@@ -4726,7 +4726,7 @@ pub struct UtxoProtocolInfo {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", content = "protocol_data")]
 pub enum CoinProtocol {
-    // TODO: Nest this option deep into the innert struct fields when more fields are added to the UTXO protocol info.
+    // TODO: Nest this option deep into the inner struct fields when more fields are added to the UTXO protocol info.
     UTXO(Option<UtxoProtocolInfo>),
     QTUM,
     QRC20 {
