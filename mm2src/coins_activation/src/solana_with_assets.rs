@@ -1,6 +1,6 @@
 #![allow(unused_variables)]
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use async_trait::async_trait;
 use coins::{
@@ -85,8 +85,6 @@ pub struct SolanaActivationResult {
     balance: Option<CoinBalance>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tokens_balances: Option<HashMap<String, CoinBalance>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tokens_tickers: Option<HashSet<String>>,
 }
 
 impl CurrentBlock for SolanaActivationResult {
@@ -195,7 +193,6 @@ impl PlatformCoinWithTokensActivationOps for SolanaCoin {
             current_block,
             balance: Some(balance),
             tokens_balances: None,
-            tokens_tickers: None,
         })
     }
 

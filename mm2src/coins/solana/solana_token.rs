@@ -2,17 +2,21 @@
 #![allow(unused_variables)]
 
 use std::ops::Deref;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use common::executor::abortable_queue::{AbortableQueue, WeakSpawner};
-use common::executor::AbortedError;
-use futures01::Future;
+use common::executor::{AbortableSystem, AbortedError};
 use derive_more::Display;
+use futures::{FutureExt, TryFutureExt};
+use futures01::Future;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
+use num_traits::Zero;
 use rpc::v1::types::{Bytes as RpcBytes, H264 as RpcH264};
+use solana_rpc_client_types::request::TokenAccountsFilter;
 
 use crate::coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentResult};
 use crate::hd_wallet::HDAddressSelector;
@@ -27,6 +31,7 @@ use crate::{
     TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr,
     ValidatePaymentInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
 };
+use solana_pubkey::Pubkey as SolanaAddress;
 
 pub struct SolanaTokenFields {
     pub ticker: String,
@@ -50,6 +55,7 @@ pub struct SolanaToken(Arc<SolanaTokenFields>);
 pub struct SolanaTokenProtocolInfo {
     pub platform: String,
     pub decimals: u8,
+    pub token_contract_address: SolanaAddress,
 }
 
 #[derive(Clone, Debug)]
@@ -59,7 +65,35 @@ pub struct SolanaTokenInitError {
 }
 
 #[derive(Display, Debug, Clone)]
-pub enum SolanaTokenInitErrorKind {}
+pub enum SolanaTokenInitErrorKind {
+    QueryError { reason: String },
+    Internal { reason: String },
+}
+
+impl SolanaToken {
+    pub fn init(
+        ticker: String,
+        platform_coin: SolanaCoin,
+        protocol_info: SolanaTokenProtocolInfo,
+    ) -> MmResult<Self, SolanaTokenInitError> {
+        let abortable_system = platform_coin
+            .abortable_system
+            .create_subsystem()
+            .map_err(|e| SolanaTokenInitError {
+                ticker: ticker.clone(),
+                kind: SolanaTokenInitErrorKind::Internal { reason: e.to_string() },
+            })?;
+
+        let token_fields = SolanaTokenFields {
+            ticker,
+            platform_coin,
+            protocol_info,
+            abortable_system,
+        };
+
+        Ok(SolanaToken(Arc::new(token_fields)))
+    }
+}
 
 #[async_trait]
 impl MmCoin for SolanaToken {
@@ -189,7 +223,7 @@ impl MarketCoinOps for SolanaToken {
     }
 
     fn my_address(&self) -> MmResult<String, MyAddressError> {
-        todo!()
+        self.platform_coin.my_address()
     }
 
     fn address_from_pubkey(&self, pubkey: &RpcH264) -> MmResult<String, AddressFromPubkeyError> {
@@ -213,7 +247,39 @@ impl MarketCoinOps for SolanaToken {
     }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
-        todo!()
+        let token = self.clone();
+        let platform_coin = self.platform_coin.clone();
+
+        let fut = async move {
+            let rpc = platform_coin.rpc_client().await.expect("TODO");
+            let token_accounts = rpc
+                .get_token_accounts_by_owner(
+                    &platform_coin.address,
+                    TokenAccountsFilter::Mint(token.protocol_info.token_contract_address),
+                )
+                .expect("TODO");
+
+            let Some(token_account) = token_accounts.first() else {
+                return Ok(CoinBalance {
+                    spendable: BigDecimal::zero(),
+                    unspendable: BigDecimal::zero(),
+                });
+            };
+
+            let token_account = SolanaAddress::from_str(&token_account.pubkey).expect("TODO");
+            let balance_string = rpc
+                .get_token_account_balance(&token_account)
+                .expect("TODO")
+                .ui_amount_string;
+            let balance = BigDecimal::from_str(&balance_string).expect("TODO");
+
+            Ok(CoinBalance {
+                spendable: balance,
+                unspendable: Default::default(),
+            })
+        };
+
+        Box::new(fut.boxed().compat())
     }
 
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {

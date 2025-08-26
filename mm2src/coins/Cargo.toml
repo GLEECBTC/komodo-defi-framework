@@ -13,6 +13,7 @@ enable-sia = [
 enable-solana = [
   "dep:solana-pubkey",
   "dep:solana-rpc-client",
+  "dep:solana-rpc-client-types",
   "dep:solana-sdk",
   "dep:solana-transaction-status"
 ]
@@ -127,6 +128,7 @@ zcash_primitives.workspace = true
 # Solana
 solana-pubkey = { version = "2.4", default-features = false, optional = true }
 solana-rpc-client = { version = "2.3", default-features = false, optional = true }
+solana-rpc-client-types= { version = "2.3", default-features = false, optional = true }
 solana-sdk = { version = "1", default-features = false, optional = true }
 solana-transaction-status = { version = "1", default-features = false, optional = true }
 

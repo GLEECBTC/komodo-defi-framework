@@ -3,10 +3,12 @@
 
 use async_trait::async_trait;
 use coins::{
-    solana::{SolanaCoin, SolanaToken, SolanaTokenInitError, SolanaTokenProtocolInfo},
-    CoinProtocol,
+    solana::{SolanaCoin, SolanaToken, SolanaTokenInitError, SolanaTokenInitErrorKind, SolanaTokenProtocolInfo},
+    CoinBalance, CoinProtocol, MarketCoinOps,
 };
+use common::Future01CompatExt;
 use mm2_err_handle::prelude::*;
+use serde::Serialize;
 
 use crate::{
     platform_coin_with_tokens::TokenOf,
@@ -15,7 +17,14 @@ use crate::{
 };
 
 pub struct SolanaTokenActivationParams {}
-pub struct SolanaTokenInitResult {}
+
+#[derive(Clone, Serialize)]
+pub struct SolanaTokenInitResult {
+    ticker: String,
+    address: String,
+    current_block: u64,
+    balance: CoinBalance,
+}
 
 impl TokenOf for SolanaToken {
     type PlatformCoin = SolanaCoin;
@@ -51,6 +60,36 @@ impl TokenActivationOps for SolanaToken {
         protocol_conf: Self::ProtocolInfo,
         _is_custom: bool,
     ) -> Result<(Self, Self::ActivationResult), MmError<Self::ActivationError>> {
-        todo!()
+        let token = SolanaToken::init(ticker.clone(), platform_coin, protocol_conf)?;
+
+        let address = token.my_address().map_err(|e| SolanaTokenInitError {
+            ticker: ticker.clone(),
+            kind: SolanaTokenInitErrorKind::Internal {
+                reason: e.into_inner().to_string(),
+            },
+        })?;
+
+        let balance = token.my_balance().compat().await.mm_err(|e| SolanaTokenInitError {
+            ticker: ticker.clone(),
+            kind: SolanaTokenInitErrorKind::QueryError {
+                reason: format!("Failed to fetch balance: {e}"),
+            },
+        })?;
+
+        let current_block = token.current_block().compat().await.map_err(|e| SolanaTokenInitError {
+            ticker: ticker.clone(),
+            kind: SolanaTokenInitErrorKind::QueryError {
+                reason: format!("Failed to fetch current block: {e}"),
+            },
+        })?;
+
+        let init_result = SolanaTokenInitResult {
+            ticker,
+            address,
+            current_block,
+            balance,
+        };
+
+        Ok((token, init_result))
     }
 }

@@ -48,8 +48,8 @@ pub struct SolanaCoin(Arc<SolanaCoinFields>);
 
 pub struct SolanaCoinFields {
     ticker: String,
-    address: SolanaAddress,
-    abortable_system: AbortableQueue,
+    pub(crate) address: SolanaAddress,
+    pub(crate) abortable_system: AbortableQueue,
     rpc_clients: AsyncMutex<Vec<Arc<RpcClient>>>,
     protocol_info: SolanaProtocolInfo,
 }
@@ -160,7 +160,7 @@ impl SolanaCoin {
         Ok(SolanaCoin(Arc::new(fields)))
     }
 
-    async fn rpc_client(&self) -> MmResult<Arc<RpcClient>, String> {
+    pub(crate) async fn rpc_client(&self) -> MmResult<Arc<RpcClient>, String> {
         let mut rpcs = self.rpc_clients.lock().await;
 
         if let Some(index) = rpcs.iter().position(|rpc| rpc.get_health().is_ok()) {

@@ -1130,6 +1130,7 @@ dependencies = [
  "sia-rust",
  "solana-pubkey",
  "solana-rpc-client",
+ "solana-rpc-client-types",
  "solana-sdk",
  "solana-transaction-status",
  "spv_validation",
