@@ -16,6 +16,7 @@ use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 use num_traits::Zero;
 use rpc::v1::types::{Bytes as RpcBytes, H264 as RpcH264};
+use serde::Deserialize;
 use solana_rpc_client_types::request::TokenAccountsFilter;
 
 use crate::coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentResult};
@@ -55,7 +56,23 @@ pub struct SolanaToken(Arc<SolanaTokenFields>);
 pub struct SolanaTokenProtocolInfo {
     pub platform: String,
     pub decimals: u8,
+    #[serde(serialize_with = "serialize_pubkey", deserialize_with = "deserialize_pubkey")]
     pub token_contract_address: SolanaAddress,
+}
+
+pub fn serialize_pubkey<S>(public_key: &SolanaAddress, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_str(&public_key.to_string())
+}
+
+pub fn deserialize_pubkey<'de, D>(deserializer: D) -> Result<SolanaAddress, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    SolanaAddress::from_str(&s).map_err(serde::de::Error::custom)
 }
 
 #[derive(Clone, Debug)]
@@ -252,12 +269,15 @@ impl MarketCoinOps for SolanaToken {
 
         let fut = async move {
             let rpc = platform_coin.rpc_client().await.expect("TODO");
-            let token_accounts = rpc
-                .get_token_accounts_by_owner(
-                    &platform_coin.address,
-                    TokenAccountsFilter::Mint(token.protocol_info.token_contract_address),
-                )
-                .expect("TODO");
+            let Ok(token_accounts) = rpc.get_token_accounts_by_owner(
+                &platform_coin.address,
+                TokenAccountsFilter::Mint(token.protocol_info.token_contract_address),
+            ) else {
+                return Ok(CoinBalance {
+                    spendable: BigDecimal::zero(),
+                    unspendable: BigDecimal::zero(),
+                });
+            };
 
             let Some(token_account) = token_accounts.first() else {
                 return Ok(CoinBalance {
@@ -282,12 +302,12 @@ impl MarketCoinOps for SolanaToken {
         Box::new(fut.boxed().compat())
     }
 
-    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
+    fn platform_coin_balance(&self) -> BalanceFut<BigDecimal> {
         todo!()
     }
 
     fn platform_ticker(&self) -> &str {
-        todo!()
+        self.platform_coin.ticker()
     }
 
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
@@ -316,7 +336,7 @@ impl MarketCoinOps for SolanaToken {
     }
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> {
-        todo!()
+        self.platform_coin.current_block()
     }
 
     fn display_priv_key(&self) -> Result<String, String> {

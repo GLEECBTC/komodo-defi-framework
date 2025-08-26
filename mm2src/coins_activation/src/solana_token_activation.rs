@@ -8,14 +8,15 @@ use coins::{
 };
 use common::Future01CompatExt;
 use mm2_err_handle::prelude::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     platform_coin_with_tokens::TokenOf,
     prelude::TryFromCoinProtocol,
-    token::{TokenActivationOps, TokenProtocolParams},
+    token::{EnableTokenError, TokenActivationOps, TokenProtocolParams},
 };
 
+#[derive(Clone, Deserialize)]
 pub struct SolanaTokenActivationParams {}
 
 #[derive(Clone, Serialize)]
@@ -42,6 +43,19 @@ impl TryFromCoinProtocol for SolanaTokenProtocolInfo {
 impl TokenProtocolParams for SolanaTokenProtocolInfo {
     fn platform_coin_ticker(&self) -> &str {
         &self.platform
+    }
+}
+
+impl From<SolanaTokenInitError> for EnableTokenError {
+    fn from(err: SolanaTokenInitError) -> Self {
+        match err.kind {
+            SolanaTokenInitErrorKind::QueryError { reason } => {
+                EnableTokenError::CouldNotFetchBalance(format!("Failed to fetch balance for {}, {reason}", err.ticker))
+            },
+            SolanaTokenInitErrorKind::Internal { reason } => {
+                EnableTokenError::Internal(format!("Internal error occured for {}, {reason}", err.ticker))
+            },
+        }
     }
 }
 

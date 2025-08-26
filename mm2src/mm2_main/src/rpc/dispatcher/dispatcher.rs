@@ -238,6 +238,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
             )
             .await
         },
+        "enable_solana_token" => handle_mmrpc(ctx, request, enable_token::<coins::solana::SolanaToken>).await,
         "enable_tendermint_with_assets" => {
             handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<TendermintCoin>).await
         },

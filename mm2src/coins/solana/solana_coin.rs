@@ -1,9 +1,9 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
 
-use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::{collections::HashMap, ops::Deref};
 
 use async_trait::async_trait;
 use common::executor::{
@@ -19,6 +19,7 @@ use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 use nom::AsBytes;
 use num_traits::Zero;
+use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as RpcBytes, H264 as RpcH264};
 use solana_pubkey::Pubkey as SolanaAddress;
 use solana_rpc_client::rpc_client::RpcClient;
@@ -52,6 +53,7 @@ pub struct SolanaCoinFields {
     pub(crate) abortable_system: AbortableQueue,
     rpc_clients: AsyncMutex<Vec<Arc<RpcClient>>>,
     protocol_info: SolanaProtocolInfo,
+    tokens_info: PaMutex<HashMap<String, super::SolanaTokenProtocolInfo>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -155,6 +157,7 @@ impl SolanaCoin {
             abortable_system,
             rpc_clients: AsyncMutex::new(rpc_clients),
             protocol_info,
+            tokens_info: PaMutex::new(HashMap::new()),
         };
 
         Ok(SolanaCoin(Arc::new(fields)))
@@ -171,6 +174,10 @@ impl SolanaCoin {
         }
 
         MmError::err("No healthy RPC client found.".to_owned())
+    }
+
+    pub fn add_activated_token(&self, ticker: String, info: super::SolanaTokenProtocolInfo) {
+        self.tokens_info.lock().insert(ticker, info);
     }
 }
 
@@ -351,11 +358,11 @@ impl MarketCoinOps for SolanaCoin {
     }
 
     fn platform_coin_balance(&self) -> BalanceFut<BigDecimal> {
-        todo!()
+        Box::new(self.my_balance().map(|coin_balance| coin_balance.spendable))
     }
 
     fn platform_ticker(&self) -> &str {
-        todo!()
+        &self.ticker
     }
 
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {

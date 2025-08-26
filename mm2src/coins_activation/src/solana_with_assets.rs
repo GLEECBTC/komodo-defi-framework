@@ -30,7 +30,7 @@ pub type SolanaCoinTaskManagerShared = InitPlatformCoinWithTokensTaskManagerShar
 
 impl RegisterTokenInfo<SolanaToken> for SolanaCoin {
     fn register_token_info(&self, token: &SolanaToken) {
-        todo!()
+        self.add_activated_token(token.ticker().to_owned(), token.protocol_info.clone());
     }
 }
 
