@@ -2152,20 +2152,26 @@ fn verify_p2pk_input_pubkey(
     index: usize,
     signature_version: SignatureVersion,
     fork_id: u32,
-) -> Result<bool, String> {
+) -> Result<bool, ValidatePaymentError> {
     // Extract the signature from the scriptSig.
-    let signature = script.extract_signature()?;
+    let signature = script
+        .extract_signature()
+        .map_err(|e| ValidatePaymentError::CheckSignatureError(format!("Signature parsing error: {}", e)))?;
     // Validate the signature.
-    try_s!(SecpSignature::from_der(&signature[..signature.len().saturating_sub(1)]));
+    SecpSignature::from_der(&signature[..signature.len().saturating_sub(1)])
+        .map_err(|e| ValidatePaymentError::CheckSignatureError(format!("Signature parsing error: {}", e)))?;
     let signature = signature.into();
     // Make sure we have no more instructions. P2PK scriptSigs consist of a single instruction only containing the signature.
     if script.get_instruction(1).is_some() {
-        return ERR!("Unexpected instruction at position 2 of script {:?}", script);
+        return Err(ValidatePaymentError::TxDeserializationError(format!(
+            "Unexpected instruction at position 2 of script {:?}",
+            script
+        )));
     };
     // Get the scriptPub for this input. We need it to get the transaction sig_hash to sign (but actually "to verify" in this case).
     let pubkey = expected_pubkey
         .to_secp256k1_pubkey()
-        .map_err(|e| ERRL!("Error converting plain pubkey to secp256k1 pubkey: {}", e))?;
+        .map_err(|e| ValidatePaymentError::InvalidData(format!("Parsing expected pubkey error: {}", e)))?;
     // P2PK scriptPub has two valid possible formats depending on whether the public key is written in compressed or uncompressed form.
     let possible_pubkey_scripts = [
         Builder::build_p2pk(&Public::Compressed(pubkey.serialize().into())),
@@ -2182,14 +2188,24 @@ fn verify_p2pk_input_pubkey(
             fork_id,
         ) {
             Ok(hash) => hash,
-            Err(e) => return ERR!("Error calculating signature hash: {}", e),
+            Err(e) => {
+                return Err(ValidatePaymentError::CheckSignatureError(format!(
+                    "Error calculating signature hash: {}",
+                    e
+                )))
+            },
         };
         // Verify that the signature is valid for the transaction hash with respect to the expected public key.
         return match expected_pubkey.verify(&hash, &signature) {
             Ok(true) => Ok(true),
             // The signature is invalid for this pubkey, try the other possible pubkey script.
             Ok(false) => continue,
-            Err(e) => ERR!("Error verifying signature: {}", e),
+            Err(e) => {
+                return Err(ValidatePaymentError::CheckSignatureError(format!(
+                    "Error verifying signature: {}",
+                    e
+                )))
+            },
         };
     }
 
@@ -2295,8 +2311,7 @@ pub async fn check_all_utxo_inputs_signed_by_pub<T: UtxoCommonOps>(
                 idx,
                 coin.as_ref().conf.signature_version,
                 coin.as_ref().conf.fork_id,
-            )
-            .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
+            )?;
             if successful_verification {
                 // No pubkey extraction for P2PK inputs. Continue.
                 continue;
