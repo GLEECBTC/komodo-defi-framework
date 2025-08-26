@@ -257,6 +257,8 @@ impl SystemInner for QueueInnerState {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
     use super::*;
     use crate::block_on;
 
@@ -319,8 +321,8 @@ mod tests {
 
     #[test]
     fn test_spawn_critical() {
-        static mut F1_FINISHED: bool = false;
-        static mut F2_FINISHED: bool = false;
+        static F1_FINISHED: AtomicBool = AtomicBool::new(false);
+        static F2_FINISHED: AtomicBool = AtomicBool::new(false);
 
         let abortable_system = AbortableQueue::default();
         let spawner = abortable_system.weak_spawner();
@@ -329,13 +331,13 @@ mod tests {
 
         let fut1 = async move {
             Timer::sleep(0.6).await;
-            unsafe { F1_FINISHED = true };
+            F1_FINISHED.store(true, Ordering::Relaxed);
         };
         spawner.spawn_with_settings(fut1, settings.clone());
 
         let fut2 = async move {
             Timer::sleep(0.2).await;
-            unsafe { F2_FINISHED = true };
+            F2_FINISHED.store(true, Ordering::Relaxed);
         };
         spawner.spawn_with_settings(fut2, settings);
 
@@ -343,14 +345,14 @@ mod tests {
 
         block_on(Timer::sleep(1.2));
         // `fut1` must not complete.
-        assert!(unsafe { !F1_FINISHED });
+        assert!(!F1_FINISHED.load(Ordering::Relaxed));
         // `fut` must complete.
-        assert!(unsafe { F2_FINISHED });
+        assert!(F2_FINISHED.load(Ordering::Relaxed));
     }
 
     #[test]
     fn test_spawn_after_abort() {
-        static mut F1_FINISHED: bool = false;
+        static F1_FINISHED: AtomicBool = AtomicBool::new(false);
 
         for _ in 0..50 {
             let abortable_system = AbortableQueue::default();
@@ -363,11 +365,11 @@ mod tests {
             block_on(Timer::sleep(0.01));
 
             spawner.spawn(async move {
-                unsafe { F1_FINISHED = true };
+                F1_FINISHED.store(true, Ordering::Relaxed);
             });
         }
 
         // Futures spawned after `AbortableQueue::abort_all` must not complete.
-        assert!(unsafe { !F1_FINISHED });
+        assert!(!F1_FINISHED.load(Ordering::Relaxed));
     }
 }

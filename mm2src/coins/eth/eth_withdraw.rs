@@ -6,7 +6,7 @@ use crate::eth::wallet_connect::WcEthTxParams;
 use crate::eth::{
     calc_total_fee, get_eth_gas_details_from_withdraw_fee, tx_builder_with_pay_for_gas_option,
     tx_type_from_pay_for_gas_option, Action, Address, EthTxFeeDetails, KeyPair, PayForGasOption, SignedEthTx,
-    TransactionWrapper, UnSignedEthTxBuilder,
+    TransactionWrapper, UnSignedEthTxBuilder, ETH_RPC_REQUEST_TIMEOUT_S,
 };
 use crate::hd_wallet::{HDAddressSelector, HDCoinWithdrawOps, HDWalletOps, WithdrawSenderAddress};
 use crate::rpc_command::init_withdraw::{WithdrawInProgressStatus, WithdrawTaskHandleShared};
@@ -293,7 +293,7 @@ where
                     .clone()
                     .get_addr_nonce(my_address)
                     .compat()
-                    .timeout_secs(30.)
+                    .timeout(ETH_RPC_REQUEST_TIMEOUT_S)
                     .await?
                     .map_to_mm(WithdrawError::Transport)?;
 
@@ -342,7 +342,7 @@ where
                     .clone()
                     .get_addr_nonce(my_address)
                     .compat()
-                    .timeout_secs(30.)
+                    .timeout(ETH_RPC_REQUEST_TIMEOUT_S)
                     .await?
                     .map_to_mm(WithdrawError::Transport)?;
                 let params = WcEthTxParams {

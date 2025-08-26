@@ -1301,8 +1301,8 @@ impl MarketCoinOps for ZCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
-        utxo_common::base_coin_balance(self)
+    fn platform_coin_balance(&self) -> BalanceFut<BigDecimal> {
+        utxo_common::platform_coin_balance(self)
     }
 
     fn platform_ticker(&self) -> &str {

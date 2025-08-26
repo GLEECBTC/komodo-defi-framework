@@ -185,6 +185,7 @@ use std::panic::{set_hook, PanicHookInfo};
 use std::path::{Path, PathBuf};
 use std::ptr::read_volatile;
 use std::sync::atomic::Ordering;
+use std::sync::Mutex;
 use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, SystemTimeError};
 use uuid::Uuid;
@@ -197,7 +198,6 @@ cfg_native! {
     #[cfg(not(windows))]
     use findshlibs::{IterationControl, Segment, SharedLibrary, TargetSharedLibrary};
     use std::env;
-    use std::sync::Mutex;
     use std::str::FromStr;
 }
 
@@ -817,32 +817,29 @@ pub fn writeln(line: &str) {
     });
 }
 
-#[cfg(target_arch = "wasm32")]
-static mut PROCESS_LOG_TAIL: [u8; 0x10000] = [0; 0x10000];
-
-#[cfg(target_arch = "wasm32")]
-static TAIL_CUR: AtomicUsize = AtomicUsize::new(0);
-
 /// Keep a tail of the log in RAM for the integration tests.
-#[allow(static_mut_refs)] // TODO: Refactor PROCESS_LOG_TAIL to use lazystatic
 #[cfg(target_arch = "wasm32")]
 pub fn append_log_tail(line: &str) {
-    unsafe {
-        if line.len() < PROCESS_LOG_TAIL.len() {
-            let posⁱ = TAIL_CUR.load(Ordering::Relaxed);
-            let posⱼ = posⁱ + line.len();
-            let (posˢ, posⱼ) = if posⱼ > PROCESS_LOG_TAIL.len() {
-                (0, line.len())
-            } else {
-                (posⁱ, posⱼ)
-            };
-            if TAIL_CUR
-                .compare_exchange(posⁱ, posⱼ, Ordering::Relaxed, Ordering::Relaxed)
-                .is_ok()
-            {
-                for (cur, ix) in (posˢ..posⱼ).zip(0..line.len()) {
-                    PROCESS_LOG_TAIL[cur] = line.as_bytes()[ix]
-                }
+    static PROCESS_LOG_TAIL: OnceLock<Mutex<[u8; 0x10000]>> = OnceLock::new();
+    static TAIL_CUR: AtomicUsize = AtomicUsize::new(0);
+
+    let process_log_tail = PROCESS_LOG_TAIL.get_or_init(|| Mutex::new([0; 0x10000]));
+    let mut process_log_tail = process_log_tail.lock().unwrap();
+
+    if line.len() < process_log_tail.len() {
+        let posⁱ = TAIL_CUR.load(Ordering::Relaxed);
+        let posⱼ = posⁱ + line.len();
+        let (posˢ, posⱼ) = if posⱼ > process_log_tail.len() {
+            (0, line.len())
+        } else {
+            (posⁱ, posⱼ)
+        };
+        if TAIL_CUR
+            .compare_exchange(posⁱ, posⱼ, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+        {
+            for (cur, ix) in (posˢ..posⱼ).zip(0..line.len()) {
+                process_log_tail[cur] = line.as_bytes()[ix]
             }
         }
     }
@@ -851,6 +848,7 @@ pub fn append_log_tail(line: &str) {
 #[cfg(target_arch = "wasm32")]
 pub fn writeln(line: &str) {
     use web_sys::console;
+
     console::log_1(&line.into());
     append_log_tail(line);
 }

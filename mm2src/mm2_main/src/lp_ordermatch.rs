@@ -3744,7 +3744,9 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
             let mut uuids_to_remove = vec![];
             let mut pubkeys_to_remove = vec![];
             for (pubkey, state) in orderbook.pubkeys_state.iter() {
-                let to_keep = pubkey == &my_pubsecp || state.last_keep_alive + maker_order_timeout > now_sec();
+                let is_ours = orderbook.my_p2p_pubkeys.contains(pubkey);
+                let to_keep =
+                    pubkey == &my_pubsecp || is_ours || state.last_keep_alive + maker_order_timeout > now_sec();
                 if !to_keep {
                     for (uuid, _) in &state.orders_uuids {
                         uuids_to_remove.push(*uuid);
@@ -3816,8 +3818,31 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
 
                 // notify other nodes only if maker order is still there keeping maker_orders locked during the operation
                 if maker_orders.contains_key(&uuid) {
-                    let topic = order.orderbook_topic();
-                    subscribe_to_topic(&ctx, topic);
+                    if let Err(err) = subscribe_to_orderbook_topic(
+                        &ctx,
+                        order.base_orderbook_ticker(),
+                        order.rel_orderbook_ticker(),
+                        false,
+                    )
+                    .await
+                    {
+                        // TODO: centralized-P2P-failure-policy
+                        // Introduce a single, centralized handler for P2P/network failures that affect a specific (base, rel) pair.
+                        // The handler should, on critical/persistent failures, cancel local maker orders for that pair and clear
+                        // in-memory pair state to avoid stale/half-synced state. Apply this consistently across all call sites,
+                        // including but not limited to:
+                        // - subscribe_to_orderbook_topic
+                        // - maker_order_created_p2p_notify
+                        // - re-subscribe on reconnect if needed
+                        // - keep-alive initiated sync requests
+                        // - background refresh / re-announce paths
+                        warn!(
+                            "Failed to subscribe to orderbook topic {}:{}: {}",
+                            order.base_orderbook_ticker(),
+                            order.rel_orderbook_ticker(),
+                            err
+                        );
+                    }
                     maker_order_created_p2p_notify(
                         ctx.clone(),
                         &order,

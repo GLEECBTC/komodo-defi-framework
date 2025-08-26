@@ -18,6 +18,7 @@ use rand::{seq::SliceRandom, thread_rng, Rng};
 use secp256k1::PublicKey;
 use std::collections::HashSet;
 use std::iter::{self, FromIterator};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 #[test]
@@ -1406,11 +1407,10 @@ fn lp_connect_start_bob_should_not_be_invoked_if_order_match_already_connected()
         .lock()
         .add_order(ctx.weak(), maker_order, None);
 
-    static mut CONNECT_START_CALLED: bool = false;
+    static CONNECT_START_CALLED: AtomicBool = AtomicBool::new(false);
+
     lp_connect_start_bob.mock_safe(|_, _, _, _| {
-        unsafe {
-            CONNECT_START_CALLED = true;
-        }
+        CONNECT_START_CALLED.store(true, Ordering::Relaxed);
 
         MockResult::Return(())
     });
@@ -1423,7 +1423,8 @@ fn lp_connect_start_bob_should_not_be_invoked_if_order_match_already_connected()
         PublicKey::from_slice(&prefixed_pub).unwrap().into(),
         connect,
     ));
-    assert!(unsafe { !CONNECT_START_CALLED });
+
+    assert!(!CONNECT_START_CALLED.load(Ordering::Relaxed));
 }
 
 #[test]

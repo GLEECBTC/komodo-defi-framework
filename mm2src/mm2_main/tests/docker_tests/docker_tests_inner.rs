@@ -3710,6 +3710,52 @@ fn test_enable_eth_coin_with_token_then_disable() {
 }
 
 #[test]
+fn test_platform_coin_mismatch() {
+    let coin = erc20_coin_with_random_privkey(swap_contract());
+
+    let priv_key = coin.display_priv_key().unwrap();
+    let mut erc20_conf = erc20_dev_conf(&erc20_contract_checksum());
+    erc20_conf["protocol"]["protocol_data"]["platform"] = "MATIC".into(); // set a different platform coin
+    let coins = json!([eth_dev_conf(), erc20_conf]);
+
+    let conf = Mm2TestConf::seednode(&priv_key, &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!("log path: {}", mm.log_path.display());
+
+    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let erc20_tokens_requests = vec![json!({ "ticker": "ERC20DEV" })];
+    let nodes = vec![json!({ "url": GETH_RPC_URL })];
+
+    let enable = block_on(mm.rpc(&json!({
+    "userpass": mm.userpass,
+    "method": "enable_eth_with_tokens",
+    "mmrpc": "2.0",
+    "params": {
+            "ticker": "ETH",
+            "erc20_tokens_requests": erc20_tokens_requests,
+            "swap_contract_address": swap_contract,
+            "nodes": nodes,
+            "tx_history": false,
+            "get_balances": false,
+        }
+    })))
+    .unwrap();
+    assert_eq!(
+        enable.0,
+        StatusCode::BAD_REQUEST,
+        "'enable_eth_with_tokens' must fail with PlatformCoinMismatch",
+    );
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&enable.1).unwrap()["error_type"]
+            .as_str()
+            .unwrap(),
+        "PlatformCoinMismatch",
+    );
+}
+
+#[test]
 fn test_enable_eth_coin_with_token_without_balance() {
     let coin = erc20_coin_with_random_privkey(swap_contract());
 

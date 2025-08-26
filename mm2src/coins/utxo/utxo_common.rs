@@ -364,7 +364,7 @@ pub fn denominate_satoshis(coin: &UtxoCoinFields, satoshi: i64) -> f64 {
     satoshi as f64 / 10f64.powf(coin.decimals as f64)
 }
 
-pub fn base_coin_balance<T>(coin: &T) -> BalanceFut<BigDecimal>
+pub fn platform_coin_balance<T>(coin: &T) -> BalanceFut<BigDecimal>
 where
     T: MarketCoinOps,
 {

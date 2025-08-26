@@ -30,11 +30,18 @@ pub enum InitErc20Error {
     #[display(fmt = "{_0}")]
     HwError(HwRpcError),
     #[display(fmt = "Initialization task has timed out {duration:?}")]
-    TaskTimedOut { duration: Duration },
+    TaskTimedOut {
+        duration: Duration,
+    },
     #[display(fmt = "Token {ticker} is activated already")]
-    TokenIsAlreadyActivated { ticker: String },
+    TokenIsAlreadyActivated {
+        ticker: String,
+    },
     #[display(fmt = "Error on  token {ticker} creation: {error}")]
-    TokenCreationError { ticker: String, error: String },
+    TokenCreationError {
+        ticker: String,
+        error: String,
+    },
     #[display(fmt = "Could not fetch balance: {_0}")]
     CouldNotFetchBalance(String),
     #[display(fmt = "Transport error: {_0}")]
@@ -43,6 +50,7 @@ pub enum InitErc20Error {
     Internal(String),
     #[display(fmt = "Custom token error: {_0}")]
     CustomTokenError(CustomTokenError),
+    PlatformCoinMismatch,
 }
 
 impl From<InitErc20Error> for InitTokenError {
@@ -60,6 +68,7 @@ impl From<InitErc20Error> for InitTokenError {
             InitErc20Error::Transport(transport) => InitTokenError::Transport(transport),
             InitErc20Error::Internal(internal) => InitTokenError::Internal(internal),
             InitErc20Error::CustomTokenError(error) => InitTokenError::CustomTokenError(error),
+            InitErc20Error::PlatformCoinMismatch => InitTokenError::PlatformCoinMismatch,
         }
     }
 }
@@ -75,6 +84,7 @@ impl From<EthTokenActivationError> for InitErc20Error {
             | EthTokenActivationError::InvalidPayload(_)
             | EthTokenActivationError::Transport(_) => InitErc20Error::Transport(e.to_string()),
             EthTokenActivationError::CustomTokenError(e) => InitErc20Error::CustomTokenError(e),
+            EthTokenActivationError::PlatformCoinMismatch => InitErc20Error::PlatformCoinMismatch,
         }
     }
 }

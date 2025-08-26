@@ -308,17 +308,30 @@ pub enum InitTokenError {
     #[display(fmt = "No such task '{_0}'")]
     NoSuchTask(TaskId),
     #[display(fmt = "Initialization task has timed out {duration:?}")]
-    TaskTimedOut { duration: Duration },
+    TaskTimedOut {
+        duration: Duration,
+    },
     #[display(fmt = "Token {ticker} is activated already")]
-    TokenIsAlreadyActivated { ticker: String },
+    TokenIsAlreadyActivated {
+        ticker: String,
+    },
     #[display(fmt = "Token {_0} config is not found")]
     TokenConfigIsNotFound(String),
     #[display(fmt = "Token {ticker} protocol parsing failed: {error}")]
-    TokenProtocolParseError { ticker: String, error: String },
+    TokenProtocolParseError {
+        ticker: String,
+        error: String,
+    },
     #[display(fmt = "Unexpected platform protocol {protocol} for {ticker}")]
-    UnexpectedTokenProtocol { ticker: String, protocol: Json },
+    UnexpectedTokenProtocol {
+        ticker: String,
+        protocol: Json,
+    },
     #[display(fmt = "Error on platform coin {ticker} creation: {error}")]
-    TokenCreationError { ticker: String, error: String },
+    TokenCreationError {
+        ticker: String,
+        error: String,
+    },
     #[display(fmt = "Could not fetch balance: {_0}")]
     CouldNotFetchBalance(String),
     #[display(fmt = "Platform coin {_0} is not activated")]
@@ -336,6 +349,7 @@ pub enum InitTokenError {
     Transport(String),
     #[display(fmt = "Internal error: {_0}")]
     Internal(String),
+    PlatformCoinMismatch,
 }
 
 impl From<CoinConfWithProtocolError> for InitTokenError {
@@ -376,6 +390,7 @@ impl HttpStatusCode for InitTokenError {
             | InitTokenError::UnexpectedTokenProtocol { .. }
             | InitTokenError::TokenCreationError { .. }
             | InitTokenError::PlatformCoinIsNotActivated(_)
+            | InitTokenError::PlatformCoinMismatch
             | InitTokenError::CustomTokenError(_) => StatusCode::BAD_REQUEST,
             InitTokenError::TaskTimedOut { .. } => StatusCode::REQUEST_TIMEOUT,
             InitTokenError::HwError(_) => StatusCode::GONE,

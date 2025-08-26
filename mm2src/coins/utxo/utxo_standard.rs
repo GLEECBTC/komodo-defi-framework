@@ -901,8 +901,8 @@ impl MarketCoinOps for UtxoStandardCoin {
         utxo_common::my_balance(self.clone())
     }
 
-    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
-        utxo_common::base_coin_balance(self)
+    fn platform_coin_balance(&self) -> BalanceFut<BigDecimal> {
+        utxo_common::platform_coin_balance(self)
     }
 
     fn platform_ticker(&self) -> &str {

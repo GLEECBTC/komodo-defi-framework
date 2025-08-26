@@ -3791,7 +3791,7 @@ impl MarketCoinOps for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
+    fn platform_coin_balance(&self) -> BalanceFut<BigDecimal> {
         Box::new(self.my_balance().map(|coin_balance| coin_balance.spendable))
     }
 

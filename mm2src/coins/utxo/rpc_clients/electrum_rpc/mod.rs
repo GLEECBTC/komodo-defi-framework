@@ -11,6 +11,7 @@ mod tcp_stream;
 
 pub use client::{ElectrumClient, ElectrumClientImpl, ElectrumClientSettings};
 pub use connection::ElectrumConnectionSettings;
+pub use constants::*;
 pub use rpc_responses::*;
 
 #[inline]

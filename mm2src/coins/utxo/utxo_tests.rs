@@ -1,4 +1,3 @@
-#![allow(static_mut_refs)]
 use super::*;
 use crate::coin_balance::HDAddressBalance;
 use crate::coin_errors::ValidatePaymentError;
@@ -66,6 +65,9 @@ use std::convert::TryFrom;
 use std::iter;
 use std::num::NonZeroUsize;
 use std::str::FromStr;
+
+#[cfg(test)]
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 #[cfg(not(target_arch = "wasm32"))]
 const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
@@ -436,9 +438,9 @@ fn test_sat_from_big_decimal() {
 fn test_wait_for_payment_spend_timeout_native() {
     let client = NativeClientImpl::default();
 
-    static mut OUTPUT_SPEND_CALLED: bool = false;
+    static OUTPUT_SPEND_CALLED: AtomicBool = AtomicBool::new(false);
     NativeClient::find_output_spend.mock_safe(|_, _, _, _, _, _| {
-        unsafe { OUTPUT_SPEND_CALLED = true };
+        OUTPUT_SPEND_CALLED.store(true, Ordering::Relaxed);
         MockResult::Return(Box::new(futures01::future::ok(None)))
     });
     let client = UtxoRpcClientEnum::Native(NativeClient(Arc::new(client)));
@@ -458,7 +460,8 @@ fn test_wait_for_payment_spend_timeout_native() {
         watcher_reward: false
     }))
     .is_err());
-    assert!(unsafe { OUTPUT_SPEND_CALLED });
+
+    assert!(OUTPUT_SPEND_CALLED.load(Ordering::Relaxed));
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -467,10 +470,10 @@ fn test_wait_for_payment_spend_timeout_electrum() {
     use mm2_event_stream::StreamingManager;
     use rpc_clients::ElectrumClientSettings;
 
-    static mut OUTPUT_SPEND_CALLED: bool = false;
+    static OUTPUT_SPEND_CALLED: AtomicBool = AtomicBool::new(false);
 
     ElectrumClient::find_output_spend.mock_safe(|_, _, _, _, _, _| {
-        unsafe { OUTPUT_SPEND_CALLED = true };
+        OUTPUT_SPEND_CALLED.store(true, Ordering::Relaxed);
         MockResult::Return(Box::new(futures01::future::ok(None)))
     });
 
@@ -516,7 +519,7 @@ fn test_wait_for_payment_spend_timeout_electrum() {
         watcher_reward: false
     }))
     .is_err());
-    assert!(unsafe { OUTPUT_SPEND_CALLED });
+    assert!(OUTPUT_SPEND_CALLED.load(Ordering::Relaxed));
 }
 
 #[test]
@@ -1183,9 +1186,9 @@ fn test_network_info_deserialization() {
 fn test_generate_transaction_relay_fee_is_used_when_dynamic_fee_is_lower() {
     let client = NativeClientImpl::default();
 
-    static mut GET_RELAY_FEE_CALLED: bool = false;
+    static GET_RELAY_FEE_CALLED: AtomicBool = AtomicBool::new(false);
     NativeClient::get_relay_fee.mock_safe(|_| {
-        unsafe { GET_RELAY_FEE_CALLED = true };
+        GET_RELAY_FEE_CALLED.store(true, Ordering::Relaxed);
         MockResult::Return(Box::new(futures01::future::ok("1.0".parse().unwrap())))
     });
     let client = UtxoRpcClientEnum::Native(NativeClient(Arc::new(client)));
@@ -1216,7 +1219,7 @@ fn test_generate_transaction_relay_fee_is_used_when_dynamic_fee_is_lower() {
     assert_eq!(generated.1.fee_amount, 22000000);
     assert_eq!(generated.1.received_by_me, 78000000);
     assert_eq!(generated.1.spent_by_me, 1000000000);
-    assert!(unsafe { GET_RELAY_FEE_CALLED });
+    assert!(GET_RELAY_FEE_CALLED.load(Ordering::Relaxed));
 }
 
 /// Test the transaction builder calculations (with random generated values)
@@ -1371,9 +1374,9 @@ fn test_generate_transaction_random_values() {
 fn test_generate_transaction_relay_fee_is_used_when_dynamic_fee_is_lower_and_deduct_from_output() {
     let client = NativeClientImpl::default();
 
-    static mut GET_RELAY_FEE_CALLED: bool = false;
+    static GET_RELAY_FEE_CALLED: AtomicBool = AtomicBool::new(false);
     NativeClient::get_relay_fee.mock_safe(|_| {
-        unsafe { GET_RELAY_FEE_CALLED = true };
+        GET_RELAY_FEE_CALLED.store(true, Ordering::Relaxed);
         MockResult::Return(Box::new(futures01::future::ok("1.0".parse().unwrap())))
     });
     let client = UtxoRpcClientEnum::Native(NativeClient(Arc::new(client)));
@@ -1407,7 +1410,7 @@ fn test_generate_transaction_relay_fee_is_used_when_dynamic_fee_is_lower_and_ded
     assert_eq!(generated.1.fee_amount, 18600000);
     assert_eq!(generated.1.received_by_me, 0);
     assert_eq!(generated.1.spent_by_me, 1000000000);
-    assert!(unsafe { GET_RELAY_FEE_CALLED });
+    assert!(GET_RELAY_FEE_CALLED.load(Ordering::Relaxed));
 }
 
 #[test]
@@ -1416,9 +1419,9 @@ fn test_generate_transaction_relay_fee_is_used_when_dynamic_fee_is_lower_and_ded
 fn test_generate_tx_fee_is_correct_when_dynamic_fee_is_larger_than_relay() {
     let client = NativeClientImpl::default();
 
-    static mut GET_RELAY_FEE_CALLED: bool = false;
+    static GET_RELAY_FEE_CALLED: AtomicBool = AtomicBool::new(false);
     NativeClient::get_relay_fee.mock_safe(|_| {
-        unsafe { GET_RELAY_FEE_CALLED = true };
+        GET_RELAY_FEE_CALLED.store(true, Ordering::Relaxed);
         MockResult::Return(Box::new(futures01::future::ok("0.00001".parse().unwrap())))
     });
     let client = UtxoRpcClientEnum::Native(NativeClient(Arc::new(client)));
@@ -1454,7 +1457,7 @@ fn test_generate_tx_fee_is_correct_when_dynamic_fee_is_larger_than_relay() {
     assert_eq!(generated.1.fee_amount, 3032);
     assert_eq!(generated.1.received_by_me, 999996968);
     assert_eq!(generated.1.spent_by_me, 20000000000);
-    assert!(unsafe { GET_RELAY_FEE_CALLED });
+    assert!(GET_RELAY_FEE_CALLED.load(Ordering::Relaxed));
 }
 
 #[test]
@@ -2105,12 +2108,12 @@ fn test_get_mature_unspent_ordered_map_from_cache_impl(
         let result: HashMap<_, _> = iter::once((tx_hash, VerboseTransactionFrom::Cache(verbose.clone()))).collect();
         MockResult::Return(Box::new(futures01::future::ok(result)))
     });
-    static mut IS_UNSPENT_MATURE_CALLED: bool = false;
+    static IS_UNSPENT_MATURE_CALLED: AtomicBool = AtomicBool::new(false);
     UtxoStandardCoin::is_unspent_mature.mock_safe(move |_, tx: &RpcTransaction| {
         // check if the transaction height and confirmations are expected
         assert_eq!(tx.height, expected_height);
         assert_eq!(tx.confirmations, expected_confs);
-        unsafe { IS_UNSPENT_MATURE_CALLED = true }
+        IS_UNSPENT_MATURE_CALLED.store(true, Ordering::Relaxed);
         MockResult::Return(false)
     });
 
@@ -2121,7 +2124,7 @@ fn test_get_mature_unspent_ordered_map_from_cache_impl(
     ))
     .expect("Expected an empty unspent list");
     // unspents should be empty because `is_unspent_mature()` always returns false
-    assert!(unsafe { IS_UNSPENT_MATURE_CALLED });
+    assert!(IS_UNSPENT_MATURE_CALLED.load(Ordering::Relaxed));
     assert!(unspents.mature.is_empty());
     assert_eq!(unspents.immature.len(), 1);
 }
@@ -2684,9 +2687,9 @@ fn test_find_output_spend_skips_conflicting_transactions() {
         MockResult::Return(Box::new(futures01::future::ok(listsinceblockres)))
     });
 
-    static mut GET_RAW_TRANSACTION_BYTES_CALLED: usize = 0;
+    static GET_RAW_TRANSACTION_BYTES_CALLED: AtomicU32 = AtomicU32::new(0);
     NativeClientImpl::get_raw_transaction_bytes.mock_safe(move |_, txid| {
-        unsafe { GET_RAW_TRANSACTION_BYTES_CALLED += 1 };
+        GET_RAW_TRANSACTION_BYTES_CALLED.fetch_add(1, Ordering::Relaxed);
         assert_eq!(*txid, expected_txid);
         // no matter what we return here
         let bytes: BytesJson = hex::decode("0400008085202f890347d329798b508dc28ec99d8c6f6c7ced860a19a364e1bafe391cab89aeaac731020000006a47304402203ea8b380d0a7e64348869ef7c4c2bfa966fc7b148633003332fa8d0ab0c1bc5602202cc63fabdd2a6578c52d8f4f549069b16505f2ead48edc2b8de299be15aadf9a012102d8c948c6af848c588517288168faa397d6ba3ea924596d03d1d84f224b5123c2ffffffff1d1fd3a6b01710647a7f4a08c6de6075cb8e78d5069fa50f10c4a2a10ded2a95000000006a47304402203868945edc0f6dc2ee43d70a69ee4ec46ca188dc493173ce58924ba9bf6ee7a50220648ff99ce458ca72800758f6a1bd3800cd05ff9c3122f23f3653c25e09d22c79012102d8c948c6af848c588517288168faa397d6ba3ea924596d03d1d84f224b5123c2ffffffff7932150df8b4a1852b8b84b89b0d5322bf74665fb7f76a728369fd6895d3fd48000000006a4730440220127918c6f79c11f7f2376a6f3b750ed4c7103183181ad1218afcb2625ece9599022028c05e88d3a2f97cebd84a718cda33b62b48b18f16278fa8e531fd2155e61ee8012102d8c948c6af848c588517288168faa397d6ba3ea924596d03d1d84f224b5123c2ffffffff0329fd12000000000017a914cafb62e3e8bdb8db3735c39b92743ac6ebc9ef20870000000000000000166a14a7416b070c9bb98f4bafae55616f005a2a30bd6014b40c00000000001976a91450f4f098306f988d8843004689fae28c83ef16e888ac8cc5925f000000000000000000000000000000").unwrap().into();
@@ -2706,7 +2709,7 @@ fn test_find_output_spend_skips_conflicting_transactions() {
         TxHashAlgo::DSHA256,
     ));
     assert_eq!(actual, Ok(None));
-    assert_eq!(unsafe { GET_RAW_TRANSACTION_BYTES_CALLED }, 1);
+    assert_eq!(GET_RAW_TRANSACTION_BYTES_CALLED.load(Ordering::Relaxed), 1);
 }
 
 #[test]
@@ -3734,10 +3737,10 @@ fn test_withdraw_p2pk_balance() {
 #[test]
 fn test_utxo_standard_with_check_utxo_maturity_true() {
     /// Whether [`UtxoStandardCoin::get_mature_unspent_ordered_list`] is called or not.
-    static mut GET_MATURE_UNSPENT_ORDERED_LIST_CALLED: bool = false;
+    static GET_MATURE_UNSPENT_ORDERED_LIST_CALLED: AtomicBool = AtomicBool::new(false);
 
     UtxoStandardCoin::get_mature_unspent_ordered_list.mock_safe(|coin, _| {
-        unsafe { GET_MATURE_UNSPENT_ORDERED_LIST_CALLED = true };
+        GET_MATURE_UNSPENT_ORDERED_LIST_CALLED.store(true, Ordering::Relaxed);
         let fut = async move {
             let cache = coin.as_ref().recently_spent_outpoints.lock().await;
             Ok((MatureUnspentList::default(), cache))
@@ -3761,7 +3764,7 @@ fn test_utxo_standard_with_check_utxo_maturity_true() {
     let address = Address::from_legacyaddress("R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW", &KMD_PREFIXES).unwrap();
     // Don't use `block_on` here because it's used within a mock of [`GetUtxoListOps::get_mature_unspent_ordered_list`].
     block_on_f01(coin.get_unspent_ordered_list(&address).compat()).unwrap();
-    assert!(unsafe { GET_MATURE_UNSPENT_ORDERED_LIST_CALLED });
+    assert!(GET_MATURE_UNSPENT_ORDERED_LIST_CALLED.load(Ordering::Relaxed));
 }
 
 /// `UtxoStandardCoin` hasn't to check UTXO maturity if `check_utxo_maturity` is not set.
@@ -3769,10 +3772,10 @@ fn test_utxo_standard_with_check_utxo_maturity_true() {
 #[test]
 fn test_utxo_standard_without_check_utxo_maturity() {
     /// Whether [`UtxoStandardCoin::get_all_unspent_ordered_list`] is called or not.
-    static mut GET_ALL_UNSPENT_ORDERED_LIST_CALLED: bool = false;
+    static GET_ALL_UNSPENT_ORDERED_LIST_CALLED: AtomicBool = AtomicBool::new(false);
 
     UtxoStandardCoin::get_all_unspent_ordered_list.mock_safe(|coin, _| {
-        unsafe { GET_ALL_UNSPENT_ORDERED_LIST_CALLED = true };
+        GET_ALL_UNSPENT_ORDERED_LIST_CALLED.store(true, Ordering::Relaxed);
         let fut = async move {
             let cache = coin.as_ref().recently_spent_outpoints.lock().await;
             Ok((Vec::new(), cache))
@@ -3799,7 +3802,7 @@ fn test_utxo_standard_without_check_utxo_maturity() {
     let address = Address::from_legacyaddress("R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW", &KMD_PREFIXES).unwrap();
     // Don't use `block_on` here because it's used within a mock of [`UtxoStandardCoin::get_all_unspent_ordered_list`].
     block_on_f01(coin.get_unspent_ordered_list(&address).compat()).unwrap();
-    assert!(unsafe { GET_ALL_UNSPENT_ORDERED_LIST_CALLED });
+    assert!(GET_ALL_UNSPENT_ORDERED_LIST_CALLED.load(Ordering::Relaxed));
 }
 
 /// `QtumCoin` has to check UTXO maturity if `check_utxo_maturity` is not set.
@@ -3807,10 +3810,10 @@ fn test_utxo_standard_without_check_utxo_maturity() {
 #[test]
 fn test_qtum_without_check_utxo_maturity() {
     /// Whether [`QtumCoin::get_mature_unspent_ordered_list`] is called or not.
-    static mut GET_MATURE_UNSPENT_ORDERED_LIST_CALLED: bool = false;
+    static GET_MATURE_UNSPENT_ORDERED_LIST_CALLED: AtomicBool = AtomicBool::new(false);
 
     QtumCoin::get_mature_unspent_ordered_list.mock_safe(|coin, _| {
-        unsafe { GET_MATURE_UNSPENT_ORDERED_LIST_CALLED = true };
+        GET_MATURE_UNSPENT_ORDERED_LIST_CALLED.store(true, Ordering::Relaxed);
         let fut = async move {
             let cache = coin.as_ref().recently_spent_outpoints.lock().await;
             Ok((MatureUnspentList::default(), cache))
@@ -3841,7 +3844,7 @@ fn test_qtum_without_check_utxo_maturity() {
     .unwrap();
     // Don't use `block_on` here because it's used within a mock of [`QtumCoin::get_mature_unspent_ordered_list`].
     block_on_f01(coin.get_unspent_ordered_list(&address).compat()).unwrap();
-    assert!(unsafe { GET_MATURE_UNSPENT_ORDERED_LIST_CALLED });
+    assert!(GET_MATURE_UNSPENT_ORDERED_LIST_CALLED.load(Ordering::Relaxed));
 }
 
 /// The test is for splitting some mature unspent `QTUM` out points into 40 outputs with amount `1 QTUM` in each
@@ -4275,10 +4278,10 @@ fn test_raven_low_tx_fee_error() {
 #[test]
 fn test_qtum_with_check_utxo_maturity_false() {
     /// Whether [`QtumCoin::get_all_unspent_ordered_list`] is called or not.
-    static mut GET_ALL_UNSPENT_ORDERED_LIST_CALLED: bool = false;
+    static GET_ALL_UNSPENT_ORDERED_LIST_CALLED: AtomicBool = AtomicBool::new(false);
 
     QtumCoin::get_all_unspent_ordered_list.mock_safe(|coin, _address| {
-        unsafe { GET_ALL_UNSPENT_ORDERED_LIST_CALLED = true };
+        GET_ALL_UNSPENT_ORDERED_LIST_CALLED.store(true, Ordering::Relaxed);
         let fut = async move {
             let cache = coin.as_ref().recently_spent_outpoints.lock().await;
             let unspents = Vec::new();
@@ -4316,7 +4319,7 @@ fn test_qtum_with_check_utxo_maturity_false() {
     .unwrap();
     // Don't use `block_on` here because it's used within a mock of [`QtumCoin::get_all_unspent_ordered_list`].
     block_on_f01(coin.get_unspent_ordered_list(&address).compat()).unwrap();
-    assert!(unsafe { GET_ALL_UNSPENT_ORDERED_LIST_CALLED });
+    assert!(GET_ALL_UNSPENT_ORDERED_LIST_CALLED.load(Ordering::Relaxed));
 }
 
 #[test]
@@ -4647,28 +4650,34 @@ fn test_account_balance_rpc() {
 
 #[test]
 fn test_scan_for_new_addresses() {
-    static mut ACCOUNT_ID: u32 = 0;
-    static mut NEW_EXTERNAL_ADDRESSES_NUMBER: u32 = 0;
-    static mut NEW_INTERNAL_ADDRESSES_NUMBER: u32 = 0;
+    static ACCOUNT_ID: AtomicU32 = AtomicU32::new(0);
+    static NEW_EXTERNAL_ADDRESSES_NUMBER: AtomicU32 = AtomicU32::new(0);
+    static NEW_INTERNAL_ADDRESSES_NUMBER: AtomicU32 = AtomicU32::new(0);
 
     HDWalletMockStorage::update_external_addresses_number.mock_safe(
         |_, _, account_id, new_external_addresses_number| {
-            assert_eq!(account_id, unsafe { ACCOUNT_ID });
-            assert_eq!(new_external_addresses_number, unsafe { NEW_EXTERNAL_ADDRESSES_NUMBER });
+            assert_eq!(account_id, ACCOUNT_ID.load(Ordering::Relaxed));
+            assert_eq!(
+                new_external_addresses_number,
+                NEW_EXTERNAL_ADDRESSES_NUMBER.load(Ordering::Relaxed)
+            );
             MockResult::Return(Box::pin(futures::future::ok(())))
         },
     );
 
     HDWalletMockStorage::update_internal_addresses_number.mock_safe(
         |_, _, account_id, new_internal_addresses_number| {
-            assert_eq!(account_id, unsafe { ACCOUNT_ID });
-            assert_eq!(new_internal_addresses_number, unsafe { NEW_INTERNAL_ADDRESSES_NUMBER });
+            assert_eq!(account_id, ACCOUNT_ID.load(Ordering::Relaxed));
+            assert_eq!(
+                new_internal_addresses_number,
+                NEW_INTERNAL_ADDRESSES_NUMBER.load(Ordering::Relaxed)
+            );
             MockResult::Return(Box::pin(futures::future::ok(())))
         },
     );
 
     // The list of addresses that were checked using [`UtxoAddressScanner::is_address_used`].
-    static mut CHECKED_ADDRESSES: Vec<String> = Vec::new();
+    static CHECKED_ADDRESSES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
     // The map of addresses for those [`NativeClient::display_balance`] called.
     let mut display_balances: HashMap<String, u64> = HashMap::new();
@@ -4805,9 +4814,7 @@ fn test_scan_for_new_addresses() {
 
     UtxoAddressScanner::is_address_used.mock_safe(move |_, address| {
         let address = address.to_string();
-        unsafe {
-            CHECKED_ADDRESSES.push(address.clone());
-        }
+        CHECKED_ADDRESSES.lock().unwrap().push(address.clone());
         let is_used = non_empty_addresses.remove(&address);
         MockResult::Return(Box::pin(futures::future::ok(is_used)))
     });
@@ -4850,11 +4857,9 @@ fn test_scan_for_new_addresses() {
 
     // Check balance of Account#0
 
-    unsafe {
-        ACCOUNT_ID = 0;
-        NEW_EXTERNAL_ADDRESSES_NUMBER = 4;
-        NEW_INTERNAL_ADDRESSES_NUMBER = 4;
-    }
+    ACCOUNT_ID.store(0, Ordering::Relaxed);
+    NEW_EXTERNAL_ADDRESSES_NUMBER.store(4, Ordering::Relaxed);
+    NEW_INTERNAL_ADDRESSES_NUMBER.store(4, Ordering::Relaxed);
 
     let params = ScanAddressesParams {
         account_index: 0,
@@ -4875,11 +4880,9 @@ fn test_scan_for_new_addresses() {
 
     // Check balance of Account#1
 
-    unsafe {
-        ACCOUNT_ID = 1;
-        NEW_EXTERNAL_ADDRESSES_NUMBER = 5;
-        NEW_INTERNAL_ADDRESSES_NUMBER = 2;
-    }
+    ACCOUNT_ID.store(1, Ordering::Relaxed);
+    NEW_EXTERNAL_ADDRESSES_NUMBER.store(5, Ordering::Relaxed);
+    NEW_INTERNAL_ADDRESSES_NUMBER.store(2, Ordering::Relaxed);
 
     let params = ScanAddressesParams {
         account_index: 1,
@@ -4907,29 +4910,25 @@ fn test_scan_for_new_addresses() {
     assert_eq!(accounts[&0].internal_addresses_number, 4);
     assert_eq!(accounts[&1].external_addresses_number, 5);
     assert_eq!(accounts[&1].internal_addresses_number, 2);
-    assert_eq!(unsafe { &CHECKED_ADDRESSES }, &expected_checked_addresses);
+    assert_eq!(*CHECKED_ADDRESSES.lock().unwrap(), expected_checked_addresses);
 }
 
 #[test]
 fn test_get_new_address() {
-    static mut EXPECTED_CHECKED_ADDRESSES: Vec<String> = Vec::new();
-    static mut CHECKED_ADDRESSES: Vec<String> = Vec::new();
-    static mut NON_EMPTY_ADDRESSES: Option<HashSet<String>> = None;
+    static EXPECTED_CHECKED_ADDRESSES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+    static CHECKED_ADDRESSES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+    static NON_EMPTY_ADDRESSES: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 
     macro_rules! expected_checked_addresses {
         ($($_der_path:literal, $addr:literal);*) => {
-            unsafe {
-                CHECKED_ADDRESSES.clear();
-                EXPECTED_CHECKED_ADDRESSES = vec![$($addr.to_string()),*];
-            }
+            CHECKED_ADDRESSES.lock().unwrap().clear();
+            *EXPECTED_CHECKED_ADDRESSES.lock().unwrap() = vec![$($addr.to_string()),*];
         };
     }
 
     macro_rules! non_empty_addresses {
         ($($_der_path:literal, $addr:literal);*) => {
-            unsafe {
-                NON_EMPTY_ADDRESSES = Some(vec![$($addr.to_string()),*].into_iter().collect());
-            }
+                *NON_EMPTY_ADDRESSES.lock().unwrap() = Some(vec![$($addr.to_string()),*].into_iter().collect());
         };
     }
 
@@ -4944,11 +4943,9 @@ fn test_get_new_address() {
 
     UtxoAddressScanner::is_address_used.mock_safe(move |_, address| {
         let address = address.to_string();
-        unsafe {
-            CHECKED_ADDRESSES.push(address.clone());
-            let is_used = NON_EMPTY_ADDRESSES.as_mut().unwrap().remove(&address);
-            MockResult::Return(Box::pin(futures::future::ok(is_used)))
-        }
+        CHECKED_ADDRESSES.lock().unwrap().push(address.clone());
+        let is_used = NON_EMPTY_ADDRESSES.lock().unwrap().as_mut().unwrap().remove(&address);
+        MockResult::Return(Box::pin(futures::future::ok(is_used)))
     });
 
     MockableConfirmAddress::confirm_address
@@ -5001,7 +4998,10 @@ fn test_get_new_address() {
         gap_limit: None, // Will be used 2 from `UtxoHDWallet` by default.
     };
     block_on(coin.get_new_address_rpc(params, &confirm_address)).unwrap();
-    unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
+    assert_eq!(
+        *CHECKED_ADDRESSES.lock().unwrap(),
+        *EXPECTED_CHECKED_ADDRESSES.lock().unwrap()
+    );
 
     // `m/44'/141'/1'/0/3` is empty, so `m/44'/141'/1'/0/2` will be checked.
 
@@ -5016,7 +5016,10 @@ fn test_get_new_address() {
         .expect_err("get_new_address_rpc should have failed with 'EmptyAddressesLimitReached' error");
     let expected = GetNewAddressRpcError::EmptyAddressesLimitReached { gap_limit: 1 };
     assert_eq!(err.into_inner(), expected);
-    unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
+    assert_eq!(
+        *CHECKED_ADDRESSES.lock().unwrap(),
+        *EXPECTED_CHECKED_ADDRESSES.lock().unwrap()
+    );
 
     // `m/44'/141'/1'/0/3` is empty, but `m/44'/141'/1'/0/2` is not.
 
@@ -5031,7 +5034,10 @@ fn test_get_new_address() {
         gap_limit: Some(2),
     };
     block_on(coin.get_new_address_rpc(params, &confirm_address)).unwrap();
-    unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
+    assert_eq!(
+        *CHECKED_ADDRESSES.lock().unwrap(),
+        *EXPECTED_CHECKED_ADDRESSES.lock().unwrap()
+    );
 
     // `m/44'/141'/2'/0/3` and `m/44'/141'/2'/0/2` are empty.
 
@@ -5049,7 +5055,10 @@ fn test_get_new_address() {
         .expect_err("get_new_address_rpc should have failed with 'EmptyAddressesLimitReached' error");
     let expected = GetNewAddressRpcError::EmptyAddressesLimitReached { gap_limit: 2 };
     assert_eq!(err.into_inner(), expected);
-    unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
+    assert_eq!(
+        *CHECKED_ADDRESSES.lock().unwrap(),
+        *EXPECTED_CHECKED_ADDRESSES.lock().unwrap()
+    );
 
     // `gap_limit=0` means don't allow to generate new address if the last one is empty yet.
 
@@ -5064,7 +5073,10 @@ fn test_get_new_address() {
         .expect_err("!get_new_address_rpc should have failed with 'EmptyAddressesLimitReached' error");
     let expected = GetNewAddressRpcError::EmptyAddressesLimitReached { gap_limit: 0 };
     assert_eq!(err.into_inner(), expected);
-    unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
+    assert_eq!(
+        *CHECKED_ADDRESSES.lock().unwrap(),
+        *EXPECTED_CHECKED_ADDRESSES.lock().unwrap()
+    );
 
     // `(gap_limit=5) > (known_addresses_number=4)`, there should not be any network request.
 
@@ -5076,7 +5088,10 @@ fn test_get_new_address() {
         gap_limit: Some(5),
     };
     block_on(coin.get_new_address_rpc(params, &confirm_address)).unwrap();
-    unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
+    assert_eq!(
+        *CHECKED_ADDRESSES.lock().unwrap(),
+        *EXPECTED_CHECKED_ADDRESSES.lock().unwrap()
+    );
 
     // `known_addresses_number=0`, always allow.
 
@@ -5088,7 +5103,10 @@ fn test_get_new_address() {
         gap_limit: Some(0),
     };
     block_on(coin.get_new_address_rpc(params, &confirm_address)).unwrap();
-    unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
+    assert_eq!(
+        *CHECKED_ADDRESSES.lock().unwrap(),
+        *EXPECTED_CHECKED_ADDRESSES.lock().unwrap()
+    );
 
     // Check if `get_new_address_rpc` fails on the `HDAddressConfirm::confirm_address` error.
 
@@ -5334,13 +5352,14 @@ fn test_block_header_utxo_loop() {
     use crate::utxo::utxo_builder::{block_header_utxo_loop, BlockHeaderUtxoLoopExtraArgs};
     use keys::hash::H256 as H256Json;
 
-    static mut CURRENT_BLOCK_COUNT: u64 = 13;
+    static CURRENT_BLOCK_COUNT: AtomicU64 = AtomicU64::new(13);
 
     ElectrumClient::get_servers_with_latest_block_count.mock_safe(move |_| {
         let servers = DOC_ELECTRUM_ADDRS.iter().map(|url| url.to_string()).collect();
-        MockResult::Return(Box::new(futures01::future::ok((servers, unsafe {
-            CURRENT_BLOCK_COUNT
-        }))))
+        MockResult::Return(Box::new(futures01::future::ok((
+            servers,
+            CURRENT_BLOCK_COUNT.load(Ordering::Relaxed),
+        ))))
     });
     let expected_steps: Arc<Mutex<Vec<(u64, u64)>>> = Arc::new(Mutex::new(Vec::with_capacity(14)));
 
@@ -5396,7 +5415,7 @@ fn test_block_header_utxo_loop() {
 
     let test_fut = async move {
         *expected_steps.lock().unwrap() = vec![(2, 5), (6, 9), (10, 13), (14, 14)];
-        unsafe { CURRENT_BLOCK_COUNT = 14 }
+        CURRENT_BLOCK_COUNT.store(14, Ordering::Relaxed);
         Timer::sleep(3.).await;
         let get_headers_count = client
             .block_headers_storage()
@@ -5408,7 +5427,7 @@ fn test_block_header_utxo_loop() {
         assert!(expected_steps.lock().unwrap().is_empty());
 
         *expected_steps.lock().unwrap() = vec![(15, 18)];
-        unsafe { CURRENT_BLOCK_COUNT = 18 }
+        CURRENT_BLOCK_COUNT.store(18, Ordering::Relaxed);
         Timer::sleep(2.).await;
         let get_headers_count = client
             .block_headers_storage()
@@ -5420,7 +5439,7 @@ fn test_block_header_utxo_loop() {
         assert!(expected_steps.lock().unwrap().is_empty());
 
         *expected_steps.lock().unwrap() = vec![(19, 19)];
-        unsafe { CURRENT_BLOCK_COUNT = 19 }
+        CURRENT_BLOCK_COUNT.store(19, Ordering::Relaxed);
         Timer::sleep(2.).await;
         let get_headers_count = client
             .block_headers_storage()
@@ -5523,8 +5542,8 @@ fn test_block_header_utxo_loop_with_reorg() {
     use futures::future::{Either, FutureExt};
     use keys::hash::H256 as H256Json;
 
-    static mut CURRENT_BLOCK_COUNT: u64 = 3;
-    static mut IS_MISMATCH_HEADER: bool = true;
+    static CURRENT_BLOCK_COUNT: AtomicU64 = AtomicU64::new(3);
+    static IS_MISMATCH_HEADER: AtomicBool = AtomicBool::new(true);
     let rick_headers = include_str!("../for_tests/RICK_HEADERS.json");
     let rick_headers: Vec<String> = serde_json::from_str(rick_headers).unwrap();
     let mut rick_headers_map = HashMap::new();
@@ -5537,13 +5556,14 @@ fn test_block_header_utxo_loop_with_reorg() {
 
     ElectrumClient::get_servers_with_latest_block_count.mock_safe(move |_| {
         let servers = DOC_ELECTRUM_ADDRS.iter().map(|url| url.to_string()).collect();
-        MockResult::Return(Box::new(futures01::future::ok((servers, unsafe {
-            CURRENT_BLOCK_COUNT
-        }))))
+        MockResult::Return(Box::new(futures01::future::ok((
+            servers,
+            CURRENT_BLOCK_COUNT.load(Ordering::Relaxed),
+        ))))
     });
 
     let mut rick_headers_map_clone = rick_headers_map.clone();
-    ElectrumClient::retrieve_headers_from.mock_safe(move |_this, _server_addr, from_height, to_height| unsafe {
+    ElectrumClient::retrieve_headers_from.mock_safe(move |_this, _server_addr, from_height, to_height| {
         let header_map = rick_headers_map_clone
             .clone()
             .into_iter()
@@ -5557,8 +5577,8 @@ fn test_block_header_utxo_loop_with_reorg() {
         }
         // the first time headers from 5 is requested, we expected chain reorg error so we switch the bad header at
         // height 5 with a valid header so the next retrieval can validate it.
-        if from_height == 5 && IS_MISMATCH_HEADER {
-            IS_MISMATCH_HEADER = false;
+        if from_height == 5 && IS_MISMATCH_HEADER.load(Ordering::Relaxed) {
+            IS_MISMATCH_HEADER.store(false, Ordering::Relaxed);
             if let Some(header) = rick_headers_map_clone.get_mut(&5) {
                 *header = rick_blocker_5();
             }
@@ -5625,7 +5645,7 @@ fn test_block_header_utxo_loop_with_reorg() {
             .unwrap();
         assert_eq!(get_headers_count, 3);
 
-        unsafe { CURRENT_BLOCK_COUNT = 5 }
+        CURRENT_BLOCK_COUNT.store(5, Ordering::Relaxed);
         Timer::sleep(2.).await;
         let get_headers_count = client
             .block_headers_storage()
@@ -5635,7 +5655,7 @@ fn test_block_header_utxo_loop_with_reorg() {
             .unwrap();
         assert_eq!(get_headers_count, 5);
 
-        unsafe { CURRENT_BLOCK_COUNT = 8 }
+        CURRENT_BLOCK_COUNT.store(8, Ordering::Relaxed);
         Timer::sleep(2.).await;
         let get_headers_count = client
             .block_headers_storage()
@@ -5645,7 +5665,7 @@ fn test_block_header_utxo_loop_with_reorg() {
             .unwrap();
         assert_eq!(get_headers_count, 8);
 
-        unsafe { CURRENT_BLOCK_COUNT = 10 }
+        CURRENT_BLOCK_COUNT.store(10, Ordering::Relaxed);
         Timer::sleep(2.).await;
         let get_headers_count = client
             .block_headers_storage()
