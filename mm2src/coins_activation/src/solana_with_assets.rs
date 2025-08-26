@@ -5,10 +5,13 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use coins::{
     my_tx_history_v2::TxHistoryStorage,
-    solana::{RpcNode, SolanaCoin, SolanaInitError, SolanaInitErrorKind, SolanaProtocolInfo, SolanaToken},
+    solana::{
+        RpcNode, SolanaCoin, SolanaInitError, SolanaInitErrorKind, SolanaProtocolInfo, SolanaToken,
+        SolanaTokenInitError, SolanaTokenInitErrorKind, SolanaTokenProtocolInfo,
+    },
     CoinBalance, CoinProtocol, MarketCoinOps, MmCoinEnum, PrivKeyBuildPolicy,
 };
-use common::{true_f, Future01CompatExt};
+use common::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
@@ -21,9 +24,11 @@ use crate::{
         EnablePlatformCoinWithTokensError, GetPlatformBalance, InitPlatformCoinWithTokensAwaitingStatus,
         InitPlatformCoinWithTokensInProgressStatus, InitPlatformCoinWithTokensTask,
         InitPlatformCoinWithTokensTaskManagerShared, InitPlatformCoinWithTokensUserAction,
-        PlatformCoinWithTokensActivationOps, RegisterTokenInfo, TokenAsMmCoinInitializer,
+        PlatformCoinWithTokensActivationOps, RegisterTokenInfo, TokenActivationParams, TokenActivationRequest,
+        TokenAsMmCoinInitializer, TokenInitializer, TokenOf,
     },
     prelude::{ActivationRequestInfo, CurrentBlock, TryFromCoinProtocol, TryPlatformCoinFromMmCoinEnum, TxHistory},
+    solana_token_activation::SolanaTokenActivationParams,
 };
 
 pub type SolanaCoinTaskManagerShared = InitPlatformCoinWithTokensTaskManagerShared<SolanaCoin>;
@@ -39,8 +44,7 @@ pub struct SolanaActivationRequest {
     nodes: Vec<RpcNode>,
     #[serde(default)]
     tx_history: bool,
-    #[serde(default = "true_f")]
-    pub get_balances: bool,
+    pub tokens_params: Vec<TokenActivationRequest<SolanaTokenActivationParams>>,
 }
 
 impl TxHistory for SolanaActivationRequest {
@@ -81,10 +85,8 @@ pub struct SolanaActivationResult {
     ticker: String,
     address: String,
     current_block: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    balance: Option<CoinBalance>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tokens_balances: Option<HashMap<String, CoinBalance>>,
+    balance: CoinBalance,
+    tokens_balances: HashMap<String, CoinBalance>,
 }
 
 impl CurrentBlock for SolanaActivationResult {
@@ -95,7 +97,7 @@ impl CurrentBlock for SolanaActivationResult {
 
 impl GetPlatformBalance for SolanaActivationResult {
     fn get_platform_balance(&self) -> Option<BigDecimal> {
-        self.balance.as_ref().map(|b| b.spendable.clone())
+        Some(self.balance.spendable.clone())
     }
 }
 
@@ -156,8 +158,7 @@ impl PlatformCoinWithTokensActivationOps for SolanaCoin {
     fn token_initializers(
         &self,
     ) -> Vec<Box<dyn TokenAsMmCoinInitializer<PlatformCoin = Self, ActivationRequest = Self::ActivationRequest>>> {
-        // TODO
-        vec![]
+        vec![Box::new(self.clone())]
     }
 
     async fn get_activation_result(
@@ -187,12 +188,21 @@ impl PlatformCoinWithTokensActivationOps for SolanaCoin {
             },
         })?;
 
+        let mut tokens_balances = HashMap::new();
+
+        let tokens_info = self.tokens_info.lock().clone();
+
+        for (ticker, info) in tokens_info {
+            let balance = self.token_balance(&info.token_contract_address).await.expect("TODO");
+            tokens_balances.insert(ticker, balance);
+        }
+
         Ok(SolanaActivationResult {
             ticker: self.ticker().to_owned(),
             address,
             current_block,
-            balance: Some(balance),
-            tokens_balances: None,
+            balance,
+            tokens_balances,
         })
     }
 
@@ -209,5 +219,55 @@ impl PlatformCoinWithTokensActivationOps for SolanaCoin {
         activation_ctx: &CoinsActivationContext,
     ) -> &InitPlatformCoinWithTokensTaskManagerShared<SolanaCoin> {
         &activation_ctx.init_solana_coin_task_manager
+    }
+}
+
+#[async_trait]
+impl TokenInitializer for SolanaCoin {
+    type Token = SolanaToken;
+    type TokenActivationRequest = SolanaTokenActivationParams;
+    type TokenProtocol = SolanaTokenProtocolInfo;
+    type InitTokensError = SolanaTokenInitError;
+
+    fn tokens_requests_from_platform_request(
+        platform_request: &SolanaActivationRequest,
+    ) -> Vec<TokenActivationRequest<Self::TokenActivationRequest>> {
+        platform_request.tokens_params.clone()
+    }
+
+    async fn enable_tokens(
+        &self,
+        params: Vec<TokenActivationParams<Self::TokenActivationRequest, Self::TokenProtocol>>,
+    ) -> Result<Vec<Self::Token>, MmError<Self::InitTokensError>> {
+        params
+            .into_iter()
+            .map(|param| SolanaToken::init(param.ticker, self.platform_coin().clone(), param.protocol.clone()))
+            .collect()
+    }
+
+    fn platform_coin(&self) -> &<Self::Token as TokenOf>::PlatformCoin {
+        self
+    }
+
+    fn validate_token_params(
+        &self,
+        params: &[TokenActivationParams<Self::TokenActivationRequest, Self::TokenProtocol>],
+    ) -> MmResult<(), Self::InitTokensError> {
+        for token_param in params {
+            match &token_param.protocol {
+                SolanaTokenProtocolInfo { platform, .. } if platform == self.platform_coin().ticker() => {},
+                other => {
+                    return MmError::err(SolanaTokenInitError {
+                        ticker: self.ticker().to_owned(),
+                        kind: SolanaTokenInitErrorKind::PlatformCoinMismatch {
+                            expected_platform_coin: self.platform_coin().ticker().to_owned(),
+                            actual_platform_coin: other.platform.clone(),
+                        },
+                    })
+                },
+            }
+        }
+
+        Ok(())
     }
 }

@@ -14,10 +14,8 @@ use futures01::Future;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
-use num_traits::Zero;
 use rpc::v1::types::{Bytes as RpcBytes, H264 as RpcH264};
 use serde::Deserialize;
-use solana_rpc_client_types::request::TokenAccountsFilter;
 
 use crate::coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentResult};
 use crate::hd_wallet::HDAddressSelector;
@@ -83,8 +81,19 @@ pub struct SolanaTokenInitError {
 
 #[derive(Display, Debug, Clone)]
 pub enum SolanaTokenInitErrorKind {
-    QueryError { reason: String },
-    Internal { reason: String },
+    QueryError {
+        reason: String,
+    },
+    Internal {
+        reason: String,
+    },
+    #[display(
+        fmt = "Expected platform coin is '{expected_platform_coin}' but requested one is '{actual_platform_coin}'."
+    )]
+    PlatformCoinMismatch {
+        expected_platform_coin: String,
+        actual_platform_coin: String,
+    },
 }
 
 impl SolanaToken {
@@ -268,35 +277,9 @@ impl MarketCoinOps for SolanaToken {
         let platform_coin = self.platform_coin.clone();
 
         let fut = async move {
-            let rpc = platform_coin.rpc_client().await.expect("TODO");
-            let Ok(token_accounts) = rpc.get_token_accounts_by_owner(
-                &platform_coin.address,
-                TokenAccountsFilter::Mint(token.protocol_info.token_contract_address),
-            ) else {
-                return Ok(CoinBalance {
-                    spendable: BigDecimal::zero(),
-                    unspendable: BigDecimal::zero(),
-                });
-            };
-
-            let Some(token_account) = token_accounts.first() else {
-                return Ok(CoinBalance {
-                    spendable: BigDecimal::zero(),
-                    unspendable: BigDecimal::zero(),
-                });
-            };
-
-            let token_account = SolanaAddress::from_str(&token_account.pubkey).expect("TODO");
-            let balance_string = rpc
-                .get_token_account_balance(&token_account)
-                .expect("TODO")
-                .ui_amount_string;
-            let balance = BigDecimal::from_str(&balance_string).expect("TODO");
-
-            Ok(CoinBalance {
-                spendable: balance,
-                unspendable: Default::default(),
-            })
+            platform_coin
+                .token_balance(&token.protocol_info.token_contract_address)
+                .await
         };
 
         Box::new(fut.boxed().compat())

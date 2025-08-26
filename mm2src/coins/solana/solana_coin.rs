@@ -23,6 +23,7 @@ use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as RpcBytes, H264 as RpcH264};
 use solana_pubkey::Pubkey as SolanaAddress;
 use solana_rpc_client::rpc_client::RpcClient;
+use solana_rpc_client_types::request::TokenAccountsFilter;
 use solana_sdk::signature::keypair_from_seed;
 use solana_sdk::signer::Signer;
 use url::Url;
@@ -53,7 +54,7 @@ pub struct SolanaCoinFields {
     pub(crate) abortable_system: AbortableQueue,
     rpc_clients: AsyncMutex<Vec<Arc<RpcClient>>>,
     protocol_info: SolanaProtocolInfo,
-    tokens_info: PaMutex<HashMap<String, super::SolanaTokenProtocolInfo>>,
+    pub tokens_info: PaMutex<HashMap<String, super::SolanaTokenProtocolInfo>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -178,6 +179,41 @@ impl SolanaCoin {
 
     pub fn add_activated_token(&self, ticker: String, info: super::SolanaTokenProtocolInfo) {
         self.tokens_info.lock().insert(ticker, info);
+    }
+
+    pub async fn token_balance(
+        &self,
+        token_contract_address: &SolanaAddress,
+    ) -> Result<CoinBalance, MmError<BalanceError>> {
+        let rpc = self.rpc_client().await.expect("TODO");
+
+        let Ok(token_accounts) =
+            rpc.get_token_accounts_by_owner(&self.address, TokenAccountsFilter::Mint(*token_contract_address))
+        else {
+            return Ok(CoinBalance {
+                spendable: BigDecimal::zero(),
+                unspendable: BigDecimal::zero(),
+            });
+        };
+
+        let Some(token_account) = token_accounts.first() else {
+            return Ok(CoinBalance {
+                spendable: BigDecimal::zero(),
+                unspendable: BigDecimal::zero(),
+            });
+        };
+
+        let token_account = SolanaAddress::from_str(&token_account.pubkey).expect("TODO");
+        let balance_string = rpc
+            .get_token_account_balance(&token_account)
+            .expect("TODO")
+            .ui_amount_string;
+        let balance = BigDecimal::from_str(&balance_string).expect("TODO");
+
+        Ok(CoinBalance {
+            spendable: balance,
+            unspendable: Default::default(),
+        })
     }
 }
 

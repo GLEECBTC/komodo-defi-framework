@@ -11,7 +11,7 @@ use mm2_err_handle::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    platform_coin_with_tokens::TokenOf,
+    platform_coin_with_tokens::{InitTokensAsMmCoinsError, TokenOf},
     prelude::TryFromCoinProtocol,
     token::{EnableTokenError, TokenActivationOps, TokenProtocolParams},
 };
@@ -49,12 +49,19 @@ impl TokenProtocolParams for SolanaTokenProtocolInfo {
 impl From<SolanaTokenInitError> for EnableTokenError {
     fn from(err: SolanaTokenInitError) -> Self {
         match err.kind {
-            SolanaTokenInitErrorKind::QueryError { reason } => {
-                EnableTokenError::CouldNotFetchBalance(format!("Failed to fetch balance for {}, {reason}", err.ticker))
-            },
-            SolanaTokenInitErrorKind::Internal { reason } => {
-                EnableTokenError::Internal(format!("Internal error occured for {}, {reason}", err.ticker))
-            },
+            SolanaTokenInitErrorKind::QueryError { reason } => EnableTokenError::Transport(reason.to_string()),
+            SolanaTokenInitErrorKind::Internal { reason } => EnableTokenError::Internal(reason.to_string()),
+            SolanaTokenInitErrorKind::PlatformCoinMismatch { .. } => EnableTokenError::PlatformCoinMismatch,
+        }
+    }
+}
+
+impl From<SolanaTokenInitError> for InitTokensAsMmCoinsError {
+    fn from(err: SolanaTokenInitError) -> Self {
+        match err.kind {
+            SolanaTokenInitErrorKind::QueryError { reason } => InitTokensAsMmCoinsError::Transport(reason.to_string()),
+            SolanaTokenInitErrorKind::Internal { reason } => InitTokensAsMmCoinsError::Internal(reason.to_string()),
+            SolanaTokenInitErrorKind::PlatformCoinMismatch { .. } => InitTokensAsMmCoinsError::PlatformCoinMismatch,
         }
     }
 }
