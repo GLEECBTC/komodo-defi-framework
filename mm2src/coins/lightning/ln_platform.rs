@@ -85,7 +85,7 @@ pub async fn update_best_block(
                 let block_header = match deserialize(&h.hex.0) {
                     Ok(header) => header,
                     Err(e) => {
-                        error!("Block header deserialization error: {}", e.to_string());
+                        error!("Block header deserialization error: {}", e);
                         return;
                     },
                 };

@@ -5855,12 +5855,10 @@ pub fn address_by_coin_conf_and_pubkey_str(
         #[cfg(feature = "enable-sia")]
         CoinProtocol::SIA => ERR!("address_by_coin_conf_and_pubkey_str is not supported for SIA protocol!"), // TODO Alright
         #[cfg(feature = "enable-solana")]
-        CoinProtocol::SOLANA(_) => {
-            return ERR!("address_by_coin_conf_and_pubkey_str is not implemented for SOLANA yet.")
-        },
+        CoinProtocol::SOLANA(_) => ERR!("address_by_coin_conf_and_pubkey_str is not implemented for SOLANA yet."),
         #[cfg(feature = "enable-solana")]
         CoinProtocol::SOLANATOKEN(_) => {
-            return ERR!("address_by_coin_conf_and_pubkey_str is not implemented for SOLANATOKEN yet.")
+            ERR!("address_by_coin_conf_and_pubkey_str is not implemented for SOLANATOKEN yet.")
         },
     }
 }
