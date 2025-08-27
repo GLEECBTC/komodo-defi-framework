@@ -170,7 +170,7 @@ impl PlatformCoinWithTokensActivationOps for SolanaCoin {
         let balance = self.my_balance().compat().await.map_err(|e| SolanaInitError {
             ticker: self.ticker().to_owned(),
             kind: SolanaInitErrorKind::QueryError {
-                reason: format!("Failed to fetch balance: {e}"),
+                reason: format!("Failed to fetch '{}' balance: {e}", self.ticker()),
             },
         })?;
 
@@ -193,7 +193,16 @@ impl PlatformCoinWithTokensActivationOps for SolanaCoin {
         let tokens_info = self.tokens_info.lock().clone();
 
         for (ticker, info) in tokens_info {
-            let balance = self.token_balance(&info.token_contract_address).await.expect("TODO");
+            let balance = self
+                .token_balance(&info.token_contract_address)
+                .await
+                .map_err(|e| SolanaInitError {
+                    ticker: self.ticker().to_owned(),
+                    kind: SolanaInitErrorKind::QueryError {
+                        reason: format!("Failed to fetch '{ticker}' balance: {e}"),
+                    },
+                })?;
+
             tokens_balances.insert(ticker, balance);
         }
 

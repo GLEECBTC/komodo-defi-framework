@@ -185,7 +185,10 @@ impl SolanaCoin {
         &self,
         token_contract_address: &SolanaAddress,
     ) -> Result<CoinBalance, MmError<BalanceError>> {
-        let rpc = self.rpc_client().await.expect("TODO");
+        let rpc = self
+            .rpc_client()
+            .map_err(|e| BalanceError::Transport(e.into_inner()))
+            .await?;
 
         let Ok(token_accounts) =
             rpc.get_token_accounts_by_owner(&self.address, TokenAccountsFilter::Mint(*token_contract_address))
@@ -203,12 +206,15 @@ impl SolanaCoin {
             });
         };
 
-        let token_account = SolanaAddress::from_str(&token_account.pubkey).expect("TODO");
+        let token_account =
+            SolanaAddress::from_str(&token_account.pubkey).map_err(|e| BalanceError::Internal(e.to_string()))?;
+
         let balance_string = rpc
             .get_token_account_balance(&token_account)
-            .expect("TODO")
+            .map_err(|e| BalanceError::Transport(e.to_string()))?
             .ui_amount_string;
-        let balance = BigDecimal::from_str(&balance_string).expect("TODO");
+
+        let balance = BigDecimal::from_str(&balance_string).map_err(|e| BalanceError::Internal(e.to_string()))?;
 
         Ok(CoinBalance {
             spendable: balance,
