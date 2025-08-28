@@ -1,4 +1,4 @@
-use common::HttpStatusCode;
+use common::{now_sec, HttpStatusCode};
 use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
@@ -122,7 +122,7 @@ pub async fn consolidate_utxos_rpc(
                         amount: spent_by_me - received_by_me,
                     })),
                     block_height: 0,
-                    timestamp: 0,
+                    timestamp: now_sec(),
                     kmd_rewards: None,
                     transaction_type: Default::default(),
                     memo: None,
