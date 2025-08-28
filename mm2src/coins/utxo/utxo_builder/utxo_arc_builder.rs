@@ -149,6 +149,11 @@ impl Default for MergeConditions {
     }
 }
 
+pub enum UtxoMergeError {
+    BadMergeConditions(String),
+    InternalError(String),
+}
+
 /// Merges unspent UTXOs from `from_address` address to `to_script_pubkey` script.
 pub async fn merge_utxos<Coin>(
     coin: &Coin,
@@ -156,27 +161,29 @@ pub async fn merge_utxos<Coin>(
     to_script_pubkey: &Script,
     merge_conditions: &MergeConditions,
     broadcast: bool,
-) -> MmResult<(Transaction, Vec<UnspentInfo>), String>
+) -> MmResult<(Transaction, Vec<UnspentInfo>), UtxoMergeError>
 where
     Coin: UtxoCommonOps + GetUtxoListOps,
 {
     let ticker = &coin.as_ref().conf.ticker;
-    let (unspents, recently_spent) = coin
-        .get_unspent_ordered_list(from_address)
-        .await
-        .mm_err(|e| format!("Error in get_unspent_ordered_list for coin={ticker}: {e}"))?;
+    let (unspents, recently_spent) = coin.get_unspent_ordered_list(from_address).await.mm_err(|e| {
+        UtxoMergeError::InternalError(format!("Error in get_unspent_ordered_list for coin={ticker}: {e}"))
+    })?;
 
     if unspents.len() < merge_conditions.merge_at {
-        return Err(format!(
+        return Err(UtxoMergeError::BadMergeConditions(format!(
             "Not enough unspent UTXOs to merge for coin={ticker}, found={}, required={}",
             unspents.len(),
             merge_conditions.merge_at
-        )
+        ))
         .into());
     }
     let unspents: Vec<_> = unspents.into_iter().take(merge_conditions.max_merge_at_once).collect();
     if unspents.len() < 2 {
-        return Err(format!("No point of merging only a single UTXO (coin={ticker})").into());
+        return Err(UtxoMergeError::BadMergeConditions(format!(
+            "No point of merging only a single UTXO (coin={ticker})"
+        ))
+        .into());
     }
 
     let value = unspents.iter().fold(0, |sum, unspent| sum + unspent.value);
@@ -195,9 +202,9 @@ where
             vec![output],
         )
         .await
-        .map_to_mm(|e| format!("Error in generate_and_send_tx for coin={ticker}: {e}"))?
+        .map_to_mm(|e| UtxoMergeError::InternalError(format!("Error in generate_and_send_tx for coin={ticker}: {e}")))?
     } else {
-        generate_tx(
+        let (tx, _) = generate_tx(
             coin,
             unspents.clone(),
             None,
@@ -205,8 +212,8 @@ where
             vec![output],
         )
         .await
-        .map_to_mm(|e| format!("Error in generate_tx for coin={ticker}: {e}"))?
-        .0
+        .map_to_mm(|e| UtxoMergeError::InternalError(format!("Error in generate_tx for coin={ticker}: {e}")))?;
+        tx
     };
 
     Ok((tx, unspents))
@@ -272,7 +279,10 @@ async fn merge_utxo_loop<T>(
                 spents.len(),
                 tx.hash().reversed()
             ),
-            Err(e) => error!("Error on UTXO merge attempt for coin={ticker}: {e}"),
+            Err(e) => match e.into_inner() {
+                UtxoMergeError::BadMergeConditions(_) => (), // We don't gotta log any errors here since we provided a bad merge conditions.ƒ
+                UtxoMergeError::InternalError(e) => error!("Error on UTXO merge attempt for coin={ticker}: {e}"),
+            },
         }
     }
 }

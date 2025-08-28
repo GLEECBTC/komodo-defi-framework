@@ -11,7 +11,7 @@ use crate::{
     lp_coinfind_or_err,
     utxo::{
         output_script,
-        utxo_builder::{merge_utxos, MergeConditions},
+        utxo_builder::{merge_utxos, MergeConditions, UtxoMergeError},
         utxo_common::big_decimal_from_sat_unsigned,
         UtxoFeeDetails,
     },
@@ -39,7 +39,8 @@ pub enum ConsolidateUtxoError {
     NoSuchCoin,
     CoinNotSupported,
     InvalidAddress(String),
-    MergeError(String),
+    BadMergeConditions(String),
+    InternalError(String),
 }
 
 impl HttpStatusCode for ConsolidateUtxoError {
@@ -48,7 +49,8 @@ impl HttpStatusCode for ConsolidateUtxoError {
             ConsolidateUtxoError::NoSuchCoin => StatusCode::NOT_FOUND,
             ConsolidateUtxoError::CoinNotSupported => StatusCode::BAD_REQUEST,
             ConsolidateUtxoError::InvalidAddress(_) => StatusCode::BAD_REQUEST,
-            ConsolidateUtxoError::MergeError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            ConsolidateUtxoError::BadMergeConditions(_) => StatusCode::BAD_REQUEST,
+            ConsolidateUtxoError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -57,6 +59,15 @@ impl From<CoinFindError> for ConsolidateUtxoError {
     fn from(err: CoinFindError) -> Self {
         match err {
             CoinFindError::NoSuchCoin { .. } => ConsolidateUtxoError::NoSuchCoin,
+        }
+    }
+}
+
+impl From<UtxoMergeError> for ConsolidateUtxoError {
+    fn from(err: UtxoMergeError) -> Self {
+        match err {
+            UtxoMergeError::BadMergeConditions(e) => ConsolidateUtxoError::BadMergeConditions(e),
+            UtxoMergeError::InternalError(e) => ConsolidateUtxoError::InternalError(e),
         }
     }
 }
@@ -96,7 +107,7 @@ pub async fn consolidate_utxos_rpc(
                 request.broadcast,
             )
             .await
-            .map_err(|e| ConsolidateUtxoError::MergeError(format!("Failed to merge UTXOs: {e}")))?;
+            .map_mm_err()?;
 
             let received_by_me = transaction.outputs.iter().map(|o| o.value).sum();
             let received_by_me = big_decimal_from_sat_unsigned(received_by_me, coin.as_ref().decimals);
