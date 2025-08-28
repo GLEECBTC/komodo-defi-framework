@@ -99,8 +99,9 @@ pub async fn consolidate_utxos_rpc(
             .map_err(|e| ConsolidateUtxoError::MergeError(format!("Failed to merge UTXOs: {e}")))?;
 
             let received_by_me = transaction.outputs.iter().map(|o| o.value).sum();
-            let spent_by_me = spent_utxos.iter().map(|i| i.value).sum();
             let received_by_me = big_decimal_from_sat_unsigned(received_by_me, coin.as_ref().decimals);
+
+            let spent_by_me = spent_utxos.iter().map(|i| i.value).sum();
             let spent_by_me = big_decimal_from_sat_unsigned(spent_by_me, coin.as_ref().decimals);
 
             Ok(ConsolidateUtxoResponse {
