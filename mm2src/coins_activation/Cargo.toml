@@ -9,7 +9,7 @@ doctest = false
 [features]
 enable-sia = []
 enable-solana = []
-default = ["enable-solana"]
+default = []
 for-tests = []
 
 [dependencies]

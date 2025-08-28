@@ -177,6 +177,7 @@ async fn experimental_rpcs_dispatcher(
     ctx: MmArc,
     experimental_method: &str,
 ) -> DispatcherResult<Response<Vec<u8>>> {
+    #[cfg(feature = "enable-solana")]
     match request.method.as_str() {
         "enable_solana_with_assets" => {
             return handle_mmrpc(
