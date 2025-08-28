@@ -177,6 +177,19 @@ async fn experimental_rpcs_dispatcher(
     ctx: MmArc,
     experimental_method: &str,
 ) -> DispatcherResult<Response<Vec<u8>>> {
+    match request.method.as_str() {
+        "enable_solana_with_assets" => {
+            return handle_mmrpc(
+                ctx,
+                request,
+                enable_platform_coin_with_tokens::<coins::solana::SolanaCoin>,
+            )
+            .await
+        },
+        "enable_solana_token" => return handle_mmrpc(ctx, request, enable_token::<coins::solana::SolanaToken>).await,
+        _ => {},
+    };
+
     if let Some(staking_method) = experimental_method.strip_prefix("staking::") {
         return staking_dispatcher(request, ctx, staking_method).await;
     }
@@ -230,15 +243,6 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "enable_eth_with_tokens" => handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<EthCoin>).await,
         "enable_erc20" => handle_mmrpc(ctx, request, enable_token::<EthCoin>).await,
         "enable_nft" => handle_mmrpc(ctx, request, enable_token::<EthCoin>).await,
-        "enable_solana_with_assets" => {
-            handle_mmrpc(
-                ctx,
-                request,
-                enable_platform_coin_with_tokens::<coins::solana::SolanaCoin>,
-            )
-            .await
-        },
-        "enable_solana_token" => handle_mmrpc(ctx, request, enable_token::<coins::solana::SolanaToken>).await,
         "enable_tendermint_with_assets" => {
             handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<TendermintCoin>).await
         },

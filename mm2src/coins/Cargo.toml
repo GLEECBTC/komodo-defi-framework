@@ -17,7 +17,7 @@ enable-solana = [
   "dep:solana-sdk",
   "dep:solana-transaction-status"
 ]
-default = ["enable-solana"]
+default = []
 run-docker-tests = []
 for-tests = ["dep:mocktopus"]
 new-db-arch = ["mm2_core/new-db-arch"]
