@@ -5892,27 +5892,6 @@ impl EthCoin {
         Box::new(Box::pin(fut).compat())
     }
 
-    /// Estimated trade fee for the provided gas limit
-    pub async fn estimate_trade_fee(&self, gas_limit: U256, stage: FeeApproxStage) -> TradePreimageResult<TradeFee> {
-        let pay_for_gas_option = self
-            .get_swap_pay_for_gas_option(self.get_swap_gas_fee_policy().await.map_mm_err()?)
-            .await
-            .map_mm_err()?;
-        let pay_for_gas_option = increase_gas_price_by_stage(pay_for_gas_option, &stage);
-        let total_fee = calc_total_fee(gas_limit, &pay_for_gas_option).map_mm_err()?;
-        let amount = u256_to_big_decimal(total_fee, ETH_DECIMALS).map_mm_err()?;
-        let fee_coin = match &self.coin_type {
-            EthCoinType::Eth => &self.ticker,
-            EthCoinType::Erc20 { platform, .. } => platform,
-            EthCoinType::Nft { .. } => return MmError::err(TradePreimageError::NftProtocolNotSupported),
-        };
-        Ok(TradeFee {
-            coin: fee_coin.into(),
-            amount: amount.into(),
-            paid_from_trading_vol: false,
-        })
-    }
-
     pub async fn platform_coin(&self) -> CoinFindResult<EthCoin> {
         match &self.coin_type {
             EthCoinType::Eth => Ok(self.clone()),
