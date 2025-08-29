@@ -1,8 +1,10 @@
+use std::collections::HashMap;
+
 use common::{now_sec, HttpStatusCode};
 use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
-use mm2_err_handle::prelude::{MmResult, MmResultExt};
+use mm2_err_handle::prelude::{MapMmError, MmResult, MmResultExt};
 use mm2_number::BigDecimal;
 use rpc::v1::types::ToTxHash;
 
@@ -13,7 +15,7 @@ use crate::{
         output_script,
         utxo_builder::{merge_utxos, MergeConditions, UtxoMergeError},
         utxo_common::big_decimal_from_sat_unsigned,
-        UtxoFeeDetails,
+        UtxoFeeDetails, UtxoStandardOps,
     },
     CoinFindError, DerivationMethod, MmCoinEnum, Transaction, TransactionData, TransactionDetails,
 };
@@ -115,30 +117,38 @@ pub async fn consolidate_utxos_rpc(
             let spent_by_me = spent_utxos.iter().map(|i| i.value).sum();
             let spent_by_me = big_decimal_from_sat_unsigned(spent_by_me, coin.as_ref().decimals);
 
+            let mut tx = TransactionDetails {
+                from: vec![from_address.addr_to_string()],
+                to: vec![from_address.addr_to_string()],
+                received_by_me: received_by_me.clone(),
+                spent_by_me: spent_by_me.clone(),
+                total_amount: spent_by_me.clone(),
+                my_balance_change: &received_by_me - &spent_by_me,
+                tx: TransactionData::new_signed(
+                    transaction.tx_hex().into(),
+                    transaction.hash().reversed().to_vec().to_tx_hash(),
+                ),
+                coin: coin.as_ref().conf.ticker.clone(),
+                internal_id: transaction.hash().reversed().to_vec().into(),
+                fee_details: Some(crate::TxFeeDetails::Utxo(UtxoFeeDetails {
+                    coin: Some(coin.as_ref().conf.ticker.clone()),
+                    amount: spent_by_me - received_by_me,
+                })),
+                block_height: 0,
+                timestamp: now_sec(),
+                kmd_rewards: None,
+                transaction_type: Default::default(),
+                memo: None,
+            };
+
+            if tx.should_update_kmd_rewards() {
+                coin.update_kmd_rewards(&mut tx, &mut HashMap::new())
+                    .await
+                    .mm_err(|e| ConsolidateUtxoError::InternalError(format!("Failed to update KMD rewards: {e}")))?;
+            }
+
             Ok(ConsolidateUtxoResponse {
-                tx: TransactionDetails {
-                    from: vec![from_address.addr_to_string()],
-                    to: vec![from_address.addr_to_string()],
-                    received_by_me: received_by_me.clone(),
-                    spent_by_me: spent_by_me.clone(),
-                    total_amount: spent_by_me.clone(),
-                    my_balance_change: &received_by_me - &spent_by_me,
-                    tx: TransactionData::new_signed(
-                        transaction.tx_hex().into(),
-                        transaction.hash().reversed().to_vec().to_tx_hash(),
-                    ),
-                    coin: coin.as_ref().conf.ticker.clone(),
-                    internal_id: transaction.hash().reversed().to_vec().into(),
-                    fee_details: Some(crate::TxFeeDetails::Utxo(UtxoFeeDetails {
-                        coin: Some(coin.as_ref().conf.ticker.clone()),
-                        amount: spent_by_me - received_by_me,
-                    })),
-                    block_height: 0,
-                    timestamp: now_sec(),
-                    kmd_rewards: None,
-                    transaction_type: Default::default(),
-                    memo: None,
-                },
+                tx,
                 consolidated_utxos: spent_utxos
                     .into_iter()
                     .map(|spent| SpentUtxo {
