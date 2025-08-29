@@ -3979,21 +3979,17 @@ impl EthCoin {
         let coin = self.clone();
         let fut = async move {
             // Try to estimate gas from the network
-            let final_gas = match &action {
-                Action::Call(contract_addr) => coin
-                    .estimate_gas_for_contract_call_if_conf(
-                        *contract_addr,
-                        Bytes::from(data.clone()),
-                        value,
-                        default_gas,
-                    )
-                    .await
-                    .map_err(|err| TransactionErr::Plain(ERRL!("{}", err.get_inner())))?
-                    .ok_or(TransactionErr::InternalError("no gas limit set".to_owned()))?,
-                _ => {
-                    // fallback to provided gas limit for non-contract calls
-                    default_gas.ok_or(TransactionErr::InternalError("no gas limit set".to_owned()))?
-                },
+            let final_gas = if let Some(default_gas) = default_gas {
+                default_gas
+            } else {
+                match &action {
+                    Action::Call(contract_addr) => coin
+                        .estimate_gas_for_contract_call_if_conf(*contract_addr, Bytes::from(data.clone()), value)
+                        .await
+                        .map_err(|err| TransactionErr::Plain(ERRL!("{}", err.get_inner())))?
+                        .ok_or(TransactionErr::InternalError("no gas limit set".to_owned()))?,
+                    _ => return Err(TransactionErr::InternalError("no gas limit set".to_owned())),
+                }
             };
 
             match coin.priv_key_policy {
@@ -4926,22 +4922,19 @@ impl EthCoin {
         contract_addr: Address,
         call_data: Bytes,
         value: U256,
-        default_gas: Option<U256>,
     ) -> Web3RpcResult<Option<U256>> {
-        match (self.estimate_gas_mult, default_gas) {
-            (Some(estimate_gas_mult), _) => {
-                let gas_estimated = self
-                    .estimate_gas_for_contract_call(contract_addr, call_data, value)
-                    .await?;
-                let gas_estimated = u256_to_big_decimal(gas_estimated, 0).map_mm_err()?
-                    * BigDecimal::from_f64(estimate_gas_mult).unwrap_or(BigDecimal::from(1));
-                Ok(Some(u256_from_big_decimal(&gas_estimated, 0).map_mm_err()?))
-            },
-            (None, Some(default_gas)) => Ok(Some(default_gas)),
-            (None, None) => Ok(Some(
+        if let Some(estimate_gas_mult) = self.estimate_gas_mult {
+            let gas_estimated = self
+                .estimate_gas_for_contract_call(contract_addr, call_data, value)
+                .await?;
+            let gas_estimated = u256_to_big_decimal(gas_estimated, 0).map_mm_err()?
+                * BigDecimal::from_f64(estimate_gas_mult).unwrap_or(BigDecimal::from(1));
+            Ok(Some(u256_from_big_decimal(&gas_estimated, 0).map_mm_err()?))
+        } else {
+            Ok(Some(
                 self.estimate_gas_for_contract_call(contract_addr, call_data, value)
                     .await?,
-            )),
+            ))
         }
     }
 
