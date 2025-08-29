@@ -933,7 +933,7 @@ pub struct EthCoinImpl {
     decimals: u8,
     history_sync_state: Mutex<HistorySyncState>,
     required_confirmations: AtomicU64,
-    #[cfg_attr(any(test, feature = "run-docker-tests"), allow(dead_code))]
+    #[cfg_attr(feature = "run-docker-tests", allow(dead_code))]
     swap_gas_fee_policy: Mutex<SwapGasFeePolicy>,
     max_eth_tx_type: Option<u64>,
     gas_price_adjust: Option<GasPriceAdjust>,
