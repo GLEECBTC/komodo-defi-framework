@@ -54,6 +54,7 @@ pub enum ValidatePaymentError {
     TimelockOverflow(TryFromIntError),
     ProtocolNotSupported(String),
     InvalidData(String),
+    CheckSignatureError(String),
 }
 
 impl From<SPVError> for ValidatePaymentError {
