@@ -2873,7 +2873,6 @@ async fn sign_and_send_transaction_with_keypair(
     data: Vec<u8>,
     gas: U256,
 ) -> Result<SignedEthTx, TransactionErr> {
-    info!(target: "sign-and-send", "get_gas_price…");
     let pay_for_gas_policy = try_tx_s!(coin.get_swap_gas_fee_policy().await);
     let pay_for_gas_option = try_tx_s!(coin.get_swap_pay_for_gas_option(pay_for_gas_policy).await);
     let address_lock = coin.get_address_lock(address).await;
@@ -2975,12 +2974,10 @@ async fn sign_raw_eth_tx(coin: &EthCoin, args: &SignEthTransactionParams) -> Raw
                 .mm_err(|e| RawTransactionError::InternalError(e.to_string()))?;
             let address_lock = coin.get_address_lock(my_address).await;
             let _nonce_lock = address_lock.lock().await;
-            info!(target: "sign-and-send", "get_gas_price…");
             let pay_for_gas_option = coin
                 .get_swap_pay_for_gas_option_from_rpc(&args.pay_for_gas)
                 .await
                 .map_mm_err()?;
-            info!("sign_raw_eth_tx pay_for_gas_option {:?}", pay_for_gas_option);
             sign_transaction_with_keypair(
                 coin,
                 key_pair,
