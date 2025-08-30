@@ -41,7 +41,13 @@ pub struct DbUpgrader {
     transaction: IdbTransactionImpl,
 }
 
-unsafe impl Send for DbUpgrader {}
+/// This is a hack to get us to pass `&'a DbUpgrader` around in on_upgrade_needed callbacks.
+/// That said, `DbUpgrader` is short lived and is used solely for the on_upgrade_needed callbacks,
+/// and then dropped right away. The content inside it shouldn't change after initialization
+/// and the only mutable part is `transaction.aborted` which is an `Arc<AtomicBool>`, thus it is safe
+/// to share.
+/// Again, this really won't be shared across multiple writers at the same time, and is only passed
+/// to a single on_upgrade_needed callback at a time.
 unsafe impl Sync for DbUpgrader {}
 
 impl DbUpgrader {
