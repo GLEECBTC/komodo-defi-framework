@@ -1,6 +1,6 @@
 use common::stringify_js_error;
 use derive_more::Display;
-use futures::future::BoxFuture;
+use futures::future::LocalBoxFuture;
 use js_sys::Array;
 use mm2_err_handle::prelude::*;
 use wasm_bindgen::prelude::*;
@@ -15,7 +15,7 @@ const ITEM_KEY_PATH: &str = "_item_id";
 
 pub type OnUpgradeResult<T> = Result<T, MmError<OnUpgradeError>>;
 pub type OnUpgradeNeededCb =
-    Box<dyn for<'a> FnOnce(&'a DbUpgrader, u32, u32) -> BoxFuture<'a, OnUpgradeResult<()>> + Send>;
+    Box<dyn for<'a> FnOnce(&'a DbUpgrader, u32, u32) -> LocalBoxFuture<'a, OnUpgradeResult<()>> + Send>;
 
 #[derive(Debug, Display, PartialEq)]
 pub enum OnUpgradeError {

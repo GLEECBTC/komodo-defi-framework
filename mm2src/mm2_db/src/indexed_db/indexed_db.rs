@@ -13,7 +13,7 @@ use common::log::debug;
 use common::stringify_js_error;
 use derive_more::Display;
 use futures::channel::{mpsc, oneshot};
-use futures::future::BoxFuture;
+use futures::future::LocalBoxFuture;
 use futures::{FutureExt, StreamExt};
 use mm2_core::DbNamespaceId;
 use mm2_err_handle::prelude::*;
@@ -76,7 +76,7 @@ pub trait TableSignature: DeserializeOwned + Serialize + 'static {
         upgrader: &DbUpgrader,
         old_version: u32,
         new_version: u32,
-    ) -> impl Future<Output = OnUpgradeResult<()>> + Send;
+    ) -> impl Future<Output = OnUpgradeResult<()>>;
 }
 
 /// Essential operations for initializing an IndexedDb instance.
@@ -154,8 +154,8 @@ impl IndexedDbBuilder {
             upgrader: &'a DbUpgrader,
             old_version: u32,
             new_version: u32,
-        ) -> BoxFuture<'a, OnUpgradeResult<()>> {
-            Table::on_upgrade_needed(upgrader, old_version, new_version).boxed()
+        ) -> LocalBoxFuture<'a, OnUpgradeResult<()>> {
+            Table::on_upgrade_needed(upgrader, old_version, new_version).boxed_local()
         }
 
         let on_upgrade_needed_cb = Box::new(on_upgrade_needed_cb::<Table>);
