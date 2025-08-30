@@ -108,7 +108,7 @@ impl IdbObjectStoreImpl {
         Self::item_ids_from_completed_request(&get_request)
     }
 
-    pub(crate) async fn get_all_items(&self) -> DbTransactionResult<Vec<(ItemId, Json)>> {
+    pub async fn get_all_items(&self) -> DbTransactionResult<Vec<(ItemId, Json)>> {
         if self.aborted.load(Ordering::Relaxed) {
             return MmError::err(DbTransactionError::TransactionAborted);
         }
@@ -175,7 +175,7 @@ impl IdbObjectStoreImpl {
         Self::count_from_completed_request(&count_request)
     }
 
-    pub(crate) async fn replace_item(&self, _item_id: ItemId, item: Json) -> DbTransactionResult<ItemId> {
+    pub async fn replace_item(&self, _item_id: ItemId, item: Json) -> DbTransactionResult<ItemId> {
         if self.aborted.load(Ordering::Relaxed) {
             return MmError::err(DbTransactionError::TransactionAborted);
         }

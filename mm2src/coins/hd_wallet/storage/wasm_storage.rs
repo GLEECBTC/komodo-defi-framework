@@ -127,8 +127,24 @@ impl TableSignature for HDAccountTable {
                     // Delete the old indexes and clear the table before creating new ones.
                     table.delete_index(WALLET_ID_INDEX)?;
                     table.delete_index(WALLET_ACCOUNT_ID_INDEX)?;
-                    // FIXME: Here instead of clearing the table, you need to access the table and set every purpose and coin_type field to -1.
-                    // let items = table.object_store_impl.get_all_items().await; (we need this current method to be async)
+                    // Set the `coin_type` & `purpose`.
+                    let records_res = table.object_store.get_all_items().await;
+                    let records = records_res.mm_err(|error| OnUpgradeError::TransactionError {
+                        table: Self::TABLE_NAME.to_owned(),
+                        error,
+                    })?;
+                    for (record_id, mut record) in records {
+                        record["coin_type"] = (-1).into();
+                        record["purpose"] = (-1).into();
+                        table
+                            .object_store
+                            .replace_item(record_id, record)
+                            .await
+                            .mm_err(|error| OnUpgradeError::TransactionError {
+                                table: Self::TABLE_NAME.to_owned(),
+                                error,
+                            })?;
+                    }
                     // Create the new indexes with the purpose and coin_type fields.
                     table.create_multi_index(
                         WALLET_ID_INDEX,

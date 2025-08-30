@@ -6,7 +6,10 @@ use mm2_err_handle::prelude::*;
 use wasm_bindgen::prelude::*;
 use web_sys::{IdbIndexParameters, IdbObjectStoreParameters};
 
-use crate::indexed_db::db_driver::{IdbDatabaseImpl, IdbObjectStoreImpl, IdbTransactionImpl};
+use crate::indexed_db::{
+    db_driver::{IdbDatabaseImpl, IdbObjectStoreImpl, IdbTransactionImpl},
+    DbTransactionError,
+};
 
 const ITEM_KEY_PATH: &str = "_item_id";
 
@@ -32,8 +35,8 @@ pub enum OnUpgradeError {
     },
     #[display(fmt = "Error occurred due to deleting the '{index}' index: {description}")]
     ErrorDeletingIndex { index: String, description: String },
-    #[display(fmt = "Error occurred due to clearing the '{table}' table: {description}")]
-    ErrorClearingTable { table: String, description: String },
+    #[display(fmt = "Error occurred while performing a transaction over the '{table}' table: {error}")]
+    TransactionError { table: String, error: DbTransactionError },
 }
 
 pub struct DbUpgrader {
@@ -97,7 +100,7 @@ impl DbUpgrader {
 }
 
 pub struct TableUpgrader {
-    object_store: IdbObjectStoreImpl,
+    pub object_store: IdbObjectStoreImpl,
 }
 
 impl TableUpgrader {
