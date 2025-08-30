@@ -91,10 +91,13 @@ impl IdbDatabaseImpl {
 
 impl Drop for IdbDatabaseImpl {
     fn drop(&mut self) {
-        info!("'{}' database has been closed", self.db_name);
-        self.db.close();
         let mut open_databases = OPEN_DATABASES.lock().expect("!OPEN_DATABASES.lock()");
-        open_databases.remove(&self.db_name);
+        if open_databases.remove(&self.db_name) {
+            // Only run the `db.close()` if the database was maintained in the OPEN_DATABASES.
+            // Otherwise, we don't know nothing about it and we shouldn't close it ourselves.
+            info!("'{}' database has been closed", self.db_name);
+            self.db.close();
+        }
     }
 }
 
