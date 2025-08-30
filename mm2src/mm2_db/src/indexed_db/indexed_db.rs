@@ -22,7 +22,6 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
-use std::future::Future;
 use std::marker::PhantomData;
 use std::sync::Mutex;
 use wasm_bindgen::JsCast;
@@ -71,12 +70,8 @@ pub mod cursor_prelude {
 pub trait TableSignature: DeserializeOwned + Serialize + 'static {
     const TABLE_NAME: &'static str;
 
-    // This is an async function (returns `impl Future`) with a `Send` constraint on the return type.
-    fn on_upgrade_needed(
-        upgrader: &DbUpgrader,
-        old_version: u32,
-        new_version: u32,
-    ) -> impl Future<Output = OnUpgradeResult<()>>;
+    #[allow(async_fn_in_trait)]
+    async fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()>;
 }
 
 /// Essential operations for initializing an IndexedDb instance.
