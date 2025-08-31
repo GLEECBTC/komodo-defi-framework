@@ -728,13 +728,7 @@ pub mod common_impl {
                     "Found a bad account in storage that doesn't correspond to the derived xpub (coin={}, derivation_path={}): derived_xpub={}, xpub_from_storage={}",
                     coin.ticker(), account.account_derivation_path(), derived_xpub, bad_account.account_xpub
                 );
-                hd_wallet
-                    .hd_wallet_storage()
-                    .delete_bad_accounts()
-                    .await
-                    .mm_err(|e| BalanceError::WalletStorageError(e.to_string()))
-                    .map_mm_err()?;
-                return Ok(());
+                break;
             }
         }
 
