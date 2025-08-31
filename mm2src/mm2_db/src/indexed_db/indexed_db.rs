@@ -1592,4 +1592,166 @@ mod tests {
             .expect("Couldn't get items by the index 'ticker=RICK'");
         assert!(actual_txs.is_empty());
     }
+
+    #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    struct OldDataManipulationUpgradeTable {
+        /// A value that was created in v1 migration.
+        v1_value1: String,
+        /// Another value that was created in v1 migration.
+        v1_value2: String,
+    }
+
+    impl TableSignature for OldDataManipulationUpgradeTable {
+        const TABLE_NAME: &'static str = "data_manipulation_upgrade_table";
+
+        async fn on_upgrade_needed(
+            upgrader: &DbUpgrader,
+            mut current_version: u32,
+            new_version: u32,
+        ) -> OnUpgradeResult<()> {
+            while current_version < new_version {
+                match current_version {
+                    // Update from version 0 to version 1:
+                    // - create the table
+                    // - create a multi index ("index") on (v1_value1, v1_value2)
+                    0 => {
+                        let table_upgrader = upgrader.create_table(Self::TABLE_NAME)?;
+                        table_upgrader.create_multi_index("index", &["v1_value1", "v1_value2"], false)?;
+                    },
+                    _ => unreachable!("db shouldn't be upgraded any further"),
+                }
+                current_version += 1;
+            }
+            Ok(())
+        }
+    }
+
+    #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    struct NewDataManipulationUpgradeTable {
+        /// A value that was created in v1 migration.
+        v1_value1: String,
+        /// Another value that was created in v1 migration.
+        v1_value2: String,
+        /// A new value that was created in v2 migration (has default value of "default v2_value").
+        v2_value: String,
+    }
+
+    impl TableSignature for NewDataManipulationUpgradeTable {
+        const TABLE_NAME: &'static str = "data_manipulation_upgrade_table";
+
+        async fn on_upgrade_needed(
+            upgrader: &DbUpgrader,
+            mut current_version: u32,
+            new_version: u32,
+        ) -> OnUpgradeResult<()> {
+            while current_version < new_version {
+                match current_version {
+                    // Update from version 0 to version 1:
+                    // - create the table
+                    // - create a multi index ("index") on (v1_value1, v1_value2)
+                    0 => {
+                        let table_upgrader = upgrader.create_table(Self::TABLE_NAME)?;
+                        table_upgrader.create_multi_index("index", &["v1_value1", "v1_value2"], false)?;
+                    },
+                    // Update from version 1 to version 2:
+                    // - delete the multi index ("index")
+                    // - add a new field "v2_value" with a default value to all existing records
+                    // - create a new multi index ("index") on the three fields (v1_value1, v1_value2, v2_value)
+                    1 => {
+                        let table_upgrader = upgrader.open_table(Self::TABLE_NAME)?;
+                        table_upgrader.delete_index("index")?;
+                        let records = table_upgrader.object_store.get_all_items().await.mm_err(|error| {
+                            OnUpgradeError::TransactionError {
+                                table: Self::TABLE_NAME.to_owned(),
+                                error,
+                            }
+                        })?;
+                        for (record_id, mut record) in records {
+                            record["v2_value"] = "default v2_value".into();
+                            table_upgrader
+                                .object_store
+                                .replace_item(record_id, record)
+                                .await
+                                .mm_err(|error| OnUpgradeError::TransactionError {
+                                    table: Self::TABLE_NAME.to_owned(),
+                                    error,
+                                })?;
+                        }
+                        table_upgrader.create_multi_index("index", &["v1_value1", "v1_value2", "v2_value"], false)?;
+                    },
+                    _ => unreachable!("db shouldn't be upgraded any further"),
+                }
+                current_version += 1;
+            }
+            Ok(())
+        }
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_data_manipulation_upgrade() {
+        const DB_NAME: &str = "TEST_DATA_MANIPULATION_UPGRADE";
+        const DB_VERSION_OLD: u32 = 1;
+        const DB_VERSION_NEW: u32 = 2;
+
+        let old_record1 = OldDataManipulationUpgradeTable {
+            v1_value1: "first v1_value1".to_owned(),
+            v1_value2: "first v1_value2".to_owned(),
+        };
+        let old_record2 = OldDataManipulationUpgradeTable {
+            v1_value1: "second v1_value1".to_owned(),
+            v1_value2: "second v1_value2".to_owned(),
+        };
+        let new_record = NewDataManipulationUpgradeTable {
+            v1_value1: "third v1_value1".to_owned(),
+            v1_value2: "third v1_value2".to_owned(),
+            v2_value: "third v2_value".to_owned(),
+        };
+
+        register_wasm_log();
+
+        // Open the OldDataManipulationUpgradeTable in version 1 and add some records.
+        {
+            let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
+                .with_version(DB_VERSION_OLD)
+                .with_table::<OldDataManipulationUpgradeTable>()
+                .build()
+                .await
+                .expect("!IndexedDb::init");
+            let transaction = db.transaction().await.expect("!IndexedDb::transaction()");
+            let table = transaction
+                .table::<OldDataManipulationUpgradeTable>()
+                .await
+                .expect("!DbTransaction::open_table");
+
+            table.add_item(&old_record1).await.expect("Couldn't add an item");
+            table.add_item(&old_record2).await.expect("Couldn't add an item");
+        }
+
+        // Open the NewDataManipulationUpgradeTable in version 2, which has a new field.
+        // Note that OldDataManipulationUpgradeTable and NewDataManipulationUpgradeTable have the same TABLE_NAME,
+        // thus they are the same table.
+        {
+            let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
+                .with_version(DB_VERSION_NEW)
+                .with_table::<NewDataManipulationUpgradeTable>()
+                .build()
+                .await
+                .expect("!IndexedDb::init");
+            let transaction = db.transaction().await.expect("!IndexedDb::transaction()");
+            let table = transaction
+                .table::<NewDataManipulationUpgradeTable>()
+                .await
+                .expect("!DbTransaction::open_table");
+
+            // Check that the old records have the new field with the default value.
+            let old_records = table.get_all_items().await.expect("Couldn't get items");
+            for (_id, record) in old_records {
+                assert_eq!(&record.v2_value, "default v2_value");
+            }
+            // Try adding a new record.
+            table.add_item(&new_record).await.expect("Couldn't add an item");
+        }
+    }
 }
