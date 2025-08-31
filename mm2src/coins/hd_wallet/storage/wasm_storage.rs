@@ -91,9 +91,9 @@ struct HDAccountTable {
     /// Non-unique index that is used to fetch/remove items from the storage.
     hd_wallet_rmd160: String,
     /// The purpose of the HD account.
-    purpose: u32,
+    purpose: i64,
     /// The coin type of the HD account.
-    coin_type: u32,
+    coin_type: i64,
     /// HD Account ID.
     /// Non-unique index that is used to fetch/remove items from the storage.
     account_id: u32,
@@ -178,8 +178,8 @@ impl HDAccountTable {
             coin: wallet_id.coin,
             hd_wallet_rmd160: wallet_id.hd_wallet_rmd160,
             account_id: account_info.account_id,
-            purpose: wallet_id.path_to_coin.purpose() as u32,
-            coin_type: wallet_id.path_to_coin.coin_type(),
+            purpose: wallet_id.path_to_coin.purpose() as i64,
+            coin_type: wallet_id.path_to_coin.coin_type() as i64,
             account_xpub: account_info.account_xpub,
             external_addresses_number: account_info.external_addresses_number,
             internal_addresses_number: account_info.internal_addresses_number,
@@ -244,9 +244,9 @@ impl HDWalletStorageInternalOps for HDWalletIndexedDbStorage {
             .map_mm_err()?
             .with_value(wallet_id.coin.clone())
             .map_mm_err()?
-            .with_value(wallet_id.path_to_coin.purpose() as u32)
+            .with_value(wallet_id.path_to_coin.purpose() as i64)
             .map_mm_err()?
-            .with_value(wallet_id.path_to_coin.coin_type())
+            .with_value(wallet_id.path_to_coin.coin_type() as i64)
             .map_mm_err()?;
         Ok(table
             .get_items_by_multi_index(index_keys)
@@ -257,12 +257,48 @@ impl HDWalletStorageInternalOps for HDWalletIndexedDbStorage {
             .collect())
     }
 
-    async fn load_bad_accounts(&self, _wallet_id: HDWalletId) -> HDWalletStorageResult<Vec<HDAccountStorageItem>> {
-        // We won't have any bad accounts since we purged the wasm DB upon migration.
-        Ok(Vec::new())
+    async fn load_bad_accounts(&self, wallet_id: HDWalletId) -> HDWalletStorageResult<Vec<HDAccountStorageItem>> {
+        let shared_db = self.get_shared_db()?;
+        let locked_db = Self::lock_db_mutex(&shared_db).await?;
+
+        let transaction = locked_db.inner.transaction().await.map_mm_err()?;
+        let table = transaction.table::<HDAccountTable>().await.map_mm_err()?;
+
+        let index_keys = MultiIndex::new(WALLET_ID_INDEX)
+            .with_value(wallet_id.hd_wallet_rmd160)
+            .map_mm_err()?
+            .with_value(wallet_id.coin.clone())
+            .map_mm_err()?
+            .with_value(-1_i64)
+            .map_mm_err()?
+            .with_value(-1_i64)
+            .map_mm_err()?;
+        Ok(table
+            .get_items_by_multi_index(index_keys)
+            .await
+            .map_mm_err()?
+            .into_iter()
+            .map(|(_item_id, item)| HDAccountStorageItem::from(item))
+            .collect())
     }
 
-    async fn delete_bad_accounts(&self, _wallet_id: HDWalletId) -> HDWalletStorageResult<()> {
+    async fn delete_bad_accounts(&self, wallet_id: HDWalletId) -> HDWalletStorageResult<()> {
+        let shared_db = self.get_shared_db()?;
+        let locked_db = Self::lock_db_mutex(&shared_db).await?;
+
+        let transaction = locked_db.inner.transaction().await.map_mm_err()?;
+        let table = transaction.table::<HDAccountTable>().await.map_mm_err()?;
+
+        let index_keys = MultiIndex::new(WALLET_ID_INDEX)
+            .with_value(wallet_id.hd_wallet_rmd160)
+            .map_mm_err()?
+            .with_value(wallet_id.coin.clone())
+            .map_mm_err()?
+            .with_value(-1_i64)
+            .map_mm_err()?
+            .with_value(-1_i64)
+            .map_mm_err()?;
+        table.delete_items_by_multi_index(index_keys).await.map_mm_err()?;
         Ok(())
     }
 
