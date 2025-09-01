@@ -221,7 +221,7 @@ impl CoinDockerOps for UtxoAssetDockerOps {
 
 impl UtxoAssetDockerOps {
     pub fn from_ticker(ticker: &str) -> UtxoAssetDockerOps {
-        let conf = json!({"asset": ticker, "txfee": 1000, "network": "regtest"});
+        let conf = json!({"coin": ticker, "asset": ticker, "txfee": 1000, "network": "regtest"});
         let req = json!({"method":"enable"});
         let priv_key = Secp256k1Secret::from("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f");
         let ctx = MmCtxBuilder::new().into_mm_arc();
