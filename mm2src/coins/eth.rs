@@ -3951,10 +3951,8 @@ impl EthCoin {
         tx_type_as_num <= max_tx_type
     }
 
-    /// Retrieves the lock associated with a given address.
-    ///
-    /// This function is used to ensure that only one transaction is sent at a time per address.
-    /// If the address does not have an associated lock, a new one is created and stored.
+    /// Returns the nonce lock associated with a given address.
+    /// The nonce lock is used to ensure that only one transaction is sent at a time per address.
     async fn get_address_lock(&self, address: Address) -> Arc<AsyncMutex<()>> {
         self.address_nonce_locks.get_adddress_lock(address).await
     }

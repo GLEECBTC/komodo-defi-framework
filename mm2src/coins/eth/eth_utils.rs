@@ -54,6 +54,8 @@ pub(crate) mod nonce_sequencer {
                 .clone()
         }
 
+        /// Retrieves the nonce lock associated with a given eth address.
+        /// If the address does not have an associated lock, a new one is created and stored.
         pub(crate) async fn get_adddress_lock(&self, address: Address) -> Arc<AsyncMutex<()>> {
             let mut locks = self.locks.lock().await;
             locks
