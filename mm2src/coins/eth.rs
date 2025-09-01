@@ -3981,8 +3981,7 @@ impl EthCoin {
                     Action::Call(contract_addr) => coin
                         .estimate_gas_for_contract_call_if_conf(*contract_addr, Bytes::from(data.clone()), value)
                         .await
-                        .map_err(|err| TransactionErr::Plain(ERRL!("{}", err.get_inner())))?
-                        .ok_or(TransactionErr::InternalError("no gas limit set".to_owned()))?,
+                        .map_err(|err| TransactionErr::Plain(ERRL!("{}", err.get_inner())))?,
                     _ => return Err(TransactionErr::InternalError("no gas limit set".to_owned())),
                 }
             };
@@ -4917,19 +4916,16 @@ impl EthCoin {
         contract_addr: Address,
         call_data: Bytes,
         value: U256,
-    ) -> Web3RpcResult<Option<U256>> {
+    ) -> Web3RpcResult<U256> {
+        let gas_estimated = self
+            .estimate_gas_for_contract_call(contract_addr, call_data, value)
+            .await?;
         if let Some(estimate_gas_mult) = self.estimate_gas_mult {
-            let gas_estimated = self
-                .estimate_gas_for_contract_call(contract_addr, call_data, value)
-                .await?;
             let gas_estimated = u256_to_big_decimal(gas_estimated, 0).map_mm_err()?
                 * BigDecimal::from_f64(estimate_gas_mult).unwrap_or(BigDecimal::from(1));
-            Ok(Some(u256_from_big_decimal(&gas_estimated, 0).map_mm_err()?))
+            Ok(u256_from_big_decimal(&gas_estimated, 0).map_mm_err()?)
         } else {
-            Ok(Some(
-                self.estimate_gas_for_contract_call(contract_addr, call_data, value)
-                    .await?,
-            ))
+            Ok(gas_estimated)
         }
     }
 
