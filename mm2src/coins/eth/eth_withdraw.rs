@@ -325,7 +325,6 @@ where
                     nonce: None,
                     ..TransactionRequest::default()
                 };
-                // TODO: we should get _nonce_lock here (when Metamask is supported for swaps)
                 self.send_withdraw_tx(&req, tx_to_send).await?
             },
             EthPrivKeyPolicy::WalletConnect { .. } => {
