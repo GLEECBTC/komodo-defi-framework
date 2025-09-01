@@ -260,7 +260,8 @@ pub struct BchDockerOps {
 
 impl BchDockerOps {
     pub fn from_ticker(ticker: &str) -> BchDockerOps {
-        let conf = json!({"asset": ticker,"txfee":1000,"network": "regtest","txversion":4,"overwintered":1});
+        let conf =
+            json!({"coin": ticker,"asset": ticker,"txfee":1000,"network": "regtest","txversion":4,"overwintered":1});
         let req = json!({"method":"enable", "bchd_urls": [], "allow_slp_unsafe_conf": true});
         let priv_key = Secp256k1Secret::from("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f");
         let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -640,7 +641,7 @@ fn qrc20_coin_conf_item(ticker: &str) -> Json {
 /// Build asset `UtxoStandardCoin` from ticker and privkey without filling the balance.
 pub fn utxo_coin_from_privkey(ticker: &str, priv_key: Secp256k1Secret) -> (MmArc, UtxoStandardCoin) {
     let ctx = MmCtxBuilder::new().into_mm_arc();
-    let conf = json!({"asset":ticker,"txversion":4,"overwintered":1,"txfee":1000,"network":"regtest"});
+    let conf = json!({"coin":ticker,"asset":ticker,"txversion":4,"overwintered":1,"txfee":1000,"network":"regtest"});
     let req = json!({"method":"enable"});
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
     let coin = block_on(utxo_standard_coin_with_priv_key(&ctx, ticker, &conf, &params, priv_key)).unwrap();
