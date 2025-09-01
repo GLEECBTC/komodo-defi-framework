@@ -179,7 +179,7 @@ async fn experimental_rpcs_dispatcher(
 ) -> DispatcherResult<Response<Vec<u8>>> {
     #[cfg(feature = "enable-solana")]
     match request.method.as_str() {
-        "enable_solana_with_assets" => {
+        "experimental::enable_solana_with_assets" => {
             return handle_mmrpc(
                 ctx,
                 request,
@@ -187,7 +187,9 @@ async fn experimental_rpcs_dispatcher(
             )
             .await
         },
-        "enable_solana_token" => return handle_mmrpc(ctx, request, enable_token::<coins::solana::SolanaToken>).await,
+        "experimental::enable_solana_token" => {
+            return handle_mmrpc(ctx, request, enable_token::<coins::solana::SolanaToken>).await
+        },
         _ => {},
     };
 

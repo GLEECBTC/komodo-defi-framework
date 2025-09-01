@@ -84,7 +84,7 @@ pub async fn get_token_info(ctx: MmArc, req: TokenInfoRequest) -> MmResult<Token
                     .ok_or(TokenInfoError::UnsupportedTokenProtocol {
                         protocol: platform.to_string(),
                     })?;
-            let contract_address = valid_addr_from_str(contract_address_str).map_to_mm(|e| {
+            let contract_address = valid_addr_from_str(&contract_address_str).map_to_mm(|e| {
                 let error = format!("Invalid contract address: {e}");
                 TokenInfoError::InvalidRequest(error)
             })?;

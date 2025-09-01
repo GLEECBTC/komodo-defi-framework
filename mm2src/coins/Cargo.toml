@@ -12,10 +12,11 @@ enable-sia = [
 ]
 enable-solana = [
   "dep:solana-pubkey",
-  "dep:solana-rpc-client",
   "dep:solana-rpc-client-types",
+  "dep:solana-rpc-client",
   "dep:solana-sdk",
-  "dep:solana-transaction-status"
+  "dep:solana-transaction-status",
+  "dep:spl-associated-token-account-client",
 ]
 default = []
 run-docker-tests = []
@@ -131,7 +132,7 @@ solana-rpc-client = { version = "2.3", default-features = false, optional = true
 solana-rpc-client-types= { version = "2.3", default-features = false, optional = true }
 solana-sdk = { version = "1", default-features = false, optional = true }
 solana-transaction-status = { version = "1", default-features = false, optional = true }
-
+spl-associated-token-account-client = { version = "2.0", default-features = false, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 blake2b_simd.workspace = true

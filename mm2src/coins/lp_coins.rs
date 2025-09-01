@@ -4827,15 +4827,15 @@ impl CoinProtocol {
             #[cfg(feature = "enable-solana")]
             CoinProtocol::SOLANA(_) => None,
             #[cfg(feature = "enable-solana")]
-            CoinProtocol::SOLANATOKEN(_) => None,
+            CoinProtocol::SOLANATOKEN(info) => Some(&info.platform),
         }
     }
 
     /// Returns the contract address associated with the coin, if any.
-    pub fn contract_address(&self) -> Option<&str> {
+    pub fn contract_address(&self) -> Option<String> {
         match self {
             CoinProtocol::QRC20 { contract_address, .. } | CoinProtocol::ERC20 { contract_address, .. } => {
-                Some(contract_address)
+                Some(contract_address.clone())
             },
             CoinProtocol::SLPTOKEN { .. }
             | CoinProtocol::UTXO { .. }
@@ -4854,7 +4854,7 @@ impl CoinProtocol {
             #[cfg(feature = "enable-solana")]
             CoinProtocol::SOLANA(_) => None,
             #[cfg(feature = "enable-solana")]
-            CoinProtocol::SOLANATOKEN(_) => None,
+            CoinProtocol::SOLANATOKEN(info) => Some(info.token_contract_address.to_string()),
         }
     }
 

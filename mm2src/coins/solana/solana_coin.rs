@@ -40,6 +40,8 @@ use crate::{
     VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WithdrawFut, WithdrawRequest,
 };
 
+pub const SOLANA_DECIMALS: u8 = 9;
+
 #[derive(Clone, Deserialize)]
 pub struct RpcNode {
     url: Url,
@@ -58,9 +60,7 @@ pub struct SolanaCoinFields {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct SolanaProtocolInfo {
-    pub decimals: u8,
-}
+pub struct SolanaProtocolInfo {}
 
 impl Deref for SolanaCoin {
     type Target = SolanaCoinFields;
@@ -190,24 +190,20 @@ impl SolanaCoin {
             .map_err(|e| BalanceError::Transport(e.into_inner()))
             .await?;
 
-        let Ok(token_accounts) =
-            rpc.get_token_accounts_by_owner(&self.address, TokenAccountsFilter::Mint(*token_contract_address))
-        else {
+        if rpc
+            .get_token_accounts_by_owner(&self.address, TokenAccountsFilter::Mint(*token_contract_address))
+            .is_err()
+        {
             return Ok(CoinBalance {
                 spendable: BigDecimal::zero(),
                 unspendable: BigDecimal::zero(),
             });
         };
 
-        let Some(token_account) = token_accounts.first() else {
-            return Ok(CoinBalance {
-                spendable: BigDecimal::zero(),
-                unspendable: BigDecimal::zero(),
-            });
-        };
-
-        let token_account =
-            SolanaAddress::from_str(&token_account.pubkey).map_err(|e| BalanceError::Internal(e.to_string()))?;
+        let token_account = spl_associated_token_account_client::address::get_associated_token_address(
+            &self.address,
+            token_contract_address,
+        );
 
         let balance_string = rpc
             .get_token_account_balance(&token_account)
@@ -250,7 +246,7 @@ impl MmCoin for SolanaCoin {
     }
 
     fn decimals(&self) -> u8 {
-        self.protocol_info.decimals
+        SOLANA_DECIMALS
     }
 
     fn convert_to_address(&self, from: &str, to_address_format: serde_json::Value) -> Result<String, String> {
@@ -387,7 +383,7 @@ impl MarketCoinOps for SolanaCoin {
                 .get_balance(&coin.address)
                 .map_err(|e| BalanceError::Transport(e.to_string()))?;
 
-            let scale = BigDecimal::from(10u64.pow(coin.protocol_info.decimals as u32));
+            let scale = BigDecimal::from(10u64.pow(SOLANA_DECIMALS as u32));
             let balance_decimal = BigDecimal::from(balance_u64) / scale;
 
             Ok(CoinBalance {
