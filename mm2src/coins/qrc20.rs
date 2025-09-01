@@ -349,6 +349,9 @@ pub async fn qrc20_coin_with_policy(
     priv_key_policy: PrivKeyBuildPolicy,
     contract_address: H160,
 ) -> Result<Qrc20Coin, String> {
+    if conf["coin"].as_str() != Some(ticker) {
+        return ERR!("Failed to activate '{}': ticker does not match coins config", ticker);
+    }
     let builder = Qrc20CoinBuilder::new(
         ctx,
         ticker,
