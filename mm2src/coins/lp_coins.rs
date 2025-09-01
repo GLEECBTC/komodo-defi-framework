@@ -2767,7 +2767,12 @@ pub enum SwapGasFeePolicy {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct SwapGasFeePolicyRequest {
+pub struct GetSwapGasFeePolicyRequest {
+    coin: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetSwapGasFeePolicyRequest {
     coin: String,
     #[serde(default)]
     swap_gas_fee_policy: SwapGasFeePolicy,
@@ -6156,8 +6161,8 @@ pub trait Eip1559Ops {
     async fn set_swap_gas_fee_policy(&self, swap_txfee_policy: SwapGasFeePolicy) -> CoinFindResult<()>;
 }
 
-/// Get eip 1559 transaction fee per gas policy (low, medium, high) set for the coin
-pub async fn get_swap_gas_fee_policy(ctx: MmArc, req: SwapGasFeePolicyRequest) -> SwapGasFeePolicyResult {
+/// Get the current eip 1559 transaction fee per gas policy
+pub async fn get_swap_gas_fee_policy(ctx: MmArc, req: GetSwapGasFeePolicyRequest) -> SwapGasFeePolicyResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     match coin {
         MmCoinEnum::EthCoin(eth_coin) => Ok(eth_coin.get_swap_gas_fee_policy().await.map_mm_err()?),
@@ -6165,8 +6170,8 @@ pub async fn get_swap_gas_fee_policy(ctx: MmArc, req: SwapGasFeePolicyRequest) -
     }
 }
 
-/// Set eip 1559 transaction fee per gas policy (low, medium, high)
-pub async fn set_swap_gas_fee_policy(ctx: MmArc, req: SwapGasFeePolicyRequest) -> SwapGasFeePolicyResult {
+/// Set eip 1559 transaction fee per gas policy (low, medium or high)
+pub async fn set_swap_gas_fee_policy(ctx: MmArc, req: SetSwapGasFeePolicyRequest) -> SwapGasFeePolicyResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     match coin {
         MmCoinEnum::EthCoin(eth_coin) => {
