@@ -4310,7 +4310,7 @@ fn test_qtum_with_check_utxo_maturity_false() {
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
 
     let priv_key = Secp256k1Secret::from([1; 32]);
-    let coin = block_on(qtum_coin_with_priv_key(&ctx, "QTUM", &conf, &params, priv_key)).unwrap();
+    let coin = block_on(qtum_coin_with_priv_key(&ctx, "tQTUM", &conf, &params, priv_key)).unwrap();
 
     let address = Address::from_legacyaddress(
         "qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE",
