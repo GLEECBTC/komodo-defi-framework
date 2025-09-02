@@ -2972,7 +2972,7 @@ fn test_v2_eth_eth_kickstart_impl(base: &str, rel: &str, maker_price: f64, taker
                 BigDecimal::from_f64(maker_volume).unwrap()
             };
 
-            // add some tolerance
+            // add some tolerance for floating point calculations of resulting amounts (+/- 0.0001)
             let (low_tol, high_tol) = if !is_token {
                 (
                     // txfee with tolerance

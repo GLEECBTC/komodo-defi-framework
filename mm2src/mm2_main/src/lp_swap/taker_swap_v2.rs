@@ -1055,7 +1055,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
 
         let prepared_params = TakerSwapPreparedParams {
             dex_fee: state_machine.dex_fee().total_spend_amount(),
-            // fee_to_send_dex_fee is not used in TPU but the coin must me set correctly
+            // fee_to_send_dex_fee is not used in TPU but the coin must be set correctly
             fee_to_send_dex_fee: TradeFee {
                 coin: state_machine.taker_coin.platform_ticker().into(),
                 amount: Default::default(),
