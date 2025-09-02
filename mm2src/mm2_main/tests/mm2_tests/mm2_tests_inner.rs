@@ -1823,7 +1823,6 @@ fn test_order_should_not_be_displayed_when_node_is_down() {
             "coins": coins,
             "seednodes": [mm_bob.ip.to_string()],
             "rpc_password": "pass",
-            "maker_order_timeout": 5,
         }),
         "pass".into(),
         None,
@@ -1870,7 +1869,7 @@ fn test_order_should_not_be_displayed_when_node_is_down() {
     assert_eq!(asks.len(), 1, "Alice RICK/MORTY orderbook must have exactly 1 ask");
 
     block_on(mm_bob.stop()).unwrap();
-    thread::sleep(Duration::from_secs(6));
+    thread::sleep(Duration::from_secs(16));
 
     let rc = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
@@ -1910,7 +1909,6 @@ fn test_own_orders_should_not_be_removed_from_orderbook() {
             "coins": coins,
             "i_am_seed": true,
             "rpc_password": "pass",
-            "maker_order_timeout": 5,
             "is_bootstrap_node": true
         }),
         "pass".into(),
