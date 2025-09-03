@@ -421,10 +421,6 @@ async fn request_and_apply_pubkey_state_sync_from_peer(
     pending_pairs: &mut HashSet<AlbOrderedOrderbookPair>,
     keep_alive_timestamp: u64,
 ) -> OrderbookP2PHandlerResult {
-    if pending_pairs.is_empty() {
-        return Ok(());
-    }
-
     let current_req = build_pubkey_state_sync_request(from_pubkey, pending_pairs, expected_pair_roots);
 
     if let Some(resp) = request_one_peer::<SyncPubkeyOrderbookStateRes>(
@@ -459,40 +455,26 @@ async fn process_orders_keep_alive(
     let keep_alive_timestamp = keep_alive.timestamp;
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("from_ctx failed");
 
-    // Phase 1: Update local state and decide whether to sync.
-    let to_request =
+    // Update local state and decide whether to sync.
+    let trie_roots_to_request =
         ordermatch_ctx
             .orderbook
             .lock()
             .process_keep_alive(&from_pubkey, keep_alive, i_am_relay, &propagated_from)?;
 
-    let req = match to_request {
-        Some(req) => req,
+    if trie_roots_to_request.is_empty() {
         // The message was processed, return Ok to forward it
-        None => return Ok(()),
-    };
-
-    // Phase 2: Prepare expected roots and the set of pairs to sync.
-    let OrdermatchRequest::SyncPubkeyOrderbookState {
-        trie_roots: expected_roots_by_pair,
-        ..
-    } = req
-    else {
-        error!(
-            "`process_keep_alive` returned unexpected `OrdermatchRequest` variant: {:?}",
-            req
-        );
         return Ok(());
-    };
-    let mut remaining_pairs: HashSet<AlbOrderedOrderbookPair> = expected_roots_by_pair.keys().cloned().collect();
+    }
 
-    // Phase 3: Query ONLY the origin peer.
+    // Query ONLY the origin peer.
+    let mut remaining_pairs: HashSet<AlbOrderedOrderbookPair> = trie_roots_to_request.keys().cloned().collect();
     let _ = request_and_apply_pubkey_state_sync_from_peer(
         &ctx,
         &ordermatch_ctx.orderbook,
         &from_pubkey,
         &propagated_from,
-        &expected_roots_by_pair,
+        &trie_roots_to_request,
         &mut remaining_pairs,
         keep_alive_timestamp,
     )
@@ -3077,19 +3059,58 @@ impl Orderbook {
         self.topics_subscribed_to.contains_key(topic)
     }
 
-    // TODO(rate-limit):
-    // Add centralized inbound rate limiting per OrdermatchMessage type.
-    // For keep-alive, enforce a minimum interval per pubkey (e.g., >= 20–30s) or X messages/minute.
-    // When throttled, early-return Ok(None) to avoid sync and propagation.
-    // Prefer implementing this in a shared limiter (e.g., mm2_p2p or a small service in lp_network)
-    // and call it here before any state mutation.
+    /// Processes a [`new_protocol::PubkeyKeepAlive`] for `from_pubkey`, updating per‑pair state and
+    /// deciding whether a state sync is required.
+    ///
+    /// This function performs only local state transitions; it does no I/O.
+    /// It may:
+    /// - Accept the announcement (per pair) and refresh timestamps if the announced root matches the
+    ///   local root.
+    /// - Clear a pair if the announced root is null/empty (remove all orders, remember the null root,
+    ///   update the maker timestamp floor, and drop the local “last seen” so GC can prune it).
+    /// - Detect divergence and return the set of pairs that must be synced to the announced roots.
+    ///
+    /// Invariants and validation:
+    /// - Maker timestamps are checked per pair and must be strictly increasing. If any pair is stale
+    ///   (announced timestamp ≤ the last accepted maker timestamp for that pair), the function returns
+    ///   [`OrderbookP2PHandlerError::StaleKeepAlive`] and no state is advanced for that message. Callers
+    ///   must not propagate such a message.
+    /// - We update `pair_last_seen_local` only for pairs that are accepted/in‑sync. Divergent pairs do
+    ///   not refresh liveness until validated to the expected root.
+    ///
+    /// Subscription policy:
+    /// - Pairs we are not subscribed to are ignored unless this node acts as a relay (`i_am_relay`).
+    ///
+    /// Returns:
+    /// - A map of `"BASE:REL"` to the expected roots (as announced) for which local state diverges and
+    ///   a sync is required. An empty map means no sync is needed and the message may be propagated.
+    ///
+    /// Caller responsibilities:
+    /// - If the returned map is non‑empty, fetch trie diffs from the peer that propagated the keep‑alive
+    ///   (`propagated_from`), validate them to the expected roots, apply, and only then consider forwarding
+    ///   the keep‑alive.
+    ///
+    /// Errors:
+    /// - [`OrderbookP2PHandlerError::StaleKeepAlive`] if any per‑pair maker timestamp regresses or repeats.
+    /// - Other variants for malformed or otherwise invalid data.
+    ///
+    /// Notes:
+    /// - Maker timestamps are used for monotonicity/anti‑replay; GC uses local receive times.
+    /// - The caller must ignore Unsolicited pairs in sync responses when applying the response.
     fn process_keep_alive(
         &mut self,
         from_pubkey: &str,
         message: new_protocol::PubkeyKeepAlive,
         i_am_relay: bool,
         propagated_from: &str,
-    ) -> Result<Option<OrdermatchRequest>, MmError<OrderbookP2PHandlerError>> {
+    ) -> Result<HashMap<AlbOrderedOrderbookPair, H64>, MmError<OrderbookP2PHandlerError>> {
+        // TODO(rate-limit):
+        // Add centralized inbound rate limiting per OrdermatchMessage type.
+        // For keep-alive, enforce a minimum interval per pubkey (e.g., >= 20–30s) or X messages/minute.
+        // When throttled, early-return Ok(None) to avoid sync and propagation.
+        // Prefer implementing this in a shared limiter (e.g., mm2_p2p or a small service in lp_network)
+        // and call it here before any state mutation.
+
         // Pre-scan: if any single pair is stale => treat the whole message as stale.
         // Note: We currently send keep-alives per pair (trie_roots has a single entry),
         // so this is equivalent to checking that one pair. If multi-pair keep-alives return,
@@ -3172,14 +3193,7 @@ impl Orderbook {
             state.pair_last_seen_local.insert(alb_pair, now_sec());
         }
 
-        if trie_roots_to_request.is_empty() {
-            return Ok(None);
-        }
-
-        Ok(Some(OrdermatchRequest::SyncPubkeyOrderbookState {
-            pubkey: from_pubkey.to_owned(),
-            trie_roots: trie_roots_to_request,
-        }))
+        Ok(trie_roots_to_request)
     }
 
     fn orderbook_item_with_proof(&self, order: OrderbookItem) -> OrderbookItemWithProof {

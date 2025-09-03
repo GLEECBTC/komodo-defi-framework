@@ -2631,20 +2631,11 @@ fn test_orderbook_pubkey_sync_request() {
         timestamp: now_sec(),
     };
 
-    let request = orderbook
+    let pairs_trie_roots = orderbook
         .process_keep_alive(pubkey, message, false, propagated_from)
-        .unwrap()
         .unwrap();
-    match request {
-        OrdermatchRequest::SyncPubkeyOrderbookState {
-            trie_roots: pairs_trie_roots,
-            ..
-        } => {
-            assert!(pairs_trie_roots.contains_key("C1:C2"));
-            assert!(!pairs_trie_roots.contains_key("C2:C3"));
-        },
-        _ => panic!("Invalid request {:?}", request),
-    }
+    assert!(pairs_trie_roots.contains_key("C1:C2"));
+    assert!(!pairs_trie_roots.contains_key("C2:C3"));
 }
 
 #[test]
@@ -2666,20 +2657,11 @@ fn test_orderbook_pubkey_sync_request_relay() {
         timestamp: now_sec(),
     };
 
-    let request = orderbook
+    let pairs_trie_roots = orderbook
         .process_keep_alive(pubkey, message, true, propagated_from)
-        .unwrap()
         .unwrap();
-    match request {
-        OrdermatchRequest::SyncPubkeyOrderbookState {
-            trie_roots: pairs_trie_roots,
-            ..
-        } => {
-            assert!(pairs_trie_roots.contains_key("C1:C2"));
-            assert!(pairs_trie_roots.contains_key("C2:C3"));
-        },
-        _ => panic!("Invalid request {:?}", request),
-    }
+    assert!(pairs_trie_roots.contains_key("C1:C2"));
+    assert!(pairs_trie_roots.contains_key("C2:C3"));
 }
 
 #[test]
