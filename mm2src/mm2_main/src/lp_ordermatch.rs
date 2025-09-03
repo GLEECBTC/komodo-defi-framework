@@ -3104,11 +3104,10 @@ impl Orderbook {
         propagated_from: &str,
     ) -> Result<HashMap<AlbOrderedOrderbookPair, H64>, MmError<OrderbookP2PHandlerError>> {
         // TODO(rate-limit):
-        // Add centralized inbound rate limiting per OrdermatchMessage type.
-        // For keep-alive, enforce a minimum interval per pubkey (e.g., >= 20–30s) or X messages/minute.
-        // When throttled, early-return Ok(None) to avoid sync and propagation.
-        // Prefer implementing this in a shared limiter (e.g., mm2_p2p or a small service in lp_network)
-        // and call it here before any state mutation.
+        // Add a single, shared in‑process rate limiter for OrdermatchMessage
+        // types (e.g., a module in mm2_p2p or lp_network).
+        // For keep-alive, enforce a minimum interval per pubkey (>= 20–30s) or X messages/minute.
+        // When throttled, early‑return without syncing/propagating, before any state mutation.
 
         // Pre-scan: if any single pair is stale => treat the whole message as stale.
         // Note: We currently send keep-alives per pair (trie_roots has a single entry),
