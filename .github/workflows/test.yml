@@ -123,7 +123,7 @@ jobs:
       - name: Test
         run: |
           wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/635112d590618165a152dfa0f31e95a9be39a8f6/zcutil/fetch-params-alt.sh | bash
-          cargo test --test 'mm2_tests_main' --no-fail-fast
+          cargo test --test 'mm2_tests_main' --features for-tests --no-fail-fast
 
   mac-x86-64-kdf-integration:
     timeout-minutes: 90
@@ -155,7 +155,7 @@ jobs:
       - name: Test
         run: |
           wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/635112d590618165a152dfa0f31e95a9be39a8f6/zcutil/fetch-params-alt.sh | bash
-          cargo test --test 'mm2_tests_main' --no-fail-fast
+          cargo test --test 'mm2_tests_main' --features for-tests --no-fail-fast
 
   win-x86-64-kdf-integration:
     timeout-minutes: 90
@@ -191,7 +191,7 @@ jobs:
       - name: Test
         run: |
           Invoke-WebRequest -Uri https://raw.githubusercontent.com/KomodoPlatform/komodo/635112d590618165a152dfa0f31e95a9be39a8f6/zcutil/fetch-params-alt.bat -OutFile \cmd.bat && \cmd.bat
-          cargo test --test 'mm2_tests_main' --no-fail-fast
+          cargo test --test 'mm2_tests_main' --features for-tests --no-fail-fast
 
   docker-tests:
     timeout-minutes: 90

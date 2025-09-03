@@ -17,7 +17,7 @@ custom-swap-locktime = [] # only for testing purposes, should never be activated
 native = [] # Deprecated
 track-ctx-pointer = ["common/track-ctx-pointer"]
 zhtlc-native-tests = ["coins/zhtlc-native-tests"]
-run-docker-tests = ["coins/run-docker-tests"]
+run-docker-tests = ["for-tests", "coins/run-docker-tests"]
 default = []
 trezor-udp = ["crypto/trezor-udp"] # use for tests to connect to trezor emulator over udp
 run-device-tests = []
@@ -29,7 +29,12 @@ new-db-arch = ["mm2_core/new-db-arch"] # A temporary feature to integrate the ne
 # Temporary feature for implementing IBC wrap/unwrap mechanism and will be removed
 # once we consider it as stable.
 ibc-routing-for-swaps = []
-for-tests = []
+for-tests = [
+    "coins/for-tests",
+    "coins_activation/for-tests",
+    "common/for-tests",
+    "trading_api/for-tests"
+]
 
 [dependencies]
 async-std = { workspace = true, features = ["unstable"] }
@@ -155,4 +160,14 @@ chrono.workspace = true
 gstuff.workspace = true
 prost-build = { version = "0.12", default-features = false }
 regex.workspace = true
+
+[[test]]
+name = "docker_tests_main"
+path = "tests/docker_tests_main.rs"
+required-features = ["run-docker-tests"]
+
+[[test]]
+name = "mm2_tests_main"
+path = "tests/mm2_tests_main.rs"
+required-features = ["for-tests"]
 

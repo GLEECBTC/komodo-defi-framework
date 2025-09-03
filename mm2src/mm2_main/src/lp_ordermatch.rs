@@ -134,9 +134,9 @@ pub mod ordermatch_tests;
 mod ordermatch_wasm_db;
 
 pub const ORDERBOOK_PREFIX: TopicPrefix = "orbk";
-#[cfg(not(test))]
+#[cfg(not(any(test, feature = "for-tests")))]
 pub const MIN_ORDER_KEEP_ALIVE_INTERVAL: u64 = 30;
-#[cfg(test)]
+#[cfg(any(test, feature = "for-tests"))]
 pub const MIN_ORDER_KEEP_ALIVE_INTERVAL: u64 = 5;
 const BALANCE_REQUEST_INTERVAL: f64 = 30.;
 const MAKER_ORDER_TIMEOUT: u64 = MIN_ORDER_KEEP_ALIVE_INTERVAL * 3;
