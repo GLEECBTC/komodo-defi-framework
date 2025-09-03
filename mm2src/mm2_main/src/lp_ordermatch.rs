@@ -197,9 +197,10 @@ pub enum OrderbookP2PHandlerError {
 
 impl OrderbookP2PHandlerError {
     pub(crate) fn is_warning(&self) -> bool {
+        // treat SyncFailure as a warning for now due to outdated nodes
         matches!(
             self,
-            OrderbookP2PHandlerError::OrderNotFound(_) | OrderbookP2PHandlerError::SyncFailure { .. } // treat SyncFailure as a warning for now due to outdated nodes
+            OrderbookP2PHandlerError::OrderNotFound(_) | OrderbookP2PHandlerError::SyncFailure { .. }
         )
     }
 }
@@ -335,12 +336,10 @@ fn build_pubkey_state_sync_request(
     pending_pairs: &HashSet<AlbOrderedOrderbookPair>,
     expected_pair_roots: &HashMap<AlbOrderedOrderbookPair, H64>,
 ) -> OrdermatchRequest {
-    let mut trie_roots = HashMap::with_capacity(pending_pairs.len());
-    for pair in pending_pairs {
-        if let Some(root) = expected_pair_roots.get(pair) {
-            trie_roots.insert(pair.clone(), *root);
-        }
-    }
+    let trie_roots = pending_pairs
+        .iter()
+        .filter_map(|p| expected_pair_roots.get(p).map(|&root| (p.clone(), root)))
+        .collect();
     OrdermatchRequest::SyncPubkeyOrderbookState {
         pubkey: pubkey.to_owned(),
         trie_roots,
