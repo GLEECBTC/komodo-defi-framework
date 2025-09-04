@@ -58,7 +58,6 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::bigdecimal_custom::CheckedDivision;
 use mm2_number::{BigDecimal, MmNumber};
-use primitives::hash::H512;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash, TransactionInputEnum, H256 as H256Json};
 #[cfg(test)]
 use rpc_clients::NativeClientImpl;
@@ -76,7 +75,7 @@ use utxo_common_tests::{utxo_coin_fields_for_test, utxo_coin_from_fields};
 use utxo_signer::with_key_pair::{
     calc_and_sign_sighash, p2sh_spend, signature_hash_to_sign, SIGHASH_ALL, SIGHASH_SINGLE,
 };
-use utxo_signer::UtxoSignerOps;
+use utxo_signer::{complete_tx, UtxoSignerOps};
 
 pub mod utxo_tx_history_v2_common;
 
@@ -1039,28 +1038,7 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxI
                 coin.as_ref().conf.signature_version,
                 coin.as_ref().conf.fork_id
             ));
-            Ok(UtxoTx {
-                version: unsigned.version,
-                n_time: unsigned.n_time,
-                overwintered: unsigned.overwintered,
-                lock_time: unsigned.lock_time,
-                inputs: vec![signed_input],
-                outputs: unsigned.outputs,
-                expiry_height: unsigned.expiry_height,
-                join_splits: vec![],
-                shielded_spends: vec![],
-                shielded_outputs: vec![],
-                value_balance: 0,
-                version_group_id: coin.as_ref().conf.version_group_id,
-                binding_sig: H512::default(),
-                join_split_sig: H512::default(),
-                join_split_pubkey: H256::default(),
-                zcash: coin.as_ref().conf.zcash,
-                posv: coin.as_ref().conf.is_posv,
-                str_d_zeel: unsigned.str_d_zeel,
-                tx_hash_algo: unsigned.hash_algo.into(),
-                v_extra_payload: None,
-            })
+            Ok(complete_tx(unsigned, vec![signed_input]))
         },
         P2SHSigner::WalletConnect(session_topic) => wallet_connect::sign_p2sh(
             coin,
