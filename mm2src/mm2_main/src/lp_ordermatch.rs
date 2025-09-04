@@ -3124,6 +3124,7 @@ impl Orderbook {
         // so this is equivalent to checking that one pair. If multi-pair keep-alives return,
         // demote only stale pairs instead of rejecting the whole message.
         {
+            let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
             for (alb_pair, _) in message.trie_roots.iter() {
                 let subscribed = self
                     .topics_subscribed_to
@@ -3132,16 +3133,13 @@ impl Orderbook {
                     continue;
                 }
 
-                let last_pair_timestamp = {
-                    let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
-                    *pubkey_state.latest_root_timestamp_by_pair.get(alb_pair).unwrap_or(&0)
-                };
+                let last_pair_timestamp = *pubkey_state.latest_root_timestamp_by_pair.get(alb_pair).unwrap_or(&0);
 
                 if message.timestamp <= last_pair_timestamp {
                     log::debug!(
-                    "Ignoring PubkeyKeepAlive from {} due to stale pair {}: message.timestamp={} <= last_pair_timestamp={}",
+                    "Ignoring a stale PubkeyKeepAlive from {} for pair {}: message.timestamp={} <= last_pair_timestamp={}",
                     from_pubkey, alb_pair, message.timestamp, last_pair_timestamp
-                );
+                    );
                     return MmError::err(OrderbookP2PHandlerError::StaleKeepAlive {
                         from_pubkey: from_pubkey.to_owned(),
                         propagated_from: propagated_from.to_owned(),
