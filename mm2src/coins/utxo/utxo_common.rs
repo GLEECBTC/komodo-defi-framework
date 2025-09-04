@@ -13,7 +13,6 @@ use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_hd_wallet::UtxoHDAddress;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
-use crate::utxo::wallet_connect::sign_p2sh_with_walletconnect;
 use crate::watcher_common::validate_watcher_reward;
 use crate::{
     scan_for_new_addresses_impl, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput, DexFee,
@@ -1063,38 +1062,16 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxI
                 v_extra_payload: None,
             })
         },
-        P2SHSigner::WalletConnect(session_topic) => {
-            let ctx = MmArc::from_weak(&coin.as_ref().ctx).ok_or_else(|| "Couldn't get access to MmArc".to_string())?;
-            // Get the address that's supposed to sign the P2SH transaction (its signature is required as per the redeem sript).
-            let address = coin
-                .as_ref()
-                .derivation_method
-                .single_addr()
-                .await
-                .ok_or_else(|| "Couldn't get address for P2SH signing".to_string())?;
-            let wc_ctx =
-                WalletConnectCtx::from_ctx(&ctx).map_err(|e| format!("Failed to get WalletConnectCtx: {e}"))?;
-            let chain_id = coin
-                .as_ref()
-                .conf
-                .chain_id
-                .as_ref()
-                .ok_or_else(|| "Chain ID is not set".to_string())?;
-            // Sign the single-input P2SH transaction using WalletConnect.
-            let signed_tx = sign_p2sh_with_walletconnect(
-                &wc_ctx,
-                &session_topic,
-                chain_id,
-                &address,
-                &unsigned,
-                input.prev_transaction,
-                input.redeem_script,
-                input.script_data.into(),
-            )
-            .await
-            .map_err(|e| format!("Failed to sign P2SH with WalletConnect: {e}"))?;
-            Ok(signed_tx)
-        },
+        P2SHSigner::WalletConnect(session_topic) => wallet_connect::sign_p2sh(
+            coin,
+            &session_topic,
+            &unsigned,
+            input.prev_transaction,
+            input.redeem_script,
+            input.script_data.into(),
+        )
+        .await
+        .map_err(|e| format!("WalletConnect P2SH signing error: {e}")),
     }
 }
 

@@ -62,7 +62,6 @@ use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures01::Future;
 use kdf_walletconnect::chain::WcChainId;
-use kdf_walletconnect::WalletConnectCtx;
 use keys::bytes::Bytes;
 use keys::NetworkAddressPrefixes;
 use keys::Signature;
@@ -124,7 +123,6 @@ use crate::hd_wallet::{
     AddrToString, HDAccountOps, HDAddressOps, HDPathAccountToAddressId, HDWalletCoinOps, HDWalletOps,
 };
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
-use crate::utxo::wallet_connect::sign_p2pkh_with_walletconnect;
 use crate::{ParseCoinAssocTypes, ToBytes};
 
 pub mod tx_cache;
@@ -1898,33 +1896,7 @@ where
             ))
         },
         PrivKeyPolicy::WalletConnect { ref session_topic, .. } => {
-            let ctx = MmArc::from_weak(&coin.as_ref().ctx)
-                .ok_or_else(|| TransactionErr::Plain("Couldn't get access to MmArc".to_string()))?;
-            let wc_ctx = try_tx_s!(WalletConnectCtx::from_ctx(&ctx));
-            let chain_id = coin
-                .as_ref()
-                .conf
-                .chain_id
-                .as_ref()
-                .ok_or_else(|| TransactionErr::Plain("Chain ID is not set".to_string()))?;
-            // Collect the outpoints of each P2PKH input (non-witness ones).
-            let prev_p2pkh_tx_hashes = spent_unspents
-                .iter()
-                .filter(|input| input.script.is_pay_to_public_key_hash())
-                .map(|input| input.outpoint.hash.reversed().into())
-                .collect();
-            // Get the previous transactions that created these P2PKH inputs.
-            let prev_p2pkh_txs_rpc_format = try_tx_s!(
-                utxo_common::get_verbose_transactions_from_cache_or_rpc(coin.as_ref(), prev_p2pkh_tx_hashes).await
-            );
-            let prev_p2pkh_txs = try_tx_s!(prev_p2pkh_txs_rpc_format
-                .into_iter()
-                .map(|(hash, tx)| Ok((hash.reversed().into(), deserialize(tx.into_inner().hex.as_slice())?)))
-                .collect::<Result<_, SerError>>());
-            try_tx_s!(
-                sign_p2pkh_with_walletconnect(&wc_ctx, session_topic, chain_id, &my_address, &unsigned, prev_p2pkh_txs)
-                    .await
-            )
+            try_tx_s!(wallet_connect::sign_p2pkh(coin, session_topic, &unsigned).await)
         },
         PrivKeyPolicy::Trezor => return Err(TransactionErr::Plain("Can't sign tx with trezor".to_string())),
         #[cfg(target_arch = "wasm32")]

@@ -1,6 +1,7 @@
 //! This module provides functionality to interact with WalletConnect for UTXO-based coins.
 use std::{collections::HashMap, convert::TryFrom};
 
+use crate::utxo::{utxo_common, UtxoCoinFields};
 use crate::UtxoTx;
 use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use base64::Engine;
@@ -15,8 +16,10 @@ use kdf_walletconnect::{
     WalletConnectCtx, WcTopic,
 };
 use keys::{Address, CompactSignature, Public};
-use mm2_err_handle::prelude::{MapToMmResult, MmError, MmResult};
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::{MapMmError, MapToMmResult, MmError, MmResult};
 use script::{Builder, TransactionInputSigner};
+use serialization::{deserialize, Error as SerError};
 
 /// Represents a UTXO address returned by GetAccountAddresses request in WalletConnect.
 #[derive(Deserialize)]
@@ -286,6 +289,48 @@ pub async fn sign_p2sh_with_walletconnect(
     Ok(tx_to_sign)
 }
 
+/// Signs a P2SH transaction that has a single input using WalletConnect.
+///
+/// This is just another wrapper around `sign_p2sh_with_walletconnect` to avoid some boilerplate given
+/// that there is an accessible `coin`.
+pub async fn sign_p2sh(
+    coin: &impl AsRef<UtxoCoinFields>,
+    session_topic: &WcTopic,
+    tx_input_signer: &TransactionInputSigner,
+    prev_tx: UtxoTx,
+    redeem_script: Bytes,
+    unlocking_script: Bytes,
+) -> MmResult<UtxoTx, WalletConnectError> {
+    let ctx = MmArc::from_weak(&coin.as_ref().ctx)
+        .ok_or_else(|| WalletConnectError::InternalError("Couldn't get access to MmArc".to_string()))?;
+    let wc_ctx = WalletConnectCtx::from_ctx(&ctx)?;
+    // Get the address that's supposed to sign the P2SH transaction (its signature is required as per the redeem sript).
+    let address = coin
+        .as_ref()
+        .derivation_method
+        .single_addr()
+        .await
+        .ok_or_else(|| WalletConnectError::InternalError("Couldn't get address for P2SH signing".to_string()))?;
+    let chain_id = coin
+        .as_ref()
+        .conf
+        .chain_id
+        .as_ref()
+        .ok_or_else(|| WalletConnectError::InternalError("Chain ID is not set".to_string()))?;
+
+    sign_p2sh_with_walletconnect(
+        &wc_ctx,
+        session_topic,
+        chain_id,
+        &address,
+        tx_input_signer,
+        prev_tx,
+        redeem_script,
+        unlocking_script,
+    )
+    .await
+}
+
 /// Signs a P2PKH/P2WPKH spending transaction using WalletConnect.
 ///
 /// Contrary to what the function name might suggest, this function can sign both P2PKH and **P2WPKH** inputs.
@@ -377,4 +422,58 @@ pub async fn sign_p2pkh_with_walletconnect(
     }
 
     Ok(tx_to_sign)
+}
+
+/// Signs a P2PKH/P2WPKH spending transaction using WalletConnect.
+///
+/// This is just another wrapper around `sign_p2pkh_with_walletconnect` to avoid some boilerplate given
+/// that there is an accessible `coin`.
+pub async fn sign_p2pkh(
+    coin: &impl AsRef<UtxoCoinFields>,
+    session_topic: &WcTopic,
+    tx_input_signer: &TransactionInputSigner,
+) -> MmResult<UtxoTx, WalletConnectError> {
+    let ctx = MmArc::from_weak(&coin.as_ref().ctx)
+        .ok_or_else(|| WalletConnectError::InternalError("Couldn't get access to MmArc".to_string()))?;
+    let wc_ctx = WalletConnectCtx::from_ctx(&ctx)?;
+    let address =
+        coin.as_ref().derivation_method.single_addr().await.ok_or_else(|| {
+            WalletConnectError::InternalError("Couldn't get address for P2(W)PKH signing".to_string())
+        })?;
+    let chain_id = coin
+        .as_ref()
+        .conf
+        .chain_id
+        .as_ref()
+        .ok_or_else(|| WalletConnectError::InternalError("Chain ID is not set".to_string()))?;
+
+    // Collect the outpoints of each P2PKH input (non-witness ones).
+    let prev_p2pkh_tx_hashes = tx_input_signer
+        .inputs
+        .iter()
+        .filter(|input| input.prev_script.is_pay_to_public_key_hash())
+        .map(|input| input.previous_output.hash.reversed().into())
+        .collect();
+    // Get the previous transactions that created these P2PKH inputs.
+    let prev_p2pkh_txs_rpc_format =
+        utxo_common::get_verbose_transactions_from_cache_or_rpc(coin.as_ref(), prev_p2pkh_tx_hashes)
+            .await
+            .mm_err(|e| WalletConnectError::InternalError(format!("Failed to get previous P2PKH transactions: {e}")))?;
+    let prev_p2pkh_txs = prev_p2pkh_txs_rpc_format
+        .into_iter()
+        .map(|(hash, tx)| Ok((hash.reversed().into(), deserialize(tx.into_inner().hex.as_slice())?)))
+        .collect::<Result<_, SerError>>()
+        .map_err(|e| {
+            WalletConnectError::InternalError(format!("Failed to deserialize previous P2PKH transactions: {e}"))
+        })?;
+
+    sign_p2pkh_with_walletconnect(
+        &wc_ctx,
+        session_topic,
+        chain_id,
+        &address,
+        tx_input_signer,
+        prev_p2pkh_txs,
+    )
+    .await
 }
