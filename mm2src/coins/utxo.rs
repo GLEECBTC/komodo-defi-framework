@@ -603,7 +603,7 @@ pub struct UtxoCoinConf {
     /// Fork id used in sighash
     pub fork_id: u32,
     /// A CAIP-2 compliant chain ID. This is used to identify the UTXO chain in WalletConnect and other cross-chain protocols.
-    /// https://github.com/ChainAgnostic/CAIPs/blob/main/CAIPs/caip-4.md
+    /// https://github.com/ChainAgnostic/CAIPs/blob/9516a2c0b26223d98a342938bf6d9ee59517f190/CAIPs/caip-4.md
     pub chain_id: Option<WcChainId>,
     /// Signature version
     pub signature_version: SignatureVersion,
