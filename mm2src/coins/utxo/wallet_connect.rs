@@ -155,7 +155,7 @@ struct SignedPsbt {
 
 /// The parameters used to instruct WalletConnect how to sign a specific input in a PSBT.
 ///
-/// An **array** of this struct it sent to WalletConnect in `SignPsbt` request.
+/// An **array** of this struct is sent to WalletConnect in `SignPsbt` request.
 #[derive(Serialize)]
 struct InputSigningParams {
     /// The index of the input to sign.
