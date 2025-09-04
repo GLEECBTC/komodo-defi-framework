@@ -3994,17 +3994,17 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
 
             // Remove fully expired pubkeys: delete their remaining orders first, then the state.
             // GC: remove orders while the pubkey state still exists to avoid lazy re-creation inside `remove_order_trie_update`.
-            for pubkey in &pubkeys_to_remove {
-                let uuids: Vec<Uuid> = orderbook
-                    .pubkeys_state
-                    .get(pubkey)
-                    .map(|s| s.orders_uuids.iter().map(|(uuid, _)| *uuid).collect())
-                    .unwrap_or_default();
-                for uuid in uuids {
-                    orderbook.remove_order_trie_update(uuid);
-                }
-            }
             for pubkey in pubkeys_to_remove {
+                if let Some(orders) = orderbook
+                    .pubkeys_state
+                    .get_mut(&pubkey)
+                    .map(|state| std::mem::take(&mut state.orders_uuids))
+                {
+                    for (uuid, _) in orders {
+                        orderbook.remove_order_trie_update(uuid);
+                    }
+                }
+
                 // TODO(pubkey_replay_guard):
                 // Block stale replays after full pubkey timeout (incl. restarts).
                 // - On full pubkey removal: store pubkey -> max maker_ts (write-once HashMap<String,u64>).
