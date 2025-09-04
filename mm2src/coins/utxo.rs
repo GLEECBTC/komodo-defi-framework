@@ -578,6 +578,7 @@ pub struct UtxoCoinConf {
     pub tx_version: i32,
     /// Defines if Segwit is enabled for this coin.
     /// https://en.bitcoin.it/wiki/Segregated_Witness
+    /// NOTE: this does not make the coin itself 'segwit'. This just tells that segwit addresses are supported for this coin
     pub segwit: bool,
     /// Does coin require transactions to be notarized to be considered as confirmed?
     /// https://komodoplatform.com/security-delayed-proof-of-work-dpow/
@@ -1859,6 +1860,26 @@ async fn generate_and_send_tx<T>(
 where
     T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps + UtxoTxBroadcastOps,
 {
+    let (signed, spent_unspents) = generate_tx(coin, unspents, required_inputs, fee_policy, outputs).await?;
+
+    try_tx_s!(coin.broadcast_tx(&signed).await, signed);
+
+    recently_spent.add_spent(spent_unspents, signed.hash(), signed.outputs.clone());
+
+    Ok(signed)
+}
+
+/// Generates tx using unspents and outputs. Returns the signed transaction and spent unspents.
+async fn generate_tx<T>(
+    coin: &T,
+    unspents: Vec<UnspentInfo>,
+    required_inputs: Option<Vec<UnspentInfo>>,
+    fee_policy: FeePolicy,
+    outputs: Vec<TransactionOutput>,
+) -> Result<(UtxoTx, Vec<UnspentInfo>), TransactionErr>
+where
+    T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps + UtxoTxBroadcastOps,
+{
     let my_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err().await);
     let mut builder = UtxoTxBuilder::new(coin)
         .await
@@ -1903,11 +1924,7 @@ where
         PrivKeyPolicy::Metamask { .. } => return Err(TransactionErr::Plain("Can't sign tx with metamask".to_string())),
     };
 
-    try_tx_s!(coin.broadcast_tx(&signed).await, signed);
-
-    recently_spent.add_spent(spent_unspents, signed.hash(), signed.outputs.clone());
-
-    Ok(signed)
+    Ok((signed, spent_unspents))
 }
 
 /// Builds transaction output script for an Address struct

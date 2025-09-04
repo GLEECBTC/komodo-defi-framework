@@ -102,7 +102,7 @@ impl MarketCoinOps for TestCoin {
         unimplemented!()
     }
 
-    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
+    fn platform_coin_balance(&self) -> BalanceFut<BigDecimal> {
         unimplemented!()
     }
 

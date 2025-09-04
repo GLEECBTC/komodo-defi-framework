@@ -6768,8 +6768,16 @@ mod trezor_tests {
                                     .unwrap();
                                     let _ = init_trezor_user_action(ctx.clone(), pin_req).await;
                                 },
-                                _ => {
-                                    panic!("Trezor passphrase is not supported in tests");
+                                HwRpcTaskAwaitingStatus::EnterTrezorPassphrase => {
+                                    let empty_passphrase = serde_json::from_value(json!({
+                                        "task_id": task_id,
+                                        "user_action": {
+                                            "action_type": "TrezorPassphrase",
+                                            "passphrase": ""
+                                        }
+                                    }))
+                                    .unwrap();
+                                    let _ = init_trezor_user_action(ctx.clone(), empty_passphrase).await;
                                 },
                             }
                         },
@@ -6841,7 +6849,7 @@ mod trezor_tests {
             "method": "electrum",
             "coin": ticker,
             "servers": tbtc_electrums(),
-            "priv_key_policy": { "type": "Trezor" },
+            "priv_key_policy": "Trezor",
         });
         let activation_params = UtxoActivationParams::from_legacy_req(&enable_req).unwrap();
         let request: InitStandaloneCoinReq<UtxoActivationParams> = json::from_value(json!({
@@ -6899,8 +6907,12 @@ mod trezor_tests {
                             });
                             let _ = init_trezor_user_action_rpc(mm, init.result.task_id, pin_action).await;
                         },
-                        _ => {
-                            panic!("Trezor passphrase is not supported in tests");
+                        HwRpcTaskAwaitingStatus::EnterTrezorPassphrase => {
+                            let empty_passphrase = json!({
+                                "action_type": "TrezorPassphrase",
+                                "passphrase": ""
+                            });
+                            let _ = init_trezor_user_action_rpc(mm, init.result.task_id, empty_passphrase).await;
                         },
                     }
                 },

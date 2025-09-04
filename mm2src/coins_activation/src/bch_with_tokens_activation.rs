@@ -37,6 +37,7 @@ impl From<EnableSlpError> for InitTokensAsMmCoinsError {
             EnableSlpError::UnexpectedDerivationMethod(internal) | EnableSlpError::Internal(internal) => {
                 InitTokensAsMmCoinsError::Internal(internal)
             },
+            EnableSlpError::PlatformCoinMismatch => InitTokensAsMmCoinsError::PlatformCoinMismatch,
         }
     }
 }
@@ -92,6 +93,21 @@ impl TokenInitializer for SlpTokenInitializer {
 
     fn platform_coin(&self) -> &BchCoin {
         &self.platform_coin
+    }
+
+    fn validate_token_params(
+        &self,
+        params: &[TokenActivationParams<Self::TokenActivationRequest, Self::TokenProtocol>],
+    ) -> MmResult<(), Self::InitTokensError> {
+        for token_param in params {
+            match &token_param.protocol {
+                SlpProtocolConf {
+                    platform_coin_ticker, ..
+                } if platform_coin_ticker == self.platform_coin().ticker() => {},
+                _ => return MmError::err(EnableSlpError::PlatformCoinMismatch),
+            }
+        }
+        Ok(())
     }
 }
 

@@ -363,15 +363,18 @@ fn get_sender_trade_preimage() {
 #[test]
 fn get_erc20_sender_trade_preimage() {
     const APPROVE_GAS_LIMIT: u64 = 60_000;
-    static mut ALLOWANCE: u64 = 0;
-    static mut ESTIMATE_GAS_CALLED: bool = false;
+    static ALLOWANCE: AtomicU64 = AtomicU64::new(0);
+    static ESTIMATE_GAS_CALLED: AtomicBool = AtomicBool::new(false);
 
-    EthCoin::allowance
-        .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(unsafe { ALLOWANCE.into() }))));
+    EthCoin::allowance.mock_safe(|_, _| {
+        MockResult::Return(Box::new(futures01::future::ok(
+            ALLOWANCE.load(AtomicOrdering::Relaxed).into(),
+        )))
+    });
 
     EthCoin::get_gas_price.mock_safe(|_| MockResult::Return(Box::pin(futures::future::ok(GAS_PRICE.into()))));
     EthCoin::estimate_gas_wrapper.mock_safe(|_, _| {
-        unsafe { ESTIMATE_GAS_CALLED = true };
+        ESTIMATE_GAS_CALLED.store(true, AtomicOrdering::Relaxed);
         MockResult::Return(Box::new(futures01::future::ok(APPROVE_GAS_LIMIT.into())))
     });
 
@@ -395,24 +398,24 @@ fn get_erc20_sender_trade_preimage() {
     );
 
     // value is allowed
-    unsafe { ALLOWANCE = 1000 };
+    ALLOWANCE.store(1000, AtomicOrdering::Relaxed);
     let value = u256_to_big_decimal(1000.into(), 18).expect("u256_to_big_decimal");
     let actual =
         block_on(coin.get_sender_trade_fee(TradePreimageValue::UpperBound(value), FeeApproxStage::WithoutApprox))
             .expect("!get_sender_trade_fee");
     log!("{:?}", actual.amount.to_decimal());
-    unsafe { assert!(!ESTIMATE_GAS_CALLED) }
+    assert!(!ESTIMATE_GAS_CALLED.load(AtomicOrdering::Relaxed));
     assert_eq!(actual, expected_trade_fee(gas_limit::ERC20_PAYMENT, GAS_PRICE));
 
     // value is greater than allowance
-    unsafe { ALLOWANCE = 999 };
+    ALLOWANCE.store(999, AtomicOrdering::Relaxed);
     let value = u256_to_big_decimal(1000.into(), 18).expect("u256_to_big_decimal");
     let actual = block_on(coin.get_sender_trade_fee(TradePreimageValue::UpperBound(value), FeeApproxStage::StartSwap))
         .expect("!get_sender_trade_fee");
-    unsafe {
-        assert!(ESTIMATE_GAS_CALLED);
-        ESTIMATE_GAS_CALLED = false;
-    }
+
+    assert!(ESTIMATE_GAS_CALLED.load(AtomicOrdering::Relaxed));
+    ESTIMATE_GAS_CALLED.store(false, AtomicOrdering::Relaxed);
+
     assert_eq!(
         actual,
         expected_trade_fee(
@@ -422,25 +425,27 @@ fn get_erc20_sender_trade_preimage() {
     );
 
     // value is allowed
-    unsafe { ALLOWANCE = 1000 };
+    ALLOWANCE.store(1000, AtomicOrdering::Relaxed);
     let value = u256_to_big_decimal(999.into(), 18).expect("u256_to_big_decimal");
     let actual = block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(value), FeeApproxStage::OrderIssue))
         .expect("!get_sender_trade_fee");
-    unsafe { assert!(!ESTIMATE_GAS_CALLED) }
+
+    assert!(!ESTIMATE_GAS_CALLED.load(AtomicOrdering::Relaxed));
+
     assert_eq!(
         actual,
         expected_trade_fee(gas_limit::ERC20_PAYMENT, GAS_PRICE_APPROXIMATION_ON_ORDER_ISSUE)
     );
 
     // value is greater than allowance
-    unsafe { ALLOWANCE = 1000 };
+    ALLOWANCE.store(1000, AtomicOrdering::Relaxed);
     let value = u256_to_big_decimal(1500.into(), 18).expect("u256_to_big_decimal");
     let actual = block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(value), FeeApproxStage::TradePreimage))
         .expect("!get_sender_trade_fee");
-    unsafe {
-        assert!(ESTIMATE_GAS_CALLED);
-        ESTIMATE_GAS_CALLED = false;
-    }
+
+    assert!(ESTIMATE_GAS_CALLED.load(AtomicOrdering::Relaxed));
+    ESTIMATE_GAS_CALLED.store(false, AtomicOrdering::Relaxed);
+
     assert_eq!(
         actual,
         expected_trade_fee(

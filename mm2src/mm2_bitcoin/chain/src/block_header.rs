@@ -270,7 +270,9 @@ impl Deserializable for BlockHeader {
         };
 
         // https://en.bitcoin.it/wiki/Merged_mining_specification#Merged_mining_coinbase
-        let aux_pow = if (version & AUXPOW_VERSION_FLAG) != 0 {
+        // AuxPoW is only for AuxPoW coins (Dogecoin, Namecoin, Syscoin, etc.).
+        // BTC-like variants (BTC, BCH, NAV, ...) must NOT interpret bit 8 as AuxPoW.
+        let aux_pow = if (version & AUXPOW_VERSION_FLAG) != 0 && !reader.coin_variant().is_btc() {
             let coinbase_tx = deserialize_tx(reader, TxType::StandardWithWitness)?;
             let parent_block_hash = reader.read()?;
             let coinbase_branch = reader.read()?;
@@ -2926,6 +2928,38 @@ mod tests {
         // Sapling root must be present
         assert!(header.hash_final_sapling_root.is_some());
 
+        let serialized = serialize(&header);
+        assert_eq!(serialized.take(), header_bytes);
+    }
+
+    #[test]
+    fn test_nav_block_header_v7_no_auxpow_and_roundtrip() {
+        // NAV block #9561948
+        // https://explorer.navcoin.org/block/9561948
+        //
+        // version: 0x7bf5ffff (bit 8 set, but NAV is BTC-style and must NOT parse AuxPoW)
+        // prev    = 57719d707a2e86fd3cb7a379d0575943cd4679de77e3629bcb7728b75abbeb6a
+        // merkle  = 5b57bb3d2ca2706d3d53a86a0ac6d81cbb5590ff61c357e70654b66d4bcaf195
+        // time    = 0x68936f70
+        // bits    = 0x1a2dab8e
+        // nonce   = 7
+        let header_hex = "fffff57b\
+                      6aebbb5ab72877cb9b62e377de7946cd435957d079a3b73cfd862e7a709d7157\
+                      95f1ca4b6db65406e757c361ff9055bb1cd8c60a6aa8533d6d70a22c3dbb575b\
+                      706f9368\
+                      8eab2d1a\
+                      07000000";
+
+        let header_bytes: Vec<u8> = header_hex.from_hex().unwrap();
+
+        // Treat NAV as BTC-style (no AuxPoW parsing)
+        let mut reader = Reader::new_with_coin_variant(header_bytes.as_slice(), CoinVariant::BTC);
+        let header: BlockHeader = reader.read().unwrap();
+
+        assert_eq!(header.version, 0x7bf5ffff);
+        assert!(header.aux_pow.is_none(), "NAV must not parse AuxPoW payloads");
+
+        // Round-trip
         let serialized = serialize(&header);
         assert_eq!(serialized.take(), header_bytes);
     }

@@ -2,6 +2,11 @@ use compact_integer::CompactInteger;
 use derive_more::Display;
 use std::{io, marker};
 
+const BTC_FORKS: &[&str] = &["BTC", "BCH", "NAV", "RIC"];
+const PIVX_FORKS: &[&str] = &["PIVX", "DOGEC"];
+const QTUM_FORKS: &[&str] = &["QTUM", "RUNES"];
+const RVN_FORKS: &[&str] = &["RVN", "AIPG", "XNA", "EVR", "MEWC", "AVN"];
+
 pub fn deserialize<R, T>(buffer: R) -> Result<T, Error>
 where
     R: io::Read,
@@ -100,12 +105,10 @@ fn ticker_matches(ticker: &str, with: &str) -> bool {
 impl From<&str> for CoinVariant {
     fn from(ticker: &str) -> Self {
         match ticker {
-            // "BTC", "BTC-segwit", "tBTC", "tBTC-segwit", etc..
-            t if ticker_matches(t, "BTC") => CoinVariant::BTC,
-            // "BCH", "tBCH", etc..
-            t if ticker_matches(t, "BCH") => CoinVariant::BTC,
+            // "BTC", "BTC-segwit", "tBTC", "tBTC-segwit", "BCH", "tBCH", etc..
+            t if BTC_FORKS.iter().any(|ticker| ticker_matches(t, ticker)) => CoinVariant::BTC,
             // "QTUM", "QTUM-segwit", "tQTUM", "tQTUM-segwit", etc..
-            t if ticker_matches(t, "QTUM") => CoinVariant::Qtum,
+            t if QTUM_FORKS.iter().any(|ticker| ticker_matches(t, ticker)) => CoinVariant::Qtum,
             // "LBC", "LBC-segwit", etc..
             t if ticker_matches(t, "LBC") => CoinVariant::LBC,
             // "PPC", "PPC-segwit", etc..
@@ -114,10 +117,10 @@ impl From<&str> for CoinVariant {
             t if ticker_matches(t, "RICK") => CoinVariant::RICK,
             // "MORTY"
             t if ticker_matches(t, "MORTY") => CoinVariant::MORTY,
-            // "RVN"
-            t if ticker_matches(t, "RVN") => CoinVariant::RVN,
-            // "PIVX"
-            t if ticker_matches(t, "PIVX") => CoinVariant::PIVX,
+            // `RVN`, `AIPG`, etc..
+            t if RVN_FORKS.iter().any(|ticker| ticker_matches(t, ticker)) => CoinVariant::RVN,
+            // PIVX family ("PIVX", "DOGEC", …)
+            t if PIVX_FORKS.iter().any(|ticker| ticker_matches(t, ticker)) => CoinVariant::PIVX,
             _ => CoinVariant::Standard,
         }
     }

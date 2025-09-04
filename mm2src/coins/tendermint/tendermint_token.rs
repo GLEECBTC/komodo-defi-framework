@@ -74,6 +74,7 @@ pub enum TendermintTokenInitError {
     Internal(String),
     MyAddressError(String),
     CouldNotFetchBalance(String),
+    PlatformCoinMismatch,
 }
 
 impl From<MyAddressError> for TendermintTokenInitError {
@@ -317,7 +318,7 @@ impl MarketCoinOps for TendermintToken {
         Box::new(fut.boxed().compat())
     }
 
-    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
+    fn platform_coin_balance(&self) -> BalanceFut<BigDecimal> {
         self.platform_coin.my_spendable_balance()
     }
 

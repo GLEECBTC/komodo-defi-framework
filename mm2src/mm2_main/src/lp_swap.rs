@@ -151,9 +151,10 @@ pub use swap_watcher::{
 };
 use taker_swap::TakerSwapEvent;
 pub use taker_swap::{
-    calc_max_taker_vol, check_balance_for_taker_swap, max_taker_vol, max_taker_vol_from_available, run_taker_swap,
-    taker_swap_trade_preimage, RunTakerSwapInput, TakerSavedSwap, TakerSwap, TakerSwapData, TakerSwapPreparedParams,
-    TakerTradePreimage, MAKER_PAYMENT_SPENT_BY_WATCHER_LOG, REFUND_TEST_FAILURE_LOG, WATCHER_MESSAGE_SENT_LOG,
+    calc_max_taker_vol, check_balance_for_taker_swap, create_taker_swap_default_params, max_taker_vol,
+    max_taker_vol_from_available, run_taker_swap, taker_swap_trade_preimage, RunTakerSwapInput, TakerSavedSwap,
+    TakerSwap, TakerSwapData, TakerSwapPreparedParams, TakerTradePreimage, MAKER_PAYMENT_SPENT_BY_WATCHER_LOG,
+    REFUND_TEST_FAILURE_LOG, WATCHER_MESSAGE_SENT_LOG,
 };
 pub use trade_preimage::trade_preimage_rpc;
 

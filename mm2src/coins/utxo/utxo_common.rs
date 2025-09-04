@@ -365,7 +365,7 @@ pub fn denominate_satoshis(coin: &UtxoCoinFields, satoshi: i64) -> f64 {
     satoshi as f64 / 10f64.powf(coin.decimals as f64)
 }
 
-pub fn base_coin_balance<T>(coin: &T) -> BalanceFut<BigDecimal>
+pub fn platform_coin_balance<T>(coin: &T) -> BalanceFut<BigDecimal>
 where
     T: MarketCoinOps,
 {
@@ -1746,7 +1746,12 @@ pub async fn send_maker_spends_taker_payment<T: UtxoCommonOps + SwapOps>(
     coin: T,
     args: SpendPaymentArgs<'_>,
 ) -> TransactionResult {
-    let mut prev_transaction: UtxoTx = try_tx_s!(deserialize(args.other_payment_tx).map_err(|e| ERRL!("{:?}", e)));
+    let mut prev_transaction: UtxoTx = try_tx_s!(deserialize(args.other_payment_tx).map_err(|e| ERRL!(
+        "Failed to deserialize transaction (coin={}, hex={}) : {}",
+        coin.as_ref().conf.ticker,
+        hex::encode(args.other_payment_tx),
+        e
+    )));
     prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
     drop_mutability!(prev_transaction);
     let payment_value = try_tx_s!(prev_transaction.first_output()).value;
@@ -1807,7 +1812,12 @@ pub fn send_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     input: SendMakerPaymentSpendPreimageInput,
 ) -> TransactionFut {
-    let mut transaction: UtxoTx = try_tx_fus!(deserialize(input.preimage).map_err(|e| ERRL!("{:?}", e)));
+    let mut transaction: UtxoTx = try_tx_fus!(deserialize(input.preimage).map_err(|e| ERRL!(
+        "Failed to deserialize transaction (coin={}, hex={}) : {}",
+        coin.as_ref().conf.ticker,
+        hex::encode(input.preimage),
+        e
+    )));
     if transaction.inputs.is_empty() {
         return try_tx_fus!(TX_PLAIN_ERR!("Transaction doesn't have any input"));
     }
@@ -1854,7 +1864,12 @@ pub fn create_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     secret_hash: &[u8],
     swap_unique_data: &[u8],
 ) -> TransactionFut {
-    let mut prev_transaction: UtxoTx = try_tx_fus!(deserialize(maker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
+    let mut prev_transaction: UtxoTx = try_tx_fus!(deserialize(maker_payment_tx).map_err(|e| ERRL!(
+        "Failed to deserialize transaction (coin={}, hex={}) : {}",
+        coin.as_ref().conf.ticker,
+        hex::encode(maker_payment_tx),
+        e
+    )));
     prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
     drop_mutability!(prev_transaction);
     let payment_value = try_tx_fus!(prev_transaction.first_output()).value;
@@ -1916,7 +1931,12 @@ pub fn create_taker_payment_refund_preimage<T: UtxoCommonOps + SwapOps>(
 ) -> TransactionFut {
     let coin = coin.clone();
     let mut prev_transaction: UtxoTx =
-        try_tx_fus!(deserialize(taker_payment_tx).map_err(|e| TransactionErr::Plain(format!("{e:?}"))));
+        try_tx_fus!(deserialize(taker_payment_tx).map_err(|e| TransactionErr::Plain(format!(
+            "Failed to deserialize transaction (coin={}, hex={}) : {}",
+            coin.as_ref().conf.ticker,
+            hex::encode(taker_payment_tx),
+            e
+        ))));
     prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
     drop_mutability!(prev_transaction);
     let payment_value = try_tx_fus!(prev_transaction.first_output()).value;
@@ -1969,7 +1989,12 @@ pub async fn send_taker_spends_maker_payment<T: UtxoCommonOps + SwapOps>(
     coin: T,
     args: SpendPaymentArgs<'_>,
 ) -> TransactionResult {
-    let mut prev_transaction: UtxoTx = try_tx_s!(deserialize(args.other_payment_tx).map_err(|e| ERRL!("{:?}", e)));
+    let mut prev_transaction: UtxoTx = try_tx_s!(deserialize(args.other_payment_tx).map_err(|e| ERRL!(
+        "Failed to deserialize transaction (coin={}, hex={}) : {}",
+        coin.as_ref().conf.ticker,
+        hex::encode(args.other_payment_tx),
+        e
+    )));
     prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
     drop_mutability!(prev_transaction);
     let payment_value = try_tx_s!(prev_transaction.first_output()).value;
@@ -2034,7 +2059,12 @@ pub async fn refund_htlc_payment<T: UtxoCommonOps + SwapOps>(
 ) -> Result<UtxoTx, TransactionErr> {
     let my_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err().await).clone();
     let mut prev_transaction: UtxoTx =
-        try_tx_s!(deserialize(args.payment_tx).map_err(|e| TransactionErr::Plain(format!("{e:?}"))));
+        try_tx_s!(deserialize(args.payment_tx).map_err(|e| TransactionErr::Plain(format!(
+            "Failed to deserialize transaction (coin={}, hex={}) : {}",
+            coin.as_ref().conf.ticker,
+            hex::encode(args.payment_tx),
+            e
+        ))));
     prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
     drop_mutability!(prev_transaction);
     let payment_value = try_tx_s!(prev_transaction.first_output()).value;
@@ -2098,9 +2128,15 @@ pub fn send_taker_payment_refund_preimage<T: UtxoCommonOps + SwapOps>(
     watcher_refunds_payment_args: RefundPaymentArgs,
 ) -> TransactionFut {
     let coin = coin.clone();
-    let transaction: UtxoTx = try_tx_fus!(
-        deserialize(watcher_refunds_payment_args.payment_tx).map_err(|e| TransactionErr::Plain(format!("{e:?}")))
-    );
+    let transaction: UtxoTx =
+        try_tx_fus!(
+            deserialize(watcher_refunds_payment_args.payment_tx).map_err(|e| TransactionErr::Plain(format!(
+                "Failed to deserialize transaction (coin={}, hex={}) : {}",
+                coin.as_ref().conf.ticker,
+                hex::encode(watcher_refunds_payment_args.payment_tx),
+                e
+            )))
+        );
 
     let fut = async move {
         let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
@@ -2161,20 +2197,26 @@ fn verify_p2pk_input_pubkey(
     index: usize,
     signature_version: SignatureVersion,
     fork_id: u32,
-) -> Result<bool, String> {
+) -> Result<bool, ValidatePaymentError> {
     // Extract the signature from the scriptSig.
-    let signature = script.extract_signature()?;
+    let signature = script
+        .extract_signature()
+        .map_err(|e| ValidatePaymentError::CheckSignatureError(format!("Signature parsing error: {}", e)))?;
     // Validate the signature.
-    try_s!(SecpSignature::from_der(&signature[..signature.len() - 1]));
+    SecpSignature::from_der(&signature[..signature.len().saturating_sub(1)])
+        .map_err(|e| ValidatePaymentError::CheckSignatureError(format!("Signature parsing error: {}", e)))?;
     let signature = signature.into();
     // Make sure we have no more instructions. P2PK scriptSigs consist of a single instruction only containing the signature.
     if script.get_instruction(1).is_some() {
-        return ERR!("Unexpected instruction at position 2 of script {:?}", script);
+        return Err(ValidatePaymentError::TxDeserializationError(format!(
+            "Unexpected instruction at position 2 of script {:?}",
+            script
+        )));
     };
     // Get the scriptPub for this input. We need it to get the transaction sig_hash to sign (but actually "to verify" in this case).
     let pubkey = expected_pubkey
         .to_secp256k1_pubkey()
-        .map_err(|e| ERRL!("Error converting plain pubkey to secp256k1 pubkey: {}", e))?;
+        .map_err(|e| ValidatePaymentError::InvalidData(format!("Parsing expected pubkey error: {}", e)))?;
     // P2PK scriptPub has two valid possible formats depending on whether the public key is written in compressed or uncompressed form.
     let possible_pubkey_scripts = [
         Builder::build_p2pk(&Public::Compressed(pubkey.serialize().into())),
@@ -2191,14 +2233,24 @@ fn verify_p2pk_input_pubkey(
             fork_id,
         ) {
             Ok(hash) => hash,
-            Err(e) => return ERR!("Error calculating signature hash: {}", e),
+            Err(e) => {
+                return Err(ValidatePaymentError::CheckSignatureError(format!(
+                    "Error calculating signature hash: {}",
+                    e
+                )))
+            },
         };
         // Verify that the signature is valid for the transaction hash with respect to the expected public key.
         return match expected_pubkey.verify(&hash, &signature) {
             Ok(true) => Ok(true),
             // The signature is invalid for this pubkey, try the other possible pubkey script.
             Ok(false) => continue,
-            Err(e) => ERR!("Error verifying signature: {}", e),
+            Err(e) => {
+                return Err(ValidatePaymentError::CheckSignatureError(format!(
+                    "Error verifying signature: {}",
+                    e
+                )))
+            },
         };
     }
 
@@ -2211,15 +2263,12 @@ fn pubkey_from_script_sig(script: &Script) -> Result<H264, String> {
     // Extract the signature from the scriptSig.
     let signature = script.extract_signature()?;
     // Validate the signature.
-    try_s!(SecpSignature::from_der(&signature[..signature.len() - 1]));
+    try_s!(SecpSignature::from_der(&signature[..signature.len().saturating_sub(1)]));
 
     let pubkey = match script.get_instruction(1) {
-        Some(Ok(instruction)) => match instruction.opcode {
-            Opcode::OP_PUSHBYTES_33 => match instruction.data {
-                Some(bytes) => try_s!(PublicKey::from_slice(bytes)),
-                None => return ERR!("No data at instruction 1 of script {:?}", script),
-            },
-            _ => return ERR!("Unexpected opcode {:?}", instruction.opcode),
+        Some(Ok(instruction)) => match instruction.data {
+            Some(bytes) => try_s!(PublicKey::from_slice(bytes)),
+            None => return ERR!("No data at instruction 1 of script {:?}", script),
         },
         Some(Err(e)) => return ERR!("Error {} on getting instruction 1 of script {:?}", e, script),
         None => return ERR!("None instruction 1 of script {:?}", script),
@@ -2307,8 +2356,7 @@ pub async fn check_all_utxo_inputs_signed_by_pub<T: UtxoCommonOps>(
                 idx,
                 coin.as_ref().conf.signature_version,
                 coin.as_ref().conf.fork_id,
-            )
-            .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
+            )?;
             if successful_verification {
                 // No pubkey extraction for P2PK inputs. Continue.
                 continue;
@@ -2370,7 +2418,14 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps + SwapOps>(
                 },
             };
 
-            let taker_fee_tx: UtxoTx = deserialize(tx_from_rpc.hex.0.as_slice())?;
+            let taker_fee_tx: UtxoTx = deserialize(tx_from_rpc.hex.0.as_slice()).map_to_mm(|e| {
+                ValidatePaymentError::TxDeserializationError(format!(
+                    "Failed to deserialize transaction (coin={}, hex={}) : {}",
+                    coin.as_ref().conf.ticker,
+                    hex::encode(tx_from_rpc.hex.0.as_slice()),
+                    e
+                ))
+            })?;
             let inputs_signed_by_pub =
                 check_all_utxo_inputs_signed_by_pub(&coin, &taker_fee_tx, &sender_pubkey).await?;
             if !inputs_signed_by_pub {
@@ -2566,7 +2621,14 @@ pub async fn validate_maker_payment<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     input: ValidatePaymentInput,
 ) -> ValidatePaymentResult<()> {
-    let mut tx: UtxoTx = deserialize(input.payment_tx.as_slice())?;
+    let mut tx: UtxoTx = deserialize(input.payment_tx.as_slice()).map_to_mm(|e| {
+        ValidatePaymentError::TxDeserializationError(format!(
+            "Failed to deserialize transaction (coin={}, hex={}) : {}",
+            coin.as_ref().conf.ticker,
+            hex::encode(input.payment_tx.as_slice()),
+            e
+        ))
+    })?;
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
     let our_pub = Public::from_slice(&coin.derive_htlc_pubkey(&input.unique_swap_data))
@@ -2599,8 +2661,23 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     input: WatcherValidatePaymentInput,
 ) -> ValidatePaymentFut<()> {
-    let taker_payment_tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
-    let taker_payment_refund_preimage: UtxoTx = try_f!(deserialize(input.taker_payment_refund_preimage.as_slice()));
+    let taker_payment_tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()).map_to_mm(|e| {
+        ValidatePaymentError::TxDeserializationError(format!(
+            "Failed to deserialize transaction (coin={}, hex={}) : {}",
+            coin.as_ref().conf.ticker,
+            hex::encode(input.payment_tx.as_slice()),
+            e
+        ))
+    }));
+    let taker_payment_refund_preimage: UtxoTx = try_f!(deserialize(input.taker_payment_refund_preimage.as_slice())
+        .map_to_mm(|e| {
+            ValidatePaymentError::TxDeserializationError(format!(
+                "Failed to deserialize transaction (coin={}, hex={}) : {}",
+                coin.as_ref().conf.ticker,
+                hex::encode(input.taker_payment_refund_preimage.as_slice()),
+                e
+            ))
+        }));
     let taker_pub = &try_f!(
         Public::from_slice(&input.taker_pub).map_err(|err| ValidatePaymentError::InvalidParameter(err.to_string()))
     );
@@ -2677,7 +2754,14 @@ pub async fn validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     input: ValidatePaymentInput,
 ) -> ValidatePaymentResult<()> {
-    let mut tx: UtxoTx = deserialize(input.payment_tx.as_slice())?;
+    let mut tx: UtxoTx = deserialize(input.payment_tx.as_slice()).map_to_mm(|e| {
+        ValidatePaymentError::TxDeserializationError(format!(
+            "Failed to deserialize transaction (coin={}, hex={}) : {}",
+            coin.as_ref().conf.ticker,
+            hex::encode(input.payment_tx.as_slice()),
+            e
+        ))
+    })?;
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
     let our_pub = Public::from_slice(&coin.derive_htlc_pubkey(&input.unique_swap_data))
@@ -2710,7 +2794,14 @@ pub fn validate_payment_spend_or_refund<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     input: ValidateWatcherSpendInput,
 ) -> ValidatePaymentFut<()> {
-    let mut payment_spend_tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
+    let mut payment_spend_tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()).map_to_mm(|e| {
+        ValidatePaymentError::TxDeserializationError(format!(
+            "Failed to deserialize transaction (coin={}, hex={}) : {}",
+            coin.as_ref().conf.ticker,
+            hex::encode(input.payment_tx.as_slice()),
+            e
+        ))
+    }));
     payment_spend_tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
     let coin = coin.clone();
@@ -2764,7 +2855,13 @@ pub fn check_if_my_payment_sent<T: UtxoCommonOps + SwapOps>(
                 match history.first() {
                     Some(item) => {
                         let tx_bytes = try_s!(client.get_transaction_bytes(&item.tx_hash).compat().await);
-                        let mut tx: UtxoTx = try_s!(deserialize(tx_bytes.0.as_slice()).map_err(|e| ERRL!("{:?}", e)));
+                        let mut tx: UtxoTx = try_s!(deserialize(tx_bytes.0.as_slice()).map_err(|e| ERRL!(
+                            "Failed to deserialize transaction (coin={}, hex={}) : {}",
+                            coin.as_ref().conf.ticker,
+                            hex::encode(tx_bytes.0.as_slice()),
+                            e
+                        )));
+
                         tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
                         Ok(Some(tx.into()))
                     },
@@ -2789,7 +2886,12 @@ pub fn check_if_my_payment_sent<T: UtxoCommonOps + SwapOps>(
                 for item in received_by_addr {
                     if item.address == target_addr && !item.txids.is_empty() {
                         let tx_bytes = try_s!(client.get_transaction_bytes(&item.txids[0]).compat().await);
-                        let mut tx: UtxoTx = try_s!(deserialize(tx_bytes.0.as_slice()).map_err(|e| ERRL!("{:?}", e)));
+                        let mut tx: UtxoTx = try_s!(deserialize(tx_bytes.0.as_slice()).map_err(|e| ERRL!(
+                            "Failed to deserialize transaction (coin={}, hex={}) : {}",
+                            coin.as_ref().conf.ticker,
+                            hex::encode(tx_bytes.0.as_slice()),
+                            e
+                        )));
                         tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
                         return Ok(Some(tx.into()));
                     }
@@ -2909,7 +3011,11 @@ pub async fn get_taker_watcher_reward<T: UtxoCommonOps + SwapOps + MarketCoinOps
 /// Extract a secret from the `spend_tx`.
 /// Note spender could generate the spend with several inputs where the only one input is the p2sh script.
 pub fn extract_secret(secret_hash: &[u8], spend_tx: &[u8]) -> Result<[u8; 32], String> {
-    let spend_tx: UtxoTx = try_s!(deserialize(spend_tx).map_err(|e| ERRL!("{:?}", e)));
+    let spend_tx: UtxoTx = try_s!(deserialize(spend_tx).map_err(|e| ERRL!(
+        "Failed to deserialize transaction (coin=?, hex={}) : {}",
+        hex::encode(spend_tx),
+        e
+    )));
     extract_secret_v2(secret_hash, &spend_tx)
 }
 
@@ -3152,7 +3258,14 @@ async fn sign_raw_utxo_tx<T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps>(
 ) -> RawTransactionResult {
     let tx_bytes =
         hex::decode(args.tx_hex.as_bytes()).map_to_mm(|e| RawTransactionError::DecodeError(e.to_string()))?;
-    let tx: UtxoTx = deserialize(tx_bytes.as_slice()).map_to_mm(|e| RawTransactionError::DecodeError(e.to_string()))?;
+    let tx: UtxoTx = deserialize(tx_bytes.as_slice()).map_to_mm(|e| {
+        RawTransactionError::DecodeError(format!(
+            "Failed to deserialize transaction (coin={}, hex={}) : {}",
+            coin.as_ref().conf.ticker,
+            hex::encode(&tx_bytes),
+            e
+        ))
+    })?;
 
     let mut unspents = vec![];
 
@@ -3230,7 +3343,12 @@ pub fn wait_for_confirmations(
     coin: &UtxoCoinFields,
     input: ConfirmPaymentInput,
 ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-    let mut tx: UtxoTx = try_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!("{:?}", e)));
+    let mut tx: UtxoTx = try_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!(
+        "Failed to deserialize transaction (coin={}, hex={}) : {}",
+        coin.conf.ticker,
+        hex::encode(input.payment_tx.as_slice()),
+        e
+    )));
     tx.tx_hash_algo = coin.tx_hash_algo;
     coin.rpc_client.wait_for_confirmations(
         tx.hash().reversed().into(),
@@ -3297,7 +3415,12 @@ pub async fn wait_for_output_spend<T: AsRef<UtxoCoinFields> + Send + Sync + 'sta
     wait_until: u64,
     check_every: f64,
 ) -> TransactionResult {
-    let mut tx: UtxoTx = try_tx_s!(deserialize(tx_bytes).map_err(|e| ERRL!("{:?}", e)));
+    let mut tx: UtxoTx = try_tx_s!(deserialize(tx_bytes).map_err(|e| ERRL!(
+        "Failed to deserialize transaction (coin={}, hex={}) : {}",
+        coin.as_ref().conf.ticker,
+        hex::encode(tx_bytes),
+        e
+    )));
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
     wait_for_output_spend_impl(coin.as_ref(), &tx, output_index, from_block, wait_until, check_every)
@@ -3307,7 +3430,14 @@ pub async fn wait_for_output_spend<T: AsRef<UtxoCoinFields> + Send + Sync + 'sta
 }
 
 pub fn tx_enum_from_bytes(coin: &UtxoCoinFields, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
-    let mut transaction: UtxoTx = deserialize(bytes).map_to_mm(|e| TxMarshalingErr::InvalidInput(e.to_string()))?;
+    let mut transaction: UtxoTx = deserialize(bytes).map_to_mm(|e| {
+        TxMarshalingErr::InvalidInput(format!(
+            "Failed to deserialize transaction (coin={}, hex={}) : {}",
+            coin.conf.ticker,
+            hex::encode(bytes),
+            e
+        ))
+    })?;
 
     let serialized_length = transaction.tx_hex().len();
     if bytes.len() != serialized_length {
@@ -3345,8 +3475,24 @@ pub fn min_tx_amount(coin: &UtxoCoinFields) -> BigDecimal {
 }
 
 pub fn min_trading_vol(coin: &UtxoCoinFields) -> MmNumber {
-    let dust_multiplier = MmNumber::from(10);
-    dust_multiplier * min_tx_amount(coin).into()
+    let min_from_dust = coin.dust_amount * 10;
+
+    let fixed_fee_rate = match coin.tx_fee {
+        FeeRate::FixedPerKb(sats) => Some(ActualFeeRate::FixedPerKb(sats)),
+        FeeRate::FixedPerKbDingo(sats) => Some(ActualFeeRate::FixedPerKbDingo(sats)),
+        // The output of this function must be deterministic for the lifetime of
+        // an order / swap, we will use the dust-based calculation.
+        FeeRate::Dynamic(_) => None,
+    };
+
+    let min_from_fee = fixed_fee_rate.map_or(min_from_dust, |fee_rate| {
+        fee_rate.get_tx_fee(DEFAULT_SWAP_TX_SPEND_SIZE) * 10
+    });
+
+    // The final minimum volume must be large enough to satisfy both the dust and the fee constraints.
+    let min_vol_sats = std::cmp::max(min_from_dust, min_from_fee);
+
+    big_decimal_from_sat_unsigned(min_vol_sats, coin.decimals).into()
 }
 
 pub fn is_asset_chain(coin: &UtxoCoinFields) -> bool {
@@ -3931,7 +4077,12 @@ pub async fn tx_details_by_hash<T: UtxoCommonOps>(
 ) -> Result<TransactionDetails, String> {
     let ticker = &coin.as_ref().conf.ticker;
     let verbose_tx = try_s!(coin.as_ref().rpc_client.get_verbose_transaction(hash).compat().await);
-    let mut tx: UtxoTx = try_s!(deserialize(verbose_tx.hex.as_slice()).map_err(|e| ERRL!("{:?}", e)));
+    let mut tx: UtxoTx = try_s!(deserialize(verbose_tx.hex.as_slice()).map_err(|e| ERRL!(
+        "Failed to deserialize transaction (coin={}, hex={}) : {}",
+        ticker,
+        hex::encode(verbose_tx.hex.as_slice()),
+        e
+    )));
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
     let my_address = try_s!(coin.as_ref().derivation_method.single_addr_or_err().await);
 
@@ -4088,8 +4239,14 @@ where
                 .compat()
                 .await?;
             let tx = HistoryUtxoTx {
-                tx: deserialize(verbose.hex.as_slice())
-                    .map_to_mm(|e| UtxoRpcError::InvalidResponse(format!("{e:?}, tx: {tx_hash:?}")))?,
+                tx: deserialize(verbose.hex.as_slice()).map_to_mm(|e| {
+                    UtxoRpcError::InvalidResponse(format!(
+                        "Failed to deserialize transaction (coin={}, hex={}) : {}",
+                        coin.as_ref().conf.ticker,
+                        hex::encode(verbose.hex.as_slice()),
+                        e
+                    ))
+                })?,
                 height: verbose.height,
             };
             e.insert(tx)
@@ -4106,6 +4263,8 @@ where
 /// `actual_fee = input_amount - actual_output_amount` or `actual_fee = input_amount - output_amount + kmd_rewards`.
 /// Substitute [`TransactionDetails::fee`] to the last equation:
 /// `actual_fee = TransactionDetails::fee + kmd_rewards`
+///
+/// Note: This assumes that the KMD rewards is always claimed by us and thus sets the `claimed_by_me` field to true.
 pub async fn update_kmd_rewards<T>(
     coin: &T,
     tx_details: &mut TransactionDetails,
@@ -4123,8 +4282,15 @@ where
         return MmError::err(UtxoRpcError::Internal(error));
     }
 
-    let tx: UtxoTx = deserialize(tx_hex.as_slice())
-        .map_to_mm(|e| UtxoRpcError::Internal(format!("Error deserializing the {tx_hash:?} transaction hex: {e:?}")))?;
+    let tx: UtxoTx = deserialize(tx_hex.as_slice()).map_to_mm(|e| {
+        UtxoRpcError::Internal(format!(
+            "Failed to deserialize transaction (coin={}, hex={}, hash={}) : {}",
+            coin.as_ref().conf.ticker,
+            hex::encode(tx_hex.as_slice()),
+            tx_hash,
+            e
+        ))
+    })?;
     let kmd_rewards = coin.calc_interest_of_tx(&tx, input_transactions).await?;
     let kmd_rewards = big_decimal_from_sat_unsigned(kmd_rewards, coin.as_ref().decimals);
 
@@ -4136,14 +4302,7 @@ where
         }));
     }
 
-    // Todo: https://github.com/KomodoPlatform/komodo-defi-framework/issues/1625
-    let my_address = &coin.my_address().map_mm_err()?;
-    let claimed_by_me = tx_details.from.iter().all(|from| from == my_address) && tx_details.to.contains(my_address);
-
-    tx_details.kmd_rewards = Some(KmdRewardsDetails {
-        amount: kmd_rewards,
-        claimed_by_me,
-    });
+    tx_details.kmd_rewards = Some(KmdRewardsDetails::claimed_by_me(kmd_rewards));
     Ok(())
 }
 
@@ -4757,7 +4916,12 @@ async fn search_for_swap_output_spend(
     output_index: usize,
     search_from_block: u64,
 ) -> Result<Option<FoundSwapTxSpend>, String> {
-    let mut tx: UtxoTx = try_s!(deserialize(tx).map_err(|e| ERRL!("{:?}", e)));
+    let mut tx: UtxoTx = try_s!(deserialize(tx).map_err(|e| ERRL!(
+        "Failed to deserialize transaction (coin={}, hex={}) : {}",
+        coin.conf.ticker,
+        hex::encode(tx),
+        e
+    )));
     tx.tx_hash_algo = coin.tx_hash_algo;
     drop_mutability!(tx);
     if tx.outputs.is_empty() {
@@ -5562,6 +5726,22 @@ fn test_pubkey_from_script_sig() {
 
     let script_sig_err = Script::from("493044022071edae37cf518e98db3f7637b9073a7a980b957b0c7b871415dbb4898ec3ebdc022031b402a6b98e64ffdf752266449ca979a9f70144dba77ed7a6a25bfab11648f6012103ad6f89abc2e5beaa8a3ac28e22170659b3209fe2ddf439681b4b8f31508c36fa");
     pubkey_from_script_sig(&script_sig_err).unwrap_err();
+}
+
+#[test]
+fn test_pubkey_from_axe_script_sig() {
+    let script_sig = Script::from("45304202205fa91d3dc0c88b1b0c2b5ecdf08b49c0458b6f10ff6b758b82c1934210f367fc021e51a96cf672048a44fef3256ba9a061b408f842b6b523624c28d6b5bbd1680121023c5ba1d7ef6fa015eb33defb3aba2a961898a51bbb7ff30344d07ba75ad3f289");
+    let expected_pub = H264::from("023c5ba1d7ef6fa015eb33defb3aba2a961898a51bbb7ff30344d07ba75ad3f289");
+    let actual_pub = pubkey_from_script_sig(&script_sig).unwrap();
+    assert_eq!(expected_pub, actual_pub);
+}
+
+#[test]
+fn test_pubkey_from_empty_script_sig() {
+    let script_sig = Script::from("");
+    assert!(pubkey_from_script_sig(&script_sig).is_err());
+    let script_sig = Script::from("00");
+    assert!(pubkey_from_script_sig(&script_sig).is_err());
 }
 
 #[test]

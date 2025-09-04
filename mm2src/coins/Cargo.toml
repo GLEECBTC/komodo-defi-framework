@@ -5,7 +5,12 @@ edition = "2018"
 
 [features]
 zhtlc-native-tests = []
-enable-sia = ["dep:reqwest", "dep:blake2b_simd", "dep:sia-rust"]
+enable-sia = [
+	"dep:reqwest",
+	"dep:blake2b_simd",
+	"dep:sia-rust"
+]
+enable-solana = []
 default = []
 run-docker-tests = []
 for-tests = ["dep:mocktopus"]

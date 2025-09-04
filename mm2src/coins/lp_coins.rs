@@ -301,6 +301,9 @@ use crate::coin_balance::{BalanceObjectOps, HDWalletBalanceObject};
 use crate::hd_wallet::{AddrToString, DisplayAddress};
 use z_coin::{ZCoin, ZcoinProtocolInfo};
 
+#[cfg(feature = "enable-solana")]
+pub mod solana;
+
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
 pub type TransactionResult = Result<TransactionEnum, TransactionErr>;
 pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;
@@ -2170,8 +2173,8 @@ pub trait MarketCoinOps {
         Box::new(self.my_balance().map(|CoinBalance { spendable, .. }| spendable))
     }
 
-    /// Base coin balance for tokens, e.g. ETH balance in ERC20 case
-    fn base_coin_balance(&self) -> BalanceFut<BigDecimal>;
+    /// Platform coin balance for tokens, e.g. ETH balance in ERC20 case
+    fn platform_coin_balance(&self) -> BalanceFut<BigDecimal>;
 
     fn platform_ticker(&self) -> &str;
 
@@ -3723,6 +3726,8 @@ pub enum MmCoinEnum {
     LightningCoin(LightningCoin),
     #[cfg(feature = "enable-sia")]
     SiaCoin(SiaCoin),
+    #[cfg(feature = "enable-solana")]
+    Solana(solana::SolanaCoin),
     #[cfg(any(test, feature = "for-tests"))]
     Test(TestCoin),
 }
@@ -3789,6 +3794,13 @@ impl From<LightningCoin> for MmCoinEnum {
     }
 }
 
+#[cfg(feature = "enable-solana")]
+impl From<solana::SolanaCoin> for MmCoinEnum {
+    fn from(c: solana::SolanaCoin) -> MmCoinEnum {
+        MmCoinEnum::Solana(c)
+    }
+}
+
 impl From<ZCoin> for MmCoinEnum {
     fn from(c: ZCoin) -> MmCoinEnum {
         MmCoinEnum::ZCoin(c)
@@ -3820,6 +3832,8 @@ impl Deref for MmCoinEnum {
             MmCoinEnum::ZCoin(ref c) => c,
             #[cfg(feature = "enable-sia")]
             MmCoinEnum::SiaCoin(ref c) => c,
+            #[cfg(feature = "enable-solana")]
+            MmCoinEnum::Solana(ref c) => c,
             #[cfg(any(test, feature = "for-tests"))]
             MmCoinEnum::Test(ref c) => c,
         }
@@ -4300,6 +4314,8 @@ impl CoinsContext {
 }
 
 /// This enum is used in coin activation requests.
+/// TODO: should we use #[serde(tag = "type", content = "params")] for this PrivKeyActivationPolicy like for the Eth policy,
+/// to have them identical in activation requests
 #[derive(Clone, Debug, Deserialize, Serialize, Default)]
 pub enum PrivKeyActivationPolicy {
     #[default]

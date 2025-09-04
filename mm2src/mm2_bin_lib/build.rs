@@ -12,6 +12,7 @@ fn version_tag() -> Result<String, String> {
     }
 
     let output = Command::new("git")
+        .current_dir("../../")
         .args(["log", "--pretty=format:%h", "-n1"])
         .output()
         .map_err(|e| format!("Failed to run git command: {e}\nSet `KDF_BUILD_TAG` manually instead.",))?;
@@ -48,7 +49,7 @@ fn set_build_variables() -> Result<(), String> {
 fn main() {
     println!("cargo:rerun-if-env-changed=CARGO_PKG_VERSION");
     println!("cargo:rerun-if-env-changed=KDF_BUILD_TAG");
-    println!("cargo::rerun-if-changed=.git/HEAD");
+    println!("cargo::rerun-if-changed=../../.git/HEAD");
 
     set_build_variables().expect("Failed to set build variables");
 }

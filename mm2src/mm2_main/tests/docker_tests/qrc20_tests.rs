@@ -26,6 +26,7 @@ use serde_json::{self as json, Value as Json};
 use std::convert::TryFrom;
 use std::process::Command;
 use std::str::FromStr;
+use std::sync::Mutex;
 use std::time::Duration;
 use testcontainers::clients::Cli;
 use testcontainers::core::WaitFor;
@@ -813,8 +814,7 @@ fn test_wait_for_tx_spend() {
     assert!(err.contains("Waited too long"));
 
     /// Also spends the maker payment and try to check if the wait_for_htlc_tx_spend() returns the correct tx
-    #[allow(static_mut_refs)]
-    static mut SPEND_TX: Option<TransactionEnum> = None;
+    static SPEND_TX: Mutex<Option<TransactionEnum>> = Mutex::new(None);
 
     let maker_pub_c = maker_pub.to_vec();
     let payment_hex = payment_tx_hex.clone();
@@ -831,7 +831,7 @@ fn test_wait_for_tx_spend() {
             watcher_reward: false,
         };
         let spend = block_on(taker_coin.send_taker_spends_maker_payment(taker_spends_payment_args)).unwrap();
-        unsafe { SPEND_TX = Some(spend) }
+        *SPEND_TX.lock().unwrap() = Some(spend);
     });
 
     let wait_until = wait_until_sec(120);
@@ -846,7 +846,7 @@ fn test_wait_for_tx_spend() {
     }))
     .unwrap();
 
-    unsafe { assert_eq!(Some(found), SPEND_TX) }
+    assert_eq!(Some(found), *SPEND_TX.lock().unwrap());
 }
 
 #[test]

@@ -12,6 +12,8 @@ mod prelude;
 #[cfg(feature = "enable-sia")]
 mod sia_coin_activation;
 mod slp_token_activation;
+#[cfg(feature = "enable-solana")]
+mod solana_with_assets;
 mod standalone_coin;
 mod tendermint_token_activation;
 mod tendermint_with_assets_activation;

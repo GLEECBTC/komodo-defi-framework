@@ -1,16 +1,20 @@
 use crate::proto::{
-    messages_ethereum as proto_ethereum, messages_ethereum_definitions as proto_ethereum_definitions, TrezorMessage,
+    messages_bitcoin as proto_bitcoin, messages_ethereum as proto_ethereum,
+    messages_ethereum_definitions as proto_ethereum_definitions, TrezorMessage,
 };
 use crate::response_processor::ProcessTrezorResponse;
 use crate::result_handler::ResultHandler;
-use crate::{serialize_derivation_path, OperationFailure, TrezorError, TrezorResponse, TrezorResult, TrezorSession};
+use crate::{
+    ecdsa_curve_to_string, serialize_derivation_path, OperationFailure, TrezorError, TrezorResponse, TrezorResult,
+    TrezorSession,
+};
 use ethcore_transaction::{
     eip155_methods::check_replay_protection, Action, Eip1559Transaction, LegacyTransaction, TransactionShared,
     TransactionWrapper, UnverifiedTransactionWrapper,
 };
 use ethereum_types::H256;
 use ethkey::Signature;
-use hw_common::primitives::{DerivationPath, XPub};
+use hw_common::primitives::{DerivationPath, EcdsaCurve, XPub};
 use lazy_static::lazy_static;
 use mm2_err_handle::map_mm_error::MapMmError;
 use mm2_err_handle::map_to_mm::MapToMmResult;
@@ -25,6 +29,7 @@ type StaticAddressBytes = &'static [u8];
 // new supported eth networks:
 const SEPOLIA_ID: u64 = 11155111;
 const EIP2930_NOT_SUPPORTED_ERROR: &str = "EIP-2930 tx not supported for Trezor";
+const TREZOR_COIN_TO_GET_PUBKEY: &str = "Bitcoin";
 
 lazy_static! {
 
@@ -71,11 +76,11 @@ impl<'a> TrezorSession<'a> {
     /// Retrieves the EVM address associated with a given derivation path from the Trezor device.
     pub async fn get_eth_address<'b>(
         &'b mut self,
-        derivation_path: DerivationPath,
+        derivation_path: &DerivationPath,
         show_display: bool,
     ) -> TrezorResult<TrezorResponse<'a, 'b, Option<String>>> {
         let req = proto_ethereum::EthereumGetAddress {
-            address_n: derivation_path.iter().map(|child| child.0).collect(),
+            address_n: serialize_derivation_path(derivation_path),
             show_display: Some(show_display),
             encoded_network: None,
             chunkify: None,
@@ -90,11 +95,18 @@ impl<'a> TrezorSession<'a> {
         derivation_path: &DerivationPath,
         show_display: bool,
     ) -> TrezorResult<TrezorResponse<'a, 'b, XPub>> {
-        let req = proto_ethereum::EthereumGetPublicKey {
+        // We cannot use the EthereumGetPublicKey message (broken in the Safe/Model T firmware),
+        // so we use bitcoin GetPublicKey msg instead.
+        // Apparently this should work as Bitcoin and Ethereum both use "m/44'"
+        let req = proto_bitcoin::GetPublicKey {
             address_n: serialize_derivation_path(derivation_path),
+            ecdsa_curve_name: Some(ecdsa_curve_to_string(EcdsaCurve::Secp256k1)),
             show_display: Some(show_display),
+            coin_name: Some(TREZOR_COIN_TO_GET_PUBKEY.to_string()),
+            script_type: None,
+            ignore_xpub_magic: Some(true),
         };
-        let result_handler = ResultHandler::new(|m: proto_ethereum::EthereumPublicKey| Ok(m.xpub));
+        let result_handler = ResultHandler::new(|m: proto_bitcoin::PublicKey| Ok(m.xpub));
         self.call(req, result_handler).await
     }
 

@@ -895,7 +895,7 @@ dependencies = [
  "num-traits",
  "parking_lot",
  "primitives",
- "prost",
+ "prost 0.12.6",
  "prost-build",
  "protobuf",
  "proxy_signature",
@@ -1111,7 +1111,7 @@ version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "82e23f6ab56d5f031cde05b8b82a5fefd3a1a223595c79e32317a97189e612bc"
 dependencies = [
- "prost",
+ "prost 0.12.6",
  "prost-types",
  "tendermint-proto",
 ]
@@ -4119,7 +4119,7 @@ dependencies = [
  "parking_lot",
  "primitive-types",
  "primitives",
- "prost",
+ "prost 0.12.6",
  "prost-build",
  "rand 0.6.5",
  "rand 0.7.3",
@@ -4232,7 +4232,7 @@ dependencies = [
  "mm2_number",
  "mm2_state_machine",
  "pin-project",
- "prost",
+ "prost 0.12.6",
  "rand 0.7.3",
  "rustls 0.21.10",
  "serde",
@@ -5055,7 +5055,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "deb1435c188b76130da55f17a466d252ff7b1418b2ad3e037d127b94e3411f29"
 dependencies = [
  "bytes",
- "prost-derive",
+ "prost-derive 0.12.6",
+]
+
+[[package]]
+name = "prost"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7231bd9b3d3d33c86b58adbac74b5ec0ad9f496b19d22801d773636feaa95f3d"
+dependencies = [
+ "bytes",
+ "prost-derive 0.14.1",
 ]
 
 [[package]]
@@ -5072,7 +5082,7 @@ dependencies = [
  "once_cell",
  "petgraph",
  "prettyplease",
- "prost",
+ "prost 0.12.6",
  "prost-types",
  "regex",
  "syn 2.0.87",
@@ -5093,12 +5103,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost-derive"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9120690fafc389a67ba3803df527d0ec9cbbc9cc45e4cc20b332996dfb672425"
+dependencies = [
+ "anyhow",
+ "itertools",
+ "proc-macro2",
+ "quote 1.0.37",
+ "syn 2.0.87",
+]
+
+[[package]]
 name = "prost-types"
 version = "0.12.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9091c90b0a32608e984ff2fa4091273cbdd755d54935c51d520887f4a1dbd5b0"
 dependencies = [
- "prost",
+ "prost 0.12.6",
 ]
 
 [[package]]
@@ -6927,7 +6950,7 @@ dependencies = [
  "k256",
  "num-traits",
  "once_cell",
- "prost",
+ "prost 0.12.6",
  "prost-types",
  "ripemd",
  "serde",
@@ -6967,7 +6990,7 @@ dependencies = [
  "flex-error",
  "num-derive",
  "num-traits",
- "prost",
+ "prost 0.12.6",
  "prost-types",
  "serde",
  "serde_bytes",
@@ -7314,7 +7337,7 @@ dependencies = [
  "hyper-timeout",
  "percent-encoding",
  "pin-project",
- "prost",
+ "prost 0.12.6",
  "rustls 0.21.10",
  "rustls-pemfile 1.0.2",
  "tokio",
@@ -7443,7 +7466,7 @@ dependencies = [
  "js-sys",
  "lazy_static",
  "mm2_err_handle",
- "prost",
+ "prost 0.14.1",
  "rand 0.7.3",
  "rpc_task",
  "serde",

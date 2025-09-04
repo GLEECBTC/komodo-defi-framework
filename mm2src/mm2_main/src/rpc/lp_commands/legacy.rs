@@ -19,6 +19,7 @@
 //  marketmaker
 //
 
+use coins::utxo::rpc_clients::ELECTRUM_REQUEST_TIMEOUT;
 use coins::{lp_coinfind, lp_coinfind_any, lp_coininit, CoinsContext, MmCoinEnum};
 use common::custom_futures::timeout::FutureTimerExt;
 use common::executor::Timer;
@@ -141,7 +142,7 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
 pub async fn electrum(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
     let coin: MmCoinEnum = try_s!(lp_coininit(&ctx, &ticker, &req).await);
-    let balance = match coin.my_balance().compat().timeout_secs(5.).await {
+    let balance = match coin.my_balance().compat().timeout_secs(ELECTRUM_REQUEST_TIMEOUT).await {
         Ok(Ok(balance)) => balance,
         // If the coin was activated successfully but the balance query failed (most probably due to faulty
         // electrum servers), remove the coin as the whole request is a failure now from the POV of the GUI.

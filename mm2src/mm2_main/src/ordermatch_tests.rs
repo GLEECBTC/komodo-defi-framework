@@ -18,6 +18,7 @@ use rand::{seq::SliceRandom, thread_rng, Rng};
 use secp256k1::PublicKey;
 use std::collections::HashSet;
 use std::iter::{self, FromIterator};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 #[test]
@@ -1406,11 +1407,10 @@ fn lp_connect_start_bob_should_not_be_invoked_if_order_match_already_connected()
         .lock()
         .add_order(ctx.weak(), maker_order, None);
 
-    static mut CONNECT_START_CALLED: bool = false;
+    static CONNECT_START_CALLED: AtomicBool = AtomicBool::new(false);
+
     lp_connect_start_bob.mock_safe(|_, _, _, _| {
-        unsafe {
-            CONNECT_START_CALLED = true;
-        }
+        CONNECT_START_CALLED.store(true, Ordering::Relaxed);
 
         MockResult::Return(())
     });
@@ -1423,7 +1423,8 @@ fn lp_connect_start_bob_should_not_be_invoked_if_order_match_already_connected()
         PublicKey::from_slice(&prefixed_pub).unwrap().into(),
         connect,
     ));
-    assert!(unsafe { !CONNECT_START_CALLED });
+
+    assert!(!CONNECT_START_CALLED.load(Ordering::Relaxed));
 }
 
 #[test]
@@ -1443,7 +1444,7 @@ fn should_process_request_only_once() {
     let request: TakerRequest = json::from_str(
         r#"{"base":"ETH","rel":"JST","base_amount":"0.1","base_amount_rat":[[1,[1]],[1,[10]]],"rel_amount":"0.2","rel_amount_rat":[[1,[1]],[1,[5]]],"action":"Buy","uuid":"2f9afe84-7a89-4194-8947-45fba563118f","method":"request","sender_pubkey":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3","dest_pub_key":"0000000000000000000000000000000000000000000000000000000000000000","match_by":{"type":"Any"}}"#,
     ).unwrap();
-    block_on(process_taker_request(ctx, Default::default(), request));
+    block_on(process_taker_request(ctx, request));
     let maker_orders = &ordermatch_ctx.maker_orders_ctx.lock().orders;
     let order = block_on(maker_orders.get(&uuid).unwrap().lock());
     // when new request is processed match is replaced with new instance resetting
@@ -3508,4 +3509,71 @@ fn test_maker_order_balance_loops() {
     maker_orders_ctx.remove_order(&morty_order.uuid);
     assert!(!maker_orders_ctx.balance_loop_exists(morty_ticker));
     assert_eq!(*maker_orders_ctx.count_by_tickers.get(morty_ticker).unwrap(), 0);
+}
+
+#[test]
+fn process_orders_keep_alive_with_null_root_clears_pair_and_does_not_request() {
+    let (ctx, _our_pubkey, _our_secret) = make_ctx_for_tests();
+    let (maker_pubkey, maker_secret) = pubkey_and_secret_for_test("maker-passphrase");
+
+    // Build one remote order from maker_pubkey for RICK/MORTY and insert it locally.
+    let mut orders = make_random_orders(maker_pubkey.clone(), &maker_secret, "RICK".into(), "MORTY".into(), 1);
+    let order = orders.pop().expect("one order generated");
+    let inserted_uuid = order.uuid;
+
+    {
+        let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
+        let mut orderbook = ordermatch_ctx.orderbook.lock();
+
+        // Mark the pair as subscribed so keep-alive handling considers it.
+        orderbook.topics_subscribed_to.insert(
+            orderbook_topic_from_base_rel("RICK", "MORTY"),
+            OrderbookRequestingState::Requested,
+        );
+
+        // Insert as if it came from the network; this updates trie state as well.
+        orderbook.insert_or_update_order_update_trie(order);
+
+        // Sanity: the order is present.
+        assert!(
+            orderbook.order_set.contains_key(&inserted_uuid),
+            "precondition: order must be present"
+        );
+    }
+
+    // Craft a keep-alive that advertises a null/empty root for (maker_pubkey, alb_pair).
+    let alb_pair = alb_ordered_pair("RICK", "MORTY");
+    let keep_alive = PubkeyKeepAlive {
+        trie_roots: HashMap::from_iter(std::iter::once((alb_pair.clone(), [0u8; 8]))),
+        timestamp: now_sec(),
+    };
+
+    // For a null root, we must clear the pair locally and NOT request a sync.
+    let res = block_on(process_orders_keep_alive(
+        ctx.clone(),
+        "dummy_peer".to_string(),
+        maker_pubkey.clone(),
+        keep_alive,
+        false,
+    ));
+    assert!(res.is_ok(), "process_orders_keep_alive returned error");
+
+    // The order must be gone now.
+    let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
+    let orderbook = ordermatch_ctx.orderbook.lock();
+    assert!(
+        !orderbook.order_set.contains_key(&inserted_uuid),
+        "orders for (pubkey, pair) must be cleared by null-root keep-alive"
+    );
+
+    // And the remembered trie root for that pair should be the null root.
+    let state = orderbook
+        .pubkeys_state
+        .get(&maker_pubkey)
+        .expect("pubkey state missing");
+    assert_eq!(
+        state.trie_roots.get(&alb_pair).copied(),
+        Some([0u8; 8]),
+        "null root should be remembered in pubkey state"
+    );
 }

@@ -83,6 +83,7 @@ pub enum EthActivationV2Error {
     // TODO: Map WalletConnectError to distinct error categories (transport, invalid payload) after refactoring.
     #[from_stringify("WalletConnectError")]
     WalletConnectError(String),
+    PlatformCoinMismatch,
 }
 
 impl From<MyAddressError> for EthActivationV2Error {
@@ -123,6 +124,7 @@ impl From<EthTokenActivationError> for EthActivationV2Error {
             },
             EthTokenActivationError::PrivKeyPolicyNotAllowed(e) => EthActivationV2Error::PrivKeyPolicyNotAllowed(e),
             EthTokenActivationError::CustomTokenError(e) => EthActivationV2Error::CustomTokenError(e),
+            EthTokenActivationError::PlatformCoinMismatch => EthActivationV2Error::PlatformCoinMismatch,
         }
     }
 }
@@ -262,6 +264,7 @@ pub enum EthTokenActivationError {
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     CustomTokenError(CustomTokenError),
+    PlatformCoinMismatch,
 }
 
 impl From<AbortedError> for EthTokenActivationError {

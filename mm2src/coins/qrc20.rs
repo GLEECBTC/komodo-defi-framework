@@ -1150,7 +1150,7 @@ impl MarketCoinOps for Qrc20Coin {
         };
         Box::new(fut.boxed().compat())
     }
-    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
+    fn platform_coin_balance(&self) -> BalanceFut<BigDecimal> {
         // use standard UTXO my_balance implementation that returns Qtum balance instead of QRC20
         Box::new(utxo_common::my_balance(self.clone()).map(|CoinBalance { spendable, .. }| spendable))
     }

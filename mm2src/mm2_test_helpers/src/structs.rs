@@ -1242,3 +1242,31 @@ pub struct CreateConnectionResponse {
 pub struct GetSessionResponse {
     pub session: Option<kdf_walletconnect::session::SessionRpcInfo>,
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SpentUtxo {
+    pub txid: String,
+    pub vout: u32,
+    pub value: BigDecimal,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ConsolidateUtxoResponse {
+    pub tx: TransactionDetails,
+    pub consolidated_utxos: Vec<SpentUtxo>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AddressUtxos {
+    pub address: String,
+    pub count: usize,
+    pub utxos: Vec<SpentUtxo>,
+    pub derivation_path: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FetchUtxosResponse {
+    pub total_count: usize,
+    pub addresses: Vec<AddressUtxos>,
+}

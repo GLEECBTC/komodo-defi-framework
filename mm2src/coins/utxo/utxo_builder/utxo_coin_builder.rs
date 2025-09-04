@@ -519,6 +519,9 @@ pub trait UtxoCoinBuilderCommonOps {
 
     fn ticker(&self) -> &str;
 
+    /// This function basically defines 'my address' format (so whether a coin is segwit or not)
+    /// For that it looks for the "address_format" property first in the activation request then in the coins file.
+    /// This fn is called to set the address format in the derivaion_method in UtxoCoinFields, which creates my address.
     fn address_format(&self) -> UtxoCoinBuildResult<UtxoAddressFormat> {
         let format_from_req = self.activation_params().address_format.clone();
         let format_from_conf = json::from_value::<Option<UtxoAddressFormat>>(self.conf()["address_format"].clone())

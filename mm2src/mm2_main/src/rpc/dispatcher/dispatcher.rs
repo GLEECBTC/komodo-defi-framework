@@ -36,6 +36,8 @@ use coins::eth::EthCoin;
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
 use coins::rpc_command::{
     account_balance::account_balance,
+    consolidate_utxos::consolidate_utxos_rpc,
+    fetch_utxos::fetch_utxos_rpc,
     get_current_mtp::get_current_mtp_rpc,
     get_enabled_coins::get_enabled_coins_rpc,
     get_new_address::{
@@ -224,6 +226,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "get_token_allowance" => handle_mmrpc(ctx, request, get_token_allowance_rpc).await,
         "best_orders" => handle_mmrpc(ctx, request, best_orders_rpc_v2).await,
         "clear_nft_db" => handle_mmrpc(ctx, request, clear_nft_db).await,
+        "consolidate_utxos" => handle_mmrpc(ctx, request, consolidate_utxos_rpc).await,
         "delete_wallet" => handle_mmrpc(ctx, request, delete_wallet_rpc).await,
         "enable_bch_with_tokens" => handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<BchCoin>).await,
         "enable_slp" => handle_mmrpc(ctx, request, enable_token::<SlpToken>).await,
@@ -234,6 +237,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
             handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<TendermintCoin>).await
         },
         "enable_tendermint_token" => handle_mmrpc(ctx, request, enable_token::<TendermintToken>).await,
+        "fetch_utxos" => handle_mmrpc(ctx, request, fetch_utxos_rpc).await,
         "get_current_mtp" => handle_mmrpc(ctx, request, get_current_mtp_rpc).await,
         "get_enabled_coins" => handle_mmrpc(ctx, request, get_enabled_coins_rpc).await,
         "get_locked_amount" => handle_mmrpc(ctx, request, get_locked_amount_rpc).await,

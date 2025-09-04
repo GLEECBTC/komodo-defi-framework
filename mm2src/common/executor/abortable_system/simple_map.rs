@@ -147,14 +147,16 @@ impl<FutureId: FutureIdTrait> SimpleMapInnerState<FutureId> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
     use super::*;
     use crate::block_on;
     use crate::executor::Timer;
 
     #[test]
     fn test_abort_all() {
-        static mut F1_FINISHED: bool = false;
-        static mut F2_FINISHED: bool = false;
+        static F1_FINISHED: AtomicBool = AtomicBool::new(false);
+        static F2_FINISHED: AtomicBool = AtomicBool::new(false);
 
         let abortable_system = AbortableSimpleMap::default();
         let mut guard = abortable_system.lock();
@@ -162,7 +164,7 @@ mod tests {
         guard
             .spawn_or_ignore("F1".to_string(), async move {
                 Timer::sleep(0.1).await;
-                unsafe { F1_FINISHED = true };
+                F1_FINISHED.store(true, Ordering::Relaxed);
             })
             .unwrap();
         assert_eq!(guard.contains("F1"), Ok(true));
@@ -170,7 +172,7 @@ mod tests {
         guard
             .spawn_or_ignore("F2".to_string(), async move {
                 Timer::sleep(0.5).await;
-                unsafe { F2_FINISHED = true };
+                F2_FINISHED.store(true, Ordering::Relaxed);
             })
             .unwrap();
 
@@ -179,15 +181,13 @@ mod tests {
         abortable_system.abort_all().unwrap();
         block_on(Timer::sleep(0.4));
 
-        unsafe {
-            assert!(F1_FINISHED);
-            assert!(!F2_FINISHED);
-        }
+        assert!(F1_FINISHED.load(Ordering::Relaxed));
+        assert!(!F2_FINISHED.load(Ordering::Relaxed));
     }
 
     #[test]
     fn test_abort_future() {
-        static mut F1_FINISHED: bool = false;
+        static F1_FINISHED: AtomicBool = AtomicBool::new(false);
 
         let abortable_system = AbortableSimpleMap::default();
         let mut guard = abortable_system.lock();
@@ -195,7 +195,7 @@ mod tests {
         guard
             .spawn_or_ignore("F1".to_string(), async move {
                 Timer::sleep(0.2).await;
-                unsafe { F1_FINISHED = true };
+                F1_FINISHED.store(true, Ordering::Relaxed);
             })
             .unwrap();
 
@@ -208,35 +208,31 @@ mod tests {
 
         block_on(Timer::sleep(0.3));
 
-        unsafe {
-            assert!(!F1_FINISHED);
-        }
+        assert!(!F1_FINISHED.load(Ordering::Relaxed));
     }
 
     #[test]
     fn test_spawn_twice() {
-        static mut F1_FINISHED: bool = false;
-        static mut F1_COPY_FINISHED: bool = false;
+        static F1_FINISHED: AtomicBool = AtomicBool::new(false);
+        static F1_COPY_FINISHED: AtomicBool = AtomicBool::new(false);
 
         let abortable_system = AbortableSimpleMap::default();
         let mut guard = abortable_system.lock();
 
         let fut_1 = async move {
-            unsafe { F1_FINISHED = true };
+            F1_FINISHED.store(true, Ordering::Relaxed);
         };
         guard.spawn_or_ignore("F1".to_string(), fut_1).unwrap();
 
         let fut_2 = async move {
-            unsafe { F1_COPY_FINISHED = true };
+            F1_COPY_FINISHED.store(true, Ordering::Relaxed);
         };
         guard.spawn_or_ignore("F1".to_string(), fut_2).unwrap();
 
         drop(guard);
         block_on(Timer::sleep(0.1));
 
-        unsafe {
-            assert!(F1_FINISHED);
-            assert!(!F1_COPY_FINISHED);
-        }
+        assert!(F1_FINISHED.load(Ordering::Relaxed));
+        assert!(!F1_COPY_FINISHED.load(Ordering::Relaxed));
     }
 }

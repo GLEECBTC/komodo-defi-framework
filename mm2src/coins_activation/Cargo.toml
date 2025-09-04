@@ -8,6 +8,7 @@ doctest = false
 
 [features]
 enable-sia = []
+enable-solana = []
 default = []
 for-tests = []
 
