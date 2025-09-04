@@ -2203,7 +2203,7 @@ fn set_price_with_cancel_previous_should_broadcast_cancelled_message() {
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
     block_on(mm_bob.wait_for_log(10., |log| log.contains("maker_order_cancelled_p2p_notify called")))
-        .expect("Cancel broadcast not seen in Bob’s logs within the expected time");
+        .expect("Cancel broadcast not seen in Bob's logs within the expected time");
 
     block_on(mm_alice.wait_for_log(10., |log| {
         log.contains("received ordermatch message MakerOrderCancelled")

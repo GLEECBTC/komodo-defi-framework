@@ -944,7 +944,7 @@ fn process_get_orderbook_request(ctx: MmArc, base: String, rel: String) -> Resul
                 pubkey
             ))?;
 
-            let pubkey_last_seen = pubkey_state.pair_last_seen_local.values().copied().max().unwrap_or(0);
+            let pubkey_last_seen = pubkey_state.pair_last_seen_local.values().max().copied().unwrap_or(0);
 
             let item = GetOrderbookPubkeyItem {
                 last_keep_alive: pubkey_last_seen,
