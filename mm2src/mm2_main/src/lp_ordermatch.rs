@@ -528,27 +528,37 @@ fn process_maker_order_cancelled(ctx: &MmArc, from_pubkey: String, cancelled_msg
     orderbook
         .recently_cancelled
         .insert_expirable(uuid, from_pubkey.clone(), RECENTLY_CANCELLED_TIMEOUT);
-    if let Some(order) = orderbook.order_set.get(&uuid) {
-        if order.pubkey == from_pubkey {
-            orderbook.remove_order_trie_update(uuid);
+
+    let maybe_pair = orderbook
+        .order_set
+        .get(&uuid)
+        .filter(|o| o.pubkey == from_pubkey)
+        .map(|o| alb_ordered_pair(&o.base, &o.rel));
+
+    if let Some(alb_pair) = maybe_pair {
+        orderbook.remove_order_trie_update(uuid);
+
+        // Advance the per-pair maker timestamp floor to the cancel timestamp
+        // so any earlier keep-alive for this pair will be rejected as stale.
+        //
+        // Note: we do NOT refresh liveness (pair_last_seen_local) here.
+        // Liveness is refreshed only when we accept state-carrying messages
+        // (e.g., a keep-alive that matches the expected root, a validated sync,
+        // a MakerOrderCreated/Updated, or a full-trie fill), not on cancel.
+        let state = pubkey_state_mut(&mut orderbook.pubkeys_state, &from_pubkey);
+        state
+            .latest_root_timestamp_by_pair
+            .insert(alb_pair.clone(), cancelled_msg.timestamp);
+
+        // If this cancel emptied the pair (root is zero/hashed-null), drop liveness for this pair.
+        // This mirrors the zero-root keep-alive path and allows faster GC of empty pairs.
+        if let Some(&pair_root) = state.trie_roots.get(&alb_pair) {
+            if pair_root == H64::default() || pair_root == hashed_null_node::<Layout>() {
+                state.pair_last_seen_local.remove(&alb_pair);
+            }
         }
     }
 }
-
-// fn verify_pubkey_orderbook(orderbook: &GetOrderbookPubkeyItem) -> Result<(), String> {
-//     let keys: Vec<(_, _)> = orderbook
-//         .orders
-//         .iter()
-//         .map(|(uuid, order)| {
-//             let order_bytes = rmp_serde::to_vec(&order).expect("Serialization should never fail");
-//             (uuid.as_bytes(), Some(order_bytes))
-//         })
-//         .collect();
-//     let (orders_root, proof) = &orderbook.pair_orders_trie_root;
-//     verify_trie_proof::<Layout, _, _, _>(orders_root, proof, &keys)
-//         .map_err(|e| ERRL!("Error on pair_orders_trie_root verification: {}", e))?;
-//     Ok(())
-// }
 
 // Some coins, for example ZHTLC, have privacy features like random keypair to sign P2P messages per every order.
 // So, each order of such coin has unique «pubkey» field that doesn’t match node persistent pubkey derived from passphrase.
