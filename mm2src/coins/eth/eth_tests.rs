@@ -976,7 +976,7 @@ fn test_eth_validate_valid_and_invalid_pubkey() {
 #[test]
 fn test_get_enabled_erc20_by_contract_and_platform() {
     use super::erc20::get_enabled_erc20_by_platform_and_contract;
-    use crate::rpc_command::get_enabled_coins::{get_enabled_coins_rpc, GetEnabledCoinsRequest};
+    use crate::rpc_command::get_enabled_coins::get_enabled_coins_rpc;
     const BNB_TOKEN: &str = "1INCH-BEP20";
     const ETH_TOKEN: &str = "1INCH-ERC20";
 
@@ -1081,7 +1081,7 @@ fn test_get_enabled_erc20_by_contract_and_platform() {
     });
     block_on(lp_coininit(&ctx, ETH_TOKEN, &req_eth_token)).unwrap();
 
-    let coins = block_on(get_enabled_coins_rpc(ctx.clone(), GetEnabledCoinsRequest)).unwrap();
+    let coins = block_on(get_enabled_coins_rpc(ctx.clone(), None)).unwrap();
     assert_eq!(coins.coins.len(), 2);
 
     let contract_address = Address::from_str("0x111111111117dC0aa78b770fA6A738034120C302").unwrap();
