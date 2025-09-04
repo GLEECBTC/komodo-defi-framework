@@ -1907,27 +1907,20 @@ where
                 .chain_id
                 .as_ref()
                 .ok_or_else(|| TransactionErr::Plain("Chain ID is not set".to_string()))?;
-            // Collect the outpoints of each P2PKH input.
+            // Collect the outpoints of each P2PKH input (non-witness ones).
             let prev_p2pkh_tx_hashes = spent_unspents
                 .iter()
                 .filter(|input| input.script.is_pay_to_public_key_hash())
                 .map(|input| input.outpoint.hash.reversed().into())
                 .collect();
             // Get the previous transactions that created these P2PKH inputs.
-            let prev_p2pkh_txs =
-                utxo_common::get_verbose_transactions_from_cache_or_rpc(coin.as_ref(), prev_p2pkh_tx_hashes)
-                    .await
-                    .map_err(|e| {
-                        TransactionErr::Plain(format!("Failed to get previous transactions for P2PKH inputs: {e}"))
-                    })?
-                    .into_iter()
-                    .map(|(hash, tx)| Ok((hash.reversed().into(), deserialize(tx.into_inner().hex.as_slice())?)))
-                    .collect::<Result<_, SerError>>()
-                    .map_err(|e| {
-                        TransactionErr::Plain(format!(
-                    "Failed to deserialize a previous transaction in preparation for WalletConnect P2PKH signing: {e}"
-                ))
-                    })?;
+            let prev_p2pkh_txs_rpc_format = try_tx_s!(
+                utxo_common::get_verbose_transactions_from_cache_or_rpc(coin.as_ref(), prev_p2pkh_tx_hashes).await
+            );
+            let prev_p2pkh_txs = try_tx_s!(prev_p2pkh_txs_rpc_format
+                .into_iter()
+                .map(|(hash, tx)| Ok((hash.reversed().into(), deserialize(tx.into_inner().hex.as_slice())?)))
+                .collect::<Result<_, SerError>>());
             try_tx_s!(
                 sign_p2pkh_with_walletconnect(&wc_ctx, session_topic, chain_id, &my_address, &unsigned, prev_p2pkh_txs)
                     .await
