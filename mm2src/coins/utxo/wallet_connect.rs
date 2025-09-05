@@ -251,6 +251,7 @@ pub async fn sign_p2sh_with_walletconnect(
     psbt.inputs[0].non_witness_utxo = Some(prev_tx.into());
     // We need to provide the redeem script as it's used in the signing process.
     psbt.inputs[0].redeem_script = Some(redeem_script.take().into());
+    // TODO: Check whether we should put `fork_id` here or not. When we support a `fork_id`-based chain in WalletConnect.
     psbt.inputs[0].sighash_type = Some(EcdsaSighashType::All.into());
 
     // Ask WalletConnect to sign the PSBT for us.
@@ -374,6 +375,7 @@ pub async fn sign_p2pkh_with_walletconnect(
                 input.prev_script
             )));
         }
+        // TODO: Check whether we should put `fork_id` here or not. When we support a `fork_id`-based chain in WalletConnect.
         psbt_input.sighash_type = Some(EcdsaSighashType::All.into());
     }
 
