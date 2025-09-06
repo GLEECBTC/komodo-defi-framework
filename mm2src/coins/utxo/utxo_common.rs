@@ -1766,8 +1766,7 @@ pub async fn send_maker_spends_taker_payment<T: UtxoCommonOps + SwapOps>(
         script_pubkey,
     };
 
-    let signer = P2SHSigner::try_from_coin(&coin, args.swap_unique_data)
-        .map_err(|e| TransactionErr::Plain(ERRL!("Failed to create P2SHSigner: {}", e)))?;
+    let signer = try_tx_s!(P2SHSigner::try_from_coin(&coin, args.swap_unique_data));
 
     let input = P2SHSpendingTxInput {
         prev_transaction,
@@ -2015,8 +2014,7 @@ pub async fn send_taker_spends_maker_payment<T: UtxoCommonOps + SwapOps>(
         script_pubkey,
     };
 
-    let signer = P2SHSigner::try_from_coin(&coin, args.swap_unique_data)
-        .map_err(|e| TransactionErr::Plain(ERRL!("Failed to create P2SHSigner: {}", e)))?;
+    let signer = try_tx_s!(P2SHSigner::try_from_coin(&coin, args.swap_unique_data));
 
     let input = P2SHSpendingTxInput {
         prev_transaction,
@@ -2077,8 +2075,7 @@ pub async fn refund_htlc_payment<T: UtxoCommonOps + SwapOps>(
         script_pubkey,
     };
 
-    let signer = P2SHSigner::try_from_coin(&coin, args.swap_unique_data)
-        .map_err(|e| TransactionErr::Plain(ERRL!("Failed to create P2SHSigner: {}", e)))?;
+    let signer = try_tx_s!(P2SHSigner::try_from_coin(&coin, args.swap_unique_data));
 
     let input = P2SHSpendingTxInput {
         prev_transaction,
