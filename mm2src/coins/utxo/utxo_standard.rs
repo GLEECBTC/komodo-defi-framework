@@ -853,7 +853,8 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
 
 impl CommonSwapOpsV2 for UtxoStandardCoin {
     fn derive_htlc_pubkey_v2(&self, swap_unique_data: &[u8]) -> Self::Pubkey {
-        *self.derive_htlc_key_pair(swap_unique_data).public()
+        let pubkey_bytes = self.derive_htlc_pubkey(swap_unique_data);
+        Public::Compressed(pubkey_bytes.into())
     }
 
     #[inline(always)]
