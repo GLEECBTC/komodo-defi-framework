@@ -5305,11 +5305,14 @@ pub fn derive_htlc_key_pair(coin: &UtxoCoinFields, _swap_unique_data: &[u8]) -> 
 pub fn derive_htlc_pubkey(coin: &UtxoCoinFields, swap_unique_data: &[u8]) -> [u8; 33] {
     match coin.priv_key_policy {
         PrivKeyPolicy::WalletConnect { public_key, .. } => public_key.0,
-        _ => derive_htlc_key_pair(coin, swap_unique_data)
+        PrivKeyPolicy::HDWallet { .. } | PrivKeyPolicy::Iguana { .. } => derive_htlc_key_pair(coin, swap_unique_data)
             .public_slice()
             .to_vec()
             .try_into()
             .expect("valid pubkey length"),
+        PrivKeyPolicy::Trezor => panic!("`PrivKeyPolicy::Trezor` is not supported for UTXO coins"),
+        #[cfg(target_arch = "wasm32")]
+        PrivKeyPolicy::Metamask(_) => panic!("`PrivKeyPolicy::Metamask` is not supported for UTXO coins"),
     }
 }
 
