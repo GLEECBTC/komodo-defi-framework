@@ -151,9 +151,22 @@ pub async fn get_pubkey_via_walletconnect_signature(
 /// The response from WalletConnect for `signPsbt` request.
 #[derive(Deserialize)]
 struct SignedPsbt {
-    psbt: String,
+    #[serde(deserialize_with = "base64_serde::deserialize")]
+    psbt: Vec<u8>,
     #[expect(dead_code)]
     txid: Option<String>,
+}
+
+mod base64_serde {
+    use base64::Engine;
+    use serde::{Deserialize, Deserializer};
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+        let base64 = String::deserialize(d)?;
+        super::BASE64_ENGINE
+            .decode(base64.as_bytes())
+            .map_err(serde::de::Error::custom)
+    }
 }
 
 /// The parameters used to instruct WalletConnect how to sign a specific input in a PSBT.
@@ -197,12 +210,7 @@ async fn sign_psbt(
         .send_session_request_and_wait(session_topic, chain_id, WcRequestMethods::UtxoSignPsbt, params)
         .await?;
 
-    let signed_psbt = BASE64_ENGINE.decode(signed_psbt.psbt).map_to_mm(|e| {
-        WalletConnectError::InternalError(format!(
-            "Bad base64 encoding of the signed PSBT from WalletConnect: {e}"
-        ))
-    })?;
-    let signed_psbt = Psbt::consensus_decode(&mut &signed_psbt[..]).map_to_mm(|e| {
+    let signed_psbt = Psbt::consensus_decode(&mut &signed_psbt.psbt[..]).map_to_mm(|e| {
         WalletConnectError::InternalError(format!("Failed to parse signed PSBT from WalletConnect: {e}"))
     })?;
 
