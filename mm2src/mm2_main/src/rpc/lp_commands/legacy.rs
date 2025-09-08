@@ -194,36 +194,14 @@ pub async fn enable(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> 
     Ok(res)
 }
 
-#[cfg(target_arch = "wasm32")]
-pub fn help() -> HyRes {
-    rpc_response(
-        INTERNAL_SERVER_ERROR_CODE,
-        json!({
-            "error":"'help' is only supported in native mode"
-        })
-        .to_string(),
-    )
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn help() -> HyRes {
+pub fn help(ctx: MmArc) -> HyRes {
     rpc_response(
         RESPONSE_OK_STATUS_CODE,
-        "
-        buy(base, rel, price, relvolume, timeout=10, duration=3600)
-        electrum(coin, urls)
-        enable(coin, urls, swap_contract_address)
-        myprice(base, rel)
-        my_balance(coin)
-        my_swap_status(params/uuid)
-        orderbook(base, rel, duration=3600)
-        sell(base, rel, price, basevolume, timeout=10, duration=3600)
-        send_raw_transaction(coin, tx_hex)
-        setprice(base, rel, price, broadcast=1)
-        stop()
-        version
-        withdraw(coin, amount, to)
-    ",
+        json!({
+            "result": "Please visit https://komodoplatform.com/en/docs/komodo-defi-framework/api for the API documentation.",
+            "version": &ctx.mm_version,
+        })
+        .to_string(),
     )
 }
 
