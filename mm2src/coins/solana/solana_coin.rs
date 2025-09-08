@@ -109,6 +109,8 @@ impl SolanaCoin {
             });
         }
 
+        // TODO: This isn't fully right and needs to be fixed before prod.
+        // ref: https://github.com/KomodoPlatform/komodo-defi-framework/pull/2598#discussion_r2311756777
         let priv_key = match priv_key_policy {
             PrivKeyBuildPolicy::IguanaPrivKey(priv_key) => priv_key,
             PrivKeyBuildPolicy::Trezor => {
