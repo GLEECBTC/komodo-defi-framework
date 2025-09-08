@@ -17,6 +17,7 @@ track-ctx-pointer = ["shared_ref_counter/enable", "shared_ref_counter/log"]
 arrayref.workspace = true
 async-trait.workspace = true
 backtrace.workspace = true
+base64.workspace = true
 bytes.workspace = true
 cfg-if.workspace = true
 compatible-time.workspace = true

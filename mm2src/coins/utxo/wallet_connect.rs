@@ -151,20 +151,10 @@ pub async fn get_pubkey_via_walletconnect_signature(
 /// The response from WalletConnect for `signPsbt` request.
 #[derive(Deserialize)]
 struct SignedPsbt {
-    #[serde(deserialize_with = "base64_serde::deserialize")]
+    #[serde(deserialize_with = "common::seri::deserialize_base64")]
     psbt: Vec<u8>,
     #[expect(dead_code)]
     txid: Option<String>,
-}
-
-mod base64_serde {
-    use base64::Engine;
-    use serde::{Deserialize, Deserializer};
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
-        let base64 = String::deserialize(d)?;
-        super::BASE64_ENGINE.decode(base64).map_err(serde::de::Error::custom)
-    }
 }
 
 /// The parameters used to instruct WalletConnect how to sign a specific input in a PSBT.
