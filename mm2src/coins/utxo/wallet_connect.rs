@@ -163,9 +163,7 @@ mod base64_serde {
 
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
         let base64 = String::deserialize(d)?;
-        super::BASE64_ENGINE
-            .decode(base64.as_bytes())
-            .map_err(serde::de::Error::custom)
+        super::BASE64_ENGINE.decode(base64).map_err(serde::de::Error::custom)
     }
 }
 
