@@ -343,8 +343,7 @@ impl Mm2TestConf {
                 "i_am_seed": true,
                 "wallet_name": wallet_name,
                 "wallet_password": wallet_password,
-                "is_bootstrap_node": true,
-                "passphrase": "",
+                "is_bootstrap_node": true
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }

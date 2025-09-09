@@ -250,7 +250,7 @@ impl MmCtx {
     }
 
     pub fn is_no_login_mode(&self) -> bool {
-        self.conf["passphrase"].is_null()
+        self.conf["passphrase"].is_null() && self.conf["wallet_name"].is_null()
     }
 
     #[cfg(not(target_arch = "wasm32"))]
