@@ -5765,6 +5765,33 @@ fn test_no_login() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
+fn test_no_login_get_private_keys() {
+    let coins = json!([rick_conf(), morty_conf()]);
+    let seednode_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
+    let seednode_conf = Mm2TestConf::seednode(&seednode_passphrase, &coins);
+    let seednode = MarketMakerIt::start(seednode_conf.conf, seednode_conf.rpc_password, None).unwrap();
+    let (_dump_log, _dump_dashboard) = seednode.mm_dump();
+    log!("log path: {}", seednode.log_path.display());
+
+    let no_login_conf = Mm2TestConf::no_login_node(&coins, &[&seednode.ip.to_string()]);
+    let mm = MarketMakerIt::start(no_login_conf.conf, no_login_conf.rpc_password, None).unwrap();
+
+    let rc = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "get_private_keys",
+        "mmrpc": "2.0",
+        "params": {
+            "coins": []
+        }
+    })))
+    .unwrap();
+
+    assert!(rc.0.is_client_error());
+    assert!(rc.1.contains("NotAllowedInNoLoginMode"));
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_gui_storage_accounts_functionality() {
     let passphrase = "test_gui_storage passphrase";
 
