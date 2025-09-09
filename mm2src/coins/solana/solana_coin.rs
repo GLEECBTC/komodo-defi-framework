@@ -21,11 +21,11 @@ use nom::AsBytes;
 use num_traits::Zero;
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as RpcBytes, H264 as RpcH264};
+use solana_keypair::keypair_from_seed;
 use solana_pubkey::Pubkey as SolanaAddress;
 use solana_rpc_client::rpc_client::RpcClient;
 use solana_rpc_client_types::request::TokenAccountsFilter;
-use solana_sdk::signature::keypair_from_seed;
-use solana_sdk::signer::Signer;
+use solana_signer::Signer;
 use url::Url;
 
 use crate::{
