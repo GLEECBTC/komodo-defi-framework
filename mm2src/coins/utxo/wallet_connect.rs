@@ -1,6 +1,7 @@
 //! This module provides functionality to interact with WalletConnect for UTXO-based coins.
 use std::{collections::HashMap, convert::TryFrom};
 
+use crate::utxo::utxo_common::DEFAULT_SWAP_VIN;
 use crate::utxo::{utxo_common, UtxoCoinFields};
 use crate::UtxoTx;
 use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
@@ -233,7 +234,7 @@ pub async fn sign_p2sh_with_walletconnect(
     })?;
 
     let mut tx_to_sign: UtxoTx = tx_input_signer.clone().into();
-    // Make sure we have exactly one input. We can later safely index inputs (by `[0]`) in the transaction and PSBT.
+    // Make sure we have exactly one input. We can later safely index inputs (by `[DEFAULT_SWAP_VIN]`) in the transaction and PSBT.
     if tx_to_sign.inputs.len() != 1 {
         return MmError::err(WalletConnectError::InternalError(
             "Expected exactly one input in the PSBT for P2SH signing".to_string(),
@@ -244,15 +245,15 @@ pub async fn sign_p2sh_with_walletconnect(
         WalletConnectError::InternalError(format!("Failed to create PSBT from unsigned transaction: {e}"))
     })?;
     // Since we are spending a P2SH input, we know for sure it's non-segwit.
-    psbt.inputs[0].non_witness_utxo = Some(prev_tx.into());
+    psbt.inputs[DEFAULT_SWAP_VIN].non_witness_utxo = Some(prev_tx.into());
     // We need to provide the redeem script as it's used in the signing process.
-    psbt.inputs[0].redeem_script = Some(redeem_script.take().into());
+    psbt.inputs[DEFAULT_SWAP_VIN].redeem_script = Some(redeem_script.take().into());
     // TODO: Check whether we should put `fork_id` here or not. When we support a `fork_id`-based chain in WalletConnect.
-    psbt.inputs[0].sighash_type = Some(EcdsaSighashType::All.into());
+    psbt.inputs[DEFAULT_SWAP_VIN].sighash_type = Some(EcdsaSighashType::All.into());
 
     // Ask WalletConnect to sign the PSBT for us.
     let inputs = vec![InputSigningParams {
-        index: 0,
+        index: DEFAULT_SWAP_VIN as u32,
         address: signing_address.clone(),
         sighash_types: vec![EcdsaSighashType::All as u8],
     }];
@@ -260,12 +261,12 @@ pub async fn sign_p2sh_with_walletconnect(
 
     // WalletConnect can't finalize the scriptSig for us since it doesn't have the unlocking script.
     // Thus, the signature for this input must be in the `partial_sigs` field.
-    let walletconnect_sig = signed_psbt.inputs[0]
+    let walletconnect_sig = signed_psbt.inputs[DEFAULT_SWAP_VIN]
         .partial_sigs
         .values()
         .next()
         .ok_or_else(|| WalletConnectError::InternalError("No signature found in the signed PSBT".to_string()))?;
-    let redeem_script = signed_psbt.inputs[0]
+    let redeem_script = signed_psbt.inputs[DEFAULT_SWAP_VIN]
         .redeem_script
         .as_ref()
         .ok_or_else(|| WalletConnectError::InternalError("No redeem script found in the signed PSBT".to_string()))?;
@@ -280,8 +281,8 @@ pub async fn sign_p2sh_with_walletconnect(
     final_script_sig.extend_from_slice(&redeem_script);
 
     // Sign the transaction input with the final scriptSig.
-    tx_to_sign.inputs[0].script_sig = final_script_sig;
-    tx_to_sign.inputs[0].script_witness = vec![];
+    tx_to_sign.inputs[DEFAULT_SWAP_VIN].script_sig = final_script_sig;
+    tx_to_sign.inputs[DEFAULT_SWAP_VIN].script_witness = vec![];
 
     Ok(tx_to_sign)
 }

@@ -1031,7 +1031,7 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxI
         P2SHSigner::KeyPair(key_pair) => {
             let signed_input = try_s!(p2sh_spend(
                 &unsigned,
-                DEFAULT_SWAP_VOUT,
+                DEFAULT_SWAP_VIN,
                 &key_pair,
                 input.script_data,
                 input.redeem_script.into(),

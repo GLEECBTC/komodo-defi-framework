@@ -10,7 +10,7 @@ use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::bch::BchCoin;
 use crate::utxo::bchd_grpc::{check_slp_transaction, validate_slp_utxos, ValidateSlpUtxosErr};
 use crate::utxo::rpc_clients::{UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcResult};
-use crate::utxo::utxo_common::{self, big_decimal_from_sat_unsigned, payment_script, UtxoTxBuilder};
+use crate::utxo::utxo_common::{self, big_decimal_from_sat_unsigned, payment_script, UtxoTxBuilder, DEFAULT_SWAP_VIN};
 use crate::utxo::{
     generate_and_send_tx, sat_from_big_decimal, ActualFeeRate, BroadcastTxErr, FeePolicy, GenerateTxError,
     RecentlySpentOutPointsGuard, UtxoCoinConf, UtxoCoinFields, UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps,
@@ -702,7 +702,7 @@ impl SlpToken {
             .map_mm_err()?;
 
         unsigned.lock_time = tx_locktime;
-        unsigned.inputs[0].sequence = input_sequence;
+        unsigned.inputs[DEFAULT_SWAP_VIN].sequence = input_sequence;
 
         let my_key_pair = self
             .platform_coin
@@ -712,7 +712,7 @@ impl SlpToken {
             .map_mm_err()?;
         let signed_p2sh_input = p2sh_spend(
             &unsigned,
-            0,
+            DEFAULT_SWAP_VIN,
             htlc_keypair,
             script_data,
             redeem_script,
