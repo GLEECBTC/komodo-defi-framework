@@ -993,84 +993,85 @@ fn test_get_enabled_erc20_by_contract_and_platform() {
 
     let conf = json!({
         "coins": [{
-      "coin": "BNB",
-      "name": "binancesmartchain",
-      "fname": "Binance Coin",
-      "avg_blocktime": 3,
-      "rpcport": 80,
-      "mm2": 1,
-      "use_access_list": true,
-      "max_eth_tx_type": 2,
-      "required_confirmations": 3,
-      "protocol": {
-        "type": "ETH",
-        "protocol_data": {
-            "chain_id": 56
-        }
-      },
-      "derivation_path": "m/44'/60'",
-      "trezor_coin": "Binance Smart Chain",
-      "links": {
-        "homepage": "https://www.binance.org"
-      }
-    },{
-      "coin": BNB_TOKEN,
-      "name": "1inch_bep20",
-      "fname": "1Inch",
-      "rpcport": 80,
-      "mm2": 1,
-      "avg_blocktime": 3,
-      "required_confirmations": 3,
-      "protocol": {
-        "type": "ERC20",
-        "protocol_data": {
-          "platform": "BNB",
-          "contract_address": "0x111111111117dC0aa78b770fA6A738034120C302"
-        }
-      },
-      "derivation_path": "m/44'/60'",
-      "use_access_list": true,
-      "max_eth_tx_type": 2,
-      "gas_limit": {
-          "eth_send_erc20": 60000,
-          "erc20_payment": 110000,
-          "erc20_receiver_spend": 85000,
-          "erc20_sender_refund": 85000
-      }
-    },{
-      "coin": "ETH",
-      "name": "ethereum",
-      "fname": "Ethereum",
-      "rpcport": 80,
-      "mm2": 1,
-      "sign_message_prefix": "Ethereum Signed Message:\n",
-      "required_confirmations": 3,
-      "avg_blocktime": 15,
-      "protocol": {
-        "type": "ETH",
-        "protocol_data": {
-            "chain_id": 1
-        }
-      },
-      "derivation_path": "m/44'/60'"
-    },{
-      "coin": ETH_TOKEN,
-      "name": "1inch_erc20",
-      "fname": "1Inch",
-      "rpcport": 80,
-      "mm2": 1,
-      "avg_blocktime": 15,
-      "required_confirmations": 3,
-      "decimals": 18,
-      "protocol": {
-        "type": "ERC20",
-        "protocol_data": {
-          "platform": "ETH",
-          "contract_address": "0x111111111117dC0aa78b770fA6A738034120C302"
-        }
-      },
-      "derivation_path": "m/44'/60'"
-    }]
+          "coin": "BNB",
+          "name": "binancesmartchain",
+          "fname": "Binance Coin",
+          "avg_blocktime": 3,
+          "rpcport": 80,
+          "mm2": 1,
+          "use_access_list": true,
+          "max_eth_tx_type": 2,
+          "required_confirmations": 3,
+          "protocol": {
+            "type": "ETH",
+            "protocol_data": {
+                "chain_id": 56
+            }
+          },
+          "derivation_path": "m/44'/60'",
+          "trezor_coin": "Binance Smart Chain",
+          "links": {
+            "homepage": "https://www.binance.org"
+          }
+        },{
+          "coin": BNB_TOKEN,
+          "name": "1inch_bep20",
+          "fname": "1Inch",
+          "rpcport": 80,
+          "mm2": 1,
+          "avg_blocktime": 3,
+          "required_confirmations": 3,
+          "protocol": {
+            "type": "ERC20",
+            "protocol_data": {
+              "platform": "BNB",
+              "contract_address": "0x111111111117dC0aa78b770fA6A738034120C302"
+            }
+          },
+          "derivation_path": "m/44'/60'",
+          "use_access_list": true,
+          "max_eth_tx_type": 2,
+          "gas_limit": {
+              "eth_send_erc20": 60000,
+              "erc20_payment": 110000,
+              "erc20_receiver_spend": 85000,
+              "erc20_sender_refund": 85000
+          }
+        },{
+          "coin": "ETH",
+          "name": "ethereum",
+          "fname": "Ethereum",
+          "rpcport": 80,
+          "mm2": 1,
+          "sign_message_prefix": "Ethereum Signed Message:\n",
+          "required_confirmations": 3,
+          "avg_blocktime": 15,
+          "protocol": {
+            "type": "ETH",
+            "protocol_data": {
+                "chain_id": 1
+            }
+          },
+          "derivation_path": "m/44'/60'"
+        },{
+          "coin": ETH_TOKEN,
+          "name": "1inch_erc20",
+          "fname": "1Inch",
+          "rpcport": 80,
+          "mm2": 1,
+          "avg_blocktime": 15,
+          "required_confirmations": 3,
+          "decimals": 18,
+          "protocol": {
+            "type": "ERC20",
+            "protocol_data": {
+              "platform": "ETH",
+              "contract_address": "0x111111111117dC0aa78b770fA6A738034120C302"
+            }
+          },
+          "derivation_path": "m/44'/60'"
+        }],
+        "passphrase": "spice describe gravity federal blast come thank unfair canal monkey style afraid",
     });
 
     let ctx = MmCtxBuilder::new().with_conf(conf).into_mm_arc();
@@ -1135,7 +1136,8 @@ fn test_gas_limit_conf() {
                 "erc20_receiver_spend": 130000,
                 "erc20_sender_refund": 110000
             }
-        }]
+        }],
+        "passphrase": "123456"
     });
 
     let ctx = MmCtxBuilder::new().with_conf(conf).into_mm_arc();
