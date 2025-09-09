@@ -249,6 +249,10 @@ impl MmCtx {
         self.conf["i_am_seed"].as_bool().unwrap_or(false)
     }
 
+    pub fn is_no_login_mode(&self) -> bool {
+        self.conf["passphrase"].is_null()
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     pub fn rpc_ip_port(&self) -> Result<SocketAddr, String> {
         let port = match self.conf.get("rpcport") {

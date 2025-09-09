@@ -296,6 +296,8 @@ pub enum EnablePlatformCoinWithTokensError {
     #[display(fmt = "WalletConnect Error: {_0}")]
     WalletConnectError(String),
     PlatformCoinMismatch,
+    #[display(fmt = "Cannot enable coins in no-login mode.")]
+    CannotEnableInNoLoginMode,
 }
 
 impl From<CoinConfWithProtocolError> for EnablePlatformCoinWithTokensError {
@@ -390,6 +392,7 @@ impl HttpStatusCode for EnablePlatformCoinWithTokensError {
             | EnablePlatformCoinWithTokensError::FailedSpawningBalanceEvents(_)
             | EnablePlatformCoinWithTokensError::WalletConnectError(_)
             | EnablePlatformCoinWithTokensError::PlatformCoinMismatch
+            | EnablePlatformCoinWithTokensError::CannotEnableInNoLoginMode
             | EnablePlatformCoinWithTokensError::UnexpectedTokenProtocol { .. } => StatusCode::BAD_REQUEST,
             EnablePlatformCoinWithTokensError::Transport(_) => StatusCode::BAD_GATEWAY,
         }
@@ -441,6 +444,10 @@ where
     Platform: PlatformCoinWithTokensActivationOps,
     EnablePlatformCoinWithTokensError: From<Platform::ActivationError>,
 {
+    if ctx.is_no_login_mode() {
+        return MmError::err(EnablePlatformCoinWithTokensError::CannotEnableInNoLoginMode);
+    }
+
     if req.request.is_hw_policy() {
         return MmError::err(EnablePlatformCoinWithTokensError::UnexpectedDeviceActivationPolicy);
     }

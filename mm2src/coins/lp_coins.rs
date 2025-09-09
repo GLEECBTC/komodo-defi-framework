@@ -5137,6 +5137,10 @@ pub fn is_wallet_only_ticker(ctx: &MmArc, ticker: &str) -> bool {
 ///
 /// * `req` - Payload of the corresponding "enable" or "electrum" RPC request.
 pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoinEnum, String> {
+    if ctx.is_no_login_mode() {
+        return ERR!("Cannot enable coins in no-login mode.");
+    }
+
     let cctx = try_s!(CoinsContext::from_ctx(ctx));
     {
         let coins = cctx.coins.lock().await;

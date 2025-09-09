@@ -434,6 +434,10 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
 pub async fn lp_init(ctx: MmArc, version: String, datetime: String) -> MmInitResult<()> {
     info!("Version: {} DT {}", version, datetime);
 
+    if ctx.is_no_login_mode() {
+        info!("Running on no-login mode. Wallet operations will be unavailable.");
+    }
+
     // Ensure the database root directory exists before initializing the wallet passphrase.
     // This is necessary to store the encrypted wallet passphrase if needed.
     #[cfg(not(target_arch = "wasm32"))]

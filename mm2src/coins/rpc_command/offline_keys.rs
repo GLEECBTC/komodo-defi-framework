@@ -100,6 +100,8 @@ pub enum OfflineKeysError {
     MissingPrefixValue { ticker: String, prefix_type: String },
     #[display(fmt = "Invalid parameters: start_index and end_index are only valid for HD mode")]
     InvalidParametersForMode,
+    #[display(fmt = "Cannot get private key in no-login mode.")]
+    NotAllowedInNoLoginMode,
 }
 
 #[derive(Debug, Clone)]
@@ -116,9 +118,10 @@ impl HttpStatusCode for OfflineKeysError {
             Self::CoinConfigNotFound(_) => StatusCode::BAD_REQUEST,
             Self::KeyDerivationFailed { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidHdRange { .. } => StatusCode::BAD_REQUEST,
-            Self::HdRangeTooLarge => StatusCode::BAD_REQUEST,
             Self::MissingPrefixValue { .. } => StatusCode::BAD_REQUEST,
-            Self::InvalidParametersForMode => StatusCode::BAD_REQUEST,
+            Self::HdRangeTooLarge | Self::NotAllowedInNoLoginMode | Self::InvalidParametersForMode => {
+                StatusCode::BAD_REQUEST
+            },
             Self::ProtocolParseError { .. } => StatusCode::BAD_REQUEST,
         }
     }
@@ -645,6 +648,10 @@ pub async fn get_private_keys(
     ctx: MmArc,
     req: GetPrivateKeysRequest,
 ) -> Result<GetPrivateKeysResponse, MmError<OfflineKeysError>> {
+    if ctx.is_no_login_mode() {
+        return MmError::err(OfflineKeysError::NotAllowedInNoLoginMode);
+    }
+
     let mode = req.mode.unwrap_or_else(|| {
         if ctx.enable_hd() {
             KeyExportMode::Hd
