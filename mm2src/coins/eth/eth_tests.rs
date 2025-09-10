@@ -991,6 +991,7 @@ fn test_get_enabled_erc20_by_contract_and_platform() {
     const BNB_TOKEN: &str = "1INCH-BEP20";
     const ETH_TOKEN: &str = "1INCH-ERC20";
 
+    let passphrase = "spice describe gravity federal blast come thank unfair canal monkey style afraid";
     let conf = json!({
         "coins": [{
           "coin": "BNB",
@@ -1071,15 +1072,11 @@ fn test_get_enabled_erc20_by_contract_and_platform() {
           },
           "derivation_path": "m/44'/60'"
         }],
-        "passphrase": "spice describe gravity federal blast come thank unfair canal monkey style afraid",
+        "passphrase": passphrase
     });
 
     let ctx = MmCtxBuilder::new().with_conf(conf).into_mm_arc();
-    CryptoCtx::init_with_iguana_passphrase(
-        ctx.clone(),
-        "spice describe gravity federal blast come thank unfair canal monkey style afraid",
-    )
-    .unwrap();
+    CryptoCtx::init_with_iguana_passphrase(ctx.clone(), passphrase).unwrap();
 
     let req_bnb_token = json!({
         "urls":["https://bsc-dataseed1.binance.org","https://bsc-dataseed1.defibit.io"],
@@ -1118,6 +1115,7 @@ fn test_fee_history() {
 fn test_gas_limit_conf() {
     use mm2_test_helpers::for_tests::ETH_SEPOLIA_SWAP_CONTRACT;
 
+    let passphrase = "123456";
     let conf = json!({
         "coins": [{
             "coin": "ETH",
@@ -1137,11 +1135,11 @@ fn test_gas_limit_conf() {
                 "erc20_sender_refund": 110000
             }
         }],
-        "passphrase": "123456"
+        "passphrase": passphrase
     });
 
     let ctx = MmCtxBuilder::new().with_conf(conf).into_mm_arc();
-    CryptoCtx::init_with_iguana_passphrase(ctx.clone(), "123456").unwrap();
+    CryptoCtx::init_with_iguana_passphrase(ctx.clone(), passphrase).unwrap();
 
     let req = json!({
         "urls":ETH_SEPOLIA_NODES,
