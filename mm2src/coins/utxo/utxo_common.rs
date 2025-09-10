@@ -1040,16 +1040,21 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxI
             ));
             Ok(complete_tx(unsigned, vec![signed_input]))
         },
-        P2SHSigner::WalletConnect(session_topic) => wallet_connect::sign_p2sh(
-            coin,
-            &session_topic,
-            &unsigned,
-            input.prev_transaction,
-            input.redeem_script,
-            input.script_data.into(),
-        )
-        .await
-        .map_err(|e| format!("WalletConnect P2SH signing error: {e}")),
+        P2SHSigner::WalletConnect(session_topic) => {
+            let (tx, _p2sh_sig) = wallet_connect::sign_p2sh(
+                coin,
+                &session_topic,
+                &unsigned,
+                input.prev_transaction,
+                input.redeem_script,
+                input.script_data.into(),
+                SIGHASH_ALL,
+            )
+            .await
+            .map_err(|e| format!("WalletConnect P2SH signing error: {e}"))?;
+
+            Ok(tx)
+        },
     }
 }
 
