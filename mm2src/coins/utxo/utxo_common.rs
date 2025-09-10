@@ -1112,9 +1112,6 @@ async fn gen_taker_funding_spend_preimage<T: UtxoCommonOps>(
     .map_to_mm(TxGenError::Legacy)
 }
 
-// fixme: funding spend = taker payment
-// this func is run by the maker after the taker has sent the funding tx
-// the maker generates and signs the preimage of the taker payment and send it to the taker
 pub async fn gen_and_sign_taker_funding_spend_preimage<T: UtxoCommonOps>(
     coin: &T,
     args: &GenTakerFundingSpendArgs<'_, T>,
@@ -1249,9 +1246,6 @@ pub async fn validate_taker_funding_spend_preimage<T: UtxoCommonOps + SwapOps>(
     Ok(())
 }
 
-// fixme: funding spend = taker payment
-// this func is run by the taker after receiving the preimage from the maker and (confirming the maker payment; optional)
-// the taker signs and finalizes the taker payment and broadcasts it.
 /// Common implementation of taker funding spend finalization and broadcast for UTXO coins.
 pub async fn sign_and_send_taker_funding_spend<T: UtxoCommonOps>(
     coin: &T,
@@ -1430,9 +1424,6 @@ async fn gen_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     .map_to_mm(TxGenError::Legacy)
 }
 
-// fixme: taker payment spend = preimage/swap-finalizing tx
-// this func is run by the taker after confirming the taker payment (that this tx spends).
-// the taker generates and signs the preimage of this tx and sends it to the maker.
 pub async fn gen_and_sign_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     args: &GenTakerPaymentSpendArgs<'_, T>,
@@ -1538,9 +1529,6 @@ pub async fn validate_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     Ok(())
 }
 
-// fixme: taker payment spend = preimage/swap-finalizing tx
-// this func is run by the maker after recieving the preimage of the finalizing tx from the taker
-// the maker signs and broadcasts the finalizing tx.
 /// Common implementation of taker payment spend finalization and broadcast for UTXO coins.
 /// Appends maker output to the preimage, signs it with SIGHASH_ALL and submits the resulting tx to coin's RPC.
 pub async fn sign_and_broadcast_taker_payment_spend<T: UtxoCommonOps>(
