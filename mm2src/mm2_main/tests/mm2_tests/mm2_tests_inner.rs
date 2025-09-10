@@ -1937,7 +1937,7 @@ fn test_own_orders_should_not_be_removed_from_orderbook() {
     .unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
-    thread::sleep(Duration::from_secs(6));
+    thread::sleep(Duration::from_secs(16));
 
     let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,

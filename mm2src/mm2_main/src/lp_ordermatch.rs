@@ -466,7 +466,7 @@ async fn process_orders_keep_alive(
         return Ok(());
     }
 
-    // Query ONLY the origin peer.
+    // Query ONLY the keepalive propagator.
     let mut remaining_pairs: HashSet<AlbOrderedOrderbookPair> = trie_roots_to_request.keys().cloned().collect();
     let _ = request_and_apply_pubkey_state_sync_from_peer(
         &ctx,
