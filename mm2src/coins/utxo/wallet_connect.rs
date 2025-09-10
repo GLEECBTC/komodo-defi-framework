@@ -162,12 +162,13 @@ struct SignedPsbt {
 ///
 /// An **array** of this struct is sent to WalletConnect in `SignPsbt` request.
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct InputSigningParams {
     /// The index of the input to sign.
     index: u32,
     /// The address to sign the input with.
     address: String,
-    /// The sighash types to use for signing.
+    /// An array of whitelisted sighash types that the wallet is allowed to use when signing this input.
     sighash_types: Vec<u8>,
 }
 
