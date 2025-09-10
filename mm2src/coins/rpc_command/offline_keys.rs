@@ -974,7 +974,8 @@ mod tests {
         let ctx = MmCtxBuilder::new()
             .with_conf(json!({
                 "coins": [btc_conf],
-                "rpc_password": "test123"
+                "rpc_password": "test123",
+                "passphrase": TEST_MNEMONIC,
             }))
             .into_mm_arc();
 
@@ -1008,7 +1009,8 @@ mod tests {
         let ctx = MmCtxBuilder::new()
             .with_conf(json!({
                 "coins": [btc_conf],
-                "rpc_password": "test123"
+                "rpc_password": "test123",
+                "passphrase": TEST_MNEMONIC,
             }))
             .into_mm_arc();
 
@@ -1102,7 +1104,8 @@ mod tests {
         let ctx = MmCtxBuilder::new()
             .with_conf(json!({
                 "coins": [arrr_conf],
-                "rpc_password": "test123"
+                "rpc_password": "test123",
+                "passphrase": TEST_SEED,
             }))
             .into_mm_arc();
 
@@ -1163,15 +1166,17 @@ mod tests {
     async fn test_eth_iguana_eip55_formatting() {
         use mm2_test_helpers::for_tests::eth_dev_conf;
 
+        let passphrase = "test_passphrase_for_eip55";
         let ctx = MmCtxBuilder::new()
             .with_conf(json!({
                 "coins": [eth_dev_conf()],
-                "rpc_password": "test123"
+                "rpc_password": "test123",
+                "passphrase": passphrase,
             }))
             .into_mm_arc();
 
         // Initialize with a test passphrase for Iguana mode
-        CryptoCtx::init_with_iguana_passphrase(ctx.clone(), "test_passphrase_for_eip55").unwrap();
+        CryptoCtx::init_with_iguana_passphrase(ctx.clone(), passphrase).unwrap();
 
         let req = GetPrivateKeysRequest {
             coins: vec!["ETH".to_string()],

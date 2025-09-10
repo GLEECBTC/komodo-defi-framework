@@ -30,8 +30,8 @@ async fn init_eth_coin_helper() -> Result<(MmArc, MmCoinEnum), String> {
             "rpcport": 80,
             "mm2": 1,
             "max_eth_tx_type": 2,
-            "passphrase": passphrase,
-        }]
+        }],
+        "passphrase": passphrase,
     });
 
     let ctx = MmCtxBuilder::new().with_conf(conf).into_mm_arc();
