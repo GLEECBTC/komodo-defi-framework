@@ -510,7 +510,9 @@ async fn offline_iguana_keys_export_internal(
 
             let prefix_values = extract_prefix_values(&ctx, &ticker, &coin_conf)?;
 
-            let passphrase = ctx.conf["passphrase"].as_str().unwrap_or("");
+            let passphrase = ctx.conf["passphrase"].as_str().ok_or_else(|| {
+                OfflineKeysError::Internal("Couldn't derive 'passphrase' from the KDF configuration.".to_owned())
+            })?;
 
             let key_pair = {
                 match key_pair_from_seed(passphrase) {
