@@ -12,6 +12,7 @@ use coins::{
     CoinBalance, CoinProtocol, MarketCoinOps, MmCoinEnum, PrivKeyBuildPolicy,
 };
 use common::Future01CompatExt;
+use futures::future::join_all;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
@@ -188,23 +189,25 @@ impl PlatformCoinWithTokensActivationOps for SolanaCoin {
             },
         })?;
 
-        let mut tokens_balances = HashMap::new();
-
         let tokens_info = self.tokens_info.lock().clone();
+        let tasks = tokens_info.into_iter().map(|(ticker, info)| {
+            let coin = self.clone();
+            async move {
+                let balance = coin
+                    .token_balance(&info.mint_address)
+                    .await
+                    .map_err(|e| SolanaInitError {
+                        ticker: coin.ticker().to_owned(),
+                        kind: SolanaInitErrorKind::QueryError {
+                            reason: format!("Failed to fetch '{ticker}' balance: {e}"),
+                        },
+                    })?;
 
-        for (ticker, info) in tokens_info {
-            let balance = self
-                .token_balance(&info.token_contract_address)
-                .await
-                .map_err(|e| SolanaInitError {
-                    ticker: self.ticker().to_owned(),
-                    kind: SolanaInitErrorKind::QueryError {
-                        reason: format!("Failed to fetch '{ticker}' balance: {e}"),
-                    },
-                })?;
+                Ok::<_, SolanaInitError>((ticker, balance))
+            }
+        });
 
-            tokens_balances.insert(ticker, balance);
-        }
+        let tokens_balances: HashMap<_, _> = join_all(tasks).await.into_iter().collect::<Result<_, _>>()?;
 
         Ok(SolanaActivationResult {
             ticker: self.ticker().to_owned(),

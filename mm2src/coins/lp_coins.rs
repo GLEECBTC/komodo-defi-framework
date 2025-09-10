@@ -4854,7 +4854,7 @@ impl CoinProtocol {
             #[cfg(feature = "enable-solana")]
             CoinProtocol::SOLANA(_) => None,
             #[cfg(feature = "enable-solana")]
-            CoinProtocol::SOLANATOKEN(info) => Some(info.token_contract_address.to_string()),
+            CoinProtocol::SOLANATOKEN(info) => Some(info.mint_address.to_string()),
         }
     }
 

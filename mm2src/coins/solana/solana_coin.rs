@@ -183,17 +183,14 @@ impl SolanaCoin {
         self.tokens_info.lock().insert(ticker, info);
     }
 
-    pub async fn token_balance(
-        &self,
-        token_contract_address: &SolanaAddress,
-    ) -> Result<CoinBalance, MmError<BalanceError>> {
+    pub async fn token_balance(&self, mint_address: &SolanaAddress) -> Result<CoinBalance, MmError<BalanceError>> {
         let rpc = self
             .rpc_client()
             .map_err(|e| BalanceError::Transport(e.into_inner()))
             .await?;
 
         if rpc
-            .get_token_accounts_by_owner(&self.address, TokenAccountsFilter::Mint(*token_contract_address))
+            .get_token_accounts_by_owner(&self.address, TokenAccountsFilter::Mint(*mint_address))
             .is_err()
         {
             return Ok(CoinBalance {
@@ -202,10 +199,8 @@ impl SolanaCoin {
             });
         };
 
-        let token_account = spl_associated_token_account_client::address::get_associated_token_address(
-            &self.address,
-            token_contract_address,
-        );
+        let token_account =
+            spl_associated_token_account_client::address::get_associated_token_address(&self.address, mint_address);
 
         let balance_string = rpc
             .get_token_account_balance(&token_account)

@@ -1016,7 +1016,6 @@ dependencies = [
  "proxy_signature",
  "rand 0.7.3",
  "regex",
- "reqwest 0.11.9",
  "rlp",
  "rmp-serde",
  "rpc",

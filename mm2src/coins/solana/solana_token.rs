@@ -55,7 +55,7 @@ pub struct SolanaTokenProtocolInfo {
     pub platform: String,
     pub decimals: u8,
     #[serde(serialize_with = "serialize_pubkey", deserialize_with = "deserialize_pubkey")]
-    pub token_contract_address: SolanaAddress,
+    pub mint_address: SolanaAddress,
 }
 
 pub fn serialize_pubkey<S>(public_key: &SolanaAddress, serializer: S) -> Result<S::Ok, S::Error>
@@ -276,11 +276,7 @@ impl MarketCoinOps for SolanaToken {
         let token = self.clone();
         let platform_coin = self.platform_coin.clone();
 
-        let fut = async move {
-            platform_coin
-                .token_balance(&token.protocol_info.token_contract_address)
-                .await
-        };
+        let fut = async move { platform_coin.token_balance(&token.protocol_info.mint_address).await };
 
         Box::new(fut.boxed().compat())
     }
