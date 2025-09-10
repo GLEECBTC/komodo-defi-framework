@@ -287,7 +287,7 @@ async fn sign_p2sh_with_walletconnect(
     tx_to_sign.inputs[DEFAULT_SWAP_VIN].script_sig = final_script_sig;
     tx_to_sign.inputs[DEFAULT_SWAP_VIN].script_witness = vec![];
 
-    Ok((tx_to_sign, p2sh_signature))
+    Ok((tx_to_sign, Bytes::from(walletconnect_sig.to_vec())))
 }
 
 /// Signs a P2SH transaction that has a single input using WalletConnect.
@@ -380,7 +380,12 @@ pub async fn sign_p2sh_get_sig_only(
         sighash_type,
     )
     .await
-    .map(|(_tx, p2sh_sig)| p2sh_sig)
+    .map(|(_tx, p2sh_sig)| {
+        let mut p2sh_sig = p2sh_sig.take();
+        // Remove the sighash byte at the end so to align with the output of `calc_and_sign_sighash`.
+        p2sh_sig.pop();
+        Bytes::from(p2sh_sig)
+    })
 }
 
 /// Signs a P2PKH/P2WPKH spending transaction using WalletConnect.
