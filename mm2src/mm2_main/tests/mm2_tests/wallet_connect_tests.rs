@@ -10,7 +10,7 @@ use serde_json::json;
 
 #[cfg(not(target_arch = "wasm32"))]
 /// Perform a swap using WalletConnect protocol with two tBTC (testnet4) coins.
-async fn perform_walletconnect_swap() {
+async fn perform_walletconnect_swap(use_swaps_proto_v2: bool) {
     let walletconnect_namespaces = json!({
         "required_namespaces": {
             "bip122": {
@@ -66,7 +66,10 @@ async fn perform_walletconnect_swap() {
     let trading_pair = (coins[0]["coin"].as_str().unwrap(), coins[1]["coin"].as_str().unwrap());
     let coins = json!(coins);
 
-    let bob_conf = Mm2TestConfForSwap::bob_conf_with_policy(&Mm2InitPrivKeyPolicy::GlobalHDAccount, &coins);
+    let mut bob_conf = Mm2TestConfForSwap::bob_conf_with_policy(&Mm2InitPrivKeyPolicy::GlobalHDAccount, &coins);
+    if use_swaps_proto_v2 {
+        bob_conf.conf["use_trading_proto_v2"] = true.into();
+    }
     // Uncomment to test the refund case. The quickest way to test both refunds is to reject signing TakerPaymentSpend (the 4th signing prompt).
     // This will force the taker to refund himself and after sometime the maker will also refund himself because he can't spend the TakerPayment anymore (as it's already refunded).
     // Note that you need to run the test with `--features custom-swap-locktime` to enable the custom `payment_locktime` feature.
@@ -79,11 +82,14 @@ async fn perform_walletconnect_swap() {
     log!("Bob log path: {}", mm_bob.log_path.display());
     Timer::sleep(2.).await;
 
-    let alice_conf = Mm2TestConfForSwap::alice_conf_with_policy(
+    let mut alice_conf = Mm2TestConfForSwap::alice_conf_with_policy(
         &Mm2InitPrivKeyPolicy::GlobalHDAccount,
         &coins,
         &mm_bob.my_seed_addr(),
     );
+    if use_swaps_proto_v2 {
+        alice_conf.conf["use_trading_proto_v2"] = true.into();
+    }
     // Uncomment to test the refund case
     // alice_conf.conf["payment_locktime"] = (1 * 60).into();
     let mut mm_alice = MarketMakerIt::start_async(alice_conf.conf, alice_conf.rpc_password, None)
@@ -138,6 +144,12 @@ async fn perform_walletconnect_swap() {
 
 #[test]
 #[ignore]
-fn test_walletconnect_swap() {
-    block_on(perform_walletconnect_swap());
+fn test_walletconnect_swap_v1() {
+    block_on(perform_walletconnect_swap(false));
+}
+
+#[test]
+#[ignore]
+fn test_walletconnect_swap_v2() {
+    block_on(perform_walletconnect_swap(true));
 }
