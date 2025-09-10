@@ -221,7 +221,7 @@ async fn sign_psbt(
 ///
 /// Returns the signed transaction and the bare P2SH signature returned by WalletConnect.
 #[expect(clippy::too_many_arguments)]
-pub async fn sign_p2sh_with_walletconnect(
+async fn sign_p2sh_with_walletconnect(
     wc: &WalletConnectCtx,
     session_topic: &WcTopic,
     chain_id: &WcChainId,
@@ -294,7 +294,7 @@ pub async fn sign_p2sh_with_walletconnect(
 ///
 /// This is just another wrapper around `sign_p2sh_with_walletconnect` to avoid some boilerplate given
 /// that there is an accessible `coin`.
-pub async fn sign_p2sh(
+async fn sign_p2sh_get_tx_and_sig(
     coin: &impl AsRef<UtxoCoinFields>,
     session_topic: &WcTopic,
     tx_input_signer: &TransactionInputSigner,
@@ -337,11 +337,57 @@ pub async fn sign_p2sh(
     .await
 }
 
+/// Signs a P2SH transaction that has a single input using WalletConnect and returns the signed transaction.
+pub async fn sign_p2sh(
+    coin: &impl AsRef<UtxoCoinFields>,
+    session_topic: &WcTopic,
+    tx_input_signer: &TransactionInputSigner,
+    prev_tx: UtxoTx,
+    redeem_script: Bytes,
+    unlocking_script: Bytes,
+    sighash_type: u32,
+) -> MmResult<UtxoTx, WalletConnectError> {
+    sign_p2sh_get_tx_and_sig(
+        coin,
+        session_topic,
+        tx_input_signer,
+        prev_tx,
+        redeem_script,
+        unlocking_script,
+        sighash_type,
+    )
+    .await
+    .map(|(tx, _p2sh_sig)| tx)
+}
+
+/// Signs a P2SH transaction that has a single input using WalletConnect and returns only the bare P2SH signature.
+pub async fn sign_p2sh_get_sig_only(
+    coin: &impl AsRef<UtxoCoinFields>,
+    session_topic: &WcTopic,
+    tx_input_signer: &TransactionInputSigner,
+    prev_tx: UtxoTx,
+    redeem_script: Bytes,
+    sighash_type: u32,
+) -> MmResult<Bytes, WalletConnectError> {
+    sign_p2sh_get_tx_and_sig(
+        coin,
+        session_topic,
+        tx_input_signer,
+        prev_tx,
+        redeem_script,
+        // Since we will not use the resulting tx, we can put any dummy unlocking script here.
+        Bytes::new(),
+        sighash_type,
+    )
+    .await
+    .map(|(_tx, p2sh_sig)| p2sh_sig)
+}
+
 /// Signs a P2PKH/P2WPKH spending transaction using WalletConnect.
 ///
 /// Contrary to what the function name might suggest, this function can sign both P2PKH and **P2WPKH** inputs.
 /// `prev_txs` is a map of previous transactions that contain the P2PKH inputs being spent. P2WPKH inputs don't need their previous transactions.
-pub async fn sign_p2pkh_with_walletconnect(
+async fn sign_p2pkh_with_walletconnect(
     wc: &WalletConnectCtx,
     session_topic: &WcTopic,
     chain_id: &WcChainId,
