@@ -15,6 +15,7 @@ fn pass() {
 }
 
 async fn init_eth_coin_helper() -> Result<(MmArc, MmCoinEnum), String> {
+    let passphrase = "spice describe gravity federal blast come thank unfair canal monkey style afraid";
     let conf = json!({
         "coins": [{
             "coin": "ETH",
@@ -28,16 +29,13 @@ async fn init_eth_coin_helper() -> Result<(MmArc, MmCoinEnum), String> {
             },
             "rpcport": 80,
             "mm2": 1,
-            "max_eth_tx_type": 2
+            "max_eth_tx_type": 2,
+            "passphrase": passphrase,
         }]
     });
 
     let ctx = MmCtxBuilder::new().with_conf(conf).into_mm_arc();
-    CryptoCtx::init_with_iguana_passphrase(
-        ctx.clone(),
-        "spice describe gravity federal blast come thank unfair canal monkey style afraid",
-    )
-    .unwrap();
+    CryptoCtx::init_with_iguana_passphrase(ctx.clone(), passphrase).unwrap();
 
     let req = json!({
         "urls":ETH_SEPOLIA_NODES,
