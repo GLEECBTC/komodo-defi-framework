@@ -2995,9 +2995,10 @@ fn test_utxo_merge() {
 
     block_on(mm_bob.wait_for_log(4., |log| log.contains("Starting UTXO merge loop for coin MYCOIN"))).unwrap();
 
-    block_on(mm_bob.wait_for_log(4., |log| log.contains("Trying to merge 5 UTXOs of coin MYCOIN"))).unwrap();
-
-    block_on(mm_bob.wait_for_log(4., |log| log.contains("UTXO merge successful for coin MYCOIN, tx_hash"))).unwrap();
+    block_on(mm_bob.wait_for_log(4., |log| {
+        log.contains("UTXO merge of 5 outputs successful for coin=MYCOIN, tx_hash")
+    }))
+    .unwrap();
 
     thread::sleep(Duration::from_secs(2));
     let address = block_on(coin.as_ref().derivation_method.unwrap_single_addr());
@@ -3050,15 +3051,143 @@ fn test_utxo_merge_max_merge_at_once() {
 
     block_on(mm_bob.wait_for_log(4., |log| log.contains("Starting UTXO merge loop for coin MYCOIN"))).unwrap();
 
-    block_on(mm_bob.wait_for_log(4., |log| log.contains("Trying to merge 4 UTXOs of coin MYCOIN"))).unwrap();
-
-    block_on(mm_bob.wait_for_log(4., |log| log.contains("UTXO merge successful for coin MYCOIN, tx_hash"))).unwrap();
+    block_on(mm_bob.wait_for_log(4., |log| {
+        log.contains("UTXO merge of 4 outputs successful for coin=MYCOIN, tx_hash")
+    }))
+    .unwrap();
 
     thread::sleep(Duration::from_secs(2));
     let address = block_on(coin.as_ref().derivation_method.unwrap_single_addr());
     let (unspents, _) = block_on(coin.get_unspent_ordered_list(&address)).unwrap();
     // 4 utxos are merged of 5 so the resulting unspents len must be 2
     assert_eq!(unspents.len(), 2);
+}
+
+#[test]
+fn test_consolidate_utxos_rpc() {
+    let timeout = 30; // timeout if test takes more than 30 seconds to run
+    let utxos = 50;
+    let (_ctx, coin, privkey) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
+
+    // fill several times to have more UTXOs on address
+    for i in 1..=utxos {
+        fill_address(&coin, &coin.my_address().unwrap(), i.into(), timeout);
+    }
+
+    let coins = json!([mycoin_conf(1000)]);
+    let mm_bob = MarketMakerIt::start(
+        json!({
+            "gui": "nogui",
+            "netid": 9000,
+            "dht": "on",  // Enable DHT without delay.
+            "passphrase": format!("0x{}", hex::encode(privkey)),
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+            "is_bootstrap_node": true
+        }),
+        "pass".to_string(),
+        None,
+    )
+    .unwrap();
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
+
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[], None)));
+
+    let consolidate_rpc = |merge_at: u32, merge_at_once: u32| {
+        block_on(mm_bob.rpc(&json!({
+            "mmrpc": "2.0",
+            "userpass": mm_bob.userpass,
+            "method": "consolidate_utxos",
+            "params": {
+                "coin": "MYCOIN",
+                "merge_conditions": {
+                    "merge_at": merge_at,
+                    "max_merge_at_once": merge_at_once,
+                },
+                "broadcast": true
+            }
+        })))
+        .unwrap()
+    };
+
+    let res = consolidate_rpc(52, 4);
+    assert!(!res.0.is_success(), "Expected error for merge_at > utxos: {}", res.1);
+
+    let res = consolidate_rpc(30, 4);
+    assert!(res.0.is_success(), "Consolidate utxos failed: {}", res.1);
+
+    let res: RpcSuccessResponse<ConsolidateUtxoResponse> =
+        serde_json::from_str(&res.1).expect("Expected 'RpcSuccessResponse<ConsolidateUtxoResponse>'");
+    // Assert that we respected `max_merge_at_once` and merged only 4 UTXOs.
+    assert_eq!(res.result.consolidated_utxos.len(), 4);
+    // Assert that we merged the smallest 4 UTXOs.
+    for i in 1..=4 {
+        assert_eq!(res.result.consolidated_utxos[i - 1].value, (i as u32).into());
+    }
+
+    thread::sleep(Duration::from_secs(2));
+    let address = block_on(coin.as_ref().derivation_method.unwrap_single_addr());
+    let (unspents, _) = block_on(coin.get_unspent_ordered_list(&address)).unwrap();
+    // We have 51 utxos and merged 4 of them which resulted in an extra one.
+    assert_eq!(unspents.len(), 51 - 4 + 1);
+}
+
+#[test]
+fn test_fetch_utxos_rpc() {
+    let timeout = 30; // timeout if test takes more than 30 seconds to run
+    let (_ctx, coin, privkey) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
+
+    // fill several times to have more UTXOs on address
+    for i in 1..=10 {
+        fill_address(&coin, &coin.my_address().unwrap(), i.into(), timeout);
+    }
+
+    let coins = json!([mycoin_conf(1000)]);
+    let mm_bob = MarketMakerIt::start(
+        json!({
+            "gui": "nogui",
+            "netid": 9000,
+            "dht": "on",  // Enable DHT without delay.
+            "passphrase": format!("0x{}", hex::encode(privkey)),
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+            "is_bootstrap_node": true
+        }),
+        "pass".to_string(),
+        None,
+    )
+    .unwrap();
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
+
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[], None)));
+
+    let fetch_utxo_rpc = || {
+        let res = block_on(mm_bob.rpc(&json!({
+            "mmrpc": "2.0",
+            "userpass": mm_bob.userpass,
+            "method": "fetch_utxos",
+            "params": {
+                "coin": "MYCOIN"
+            }
+        })))
+        .unwrap();
+        assert!(res.0.is_success(), "Fetch UTXOs failed: {}", res.1);
+        let res: RpcSuccessResponse<FetchUtxosResponse> =
+            serde_json::from_str(&res.1).expect("Expected 'RpcSuccessResponse<FetchUtxosResponse>'");
+        res.result
+    };
+
+    let res = fetch_utxo_rpc();
+    assert!(res.total_count == 11);
+
+    fill_address(&coin, &coin.my_address().unwrap(), 100.into(), timeout);
+    thread::sleep(Duration::from_secs(2));
+
+    let res = fetch_utxo_rpc();
+    assert!(res.total_count == 12);
+    assert!(res.addresses[0].utxos.iter().any(|utxo| utxo.value == 100.into()));
 }
 
 #[test]

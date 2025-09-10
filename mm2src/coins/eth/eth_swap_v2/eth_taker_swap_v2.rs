@@ -3,7 +3,7 @@ use super::{
     PaymentMethod, PrepareTxDataError, SpendTxSearchParams, ZERO_VALUE,
 };
 use crate::eth::{
-    decode_contract_call, get_function_input_data, wei_from_big_decimal, EthCoin, EthCoinType, ParseCoinAssocTypes,
+    decode_contract_call, get_function_input_data, u256_from_big_decimal, EthCoin, EthCoinType, ParseCoinAssocTypes,
     RefundFundingSecretArgs, RefundTakerPaymentArgs, SendTakerFundingArgs, SignedEthTx, SwapTxTypeWithSecretHash,
     TakerPaymentStateV2, TransactionErr, ValidateSwapV2TxError, ValidateSwapV2TxResult, ValidateTakerFundingArgs,
     TAKER_SWAP_V2,
@@ -89,9 +89,9 @@ impl EthCoin {
             .ok_or_else(|| TransactionErr::Plain(ERRL!("Expected swap_v2_contracts to be Some, but found None")))?
             .taker_swap_v2_contract;
         // TODO add burnFee support
-        let dex_fee = try_tx_s!(wei_from_big_decimal(&args.dex_fee.fee_amount().into(), self.decimals));
+        let dex_fee = try_tx_s!(u256_from_big_decimal(&args.dex_fee.fee_amount().into(), self.decimals));
 
-        let payment_amount = try_tx_s!(wei_from_big_decimal(
+        let payment_amount = try_tx_s!(u256_from_big_decimal(
             &(args.trading_amount.clone() + args.premium_amount.clone()),
             self.decimals
         ));
@@ -117,7 +117,7 @@ impl EthCoin {
                     eth_total_payment,
                     Action::Call(taker_swap_v2_contract),
                     data,
-                    U256::from(self.gas_limit_v2.taker.eth_payment),
+                    Some(U256::from(self.gas_limit_v2.taker.eth_payment)),
                 )
                 .compat()
                 .await
@@ -133,7 +133,7 @@ impl EthCoin {
                     U256::from(ZERO_VALUE),
                     Action::Call(taker_swap_v2_contract),
                     data,
-                    U256::from(self.gas_limit_v2.taker.erc20_payment),
+                    Some(U256::from(self.gas_limit_v2.taker.erc20_payment)),
                 )
                 .compat()
                 .await
@@ -175,9 +175,9 @@ impl EthCoin {
         validate_from_to_addresses(tx_from_rpc, taker_address, taker_swap_v2_contract).map_mm_err()?;
 
         let validation_args = {
-            let dex_fee = wei_from_big_decimal(&args.dex_fee.fee_amount().into(), self.decimals).map_mm_err()?;
+            let dex_fee = u256_from_big_decimal(&args.dex_fee.fee_amount().into(), self.decimals).map_mm_err()?;
             let payment_amount =
-                wei_from_big_decimal(&(args.trading_amount + args.premium_amount), self.decimals).map_mm_err()?;
+                u256_from_big_decimal(&(args.trading_amount + args.premium_amount), self.decimals).map_mm_err()?;
             TakerValidationArgs {
                 swap_id,
                 amount: payment_amount,
@@ -236,7 +236,7 @@ impl EthCoin {
                 U256::from(ZERO_VALUE),
                 Action::Call(taker_swap_v2_contract),
                 data,
-                gas_limit,
+                Some(gas_limit),
             )
             .compat()
             .await?;
@@ -274,11 +274,11 @@ impl EthCoin {
                 )))
             },
         };
-        let dex_fee = try_tx_s!(wei_from_big_decimal(
+        let dex_fee = try_tx_s!(u256_from_big_decimal(
             &args.dex_fee.fee_amount().to_decimal(),
             self.decimals
         ));
-        let payment_amount = try_tx_s!(wei_from_big_decimal(
+        let payment_amount = try_tx_s!(u256_from_big_decimal(
             &(args.trading_amount + args.premium_amount),
             self.decimals
         ));
@@ -301,7 +301,7 @@ impl EthCoin {
             U256::from(ZERO_VALUE),
             Action::Call(taker_swap_v2_contract),
             data,
-            U256::from(gas_limit),
+            Some(U256::from(gas_limit)),
         )
         .compat()
         .await
@@ -328,11 +328,11 @@ impl EthCoin {
             .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
 
         let maker_secret_hash = try_tx_s!(args.maker_secret_hash.try_into());
-        let dex_fee = try_tx_s!(wei_from_big_decimal(
+        let dex_fee = try_tx_s!(u256_from_big_decimal(
             &args.dex_fee.fee_amount().to_decimal(),
             self.decimals
         ));
-        let payment_amount = try_tx_s!(wei_from_big_decimal(
+        let payment_amount = try_tx_s!(u256_from_big_decimal(
             &(args.trading_amount + args.premium_amount),
             self.decimals
         ));
@@ -355,7 +355,7 @@ impl EthCoin {
             U256::from(ZERO_VALUE),
             Action::Call(taker_swap_v2_contract),
             data,
-            U256::from(gas_limit),
+            Some(U256::from(gas_limit)),
         )
         .compat()
         .await
@@ -416,7 +416,7 @@ impl EthCoin {
                 U256::from(ZERO_VALUE),
                 Action::Call(taker_swap_v2_contract),
                 data,
-                U256::from(gas_limit),
+                Some(U256::from(gas_limit)),
             )
             .compat()
             .await?;

@@ -23,9 +23,7 @@ use nft_structs::{
     WithdrawNftReq,
 };
 
-use crate::eth::{
-    withdraw_erc1155, withdraw_erc721, EthCoin, EthCoinType, EthTxFeeDetails, LegacyGasPrice, PayForGasOption,
-};
+use crate::eth::{withdraw_erc1155, withdraw_erc721, EthCoin, EthCoinType, EthTxFeeDetails, PayForGasOption};
 use crate::nft::nft_errors::{
     ClearNftDbError, MetaFromUrlError, ProtectFromSpamError, TransferConfirmationsError, UpdateSpamPhishingError,
 };
@@ -913,7 +911,8 @@ async fn get_fee_details(eth_coin: &EthCoin, transaction_hash: &str) -> Option<E
             match r.effective_gas_price {
                 Some(gas_price) => EthTxFeeDetails::new(
                     gas_used,
-                    PayForGasOption::Legacy(LegacyGasPrice { gas_price }),
+                    // TODO: is this always legacy?
+                    PayForGasOption::Legacy { gas_price },
                     fee_coin,
                 )
                 .ok(),
@@ -927,12 +926,8 @@ async fn get_fee_details(eth_coin: &EthCoin, transaction_hash: &str) -> Option<E
                         .await
                         .ok()??;
                     let gas_price = web3_tx.gas_price.unwrap_or_default();
-                    EthTxFeeDetails::new(
-                        gas_used,
-                        PayForGasOption::Legacy(LegacyGasPrice { gas_price }),
-                        fee_coin,
-                    )
-                    .ok()
+                    // TODO: is this always legacy?
+                    EthTxFeeDetails::new(gas_used, PayForGasOption::Legacy { gas_price }, fee_coin).ok()
                 },
             }
         },

@@ -55,7 +55,7 @@ impl QtumDockerOps {
     pub fn new() -> QtumDockerOps {
         let ctx = MmCtxBuilder::new().into_mm_arc();
         let confpath = unsafe { QTUM_CONF_PATH.as_ref().expect("Qtum config is not set yet") };
-        let conf = json!({"decimals":8,"network":"regtest","confpath":confpath});
+        let conf = json!({"coin":"QTUM","decimals":8,"network":"regtest","confpath":confpath});
         let req = json!({
             "method": "enable",
         });

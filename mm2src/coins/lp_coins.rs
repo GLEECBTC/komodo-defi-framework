@@ -478,24 +478,19 @@ pub struct SignUtxoTransactionParams {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct LegacyGasPrice {
-    /// Gas price in decimal gwei
-    pub gas_price: BigDecimal,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct Eip1559FeePerGas {
-    /// Max fee per gas in decimal gwei
-    pub max_fee_per_gas: BigDecimal,
-    /// Max priority fee per gas in decimal gwei
-    pub max_priority_fee_per_gas: BigDecimal,
-}
-
-#[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "tx_type")]
-pub enum PayForGasParams {
-    Legacy(LegacyGasPrice),
-    Eip1559(Eip1559FeePerGas),
+pub enum GasPriceRpcParam {
+    Legacy {
+        /// Gas price in gwei
+        gas_price: BigDecimal,
+    },
+    Eip1559 {
+        /// Max fee per gas in gwei
+        max_fee_per_gas: BigDecimal,
+        /// Max priority fee per gas in gwei
+        max_priority_fee_per_gas: BigDecimal,
+    },
+    GasPricePolicy(SwapGasFeePolicy),
 }
 
 /// sign_raw_transaction RPC request's params for signing raw eth transactions
@@ -510,7 +505,7 @@ pub struct SignEthTransactionParams {
     /// Eth gas use limit
     gas_limit: U256,
     /// Optional gas price or fee per gas params
-    pay_for_gas: Option<PayForGasParams>,
+    pub pay_for_gas: Option<GasPriceRpcParam>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -672,6 +667,7 @@ pub enum TransactionErr {
     #[from_stringify("keys::Error")]
     Plain(String),
     ProtocolNotSupported(String),
+    InternalError(String),
 }
 
 impl TransactionErr {
@@ -689,7 +685,9 @@ impl TransactionErr {
     pub fn get_plain_text_format(&self) -> String {
         match self {
             TransactionErr::TxRecoverable(_, err) => err.to_string(),
-            TransactionErr::Plain(err) | TransactionErr::ProtocolNotSupported(err) => err.to_string(),
+            TransactionErr::Plain(err)
+            | TransactionErr::ProtocolNotSupported(err)
+            | TransactionErr::InternalError(err) => err.to_string(),
         }
     }
 }
@@ -1103,6 +1101,18 @@ pub enum WatcherRewardError {
     RPCError(String),
     InvalidCoinType(String),
     InternalError(String),
+    #[display(fmt = "No such coin {}", coin)]
+    NoSuchCoin {
+        coin: String,
+    },
+}
+
+impl From<CoinFindError> for WatcherRewardError {
+    fn from(e: CoinFindError) -> Self {
+        match e {
+            CoinFindError::NoSuchCoin { coin } => WatcherRewardError::NoSuchCoin { coin },
+        }
+    }
 }
 
 /// Swap operations (mostly based on the Hash/Time locked transactions implemented by coin wallets).
@@ -2742,41 +2752,50 @@ pub enum TradePreimageValue {
     UpperBound(BigDecimal),
 }
 
+/// Gas fee policy for EVM-like swap
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
-pub enum SwapTxFeePolicy {
+pub enum SwapGasFeePolicy {
+    /// Use legacy gas price (before the EIP-1559 priority gas fee policy was implemented)
     #[default]
-    Unsupported,
-    Internal,
+    Legacy,
+    /// Use low EIP-1559 gas fee priority
     Low,
+    /// Use medium EIP-1559 gas fee priority
     Medium,
+    /// Use high EIP-1559 gas fee priority
     High,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct SwapTxFeePolicyRequest {
+pub struct GetSwapGasFeePolicyRequest {
+    coin: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetSwapGasFeePolicyRequest {
     coin: String,
     #[serde(default)]
-    swap_tx_fee_policy: SwapTxFeePolicy,
+    swap_gas_fee_policy: SwapGasFeePolicy,
 }
 
 #[derive(Debug, Display, EnumFromStringify, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
-pub enum SwapTxFeePolicyError {
+pub enum SwapGasFeePolicyError {
     #[from_stringify("CoinFindError")]
     NoSuchCoin(String),
     #[display(fmt = "eip-1559 policy is not supported for coin {_0}")]
     NotSupported(String),
 }
 
-impl HttpStatusCode for SwapTxFeePolicyError {
+impl HttpStatusCode for SwapGasFeePolicyError {
     fn status_code(&self) -> StatusCode {
         match self {
-            SwapTxFeePolicyError::NoSuchCoin(_) | SwapTxFeePolicyError::NotSupported(_) => StatusCode::BAD_REQUEST,
+            SwapGasFeePolicyError::NoSuchCoin(_) | SwapGasFeePolicyError::NotSupported(_) => StatusCode::BAD_REQUEST,
         }
     }
 }
 
-pub type SwapTxFeePolicyResult = Result<SwapTxFeePolicy, MmError<SwapTxFeePolicyError>>;
+pub type SwapGasFeePolicyResult = Result<SwapGasFeePolicy, MmError<SwapGasFeePolicyError>>;
 
 #[derive(Debug, Display, EnumFromStringify, PartialEq)]
 pub enum TradePreimageError {
@@ -2795,6 +2814,8 @@ pub enum TradePreimageError {
     InternalError(String),
     #[display(fmt = "Nft Protocol is not supported yet!")]
     NftProtocolNotSupported,
+    #[display(fmt = "No such coin {}", coin)]
+    NoSuchCoin { coin: String },
 }
 
 impl TradePreimageError {
@@ -2863,6 +2884,14 @@ impl TradePreimageError {
     }
 }
 
+impl From<CoinFindError> for TradePreimageError {
+    fn from(e: CoinFindError) -> Self {
+        match e {
+            CoinFindError::NoSuchCoin { coin } => TradePreimageError::NoSuchCoin { coin },
+        }
+    }
+}
+
 /// The reason of unsuccessful conversion of two internal numbers, e.g. `u64` from `BigNumber`.
 #[derive(Clone, Debug, Display)]
 pub struct NumConversError(String);
@@ -2896,6 +2925,10 @@ pub enum BalanceError {
     #[from_stringify("Bip32Error", "NumConversError", "ParseBigIntError")]
     #[display(fmt = "Internal: {_0}")]
     Internal(String),
+    #[display(fmt = "No such coin {}", coin)]
+    NoSuchCoin {
+        coin: String,
+    },
 }
 
 #[derive(Debug, PartialEq, Display)]
@@ -2934,6 +2967,14 @@ impl From<BalanceError> for GetNonZeroBalance {
 impl From<UnexpectedDerivationMethod> for BalanceError {
     fn from(e: UnexpectedDerivationMethod) -> Self {
         BalanceError::UnexpectedDerivationMethod(e)
+    }
+}
+
+impl From<CoinFindError> for BalanceError {
+    fn from(e: CoinFindError) -> Self {
+        match e {
+            CoinFindError::NoSuchCoin { coin } => BalanceError::NoSuchCoin { coin },
+        }
     }
 }
 
@@ -3088,6 +3129,7 @@ impl From<BalanceError> for DelegationError {
             },
             e @ BalanceError::WalletStorageError(_) => DelegationError::InternalError(e.to_string()),
             BalanceError::Internal(internal) => DelegationError::InternalError(internal),
+            BalanceError::NoSuchCoin { coin } => DelegationError::NoSuchCoin { coin },
         }
     }
 }
@@ -3335,6 +3377,7 @@ impl From<BalanceError> for WithdrawError {
             BalanceError::UnexpectedDerivationMethod(e) => WithdrawError::from(e),
             e @ BalanceError::WalletStorageError(_) => WithdrawError::InternalError(e.to_string()),
             BalanceError::Internal(internal) => WithdrawError::InternalError(internal),
+            BalanceError::NoSuchCoin { coin } => WithdrawError::NoSuchCoin { coin },
         }
     }
 }
@@ -3408,6 +3451,7 @@ impl From<EthGasDetailsErr> for WithdrawError {
             EthGasDetailsErr::Internal(e) => WithdrawError::InternalError(e),
             EthGasDetailsErr::Transport(e) => WithdrawError::Transport(e),
             EthGasDetailsErr::NftProtocolNotSupported => WithdrawError::NftProtocolNotSupported,
+            EthGasDetailsErr::NoSuchCoin { coin } => WithdrawError::NoSuchCoin { coin },
         }
     }
 }
@@ -6111,35 +6155,33 @@ fn coins_conf_check(ctx: &MmArc, coins_en: &Json, ticker: &str, req: Option<&Jso
 #[async_trait]
 pub trait Eip1559Ops {
     /// Return swap transaction fee policy
-    fn get_swap_transaction_fee_policy(&self) -> SwapTxFeePolicy;
+    async fn get_swap_gas_fee_policy(&self) -> CoinFindResult<SwapGasFeePolicy>;
 
     /// set swap transaction fee policy
-    fn set_swap_transaction_fee_policy(&self, swap_txfee_policy: SwapTxFeePolicy);
+    async fn set_swap_gas_fee_policy(&self, swap_txfee_policy: SwapGasFeePolicy) -> CoinFindResult<()>;
 }
 
-/// Get eip 1559 transaction fee per gas policy (low, medium, high) set for the coin
-pub async fn get_swap_transaction_fee_policy(ctx: MmArc, req: SwapTxFeePolicyRequest) -> SwapTxFeePolicyResult {
+/// Get the current eip 1559 transaction fee per gas policy
+pub async fn get_swap_gas_fee_policy(ctx: MmArc, req: GetSwapGasFeePolicyRequest) -> SwapGasFeePolicyResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     match coin {
-        MmCoinEnum::EthCoin(eth_coin) => Ok(eth_coin.get_swap_transaction_fee_policy()),
-        MmCoinEnum::Qrc20Coin(qrc20_coin) => Ok(qrc20_coin.get_swap_transaction_fee_policy()),
-        _ => MmError::err(SwapTxFeePolicyError::NotSupported(req.coin)),
+        MmCoinEnum::EthCoin(eth_coin) => Ok(eth_coin.get_swap_gas_fee_policy().await.map_mm_err()?),
+        _ => MmError::err(SwapGasFeePolicyError::NotSupported(req.coin)),
     }
 }
 
-/// Set eip 1559 transaction fee per gas policy (low, medium, high)
-pub async fn set_swap_transaction_fee_policy(ctx: MmArc, req: SwapTxFeePolicyRequest) -> SwapTxFeePolicyResult {
+/// Set eip 1559 transaction fee per gas policy (low, medium or high)
+pub async fn set_swap_gas_fee_policy(ctx: MmArc, req: SetSwapGasFeePolicyRequest) -> SwapGasFeePolicyResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     match coin {
         MmCoinEnum::EthCoin(eth_coin) => {
-            eth_coin.set_swap_transaction_fee_policy(req.swap_tx_fee_policy);
-            Ok(eth_coin.get_swap_transaction_fee_policy())
+            eth_coin
+                .set_swap_gas_fee_policy(req.swap_gas_fee_policy)
+                .await
+                .map_mm_err()?;
+            Ok(eth_coin.get_swap_gas_fee_policy().await.map_mm_err()?)
         },
-        MmCoinEnum::Qrc20Coin(qrc20_coin) => {
-            qrc20_coin.set_swap_transaction_fee_policy(req.swap_tx_fee_policy);
-            Ok(qrc20_coin.get_swap_transaction_fee_policy())
-        },
-        _ => MmError::err(SwapTxFeePolicyError::NotSupported(req.coin)),
+        _ => MmError::err(SwapGasFeePolicyError::NotSupported(req.coin)),
     }
 }
 
