@@ -26,6 +26,7 @@ use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandleShar
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::rpc_clients::BlockHashOrHeight;
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
+use crate::utxo::utxo_common::P2SHSigner;
 use crate::utxo::utxo_hd_wallet::{UtxoHDAccount, UtxoHDAddress};
 use crate::utxo::utxo_tx_history_v2::{
     UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams, UtxoTxHistoryOps,
@@ -40,7 +41,7 @@ use crate::{
     SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
     SendTakerFundingArgs, SignRawTransactionRequest, SignatureResult, SpendMakerPaymentArgs, SpendPaymentArgs, SwapOps,
     SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, ToBytes, TradePreimageValue, TransactionFut, TransactionResult,
-    TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult, ValidateFeeArgs, ValidateMakerPaymentArgs,
+    TxGenError, TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult, ValidateFeeArgs, ValidateMakerPaymentArgs,
     ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, ValidateSwapV2TxResult,
     ValidateTakerFundingArgs, ValidateTakerFundingSpendPreimageResult, ValidateTakerPaymentSpendPreimageResult,
     ValidateWatcherSpendInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward,
@@ -759,8 +760,8 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
         args: &GenTakerFundingSpendArgs<'_, Self>,
         swap_unique_data: &[u8],
     ) -> GenPreimageResult<Self> {
-        let htlc_keypair = self.derive_htlc_key_pair(swap_unique_data);
-        utxo_common::gen_and_sign_taker_funding_spend_preimage(self, args, &htlc_keypair).await
+        let signer = P2SHSigner::try_from_coin(self, swap_unique_data).map_err(TxGenError::Signing)?;
+        utxo_common::gen_and_sign_taker_funding_spend_preimage(self, args, &signer).await
     }
 
     async fn validate_taker_funding_spend_preimage(
@@ -777,8 +778,8 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
         args: &GenTakerFundingSpendArgs<'_, Self>,
         swap_unique_data: &[u8],
     ) -> Result<Self::Tx, TransactionErr> {
-        let htlc_keypair = self.derive_htlc_key_pair(swap_unique_data);
-        utxo_common::sign_and_send_taker_funding_spend(self, preimage, args, &htlc_keypair).await
+        let signer = try_tx_s!(P2SHSigner::try_from_coin(self, swap_unique_data));
+        utxo_common::sign_and_send_taker_funding_spend(self, preimage, args, &signer).await
     }
 
     async fn refund_combined_taker_payment(
@@ -802,8 +803,8 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
         args: &GenTakerPaymentSpendArgs<'_, Self>,
         swap_unique_data: &[u8],
     ) -> GenPreimageResult<Self> {
-        let key_pair = self.derive_htlc_key_pair(swap_unique_data);
-        utxo_common::gen_and_sign_taker_payment_spend_preimage(self, args, &key_pair).await
+        let signer = P2SHSigner::try_from_coin(self, swap_unique_data).map_err(TxGenError::Signing)?;
+        utxo_common::gen_and_sign_taker_payment_spend_preimage(self, args, &signer).await
     }
 
     async fn validate_taker_payment_spend_preimage(
@@ -823,8 +824,8 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
     ) -> Result<Self::Tx, TransactionErr> {
         let preimage = preimage
             .ok_or_else(|| TransactionErr::Plain(ERRL!("taker_payment_spend_preimage must be Some for UTXO coin")))?;
-        let htlc_keypair = self.derive_htlc_key_pair(swap_unique_data);
-        utxo_common::sign_and_broadcast_taker_payment_spend(self, preimage, gen_args, secret, &htlc_keypair).await
+        let signer = try_tx_s!(P2SHSigner::try_from_coin(self, swap_unique_data));
+        utxo_common::sign_and_broadcast_taker_payment_spend(self, preimage, gen_args, secret, &signer).await
     }
 
     async fn find_taker_payment_spend_tx(

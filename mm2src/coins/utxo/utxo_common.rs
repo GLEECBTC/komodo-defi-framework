@@ -916,7 +916,7 @@ pub enum P2SHSigner {
 }
 
 impl P2SHSigner {
-    fn try_from_coin<Coin>(coin: &Coin, swap_unique_data: &[u8]) -> Result<Self, String>
+    pub fn try_from_coin<Coin>(coin: &Coin, swap_unique_data: &[u8]) -> Result<Self, String>
     where
         Coin: UtxoCommonOps + SwapOps,
     {
@@ -1111,11 +1111,19 @@ async fn gen_taker_funding_spend_preimage<T: UtxoCommonOps>(
     .map_to_mm(TxGenError::Legacy)
 }
 
+// fixme: funding spend = taker payment
+// this func is run by the maker after the taker has sent the funding tx
+// the maker generates and signs the preimage of the taker payment and send it to the taker
 pub async fn gen_and_sign_taker_funding_spend_preimage<T: UtxoCommonOps>(
     coin: &T,
     args: &GenTakerFundingSpendArgs<'_, T>,
-    htlc_keypair: &KeyPair,
+    htlc_keypair: &P2SHSigner,
 ) -> GenPreimageResult<T> {
+    let htlc_keypair = match htlc_keypair {
+        P2SHSigner::KeyPair(key_pair) => key_pair,
+        P2SHSigner::WalletConnect(_) => panic!("no walletconnect here"),
+    };
+
     let funding_time_lock = args
         .funding_time_lock
         .try_into()
@@ -1231,13 +1239,20 @@ pub async fn validate_taker_funding_spend_preimage<T: UtxoCommonOps + SwapOps>(
     Ok(())
 }
 
+// fixme: funding spend = taker payment
+// this func is run by the taker after receiving the preimage from the maker and (confirming the maker payment; optional)
+// the taker signs and finalizes the taker payment and broadcasts it.
 /// Common implementation of taker funding spend finalization and broadcast for UTXO coins.
 pub async fn sign_and_send_taker_funding_spend<T: UtxoCommonOps>(
     coin: &T,
     preimage: &TxPreimageWithSig<T>,
     gen_args: &GenTakerFundingSpendArgs<'_, T>,
-    htlc_keypair: &KeyPair,
+    htlc_keypair: &P2SHSigner,
 ) -> Result<UtxoTx, TransactionErr> {
+    let htlc_keypair = match htlc_keypair {
+        P2SHSigner::KeyPair(key_pair) => key_pair,
+        P2SHSigner::WalletConnect(_) => panic!("no walletconnect here"),
+    };
     let redeem_script = swap_proto_v2_scripts::taker_funding_script(
         try_tx_s!(gen_args.funding_time_lock.try_into()),
         gen_args.taker_secret_hash,
@@ -1395,11 +1410,18 @@ async fn gen_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     .map_to_mm(TxGenError::Legacy)
 }
 
+// fixme: taker payment spend = preimage/swap-finalizing tx
+// this func is run by the taker after confirming the taker payment (that this tx spends).
+// the taker generates and signs the preimage of this tx and sends it to the maker.
 pub async fn gen_and_sign_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     args: &GenTakerPaymentSpendArgs<'_, T>,
-    htlc_keypair: &KeyPair,
+    htlc_keypair: &P2SHSigner,
 ) -> GenPreimageResult<T> {
+    let htlc_keypair = match htlc_keypair {
+        P2SHSigner::KeyPair(key_pair) => key_pair,
+        P2SHSigner::WalletConnect(_) => panic!("no walletconnect here"),
+    };
     let time_lock = args
         .time_lock
         .try_into()
@@ -1487,6 +1509,9 @@ pub async fn validate_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     Ok(())
 }
 
+// fixme: taker payment spend = preimage/swap-finalizing tx
+// this func is run by the maker after recieving the preimage of the finalizing tx from the taker
+// the maker signs and broadcasts the finalizing tx.
 /// Common implementation of taker payment spend finalization and broadcast for UTXO coins.
 /// Appends maker output to the preimage, signs it with SIGHASH_ALL and submits the resulting tx to coin's RPC.
 pub async fn sign_and_broadcast_taker_payment_spend<T: UtxoCommonOps>(
@@ -1494,8 +1519,12 @@ pub async fn sign_and_broadcast_taker_payment_spend<T: UtxoCommonOps>(
     preimage: &TxPreimageWithSig<T>,
     gen_args: &GenTakerPaymentSpendArgs<'_, T>,
     secret: &[u8],
-    htlc_keypair: &KeyPair,
+    htlc_keypair: &P2SHSigner,
 ) -> Result<UtxoTx, TransactionErr> {
+    let htlc_keypair = match htlc_keypair {
+        P2SHSigner::KeyPair(key_pair) => key_pair,
+        P2SHSigner::WalletConnect(_) => panic!("no walletconnect here"),
+    };
     let secret_hash = dhash160(secret);
     let redeem_script = swap_proto_v2_scripts::taker_payment_script(
         try_tx_s!(gen_args.time_lock.try_into()),
