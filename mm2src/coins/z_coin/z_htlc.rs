@@ -187,13 +187,14 @@ pub async fn z_p2sh_spend(
         value: p2sh_tx.vout[DEFAULT_SWAP_VOUT].value,
         script_pubkey: ZCashScript(redeem_script.to_vec()),
     };
-    tx_builder.add_transparent_input(
-        secp_secret,
-        outpoint,
-        input_sequence,
-        ZCashScript(script_data.to_vec()),
-        tx_out,
-    )?;
+    // fixme: uncomment
+    // tx_builder.add_transparent_input(
+    //     secp_secret,
+    //     outpoint,
+    //     input_sequence,
+    //     ZCashScript(script_data.to_vec()),
+    //     tx_out,
+    // )?;
     tx_builder.add_sapling_output(
         None,
         coin.z_fields.my_z_addr.clone(),

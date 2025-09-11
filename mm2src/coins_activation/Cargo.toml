@@ -44,4 +44,3 @@ mm2_metamask = { path = "../mm2_metamask" }
 lightning.workspace = true
 lightning-background-processor.workspace = true
 lightning-invoice.workspace = true
-secp256k1v24.workspace = true

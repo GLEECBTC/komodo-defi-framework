@@ -82,7 +82,7 @@ use num_traits::ToPrimitive;
 use primitives::hash::{H160, H256, H264};
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use script::{Builder, Script, SignatureVersion, TransactionInputSigner};
-use secp256k1::Signature as SecpSignature;
+use secp256k1::ecdsa::Signature as SecpSignature;
 use serde_json::{self as json, Value as Json};
 use serialization::{deserialize, serialize, serialize_with_flags, Error as SerError, SERIALIZE_TRANSACTION_WITNESS};
 use spv_validation::conf::SPVConf;

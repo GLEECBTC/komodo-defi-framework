@@ -4,7 +4,7 @@ use common::log::LogState;
 use lightning::routing::gossip;
 use lightning::routing::scoring::ProbabilisticScorer;
 use parking_lot::Mutex as PaMutex;
-use secp256k1v24::PublicKey;
+use secp256k1::PublicKey;
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};

@@ -10,7 +10,7 @@ use lightning::routing::gossip;
 use lightning_net_tokio::SocketDescriptor;
 use mm2_net::ip_addr::fetch_external_ip;
 use rand::RngCore;
-use secp256k1v24::PublicKey;
+use secp256k1::PublicKey;
 use std::net::{IpAddr, Ipv4Addr};
 use std::num::TryFromIntError;
 use tokio::net::TcpListener;

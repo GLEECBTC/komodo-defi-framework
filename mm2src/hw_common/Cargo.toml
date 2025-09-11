@@ -13,7 +13,7 @@ common = { path = "../common" }
 mm2_err_handle = { path = "../mm2_err_handle" }
 derive_more.workspace = true
 futures = { workspace = true, features = ["compat", "async-await"] }
-secp256k1 = { workspace = true, features = ["rand"] }
+secp256k1 = { version = "0.27", features = ["rand"] }
 serde.workspace = true
 serde_derive.workspace = true
 

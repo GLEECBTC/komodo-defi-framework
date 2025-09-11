@@ -2,7 +2,7 @@ use crate::eth::{addr_from_pubkey_str, checksum_address};
 use crate::tendermint;
 use crate::z_coin::{ZcoinConsensusParams, ZcoinProtocolInfo};
 use crate::CoinProtocol;
-use bitcoin_hashes::hex::ToHex;
+use hex::ToHex;
 use bitcrypto::ChecksumType;
 use common::HttpStatusCode;
 use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
@@ -235,7 +235,7 @@ fn get_pubkey_for_protocol(key_pair: &KeyPair, protocol: &CoinProtocol) -> Resul
         },
         _ => {
             // For other protocols, use compressed public keys
-            Ok(key_pair.public().to_vec().to_hex())
+            Ok(key_pair.public().to_vec().encode_hex())
         },
     }
 }
@@ -452,7 +452,7 @@ async fn offline_hd_keys_export_internal(
                                 },
                             };
 
-                            let priv_key = format!("0x{}", key_pair.private().secret.to_hex());
+                            let priv_key = format!("0x{}", key_pair.private().secret.to_string());
 
                             (address, priv_key)
                         },
@@ -461,7 +461,7 @@ async fn offline_hd_keys_export_internal(
                                 .map_err(|e| OfflineKeysError::Internal(e.to_string()))?
                                 .to_string();
 
-                            let priv_key = key_pair.private().secret.to_hex();
+                            let priv_key = key_pair.private().secret.to_string();
 
                             (address, priv_key)
                         },
@@ -573,7 +573,7 @@ async fn offline_iguana_keys_export_internal(
                         },
                     };
 
-                    let priv_key = format!("0x{}", key_pair.private().secret.to_hex());
+                    let priv_key = format!("0x{}", key_pair.private().secret.to_string());
 
                     (address, priv_key)
                 },
@@ -582,7 +582,7 @@ async fn offline_iguana_keys_export_internal(
                         .map_err(|e| OfflineKeysError::Internal(e.to_string()))?
                         .to_string();
 
-                    let priv_key = key_pair.private().secret.to_hex();
+                    let priv_key = key_pair.private().secret.to_string();
 
                     (address, priv_key)
                 },

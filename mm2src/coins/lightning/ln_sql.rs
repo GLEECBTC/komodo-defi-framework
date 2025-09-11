@@ -16,7 +16,7 @@ use db_common::sqlite::{
     CHECK_TABLE_EXISTS_SQL,
 };
 use lightning::ln::{PaymentHash, PaymentPreimage};
-use secp256k1v24::PublicKey;
+use secp256k1::PublicKey;
 use std::convert::TryInto;
 use std::str::FromStr;
 use uuid::Uuid;
@@ -1039,7 +1039,7 @@ mod tests {
     use db_common::sqlite::rusqlite::{self, Connection};
     use rand::distributions::Alphanumeric;
     use rand::{Rng, RngCore};
-    use secp256k1v24::{Secp256k1, SecretKey};
+    use secp256k1::{Secp256k1, SecretKey};
     use std::num::NonZeroUsize;
     use std::sync::{Arc, Mutex};
 

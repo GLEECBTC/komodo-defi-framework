@@ -1,9 +1,11 @@
 use compact::Compact;
 use crypto::dhash256;
+use ext_bitcoin::block::Version;
 #[cfg(not(target_arch = "wasm32"))]
-use ext_bitcoin::blockdata::block::BlockHeader as ExtBlockHeader;
+use ext_bitcoin::blockdata::block::Header as ExtBlockHeader;
 #[cfg(not(target_arch = "wasm32"))]
 use ext_bitcoin::hash_types::{BlockHash as ExtBlockHash, TxMerkleNode as ExtTxMerkleNode};
+use ext_bitcoin::CompactTarget;
 use hash::H256;
 use hex::FromHex;
 use primitives::bytes::Bytes;
@@ -381,19 +383,19 @@ impl From<&'static str> for BlockHeader {
 #[cfg(not(target_arch = "wasm32"))]
 impl From<BlockHeader> for ExtBlockHeader {
     fn from(header: BlockHeader) -> Self {
-        let prev_blockhash = ExtBlockHash::from_hash(header.previous_header_hash.to_sha256d());
-        let merkle_root = ExtTxMerkleNode::from_hash(header.merkle_root_hash.to_sha256d());
+        let prev_blockhash = ExtBlockHash::from_raw_hash(header.previous_header_hash.to_sha256d());
+        let merkle_root = ExtTxMerkleNode::from_raw_hash(header.merkle_root_hash.to_sha256d());
         // note: H256 nonce is not supported for bitcoin, we will just set nonce to 0 in this case since this will never happen
         let nonce = match header.nonce {
             BlockHeaderNonce::U32(n) => n,
             _ => 0,
         };
         ExtBlockHeader {
-            version: header.version as i32,
+            version: Version::from_consensus(header.version as i32),
             prev_blockhash,
             merkle_root,
             time: header.time,
-            bits: header.bits.into(),
+            bits: CompactTarget::from_consensus(header.bits.into()),
             nonce,
         }
     }

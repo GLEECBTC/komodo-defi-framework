@@ -10,7 +10,7 @@ pub mod p2p_ctx;
 use derive_more::Display;
 use lazy_static::lazy_static;
 use secp256k1::{
-    Message as SecpMessage, PublicKey as Secp256k1Pubkey, Secp256k1, SecretKey, SignOnly, Signature, VerifyOnly,
+    ecdsa::Signature, Message as SecpMessage, PublicKey as Secp256k1Pubkey, Secp256k1, SecretKey, SignOnly, VerifyOnly,
 };
 use serde::{de, Deserialize, Serialize, Serializer};
 use sha2::digest::Update;
@@ -159,7 +159,7 @@ pub fn encode_and_sign<T: Serialize>(message: &T, secret: &[u8; 32]) -> Result<V
     let encoded = encode_message(message)?;
     let sig_hash = SecpMessage::from_slice(&sha256(&encoded))
         .map_err(|e| rmp_serde::encode::Error::Syntax(format!("Error {e} parsing message")))?;
-    let sig = SECP_SIGN.sign(&sig_hash, &secret);
+    let sig = SECP_SIGN.sign_ecdsa(&sig_hash, &secret);
     let serialized_sig = sig.serialize_compact();
     let pubkey = PublicKey::from(Secp256k1Pubkey::from_secret_key(&*SECP_SIGN, &secret));
     let msg = SignedMessageSerdeHelper {
@@ -179,7 +179,10 @@ pub fn decode_signed<'de, T: de::Deserialize<'de>>(
     let sig_hash = SecpMessage::from_slice(&sha256(helper.payload)).expect("Message::from_slice should never fail");
     match &helper.pubkey {
         PublicKey::Secp256k1(serialized_pub) => {
-            if SECP_VERIFY.verify(&sig_hash, &signature, &serialized_pub.0).is_err() {
+            if SECP_VERIFY
+                .verify_ecdsa(&sig_hash, &signature, &serialized_pub.0)
+                .is_err()
+            {
                 return Err(rmp_serde::decode::Error::Syntax("Invalid message signature".into()));
             }
         },
@@ -247,7 +250,7 @@ impl PublicKey {
 
     pub fn to_hex(&self) -> String {
         match self {
-            PublicKey::Secp256k1(pubkey) => hex::encode(pubkey.0.serialize().as_ref()),
+            PublicKey::Secp256k1(pubkey) => hex::encode(pubkey.0.serialize()),
         }
     }
 

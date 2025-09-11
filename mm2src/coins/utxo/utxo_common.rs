@@ -62,7 +62,7 @@ use rpc::v1::types::{Bytes as BytesJson, ToTxHash, TransactionInputEnum, H256 as
 #[cfg(test)]
 use rpc_clients::NativeClientImpl;
 use script::{Builder, Opcode, Script, ScriptAddress, TransactionInputSigner, UnsignedTransactionInput};
-use secp256k1::{PublicKey, Signature as SecpSignature};
+use secp256k1::{ecdsa::Signature as SecpSignature, PublicKey};
 use serde_json::{self as json};
 use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, SERIALIZE_TRANSACTION_WITNESS};
 use std::cmp::Ordering;

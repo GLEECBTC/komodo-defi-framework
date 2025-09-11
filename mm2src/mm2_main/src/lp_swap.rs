@@ -86,7 +86,7 @@ use mm2_number::{BigDecimal, MmNumber, MmNumberMultiRepr};
 use mm2_state_machine::storable_state_machine::StateMachineStorage;
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264};
-use secp256k1::{PublicKey, SecretKey, Signature};
+use secp256k1::{PublicKey, SecretKey, ecdsa::Signature};
 use serde::Serialize;
 use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};
@@ -1681,7 +1681,7 @@ pub fn broadcast_swap_v2_message<T: prost::Message>(
     let secp_secret = SecretKey::from_slice(&p2p_private).expect("valid secret key");
     let secp_message =
         secp256k1::Message::from_slice(sha256(&encoded_msg).as_slice()).expect("sha256 is 32 bytes hash");
-    let signature = SECP_SIGN.sign(&secp_message, &secp_secret);
+    let signature = SECP_SIGN.sign_ecdsa(&secp_message, &secp_secret);
 
     let signed_message = SignedMessage {
         from: PublicKey::from_secret_key(&*SECP_SIGN, &secp_secret).serialize().into(),
@@ -1732,7 +1732,7 @@ pub fn process_swap_v2_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PProcessRes
             .expect("sha256 is 32 bytes hash");
 
         SECP_VERIFY
-            .verify(&secp_message, &signature, &pubkey)
+            .verify_ecdsa(&secp_message, &signature, &pubkey)
             .map_to_mm(|e| P2PProcessError::InvalidSignature(e.to_string()))?;
 
         let swap_message = SwapMessage::decode(signed_message.payload.as_slice())

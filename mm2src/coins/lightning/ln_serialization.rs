@@ -3,7 +3,7 @@ use crate::lightning::ln_platform::h256_json_from_txid;
 use crate::H256Json;
 use lightning::chain::channelmonitor::Balance;
 use lightning::ln::channelmanager::ChannelDetails;
-use secp256k1v24::PublicKey;
+use secp256k1::PublicKey;
 use serde::{de, Serialize, Serializer};
 use std::fmt;
 use std::net::{SocketAddr, ToSocketAddrs};

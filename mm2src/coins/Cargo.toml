@@ -163,7 +163,6 @@ lightning-invoice.workspace = true
 lightning-net-tokio.workspace = true
 rust-ini.workspace = true
 rustls = { workspace = true, features = ["dangerous_configuration"] }
-secp256k1v24.workspace = true
 timed-map = { workspace = true, features = ["rustc-hash"] }
 tokio.workspace = true
 tokio-rustls.workspace = true

@@ -8,12 +8,13 @@ use bitcoin_hashes::hex::FromHex;
 use common::async_blocking;
 use common::log::LogState;
 use lightning::chain::channelmonitor::ChannelMonitor;
-use lightning::chain::keysinterface::{KeysInterface, Sign};
-use lightning::routing::scoring::{ProbabilisticScorer, ProbabilisticScoringParameters};
+use lightning::sign::ecdsa::WriteableEcdsaChannelSigner as Sign;
+use lightning::sign::SignerProvider;
+use lightning::routing::scoring::{ProbabilisticScorer, ProbabilisticScoringDecayParameters};
 use lightning::util::persist::KVStorePersister;
 use lightning::util::ser::{ReadableArgs, Writeable};
 use mm2_io::fs::{check_dir_operations, invalid_data_err, read_json, write_json};
-use secp256k1v24::PublicKey;
+use secp256k1::PublicKey;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{BufReader, BufWriter, Cursor};
@@ -112,7 +113,7 @@ impl LightningFilesystemPersister {
         keys_manager: K,
     ) -> Result<Vec<(BlockHash, ChannelMonitor<Signer>)>, std::io::Error>
     where
-        K::Target: KeysInterface<Signer = Signer> + Sized,
+        K::Target: SignerProvider<EcdsaSigner = Signer> + Sized,
     {
         let path = self.monitors_path();
         if !path.exists() {
@@ -358,7 +359,7 @@ impl LightningStorage for LightningFilesystemPersister {
         let path = self.scorer_path();
         if !path.exists() {
             return Ok(Mutex::new(ProbabilisticScorer::new(
-                ProbabilisticScoringParameters::default(),
+                ProbabilisticScoringDecayParameters::default(),
                 network_graph,
                 logger,
             )));
@@ -367,7 +368,7 @@ impl LightningStorage for LightningFilesystemPersister {
             let file = fs::File::open(path)?;
             let scorer = ProbabilisticScorer::read(
                 &mut BufReader::new(file),
-                (ProbabilisticScoringParameters::default(), network_graph, logger),
+                (ProbabilisticScoringDecayParameters::default(), network_graph, logger),
             )
             .map_err(|e| invalid_data_err("Error", e))?;
             Ok(Mutex::new(scorer))

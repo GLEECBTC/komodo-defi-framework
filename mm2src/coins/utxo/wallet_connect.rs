@@ -6,7 +6,7 @@ use crate::utxo::{utxo_common, UtxoCoinFields};
 use crate::UtxoTx;
 use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use base64::Engine;
-use bitcoin::{consensus::Decodable, consensus::Encodable, psbt::Psbt, EcdsaSighashType};
+use bitcoin::{consensus::Decodable, consensus::Encodable, psbt::Psbt, sighash::EcdsaSighashType};
 use bitcrypto::sign_message_hash;
 use chain::bytes::Bytes;
 use chain::hash::H256;
@@ -182,10 +182,7 @@ async fn sign_psbt(
     broadcast: bool,
 ) -> MmResult<Psbt, WalletConnectError> {
     // Serialize the PSBT and encode it in base64 format.
-    let mut serialized_psbt = Vec::new();
-    psbt.consensus_encode(&mut serialized_psbt).map_to_mm(|e| {
-        WalletConnectError::InternalError(format!("Failed to serialize our PSBT for WalletConnect: {e}"))
-    })?;
+    let serialized_psbt = psbt.serialize();
     let serialized_psbt = BASE64_ENGINE.encode(serialized_psbt);
 
     wc.validate_update_active_chain_id(session_topic, chain_id).await?;
@@ -200,7 +197,7 @@ async fn sign_psbt(
         .send_session_request_and_wait(session_topic, chain_id, WcRequestMethods::UtxoSignPsbt, params)
         .await?;
 
-    let signed_psbt = Psbt::consensus_decode(&mut &signed_psbt.psbt[..]).map_to_mm(|e| {
+    let signed_psbt = Psbt::deserialize(&signed_psbt.psbt[..]).map_to_mm(|e| {
         WalletConnectError::InternalError(format!("Failed to parse signed PSBT from WalletConnect: {e}"))
     })?;
 

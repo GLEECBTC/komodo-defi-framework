@@ -15,6 +15,7 @@ derive_more.workspace = true
 lazy_static.workspace = true
 primitives = { path = "../primitives" }
 rand = { version = "0.6", features = ["wasm-bindgen"] }
+rand8 = { version = "0.8", package = "rand" }
 rustc-hex.workspace = true
 secp256k1 = { workspace = true, features = ["rand", "recovery"] }
 serde = { workspace = true, features = ["derive"] }
