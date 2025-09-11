@@ -1,4 +1,6 @@
-use super::{validate_amount, EthPaymentType, PaymentMethod, PrepareTxDataError, ZERO_VALUE};
+use super::{
+    validate_amount, validate_from_to_addresses, EthPaymentType, PaymentMethod, PrepareTxDataError, ZERO_VALUE,
+};
 use crate::coin_errors::{ValidatePaymentError, ValidatePaymentResult};
 use crate::eth::{
     decode_contract_call, get_function_input_data, u256_from_big_decimal, EthCoin, EthCoinType, SignedEthTx,
@@ -133,39 +135,15 @@ impl EthCoin {
         let swap_id = self.etomic_swap_id_v2(args.time_lock, args.maker_secret_hash);
 
         let tx = args.maker_payment_tx;
-
         let maker_address = public_to_address(args.maker_pub);
-        if tx.sender() != maker_address {
-            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "Payment tx was sent from wrong address, expected {:?}, got {:?}",
-                maker_address,
-                tx.sender()
-            )));
-        }
-
-        let taker_address = self.my_addr().await;
-        match tx.unsigned().action() {
-            Action::Call(to) => {
-                if *to != maker_swap_v2_contract {
-                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                        "Payment tx was sent to wrong address, expected {:?}, got {:?}",
-                        maker_swap_v2_contract, to
-                    )));
-                }
-            },
-            Action::Create => {
-                return MmError::err(ValidatePaymentError::WrongPaymentTx(
-                    "Tx action must be Call, found Create instead".to_string(),
-                ));
-            },
-        }
+        validate_from_to_addresses(tx, maker_address, maker_swap_v2_contract).map_mm_err()?;
 
         let validation_args = {
             let amount = u256_from_big_decimal(&args.amount, self.decimals).map_mm_err()?;
             MakerValidationArgs {
                 swap_id,
                 amount,
-                taker: taker_address,
+                taker: self.my_addr().await,
                 taker_secret_hash,
                 maker_secret_hash,
                 payment_time_lock: args.time_lock,
