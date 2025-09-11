@@ -133,9 +133,17 @@ impl EthCoin {
         let swap_id = self.etomic_swap_id_v2(args.time_lock, args.maker_secret_hash);
 
         let tx = args.maker_payment_tx;
-        let maker_address = public_to_address(args.maker_pub);
-        let taker_address = self.my_addr().await;
 
+        let maker_address = public_to_address(args.maker_pub);
+        if tx.sender() != maker_address {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Payment tx was sent from wrong address, expected {:?}, got {:?}",
+                maker_address,
+                tx.sender()
+            )));
+        }
+
+        let taker_address = self.my_addr().await;
         match tx.unsigned().action() {
             Action::Call(to) => {
                 if *to != maker_swap_v2_contract {
@@ -150,14 +158,6 @@ impl EthCoin {
                     "Tx action must be Call, found Create instead".to_string(),
                 ));
             },
-        }
-
-        if tx.sender() != maker_address {
-            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "Payment tx was sent from wrong address, expected {:?}, got {:?}",
-                maker_address,
-                tx.sender()
-            )));
         }
 
         let validation_args = {
