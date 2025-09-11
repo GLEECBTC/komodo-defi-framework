@@ -2620,6 +2620,7 @@ fn test_orderbook_pubkey_sync_request() {
         OrderbookRequestingState::Requested,
     );
     let pubkey = "pubkey";
+    let propagated_from = "propagated_from";
 
     let mut trie_roots = HashMap::new();
     trie_roots.insert("C1:C2".to_owned(), [1; 8]);
@@ -2630,17 +2631,11 @@ fn test_orderbook_pubkey_sync_request() {
         timestamp: now_sec(),
     };
 
-    let request = orderbook.process_keep_alive(pubkey, message, false).unwrap();
-    match request {
-        OrdermatchRequest::SyncPubkeyOrderbookState {
-            trie_roots: pairs_trie_roots,
-            ..
-        } => {
-            assert!(pairs_trie_roots.contains_key("C1:C2"));
-            assert!(!pairs_trie_roots.contains_key("C2:C3"));
-        },
-        _ => panic!("Invalid request {:?}", request),
-    }
+    let pairs_trie_roots = orderbook
+        .process_keep_alive(pubkey, message, false, propagated_from)
+        .unwrap();
+    assert!(pairs_trie_roots.contains_key("C1:C2"));
+    assert!(!pairs_trie_roots.contains_key("C2:C3"));
 }
 
 #[test]
@@ -2651,6 +2646,7 @@ fn test_orderbook_pubkey_sync_request_relay() {
         OrderbookRequestingState::Requested,
     );
     let pubkey = "pubkey";
+    let propagated_from = "propagated_from";
 
     let mut trie_roots = HashMap::new();
     trie_roots.insert("C1:C2".to_owned(), [1; 8]);
@@ -2661,17 +2657,11 @@ fn test_orderbook_pubkey_sync_request_relay() {
         timestamp: now_sec(),
     };
 
-    let request = orderbook.process_keep_alive(pubkey, message, true).unwrap();
-    match request {
-        OrdermatchRequest::SyncPubkeyOrderbookState {
-            trie_roots: pairs_trie_roots,
-            ..
-        } => {
-            assert!(pairs_trie_roots.contains_key("C1:C2"));
-            assert!(pairs_trie_roots.contains_key("C2:C3"));
-        },
-        _ => panic!("Invalid request {:?}", request),
-    }
+    let pairs_trie_roots = orderbook
+        .process_keep_alive(pubkey, message, true, propagated_from)
+        .unwrap();
+    assert!(pairs_trie_roots.contains_key("C1:C2"));
+    assert!(pairs_trie_roots.contains_key("C2:C3"));
 }
 
 #[test]

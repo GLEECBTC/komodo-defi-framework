@@ -47,7 +47,7 @@ impl EthCoin {
                     ZERO_VALUE.into(),
                     Action::Call(*args.nft_swap_info.token_address),
                     data,
-                    U256::from(gas_limit),
+                    Some(U256::from(gas_limit)),
                 )
                 .compat()
                 .await
@@ -159,7 +159,7 @@ impl EthCoin {
                     ZERO_VALUE.into(),
                     Action::Call(nft_maker_swap_v2_contract),
                     data,
-                    U256::from(gas_limit),
+                    Some(U256::from(gas_limit)),
                 )
                 .compat()
                 .await
@@ -196,7 +196,7 @@ impl EthCoin {
                     ZERO_VALUE.into(),
                     Action::Call(nft_maker_swap_v2_contract),
                     data,
-                    U256::from(gas_limit),
+                    Some(U256::from(gas_limit)),
                 )
                 .compat()
                 .await
@@ -234,7 +234,7 @@ impl EthCoin {
                     ZERO_VALUE.into(),
                     Action::Call(nft_maker_swap_v2_contract),
                     data,
-                    U256::from(gas_limit),
+                    Some(U256::from(gas_limit)),
                 )
                 .compat()
                 .await

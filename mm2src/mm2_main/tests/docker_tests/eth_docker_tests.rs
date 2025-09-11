@@ -21,21 +21,21 @@ use coins::nft::nft_structs::{Chain, ContractType, NftInfo};
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use coins::{
     lp_coinfind, CoinsContext, DexFee, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
-    MakerCoinSwapOpsV2, MmCoinEnum, MmCoinStruct, RefundFundingSecretArgs, RefundMakerPaymentSecretArgs,
+    MakerCoinSwapOpsV2, MmCoinStruct, RefundFundingSecretArgs, RefundMakerPaymentSecretArgs,
     RefundMakerPaymentTimelockArgs, RefundTakerPaymentArgs, SendMakerPaymentArgs, SendTakerFundingArgs,
     SpendMakerPaymentArgs, TakerCoinSwapOpsV2, TxPreimageWithSig, ValidateMakerPaymentArgs, ValidateTakerFundingArgs,
 };
 use coins::{
-    CoinProtocol, CoinWithDerivationMethod, CommonSwapOpsV2, ConfirmPaymentInput, DerivationMethod, Eip1559Ops,
-    FoundSwapTxSpend, MakerNftSwapOpsV2, MarketCoinOps, NftSwapInfo, ParseCoinAssocTypes, ParseNftAssocTypes,
-    PrivKeyBuildPolicy, RefundNftMakerPaymentArgs, RefundPaymentArgs, SearchForSwapTxSpendInput,
-    SendNftMakerPaymentArgs, SendPaymentArgs, SpendNftMakerPaymentArgs, SpendPaymentArgs, SwapOps, SwapTxFeePolicy,
-    SwapTxTypeWithSecretHash, ToBytes, Transaction, ValidateNftMakerPaymentArgs,
+    lp_register_coin, CoinProtocol, CoinWithDerivationMethod, CommonSwapOpsV2, ConfirmPaymentInput, DerivationMethod,
+    Eip1559Ops, FoundSwapTxSpend, MakerNftSwapOpsV2, MarketCoinOps, MmCoinEnum, NftSwapInfo, ParseCoinAssocTypes,
+    ParseNftAssocTypes, PrivKeyBuildPolicy, RefundNftMakerPaymentArgs, RefundPaymentArgs, RegisterCoinParams,
+    SearchForSwapTxSpendInput, SendNftMakerPaymentArgs, SendPaymentArgs, SpendNftMakerPaymentArgs, SpendPaymentArgs,
+    SwapGasFeePolicy, SwapOps, SwapTxTypeWithSecretHash, ToBytes, Transaction, ValidateNftMakerPaymentArgs,
 };
 use common::{block_on, block_on_f01, now_sec};
 use crypto::Secp256k1Secret;
 use ethereum_types::U256;
-use mm2_core::mm_ctx::MmArc;
+use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::{BigDecimal, BigUint};
 use mm2_test_helpers::for_tests::{
     account_balance, active_swaps, coins_needed_for_kickstart, disable_coin, enable_erc20_token_v2, enable_eth_coin_v2,
@@ -432,6 +432,7 @@ fn global_nft_with_random_privkey(
         enable_params: Default::default(),
         path_to_address: Default::default(),
         gap_limit: None,
+        swap_gas_fee_policy: None,
     };
     let coin = block_on(eth_coin_from_conf_and_request_v2(
         &MM_CTX1,
@@ -506,6 +507,7 @@ fn sepolia_coin_from_privkey(ctx: &MmArc, secret: &'static str, ticker: &str, co
         enable_params: Default::default(),
         path_to_address: Default::default(),
         gap_limit: None,
+        swap_gas_fee_policy: None,
     };
     let coin = block_on(eth_coin_from_conf_and_request_v2(
         ctx,
@@ -598,10 +600,10 @@ pub fn fill_eth_erc20_with_private_key(priv_key: Secp256k1Secret) {
     fill_erc20(my_address, U256::from(10000000000u64));
 }
 
-fn send_and_refund_eth_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) {
+fn send_and_refund_eth_maker_payment_impl(swap_txfee_policy: SwapGasFeePolicy) {
     thread::sleep(Duration::from_secs(3));
     let eth_coin = eth_coin_with_random_privkey(swap_contract());
-    eth_coin.set_swap_transaction_fee_policy(swap_txfee_policy);
+    assert!(block_on(eth_coin.set_swap_gas_fee_policy(swap_txfee_policy)).is_ok());
 
     let time_lock = now_sec() - 100;
     let other_pubkey = &[
@@ -675,20 +677,20 @@ fn send_and_refund_eth_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) {
 
 #[test]
 fn send_and_refund_eth_maker_payment_internal_gas_policy() {
-    send_and_refund_eth_maker_payment_impl(SwapTxFeePolicy::Internal);
+    send_and_refund_eth_maker_payment_impl(SwapGasFeePolicy::Legacy);
 }
 
 #[test]
 fn send_and_refund_eth_maker_payment_priority_fee() {
-    send_and_refund_eth_maker_payment_impl(SwapTxFeePolicy::Medium);
+    send_and_refund_eth_maker_payment_impl(SwapGasFeePolicy::Medium);
 }
 
-fn send_and_spend_eth_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) {
+fn send_and_spend_eth_maker_payment_impl(swap_txfee_policy: SwapGasFeePolicy) {
     let maker_eth_coin = eth_coin_with_random_privkey(swap_contract());
     let taker_eth_coin = eth_coin_with_random_privkey(swap_contract());
 
-    maker_eth_coin.set_swap_transaction_fee_policy(swap_txfee_policy.clone());
-    taker_eth_coin.set_swap_transaction_fee_policy(swap_txfee_policy);
+    assert!(block_on(maker_eth_coin.set_swap_gas_fee_policy(swap_txfee_policy.clone())).is_ok());
+    assert!(block_on(taker_eth_coin.set_swap_gas_fee_policy(swap_txfee_policy)).is_ok());
 
     let time_lock = now_sec() + 1000;
     let maker_pubkey = maker_eth_coin.derive_htlc_pubkey(&[]);
@@ -762,18 +764,18 @@ fn send_and_spend_eth_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) {
 
 #[test]
 fn send_and_spend_eth_maker_payment_internal_gas_policy() {
-    send_and_spend_eth_maker_payment_impl(SwapTxFeePolicy::Internal);
+    send_and_spend_eth_maker_payment_impl(SwapGasFeePolicy::Legacy);
 }
 
 #[test]
 fn send_and_spend_eth_maker_payment_priority_fee() {
-    send_and_spend_eth_maker_payment_impl(SwapTxFeePolicy::Medium);
+    send_and_spend_eth_maker_payment_impl(SwapGasFeePolicy::Medium);
 }
 
-fn send_and_refund_erc20_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) {
+fn send_and_refund_erc20_maker_payment_impl(swap_txfee_policy: SwapGasFeePolicy) {
     thread::sleep(Duration::from_secs(10));
     let erc20_coin = erc20_coin_with_random_privkey(swap_contract());
-    erc20_coin.set_swap_transaction_fee_policy(swap_txfee_policy);
+    assert!(block_on(erc20_coin.set_swap_gas_fee_policy(swap_txfee_policy)).is_ok());
 
     let time_lock = now_sec() - 100;
     let other_pubkey = &[
@@ -848,21 +850,21 @@ fn send_and_refund_erc20_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) 
 
 #[test]
 fn send_and_refund_erc20_maker_payment_internal_gas_policy() {
-    send_and_refund_erc20_maker_payment_impl(SwapTxFeePolicy::Internal);
+    send_and_refund_erc20_maker_payment_impl(SwapGasFeePolicy::Legacy);
 }
 
 #[test]
 fn send_and_refund_erc20_maker_payment_priority_fee() {
-    send_and_refund_erc20_maker_payment_impl(SwapTxFeePolicy::Medium);
+    send_and_refund_erc20_maker_payment_impl(SwapGasFeePolicy::Medium);
 }
 
-fn send_and_spend_erc20_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) {
+fn send_and_spend_erc20_maker_payment_impl(swap_txfee_policy: SwapGasFeePolicy) {
     thread::sleep(Duration::from_secs(7));
     let maker_erc20_coin = erc20_coin_with_random_privkey(swap_contract());
     let taker_erc20_coin = erc20_coin_with_random_privkey(swap_contract());
 
-    maker_erc20_coin.set_swap_transaction_fee_policy(swap_txfee_policy.clone());
-    taker_erc20_coin.set_swap_transaction_fee_policy(swap_txfee_policy);
+    assert!(block_on(maker_erc20_coin.set_swap_gas_fee_policy(swap_txfee_policy.clone())).is_ok());
+    assert!(block_on(taker_erc20_coin.set_swap_gas_fee_policy(swap_txfee_policy)).is_ok());
 
     let time_lock = now_sec() + 1000;
     let maker_pubkey = maker_erc20_coin.derive_htlc_pubkey(&[]);
@@ -936,12 +938,12 @@ fn send_and_spend_erc20_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) {
 
 #[test]
 fn send_and_spend_erc20_maker_payment_internal_gas_policy() {
-    send_and_spend_erc20_maker_payment_impl(SwapTxFeePolicy::Internal);
+    send_and_spend_erc20_maker_payment_impl(SwapGasFeePolicy::Legacy);
 }
 
 #[test]
 fn send_and_spend_erc20_maker_payment_priority_fee() {
-    send_and_spend_erc20_maker_payment_impl(SwapTxFeePolicy::Medium);
+    send_and_spend_erc20_maker_payment_impl(SwapGasFeePolicy::Medium);
 }
 
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
@@ -1073,6 +1075,74 @@ fn test_nonce_lock() {
     let coin = eth_coin_with_random_privkey(swap_contract());
     let my_address = block_on(coin.derivation_method().single_addr_or_err()).unwrap();
     let futures = (0..5).map(|_| coin.send_to_address(my_address, 200000000.into()).compat());
+    let results = block_on(join_all(futures));
+
+    // make sure all transactions are successful
+    for result in results {
+        result.unwrap();
+    }
+}
+
+/// Test to validate duplicate nonces for legacy token activation
+/// https://github.com/KomodoPlatform/komodo-defi-framework/issues/2573
+#[test]
+fn test_nonce_erc20_lock() {
+    use futures::future::join_all;
+
+    let swap_addresses = SwapAddresses::init();
+    let swap_contract_address = swap_addresses.swap_contract_address.addr_to_string();
+
+    let eth_conf = eth_dev_conf();
+    let erc20_conf = erc20_dev_conf(&erc20_contract_checksum());
+    let eth_ticker = eth_conf["coin"].as_str().unwrap().to_owned();
+    let erc20_ticker = erc20_conf["coin"].as_str().unwrap().to_owned();
+    let erc20_contract = erc20_conf["protocol"]["protocol_data"]["contract_address"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let ctx = MmCtxBuilder::new()
+        .with_conf(json!({"coins":[eth_conf, erc20_conf]}))
+        .into_mm_arc();
+
+    let (eth_coin, privkey) =
+        eth_coin_v2_activation_with_random_privkey(&ctx, &eth_ticker, &eth_conf, swap_addresses, false);
+    block_on(lp_register_coin(
+        &ctx,
+        MmCoinEnum::EthCoin(eth_coin.clone()),
+        RegisterCoinParams {
+            ticker: eth_ticker.clone(),
+        },
+    ))
+    .unwrap();
+
+    // Use legacy "enable" RPC for token to validate this issue
+    let req_erc20 = json!({
+        "method": "enable",
+        "coin": erc20_ticker,
+        "swap_contract_address": swap_contract_address,
+        "urls": [ GETH_RPC_URL ]
+    });
+    let eth_token = block_on(eth_coin_from_conf_and_request(
+        &ctx,
+        &erc20_ticker,
+        &erc20_conf,
+        &req_erc20,
+        CoinProtocol::ERC20 {
+            platform: eth_ticker.clone(),
+            contract_address: erc20_contract,
+        },
+        PrivKeyBuildPolicy::IguanaPrivKey(privkey),
+    ))
+    .unwrap();
+
+    let my_address = block_on(eth_coin.derivation_method().single_addr_or_err()).unwrap();
+
+    let futures = vec![
+        eth_coin.send_to_address(my_address, 100.into()).compat(),
+        eth_token.send_to_address(my_address, 1.into()).compat(),
+        eth_token.send_to_address(my_address, 2.into()).compat(),
+        eth_coin.send_to_address(my_address, 200.into()).compat(),
+    ];
     let results = block_on(join_all(futures));
 
     // make sure all transactions are successful
@@ -1508,6 +1578,7 @@ fn eth_coin_v2_activation_with_random_privkey(
         enable_params: Default::default(),
         path_to_address: Default::default(),
         gap_limit: None,
+        swap_gas_fee_policy: None,
     };
     let coin = block_on(eth_coin_from_conf_and_request_v2(
         ctx,

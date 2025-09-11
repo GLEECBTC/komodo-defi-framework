@@ -85,6 +85,7 @@ impl From<Web3RpcError> for ValidatePaymentError {
             Web3RpcError::NftProtocolNotSupported => {
                 ValidatePaymentError::ProtocolNotSupported("Nft protocol is not supported".to_string())
             },
+            Web3RpcError::NoSuchCoin { .. } => ValidatePaymentError::InternalError(e.to_string()),
         }
     }
 }

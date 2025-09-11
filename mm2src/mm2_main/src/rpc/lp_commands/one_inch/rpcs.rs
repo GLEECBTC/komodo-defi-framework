@@ -4,7 +4,7 @@ use super::types::{
     ClassicSwapLiquiditySourcesResponse, ClassicSwapQuoteRequest, ClassicSwapResponse, ClassicSwapTokensRequest,
     ClassicSwapTokensResponse,
 };
-use coins::eth::{wei_from_big_decimal, EthCoin, EthCoinType};
+use coins::eth::{u256_from_big_decimal, EthCoin, EthCoinType};
 use coins::hd_wallet::DisplayAddress;
 use coins::{lp_coinfind_or_err, CoinWithDerivationMethod, MmCoin, MmCoinEnum, Ticker};
 use ethereum_types::Address;
@@ -35,7 +35,7 @@ pub async fn one_inch_v6_0_classic_swap_quote_rpc(
     let base_chain_id = base.chain_id().ok_or(ApiIntegrationRpcError::ChainNotSupported)?;
     let rel_chain_id = rel.chain_id().ok_or(ApiIntegrationRpcError::ChainNotSupported)?;
     api_supports_pair(base_chain_id, rel_chain_id)?;
-    let sell_amount = wei_from_big_decimal(&req.amount.to_decimal(), base.decimals())
+    let sell_amount = u256_from_big_decimal(&req.amount.to_decimal(), base.decimals())
         .mm_err(|err| ApiIntegrationRpcError::InvalidParam(err.to_string()))?;
     let query_params = ClassicSwapQuoteParams::new(
         base_contract.display_address(),
@@ -78,7 +78,7 @@ pub async fn one_inch_v6_0_classic_swap_create_rpc(
     let base_chain_id = base.chain_id().ok_or(ApiIntegrationRpcError::ChainNotSupported)?;
     let rel_chain_id = rel.chain_id().ok_or(ApiIntegrationRpcError::ChainNotSupported)?;
     api_supports_pair(base_chain_id, rel_chain_id)?;
-    let sell_amount = wei_from_big_decimal(&req.amount.to_decimal(), base.decimals())
+    let sell_amount = u256_from_big_decimal(&req.amount.to_decimal(), base.decimals())
         .mm_err(|err| ApiIntegrationRpcError::InvalidParam(err.to_string()))?;
     let single_address = base.derivation_method().single_addr_or_err().await.map_mm_err()?;
 

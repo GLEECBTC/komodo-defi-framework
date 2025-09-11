@@ -3,7 +3,7 @@ use super::{
 };
 use crate::coin_errors::{ValidatePaymentError, ValidatePaymentResult};
 use crate::eth::{
-    decode_contract_call, get_function_input_data, wei_from_big_decimal, EthCoin, EthCoinType, SignedEthTx,
+    decode_contract_call, get_function_input_data, u256_from_big_decimal, EthCoin, EthCoinType, SignedEthTx,
     MAKER_SWAP_V2,
 };
 use crate::{
@@ -66,7 +66,7 @@ impl EthCoin {
             .swap_v2_contracts
             .ok_or_else(|| TransactionErr::Plain(ERRL!("Expected swap_v2_contracts to be Some, but found None")))?
             .maker_swap_v2_contract;
-        let payment_amount = try_tx_s!(wei_from_big_decimal(&args.amount, self.decimals));
+        let payment_amount = try_tx_s!(u256_from_big_decimal(&args.amount, self.decimals));
         let payment_args = {
             let taker_address = public_to_address(args.taker_pub);
             MakerPaymentArgs {
@@ -83,7 +83,7 @@ impl EthCoin {
                     payment_amount,
                     Action::Call(maker_swap_v2_contract),
                     data,
-                    U256::from(self.gas_limit_v2.maker.eth_payment),
+                    Some(U256::from(self.gas_limit_v2.maker.eth_payment)),
                 )
                 .compat()
                 .await
@@ -102,7 +102,7 @@ impl EthCoin {
                     U256::from(ZERO_VALUE),
                     Action::Call(maker_swap_v2_contract),
                     data,
-                    U256::from(self.gas_limit_v2.maker.erc20_payment),
+                    Some(U256::from(self.gas_limit_v2.maker.erc20_payment)),
                 )
                 .compat()
                 .await
@@ -146,7 +146,7 @@ impl EthCoin {
         validate_from_to_addresses(tx_from_rpc, maker_address, maker_swap_v2_contract).map_mm_err()?;
 
         let validation_args = {
-            let amount = wei_from_big_decimal(&args.amount, self.decimals).map_mm_err()?;
+            let amount = u256_from_big_decimal(&args.amount, self.decimals).map_mm_err()?;
             MakerValidationArgs {
                 swap_id,
                 amount,
@@ -207,7 +207,7 @@ impl EthCoin {
                 )))
             },
         };
-        let payment_amount = try_tx_s!(wei_from_big_decimal(&args.amount, self.decimals));
+        let payment_amount = try_tx_s!(u256_from_big_decimal(&args.amount, self.decimals));
 
         let args = {
             let taker_address = public_to_address(&Public::from_slice(args.taker_pub));
@@ -226,7 +226,7 @@ impl EthCoin {
             U256::from(ZERO_VALUE),
             Action::Call(maker_swap_v2_contract),
             data,
-            U256::from(gas_limit),
+            Some(U256::from(gas_limit)),
         )
         .compat()
         .await
@@ -253,7 +253,7 @@ impl EthCoin {
             .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
 
         let maker_secret_hash = try_tx_s!(args.maker_secret_hash.try_into());
-        let payment_amount = try_tx_s!(wei_from_big_decimal(&args.amount, self.decimals));
+        let payment_amount = try_tx_s!(u256_from_big_decimal(&args.amount, self.decimals));
         let args = {
             let taker_address = public_to_address(args.taker_pub);
             MakerRefundSecretArgs {
@@ -271,7 +271,7 @@ impl EthCoin {
             U256::from(ZERO_VALUE),
             Action::Call(maker_swap_v2_contract),
             data,
-            U256::from(gas_limit),
+            Some(U256::from(gas_limit)),
         )
         .compat()
         .await
@@ -299,7 +299,7 @@ impl EthCoin {
             U256::from(ZERO_VALUE),
             Action::Call(maker_swap_v2_contract),
             data,
-            U256::from(gas_limit),
+            Some(U256::from(gas_limit)),
         )
         .compat()
         .await
@@ -385,7 +385,7 @@ impl EthCoin {
         let function = MAKER_SWAP_V2.function("spendMakerPayment")?;
         let id = self.etomic_swap_id_v2(args.time_lock, args.maker_secret_hash);
         let maker_address = public_to_address(args.maker_pub);
-        let payment_amount = wei_from_big_decimal(&args.amount, self.decimals)
+        let payment_amount = u256_from_big_decimal(&args.amount, self.decimals)
             .map_err(|e| PrepareTxDataError::Internal(e.to_string()))?;
         let data = function.encode_input(&[
             Token::FixedBytes(id),

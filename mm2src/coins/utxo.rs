@@ -1856,6 +1856,26 @@ async fn generate_and_send_tx<T>(
 where
     T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps + UtxoTxBroadcastOps,
 {
+    let (signed, spent_unspents) = generate_tx(coin, unspents, required_inputs, fee_policy, outputs).await?;
+
+    try_tx_s!(coin.broadcast_tx(&signed).await, signed);
+
+    recently_spent.add_spent(spent_unspents, signed.hash(), signed.outputs.clone());
+
+    Ok(signed)
+}
+
+/// Generates tx using unspents and outputs. Returns the signed transaction and spent unspents.
+async fn generate_tx<T>(
+    coin: &T,
+    unspents: Vec<UnspentInfo>,
+    required_inputs: Option<Vec<UnspentInfo>>,
+    fee_policy: FeePolicy,
+    outputs: Vec<TransactionOutput>,
+) -> Result<(UtxoTx, Vec<UnspentInfo>), TransactionErr>
+where
+    T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps + UtxoTxBroadcastOps,
+{
     let my_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err().await);
     let key_pair = try_tx_s!(coin.as_ref().priv_key_policy.activated_key_or_err());
     let mut builder = UtxoTxBuilder::new(coin)
@@ -1891,11 +1911,7 @@ where
         coin.as_ref().conf.fork_id
     ));
 
-    try_tx_s!(coin.broadcast_tx(&signed).await, signed);
-
-    recently_spent.add_spent(spent_unspents, signed.hash(), signed.outputs.clone());
-
-    Ok(signed)
+    Ok((signed, spent_unspents))
 }
 
 /// Builds transaction output script for an Address struct

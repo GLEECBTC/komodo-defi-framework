@@ -3835,7 +3835,7 @@ fn test_qtum_without_check_utxo_maturity() {
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
 
     let priv_key = Secp256k1Secret::from([1; 32]);
-    let coin = block_on(qtum_coin_with_priv_key(&ctx, "QTUM", &conf, &params, priv_key)).unwrap();
+    let coin = block_on(qtum_coin_with_priv_key(&ctx, "tQTUM", &conf, &params, priv_key)).unwrap();
 
     let address = Address::from_legacyaddress(
         "qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE",
@@ -3882,7 +3882,7 @@ fn test_split_qtum() {
     });
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let coin = block_on(qtum_coin_with_priv_key(&ctx, "QTUM", &conf, &params, priv_key)).unwrap();
+    let coin = block_on(qtum_coin_with_priv_key(&ctx, "tQTUM", &conf, &params, priv_key)).unwrap();
     let p2pkh_address = block_on(coin.as_ref().derivation_method.unwrap_single_addr());
     let script: Script = output_script(&p2pkh_address).expect("valid previous script must be built");
     let key_pair = coin.as_ref().priv_key_policy.activated_key_or_err().unwrap();
@@ -4310,7 +4310,7 @@ fn test_qtum_with_check_utxo_maturity_false() {
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
 
     let priv_key = Secp256k1Secret::from([1; 32]);
-    let coin = block_on(qtum_coin_with_priv_key(&ctx, "QTUM", &conf, &params, priv_key)).unwrap();
+    let coin = block_on(qtum_coin_with_priv_key(&ctx, "tQTUM", &conf, &params, priv_key)).unwrap();
 
     let address = Address::from_legacyaddress(
         "qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE",

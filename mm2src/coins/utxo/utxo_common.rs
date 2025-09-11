@@ -4216,6 +4216,8 @@ where
 /// `actual_fee = input_amount - actual_output_amount` or `actual_fee = input_amount - output_amount + kmd_rewards`.
 /// Substitute [`TransactionDetails::fee`] to the last equation:
 /// `actual_fee = TransactionDetails::fee + kmd_rewards`
+///
+/// Note: This assumes that the KMD rewards is always claimed by us and thus sets the `claimed_by_me` field to true.
 pub async fn update_kmd_rewards<T>(
     coin: &T,
     tx_details: &mut TransactionDetails,
@@ -4253,14 +4255,7 @@ where
         }));
     }
 
-    // Todo: https://github.com/KomodoPlatform/komodo-defi-framework/issues/1625
-    let my_address = &coin.my_address().map_mm_err()?;
-    let claimed_by_me = tx_details.from.iter().all(|from| from == my_address) && tx_details.to.contains(my_address);
-
-    tx_details.kmd_rewards = Some(KmdRewardsDetails {
-        amount: kmd_rewards,
-        claimed_by_me,
-    });
+    tx_details.kmd_rewards = Some(KmdRewardsDetails::claimed_by_me(kmd_rewards));
     Ok(())
 }
 

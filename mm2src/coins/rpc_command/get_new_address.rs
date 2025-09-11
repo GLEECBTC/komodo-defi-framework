@@ -92,6 +92,7 @@ impl From<BalanceError> for GetNewAddressRpcError {
             BalanceError::WalletStorageError(internal) | BalanceError::Internal(internal) => {
                 GetNewAddressRpcError::Internal(internal)
             },
+            BalanceError::NoSuchCoin { coin } => GetNewAddressRpcError::NoSuchCoin { coin },
         }
     }
 }

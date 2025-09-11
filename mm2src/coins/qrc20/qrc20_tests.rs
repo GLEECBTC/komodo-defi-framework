@@ -1142,7 +1142,7 @@ fn test_send_contract_calls_recoverable_tx() {
     let fee_addr = hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc05").unwrap();
     let to_address = coin.contract_address_from_raw_pubkey(&fee_addr).unwrap();
     let amount = BigDecimal::try_from(0.2).unwrap();
-    let amount = wei_from_big_decimal(&amount, coin.utxo.decimals).unwrap();
+    let amount = u256_from_big_decimal(&amount, coin.utxo.decimals).unwrap();
     let mut transfer_output = coin
         .transfer_output(to_address, amount, QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT)
         .unwrap();

@@ -980,6 +980,10 @@ pub const fn ten_f64() -> f64 {
     10.
 }
 
+pub const fn fifty() -> usize {
+    50
+}
+
 pub const fn one_hundred() -> usize {
     100
 }

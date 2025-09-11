@@ -1,5 +1,5 @@
 use crate::coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentError, ValidatePaymentResult};
-use crate::eth::{self, u256_to_big_decimal, wei_from_big_decimal, TryToAddress};
+use crate::eth::{self, u256_from_big_decimal, u256_to_big_decimal, TryToAddress};
 use crate::hd_wallet::HDAddressSelector;
 use crate::qrc20::rpc_clients::{
     LogEntry, Qrc20ElectrumOps, Qrc20NativeOps, Qrc20RpcOps, TopicFilter, TxReceipt, ViewContractCallType,
@@ -23,16 +23,15 @@ use crate::utxo::{
     UtxoTxGenerationOps, VerboseTransactionFrom, UTXO_LOCK,
 };
 use crate::{
-    BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInput, DexFee, Eip1559Ops,
-    FeeApproxStage, FoundSwapTxSpend, HistorySyncState, IguanaPrivKey, MarketCoinOps, MmCoin,
-    NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionFut,
-    RawTransactionRequest, RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs,
-    SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps, SwapTxFeePolicy, TradeFee,
-    TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionData, TransactionDetails,
-    TransactionEnum, TransactionErr, TransactionResult, TransactionType, TxMarshalingErr, UnexpectedDerivationMethod,
-    ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentInput, VerificationResult,
-    WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest,
-    WithdrawResult,
+    BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInput, DexFee, FeeApproxStage,
+    FoundSwapTxSpend, HistorySyncState, IguanaPrivKey, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
+    PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest, RawTransactionResult,
+    RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SignRawTransactionRequest, SignatureResult,
+    SpendPaymentArgs, SwapOps, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue,
+    TransactionData, TransactionDetails, TransactionEnum, TransactionErr, TransactionResult, TransactionType,
+    TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr,
+    ValidatePaymentInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawError,
+    WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult,
 };
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256, sign_message_hash};
@@ -350,6 +349,9 @@ pub async fn qrc20_coin_with_policy(
     priv_key_policy: PrivKeyBuildPolicy,
     contract_address: H160,
 ) -> Result<Qrc20Coin, String> {
+    if conf["coin"].as_str() != Some(ticker) {
+        return ERR!("Failed to activate '{}': ticker does not match coins config", ticker);
+    }
     let builder = Qrc20CoinBuilder::new(
         ctx,
         ticker,
@@ -817,7 +819,7 @@ impl UtxoCommonOps for Qrc20Coin {
 impl SwapOps for Qrc20Coin {
     async fn send_taker_fee(&self, dex_fee: DexFee, _uuid: &[u8], _expire_at: u64) -> TransactionResult {
         let to_address = try_tx_s!(self.contract_address_from_raw_pubkey(self.dex_pubkey()));
-        let amount = try_tx_s!(wei_from_big_decimal(&dex_fee.fee_amount().into(), self.utxo.decimals));
+        let amount = try_tx_s!(u256_from_big_decimal(&dex_fee.fee_amount().into(), self.utxo.decimals));
         let transfer_output =
             try_tx_s!(self.transfer_output(to_address, amount, QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT));
         self.send_contract_calls(vec![transfer_output]).await
@@ -827,7 +829,7 @@ impl SwapOps for Qrc20Coin {
         let time_lock = try_tx_s!(maker_payment_args.time_lock.try_into());
         let taker_addr = try_tx_s!(self.contract_address_from_raw_pubkey(maker_payment_args.other_pubkey));
         let id = qrc20_swap_id(time_lock, maker_payment_args.secret_hash);
-        let value = try_tx_s!(wei_from_big_decimal(&maker_payment_args.amount, self.utxo.decimals));
+        let value = try_tx_s!(u256_from_big_decimal(&maker_payment_args.amount, self.utxo.decimals));
         let secret_hash = Vec::from(maker_payment_args.secret_hash);
         let swap_contract_address = try_tx_s!(maker_payment_args.swap_contract_address.try_to_address());
 
@@ -840,7 +842,7 @@ impl SwapOps for Qrc20Coin {
         let time_lock = try_tx_s!(taker_payment_args.time_lock.try_into());
         let maker_addr = try_tx_s!(self.contract_address_from_raw_pubkey(taker_payment_args.other_pubkey));
         let id = qrc20_swap_id(time_lock, taker_payment_args.secret_hash);
-        let value = try_tx_s!(wei_from_big_decimal(&taker_payment_args.amount, self.utxo.decimals));
+        let value = try_tx_s!(u256_from_big_decimal(&taker_payment_args.amount, self.utxo.decimals));
         let secret_hash = Vec::from(taker_payment_args.secret_hash);
         let swap_contract_address = try_tx_s!(taker_payment_args.swap_contract_address.try_to_address());
         self.send_hash_time_locked_payment(id, value, time_lock, secret_hash, maker_addr, swap_contract_address)
@@ -917,7 +919,7 @@ impl SwapOps for Qrc20Coin {
             .contract_address_from_raw_pubkey(self.dex_pubkey())
             .map_to_mm(ValidatePaymentError::WrongPaymentTx)?;
         let expected_value =
-            wei_from_big_decimal(&validate_fee_args.dex_fee.fee_amount().into(), self.utxo.decimals).map_mm_err()?;
+            u256_from_big_decimal(&validate_fee_args.dex_fee.fee_amount().into(), self.utxo.decimals).map_mm_err()?;
 
         self.validate_fee_impl(
             fee_tx_hash,
@@ -1305,7 +1307,7 @@ impl MmCoin for Qrc20Coin {
         let my_balance = U256::max_value();
         let value = match value {
             TradePreimageValue::Exact(value) | TradePreimageValue::UpperBound(value) => {
-                wei_from_big_decimal(&value, decimals).map_mm_err()?
+                u256_from_big_decimal(&value, decimals).map_mm_err()?
             },
         };
 
@@ -1378,7 +1380,7 @@ impl MmCoin for Qrc20Coin {
         dex_fee_amount: DexFee,
         stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
-        let amount = wei_from_big_decimal(&dex_fee_amount.fee_amount().into(), self.utxo.decimals).map_mm_err()?;
+        let amount = u256_from_big_decimal(&dex_fee_amount.fee_amount().into(), self.utxo.decimals).map_mm_err()?;
 
         // pass the dummy params
         let to_addr = H160::default();
@@ -1488,13 +1490,13 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult
 
     // the qrc20_amount_sat is used only within smart contract calls
     let (qrc20_amount_sat, qrc20_amount) = if req.max {
-        let amount = wei_from_big_decimal(&qrc20_balance, coin.utxo.decimals).map_mm_err()?;
+        let amount = u256_from_big_decimal(&qrc20_balance, coin.utxo.decimals).map_mm_err()?;
         if amount.is_zero() {
             return MmError::err(WithdrawError::ZeroBalanceToWithdrawMax);
         }
         (amount, qrc20_balance.clone())
     } else {
-        let amount_sat = wei_from_big_decimal(&req.amount, coin.utxo.decimals).map_mm_err()?;
+        let amount_sat = u256_from_big_decimal(&req.amount, coin.utxo.decimals).map_mm_err()?;
         if req.amount > qrc20_balance {
             return MmError::err(WithdrawError::NotSufficientBalance {
                 coin: coin.ticker().to_owned(),
@@ -1626,12 +1628,4 @@ fn transfer_event_from_log(log: &LogEntry) -> Result<TransferEventDetails, Strin
         sender,
         receiver,
     })
-}
-
-impl Eip1559Ops for Qrc20Coin {
-    fn get_swap_transaction_fee_policy(&self) -> SwapTxFeePolicy {
-        SwapTxFeePolicy::Unsupported
-    }
-
-    fn set_swap_transaction_fee_policy(&self, _swap_txfee_policy: SwapTxFeePolicy) {}
 }
