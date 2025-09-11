@@ -189,14 +189,15 @@ impl SolanaCoin {
             .map_err(|e| BalanceError::Transport(e.into_inner()))
             .await?;
 
-        if rpc
-            .get_token_accounts_by_owner(&self.address, TokenAccountsFilter::Mint(*mint_address))
-            .is_err()
-        {
-            return Ok(CoinBalance {
-                spendable: BigDecimal::zero(),
-                unspendable: BigDecimal::zero(),
-            });
+        if let Err(e) = rpc.get_token_accounts_by_owner(&self.address, TokenAccountsFilter::Mint(*mint_address)) {
+            if e.kind.to_string().contains("could not find mint") {
+                return Ok(CoinBalance {
+                    spendable: BigDecimal::zero(),
+                    unspendable: BigDecimal::zero(),
+                });
+            }
+
+            return MmError::err(BalanceError::Transport(e.to_string()));
         };
 
         let token_account =
