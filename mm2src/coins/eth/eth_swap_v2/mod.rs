@@ -1,4 +1,5 @@
 use crate::eth::{decode_contract_call, signed_tx_from_web3_tx, EthCoin, EthCoinType, Transaction, TransactionErr};
+use crate::hd_wallet::DisplayAddress;
 use crate::{FindPaymentSpendError, MarketCoinOps};
 use common::executor::Timer;
 use common::log::{error, info};
@@ -181,7 +182,8 @@ pub(crate) fn validate_from_to_addresses(
 ) -> Result<(), MmError<ValidatePaymentV2Err>> {
     if signed_tx.sender() != expected_from {
         return MmError::err(ValidatePaymentV2Err::WrongPaymentTx(format!(
-            "Payment tx {signed_tx:?} was sent from wrong address, expected {expected_from:?}"
+            "Payment tx {signed_tx:?} was sent from wrong address, expected {}",
+            expected_from.display_address()
         )));
     }
 
@@ -190,8 +192,9 @@ pub(crate) fn validate_from_to_addresses(
         Action::Call(to) => {
             if *to != expected_to {
                 return MmError::err(ValidatePaymentV2Err::WrongPaymentTx(format!(
-                    "Payment tx was sent to wrong address, expected {:?}, got {:?}",
-                    expected_to, to
+                    "Payment tx was sent to wrong address, expected {}, got {}",
+                    expected_to.display_address(),
+                    to.display_address()
                 )));
             }
         },
