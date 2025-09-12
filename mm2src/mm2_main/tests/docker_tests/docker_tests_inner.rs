@@ -5515,7 +5515,7 @@ fn test_approve_erc20() {
         hex::decode(str_strip_0x!(res["result"].as_str().unwrap())).is_ok(),
         "approve_token result incorrect"
     );
-
+    thread::sleep(Duration::from_secs(5));
     let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method":"get_token_allowance",
