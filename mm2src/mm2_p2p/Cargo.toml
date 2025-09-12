@@ -19,6 +19,7 @@ futures.workspace = true
 futures-ticker.workspace = true
 hex.workspace = true
 lazy_static.workspace = true
+libp2p-allow-block-list.workspace = true
 log.workspace = true
 mm2_core = { path = "../mm2_core" }
 mm2_event_stream = { path = "../mm2_event_stream" }
@@ -39,7 +40,6 @@ void.workspace = true
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 futures-rustls.workspace = true
 libp2p = { workspace = true, features = ["dns", "identify", "floodsub", "gossipsub", "noise", "ping", "request-response", "secp256k1", "tcp", "tokio", "websocket", "macros", "yamux"] }
-libp2p-allow-block-list.workspace = true
 timed-map = { workspace = true, features = ["rustc-hash"] }
 tokio.workspace = true
 
