@@ -1030,7 +1030,8 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         };
 
         let payment_value_with_premium = &state_machine.taker_volume + &state_machine.taker_premium;
-        let preimage_value = TradePreimageValue::Exact(payment_value_with_premium.to_decimal());
+        let total_value_with_premium = &payment_value_with_premium + &state_machine.dex_fee().total_spend_amount();
+        let preimage_value = TradePreimageValue::Exact(total_value_with_premium.to_decimal());
         let stage = FeeApproxStage::StartSwap;
 
         let taker_payment_fee = match state_machine
