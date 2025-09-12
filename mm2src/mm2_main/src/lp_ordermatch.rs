@@ -197,11 +197,7 @@ pub enum OrderbookP2PHandlerError {
 
 impl OrderbookP2PHandlerError {
     pub(crate) fn is_warning(&self) -> bool {
-        // treat SyncFailure as a warning for now due to outdated nodes
-        matches!(
-            self,
-            OrderbookP2PHandlerError::OrderNotFound(_) | OrderbookP2PHandlerError::SyncFailure { .. }
-        )
+        matches!(self, OrderbookP2PHandlerError::OrderNotFound(_))
     }
 }
 

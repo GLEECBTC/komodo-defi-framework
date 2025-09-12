@@ -23,7 +23,7 @@
 use coins::lp_coinfind;
 use common::executor::SpawnFuture;
 use common::{log, Future01CompatExt};
-use compatible_time::Instant;
+use compatible_time::{Duration, Instant};
 use derive_more::Display;
 use futures::{channel::oneshot, StreamExt};
 use keys::KeyPair;
@@ -39,8 +39,11 @@ use mm2_libp2p::{AdexBehaviourCmd, AdexBehaviourEvent, AdexEventRx, AdexResponse
 use mm2_libp2p::{PeerAddresses, RequestResponseBehaviourEvent};
 use mm2_metrics::{mm_label, mm_timing};
 use serde::de;
+use std::str::FromStr;
 
 use crate::{lp_healthcheck, lp_ordermatch, lp_stats, lp_swap};
+
+const TEMP_BAN_DURATION_SECS: u64 = 3600;
 
 pub type P2PRequestResult<T> = Result<T, MmError<P2PRequestError>>;
 pub type P2PProcessResult<T> = Result<T, MmError<P2PProcessError>>;
@@ -159,6 +162,29 @@ async fn process_p2p_message(
             )
             .await
             {
+                if let lp_ordermatch::OrderbookP2PHandlerError::SyncFailure { propagated_from, .. } = e.get_inner() {
+                    let to_ban = match PeerId::from_str(propagated_from) {
+                        Ok(peer) => peer,
+                        Err(parse_err) => {
+                            log::error!(
+                                "SyncFailure: invalid propagated_from '{}' ({}); skipping temp-ban",
+                                propagated_from,
+                                parse_err
+                            );
+                            return;
+                        },
+                    };
+
+                    temp_ban_peer(&ctx, to_ban, Duration::from_secs(TEMP_BAN_DURATION_SECS));
+                    log::warn!(
+                        "Temp-banned peer {} for {}s due to orderbook SyncFailure",
+                        propagated_from,
+                        TEMP_BAN_DURATION_SECS
+                    );
+
+                    return;
+                }
+
                 if e.get_inner().is_warning() {
                     log::warn!("{}", e);
                 } else {
@@ -444,6 +470,30 @@ pub fn add_reserved_peer_addresses(ctx: &MmArc, peer: PeerId, addresses: PeerAdd
     if let Err(e) = p2p_ctx.cmd_tx.lock().try_send(cmd) {
         log::error!("add_reserved_peer_addresses cmd_tx.send error {:?}", e);
     };
+}
+
+pub fn temp_ban_peer(ctx: &MmArc, peer: PeerId, duration: Duration) {
+    let p2p_ctx = P2PContext::fetch_from_mm_arc(ctx);
+    let cmd = AdexBehaviourCmd::TempBanPeer { peer, duration };
+    let send_res = {
+        let mut tx = p2p_ctx.cmd_tx.lock();
+        tx.try_send(cmd)
+    };
+    if let Err(e) = send_res {
+        log::error!("temp_ban_peer cmd_tx.send error {:?}", e);
+    }
+}
+
+pub fn unban_peer(ctx: &MmArc, peer: PeerId) {
+    let p2p_ctx = P2PContext::fetch_from_mm_arc(ctx);
+    let cmd = AdexBehaviourCmd::UnbanPeer { peer };
+    let send_res = {
+        let mut tx = p2p_ctx.cmd_tx.lock();
+        tx.try_send(cmd)
+    };
+    if let Err(e) = send_res {
+        log::error!("unban_peer cmd_tx.send error {:?}", e);
+    }
 }
 
 #[derive(Clone, Debug, Display, Serialize)]
