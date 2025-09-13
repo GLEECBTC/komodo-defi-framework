@@ -27,6 +27,7 @@ use compatible_time::{Duration, Instant};
 use derive_more::Display;
 use futures::{channel::oneshot, StreamExt};
 use keys::KeyPair;
+use lazy_static::lazy_static;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
 use mm2_libp2p::application::request_response::P2PRequest;
@@ -38,12 +39,21 @@ use mm2_libp2p::{
 use mm2_libp2p::{AdexBehaviourCmd, AdexBehaviourEvent, AdexEventRx, AdexResponse};
 use mm2_libp2p::{PeerAddresses, RequestResponseBehaviourEvent};
 use mm2_metrics::{mm_label, mm_timing};
+use parking_lot::Mutex;
 use serde::de;
 use std::str::FromStr;
+use timed_map::{MapKind, TimedMap};
 
 use crate::{lp_healthcheck, lp_ordermatch, lp_stats, lp_swap};
 
 const TEMP_BAN_DURATION_SECS: u64 = 3600;
+const PER_PEER_SYNC_BAN_GRACE: Duration = Duration::from_secs(120);
+const SYNC_BAN_GRACE_TTL: Duration = Duration::from_secs(600);
+
+lazy_static! {
+    static ref SYNC_BAN_GRACE: Mutex<TimedMap<PeerId, Instant>> =
+        Mutex::new(TimedMap::new_with_map_kind(MapKind::FxHashMap));
+}
 
 pub type P2PRequestResult<T> = Result<T, MmError<P2PRequestError>>;
 pub type P2PProcessResult<T> = Result<T, MmError<P2PProcessError>>;
@@ -162,9 +172,56 @@ async fn process_p2p_message(
             )
             .await
             {
-                if let lp_ordermatch::OrderbookP2PHandlerError::SyncFailure { propagated_from, .. } = e.get_inner() {
-                    let to_ban = match PeerId::from_str(propagated_from) {
-                        Ok(peer) => peer,
+                if let lp_ordermatch::OrderbookP2PHandlerError::SyncFailure {
+                    from_pubkey,
+                    propagated_from,
+                    unresolved_pairs,
+                } = e.get_inner()
+                {
+                    match PeerId::from_str(propagated_from) {
+                        Ok(peer) => {
+                            let now = Instant::now();
+                            let mut map = SYNC_BAN_GRACE.lock();
+                            map.drop_expired_entries();
+
+                            if let Some(first_seen) = map.get(&peer) {
+                                let elapsed = now.duration_since(*first_seen);
+                                if elapsed >= PER_PEER_SYNC_BAN_GRACE {
+                                    // Grace elapsed: ban now and clear the entry.
+                                    map.remove(&peer);
+                                    log::warn!(
+                                        "Orderbook SyncFailure from {} (pubkey {}, pairs {:?}) after {}s grace; banning.",
+                                        propagated_from,
+                                        from_pubkey,
+                                        unresolved_pairs,
+                                        PER_PEER_SYNC_BAN_GRACE.as_secs()
+                                    );
+                                    temp_ban_peer(&ctx, peer, Duration::from_secs(TEMP_BAN_DURATION_SECS));
+                                    return;
+                                } else {
+                                    let remaining = PER_PEER_SYNC_BAN_GRACE.as_secs().saturating_sub(elapsed.as_secs());
+                                    log::warn!(
+                                        "Orderbook SyncFailure from {} (pubkey {}, pairs {:?}); {}s grace remaining; not banning.",
+                                        propagated_from,
+                                        from_pubkey,
+                                        unresolved_pairs,
+                                        remaining
+                                    );
+                                    return;
+                                }
+                            } else {
+                                // First SyncFailure observed: start grace window; this entry will auto-expire after SYNC_BAN_GRACE_TTL
+                                map.insert_expirable(peer, now, SYNC_BAN_GRACE_TTL);
+                                log::warn!(
+                                    "Orderbook SyncFailure from {} (pubkey {}, pairs {:?}); starting {}s per-peer grace; not banning yet.",
+                                    propagated_from,
+                                    from_pubkey,
+                                    unresolved_pairs,
+                                    PER_PEER_SYNC_BAN_GRACE.as_secs()
+                                );
+                                return;
+                            }
+                        },
                         Err(parse_err) => {
                             log::error!(
                                 "SyncFailure: invalid propagated_from '{}' ({}); skipping temp-ban",
@@ -173,16 +230,7 @@ async fn process_p2p_message(
                             );
                             return;
                         },
-                    };
-
-                    temp_ban_peer(&ctx, to_ban, Duration::from_secs(TEMP_BAN_DURATION_SECS));
-                    log::warn!(
-                        "Temp-banned peer {} for {}s due to orderbook SyncFailure",
-                        propagated_from,
-                        TEMP_BAN_DURATION_SECS
-                    );
-
-                    return;
+                    }
                 }
 
                 if e.get_inner().is_warning() {
