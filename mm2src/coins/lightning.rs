@@ -43,10 +43,10 @@ use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::{hash::H256, CompactSignature, KeyPair, Private, Public};
-use lightning::sign::{SignerProvider, KeysManager, Recipient};
-use lightning::ln::channelmanager::{ChannelDetails, MIN_FINAL_CLTV_EXPIRY};
+use lightning::ln::channelmanager::{ChannelDetails, MIN_FINAL_CLTV_EXPIRY_DELTA};
 use lightning::ln::{PaymentHash, PaymentPreimage};
 use lightning::routing::router::{DefaultRouter, PaymentParameters, RouteParameters, Router as RouterTrait};
+use lightning::sign::{KeysManager, Recipient, SignerProvider};
 use lightning::util::ser::{Readable, Writeable};
 use lightning_background_processor::BackgroundProcessor;
 use lightning_invoice::payment::Payer;
@@ -256,10 +256,13 @@ impl LightningCoin {
         &self,
         destination: PublicKey,
         amount_msat: u64,
-        final_cltv_expiry_delta: u32,
+        final_cltv_expiry_delta: u16,
     ) -> Result<PaymentInfo, MmError<PaymentError>> {
-        if final_cltv_expiry_delta < MIN_FINAL_CLTV_EXPIRY {
-            return MmError::err(PaymentError::CLTVExpiry(final_cltv_expiry_delta, MIN_FINAL_CLTV_EXPIRY));
+        if final_cltv_expiry_delta < MIN_FINAL_CLTV_EXPIRY_DELTA {
+            return MmError::err(PaymentError::CLTVExpiry(
+                final_cltv_expiry_delta,
+                MIN_FINAL_CLTV_EXPIRY_DELTA,
+            ));
         }
         let payment_preimage = PaymentPreimage(self.keys_manager.get_secure_random_bytes());
 
@@ -425,15 +428,15 @@ impl LightningCoin {
         }
     }
 
-    // Todo: this can be removed after next rust-lightning release when min_final_cltv_expiry can be specified in
+    // Todo: this can be removed after next rust-lightning release when min_final_cltv_expiry_delta can be specified in
     // Todo: create_invoice_from_channelmanager_and_duration_since_epoch_with_payment_hash https://github.com/lightningdevkit/rust-lightning/pull/1878
-    // Todo: The above PR will also validate min_final_cltv_expiry.
+    // Todo: The above PR will also validate min_final_cltv_expiry_delta.
     async fn create_invoice_for_hash(
         &self,
         payment_hash: PaymentHash,
         amt_msat: Option<u64>,
         description: String,
-        min_final_cltv_expiry: u64,
+        min_final_cltv_expiry_delta: u64,
         invoice_expiry_delta_secs: u32,
     ) -> Result<Invoice, MmError<SignOrCreationError<()>>> {
         let open_channels_nodes = self.open_channels_nodes.lock().clone();
@@ -445,11 +448,19 @@ impl LightningCoin {
                 ));
         }
 
+        // TODO: Here we just don't set the delta if we can't convert it to u16. There is probably a better solution.
+        let min_final_cltv_expiry_delta: Option<u16> = min_final_cltv_expiry_delta.try_into().ok();
+
         // `create_inbound_payment` only returns an error if the amount is greater than the total bitcoin
         // supply.
         let payment_secret = self
             .channel_manager
-            .create_inbound_payment_for_hash(payment_hash, amt_msat, invoice_expiry_delta_secs)
+            .create_inbound_payment_for_hash(
+                payment_hash,
+                amt_msat,
+                invoice_expiry_delta_secs,
+                min_final_cltv_expiry_delta,
+            )
             .map_to_mm(|()| SignOrCreationError::CreationError(CreationError::InvalidAmount))?;
         let our_node_pubkey = self.channel_manager.get_our_node_id();
         // Todo: Check if it's better to use UTC instead of local time for invoice generations
@@ -462,7 +473,6 @@ impl LightningCoin {
             .payment_hash(Hash::from_inner(payment_hash.0))
             .payment_secret(payment_secret)
             .basic_mpp()
-            .min_final_cltv_expiry(min_final_cltv_expiry)
             .expiry_time(core::time::Duration::from_secs(invoice_expiry_delta_secs.into()));
         if let Some(amt) = amt_msat {
             invoice = invoice.amount_milli_satoshis(amt);
@@ -499,7 +509,7 @@ impl LightningCoin {
         secret_hash: &[u8],
         amount: BigDecimal,
         expires_in: u64,
-        min_final_cltv_expiry: u64,
+        min_final_cltv_expiry_delta: u64,
     ) -> Result<Vec<u8>, MmError<PaymentInstructionsErr>> {
         // lightning decimals should be 11 in config since the smallest divisible unit in lightning coin is msat
         let amt_msat = sat_from_big_decimal(&amount, self.decimals()).map_mm_err()?;
@@ -511,7 +521,7 @@ impl LightningCoin {
                 payment_hash,
                 Some(amt_msat),
                 "".into(),
-                min_final_cltv_expiry,
+                min_final_cltv_expiry_delta,
                 expires_in.try_into().expect("expires_in shouldn't exceed u32::MAX"),
             )
             .await
@@ -524,7 +534,7 @@ impl LightningCoin {
         instructions: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
-        min_final_cltv_expiry: u64,
+        min_final_cltv_expiry_delta: u64,
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
         let invoice = Invoice::from_str(&String::from_utf8_lossy(instructions))?;
         if invoice.payment_hash().as_inner() != secret_hash
@@ -544,9 +554,9 @@ impl LightningCoin {
             ));
         }
 
-        if invoice.min_final_cltv_expiry() != min_final_cltv_expiry {
+        if invoice.min_final_cltv_expiry() != min_final_cltv_expiry_delta {
             return MmError::err(ValidateInstructionsErr::ValidateLightningInvoiceErr(
-                "Invalid invoice min_final_cltv_expiry!".into(),
+                "Invalid invoice min_final_cltv_expiry_delta!".into(),
             ));
         }
 
@@ -585,7 +595,7 @@ impl LightningCoin {
             match coin.db.get_payment_from_db(payment_hash).await {
                 Ok(Some(payment)) => {
                     let amount_claimable = payment.amt_msat;
-                    // Note: locktime doesn't need to be validated since min_final_cltv_expiry should be validated in rust-lightning after fixing the below issue
+                    // Note: locktime doesn't need to be validated since min_final_cltv_expiry_delta should be validated in rust-lightning after fixing the below issue
                     // https://github.com/lightningdevkit/rust-lightning/issues/1850
                     // Also, PaymentClaimable won't be fired if amount_claimable < the amount requested in the invoice, this check is probably not needed.
                     // But keeping it just in case any changes happen in rust-lightning
@@ -875,10 +885,15 @@ impl SwapOps for LightningCoin {
         &self,
         args: PaymentInstructionArgs<'_>,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
-        let min_final_cltv_expiry = self.estimate_blocks_from_duration(args.maker_lock_duration);
-        self.swap_payment_instructions(args.secret_hash, args.amount, args.expires_in, min_final_cltv_expiry)
-            .await
-            .map(Some)
+        let min_final_cltv_expiry_delta = self.estimate_blocks_from_duration(args.maker_lock_duration);
+        self.swap_payment_instructions(
+            args.secret_hash,
+            args.amount,
+            args.expires_in,
+            min_final_cltv_expiry_delta,
+        )
+        .await
+        .map(Some)
     }
 
     #[inline]
@@ -890,7 +905,7 @@ impl SwapOps for LightningCoin {
             args.secret_hash,
             args.amount,
             args.expires_in,
-            MIN_FINAL_CLTV_EXPIRY as u64,
+            MIN_FINAL_CLTV_EXPIRY_DELTA as u64,
         )
         .await
         .map(Some)
@@ -901,8 +916,8 @@ impl SwapOps for LightningCoin {
         instructions: &[u8],
         args: PaymentInstructionArgs,
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
-        let min_final_cltv_expiry = self.estimate_blocks_from_duration(args.maker_lock_duration);
-        self.validate_swap_instructions(instructions, args.secret_hash, args.amount, min_final_cltv_expiry)
+        let min_final_cltv_expiry_delta = self.estimate_blocks_from_duration(args.maker_lock_duration);
+        self.validate_swap_instructions(instructions, args.secret_hash, args.amount, min_final_cltv_expiry_delta)
     }
 
     #[inline]
@@ -915,7 +930,7 @@ impl SwapOps for LightningCoin {
             instructions,
             args.secret_hash,
             args.amount,
-            MIN_FINAL_CLTV_EXPIRY as u64,
+            MIN_FINAL_CLTV_EXPIRY_DELTA as u64,
         )
     }
 
@@ -992,10 +1007,7 @@ impl MarketCoinOps for LightningCoin {
             ));
         }
         let message_hash = self.sign_message_hash(message).ok_or(SignatureError::PrefixNotFound)?;
-        let secret_key = self
-            .keys_manager
-            .get_node_secret(Recipient::Node)
-            .map_err(|_| SignatureError::InternalError("Error accessing node keys".to_string()))?;
+        let secret_key = self.keys_manager.get_node_secret_key();
         let private = Private {
             prefix: 239,
             secret: H256::from_slice(secret_key.as_ref())
@@ -1182,12 +1194,7 @@ impl MarketCoinOps for LightningCoin {
     }
 
     fn display_priv_key(&self) -> Result<String, String> {
-        Ok(self
-            .keys_manager
-            .get_node_secret(Recipient::Node)
-            .map_err(|_| "Unsupported recipient".to_string())?
-            .display_secret()
-            .to_string())
+        Ok(self.keys_manager.get_node_secret_key().display_secret().to_string())
     }
 
     // This will depend on the route/routes taken for the payment, since every channel's counterparty specifies the minimum amount they will allow to route.
@@ -1413,27 +1420,32 @@ impl MmCoin for LightningCoin {
             let hint = log_err_and_return_false!(Readable::read(&mut Cursor::new(h)));
             route_hints.push(hint);
         }
-        let mut payment_params =
-            PaymentParameters::from_node_id(protocol_info.node_id.into()).with_route_hints(route_hints);
         let final_cltv_expiry_delta = if is_maker {
             self.estimate_blocks_from_duration(locktime)
                 .try_into()
                 .expect("final_cltv_expiry_delta shouldn't exceed u32::MAX")
         } else {
+            MIN_FINAL_CLTV_EXPIRY_DELTA as u32
+        };
+        let mut payment_params = PaymentParameters::from_node_id(protocol_info.node_id.into(), final_cltv_expiry_delta)
+            .with_route_hints(route_hints)
+            .expect("Payment is initialized as clear payment, so route hints should be valid");
+        if is_maker {
             payment_params.max_total_cltv_expiry_delta = self
                 .estimate_blocks_from_duration(locktime)
                 .try_into()
                 .expect("max_total_cltv_expiry_delta shouldn't exceed u32::MAX");
-            MIN_FINAL_CLTV_EXPIRY
-        };
+        }
+
         drop_mutability!(payment_params);
         let route_params = RouteParameters {
             payment_params,
             final_value_msat,
-            final_cltv_expiry_delta,
+            // TODO: We should set a sane limit here on the maximum fee to be paid.
+            max_total_routing_fee_msat: None,
         };
-        let payer = self.channel_manager.node_id();
-        let first_hops = self.channel_manager.first_hops();
+        let payer = self.channel_manager.get_our_node_id();
+        let first_hops = self.channel_manager.list_usable_channels();
         let inflight_htlcs = self.channel_manager.compute_inflight_htlcs();
         self.router
             .find_route(

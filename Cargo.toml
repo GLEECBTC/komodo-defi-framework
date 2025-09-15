@@ -129,7 +129,7 @@ libc = "0.2"
 libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.12", default-features = false }
 lightning = "0.0.119"
 lightning-background-processor = "0.0.119"
-lightning-invoice = { version = "0.21.0", features = ["serde"] }
+lightning-invoice = { version = "0.27.0", features = ["serde"] }
 lightning-net-tokio = "0.0.119"
 log = "0.4"
 metrics = "0.21"

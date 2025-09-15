@@ -86,7 +86,7 @@ use mm2_number::{BigDecimal, MmNumber, MmNumberMultiRepr};
 use mm2_state_machine::storable_state_machine::StateMachineStorage;
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264};
-use secp256k1::{PublicKey, SecretKey, ecdsa::Signature};
+use secp256k1::{ecdsa::Signature, PublicKey, SecretKey};
 use serde::Serialize;
 use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};

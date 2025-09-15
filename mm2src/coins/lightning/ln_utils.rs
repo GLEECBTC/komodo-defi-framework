@@ -9,13 +9,15 @@ use bitcoin_hashes::{sha256d, Hash};
 use common::executor::SpawnFuture;
 use common::log::LogState;
 use derive_more::Display;
-use lightning::sign::{InMemorySigner, KeysManager};
 use lightning::chain::{chainmonitor, BestBlock, ChannelMonitorUpdateStatus, Watch};
 use lightning::ln::channelmanager::{
-    ChainParameters, ChannelManagerReadArgs, PaymentId, PaymentSendFailure, SimpleArcChannelManager,
+    ChainParameters, ChannelManagerReadArgs, PaymentId, PaymentSendFailure, RecipientOnionFields,
+    SimpleArcChannelManager,
 };
 use lightning::routing::gossip::RoutingFees;
 use lightning::routing::router::{PaymentParameters, RouteHint, RouteHintHop, RouteParameters, Router as RouterTrait};
+use lightning::routing::scoring::{ProbabilisticScorer, ProbabilisticScoringFeeParameters};
+use lightning::sign::{InMemorySigner, KeysManager};
 use lightning::util::config::UserConfig;
 use lightning::util::errors::APIError;
 use lightning::util::ser::ReadableArgs;
@@ -38,7 +40,13 @@ pub type ChainMonitor = chainmonitor::ChainMonitor<
 >;
 
 pub type ChannelManager = SimpleArcChannelManager<ChainMonitor, Platform, Platform, LogState>;
-pub type Router = DefaultRouter<Arc<NetworkGraph>, Arc<LogState>, Arc<Scorer>>;
+pub type Router = DefaultRouter<
+    Arc<NetworkGraph>,
+    Arc<LogState>,
+    Arc<Scorer>,
+    ProbabilisticScoringFeeParameters,
+    ProbabilisticScorer<Arc<NetworkGraph>, Arc<LogState>>,
+>;
 
 #[derive(Debug, PartialEq)]
 pub struct RpcBestBlock {
@@ -74,16 +82,9 @@ pub async fn init_persister(
     ctx: &MmArc,
     platform_coin_address: &str,
     ticker: String,
-    backup_path: Option<String>,
 ) -> EnableLightningResult<Arc<LightningFilesystemPersister>> {
     let ln_data_dir = ln_data_dir(ctx, platform_coin_address, &ticker);
-    let ln_data_backup_dir = ln_data_backup_dir(backup_path, platform_coin_address, &ticker);
-    let persister = Arc::new(LightningFilesystemPersister::new(ln_data_dir, ln_data_backup_dir));
-
-    let is_initialized = persister.is_fs_initialized().await?;
-    if !is_initialized {
-        persister.init_fs().await?;
-    }
+    let persister = Arc::new(LightningFilesystemPersister::new(ln_data_dir));
 
     Ok(persister)
 }
@@ -128,6 +129,7 @@ pub async fn init_channel_manager(
     persister: Arc<LightningFilesystemPersister>,
     db: SqliteLightningDB,
     keys_manager: Arc<KeysManager>,
+    router: Arc<Router>,
     user_config: UserConfig,
 ) -> EnableLightningResult<(Arc<ChainMonitor>, Arc<ChannelManager>)> {
     // Initialize the FeeEstimator. UtxoStandardCoin implements the FeeEstimator trait, so it'll act as our fee estimator.
@@ -160,7 +162,7 @@ pub async fn init_channel_manager(
     for (_, chan_mon) in channelmonitors.iter() {
         // Although there is a mutex lock inside the load_outputs_to_watch fn
         // it shouldn't be held by anything yet, so async_blocking is not needed.
-        chan_mon.load_outputs_to_watch(&platform);
+        chan_mon.load_outputs_to_watch(&platform, &logger);
     }
 
     let rpc_client = match &platform.coin.as_ref().rpc_client {
@@ -191,9 +193,12 @@ pub async fn init_channel_manager(
             // Read ChannelManager data from the file
             let read_args = ChannelManagerReadArgs::new(
                 keys_manager.clone(),
+                keys_manager.clone(),
+                keys_manager.clone(),
                 fee_estimator.clone(),
                 chain_monitor_for_args,
                 broadcaster.clone(),
+                router,
                 logger.clone(),
                 user_config,
                 channel_monitor_mut_references,
@@ -244,10 +249,14 @@ pub async fn init_channel_manager(
             fee_estimator.clone(),
             chain_monitor.clone(),
             broadcaster.clone(),
+            router,
             logger.clone(),
+            keys_manager.clone(),
+            keys_manager.clone(),
             keys_manager.clone(),
             user_config,
             chain_params,
+            now_sec() as u32,
         ))
     };
 
@@ -349,7 +358,7 @@ pub(crate) fn filter_channels(channels: Vec<ChannelDetails>, min_inbound_capacit
 #[derive(Debug, Display)]
 pub enum PaymentError {
     #[display(fmt = "Final cltv expiry delta {_0} is below the required minimum of {_1}")]
-    CLTVExpiry(u32, u32),
+    CLTVExpiry(u16, u16),
     #[display(fmt = "Error paying invoice: {_0}")]
     Invoice(String),
     #[display(fmt = "Keysend error: {_0}")]
@@ -382,10 +391,11 @@ pub(crate) fn pay_invoice_with_max_total_cltv_expiry_delta(
         .ok_or(InvoicePaymentError::Invoice("amount missing"))?;
     let expiry_time = (invoice.duration_since_epoch() + invoice.expiry_time()).as_secs();
 
-    let mut payment_params = PaymentParameters::from_node_id(invoice.recover_payee_pub_key())
-        .with_expiry_time(expiry_time)
-        .with_route_hints(invoice.route_hints())
-        .with_max_total_cltv_expiry_delta(max_total_cltv_expiry_delta);
+    let mut payment_params =
+        PaymentParameters::from_node_id(invoice.recover_payee_pub_key(), invoice.min_final_cltv_expiry() as u32)
+            .with_expiry_time(expiry_time)
+            .with_route_hints(invoice.route_hints())
+            .with_max_total_cltv_expiry_delta(max_total_cltv_expiry_delta);
     if let Some(features) = invoice.features() {
         payment_params = payment_params.with_features(features.clone());
     }
@@ -393,7 +403,8 @@ pub(crate) fn pay_invoice_with_max_total_cltv_expiry_delta(
     let route_params = RouteParameters {
         payment_params,
         final_value_msat,
-        final_cltv_expiry_delta: invoice.min_final_cltv_expiry() as u32,
+        // TODO: Set a sensible default for max_total_routing_fee_msat
+        max_total_routing_fee_msat: None,
     };
 
     pay_internal(channel_manager, router, &route_params, invoice, &mut 0, &mut Vec::new())
@@ -407,8 +418,8 @@ fn pay_internal(
     attempts: &mut usize,
     errors: &mut Vec<APIError>,
 ) -> Result<PaymentId, PaymentError> {
-    let payer = channel_manager.node_id();
-    let first_hops = channel_manager.first_hops();
+    let payer = channel_manager.get_our_node_id();
+    let first_hops = channel_manager.list_usable_channels();
     let payment_hash_inner = invoice.payment_hash().into_inner();
     let payment_hash = PaymentHash(payment_hash_inner);
     let payment_id = PaymentId(payment_hash_inner);
@@ -423,8 +434,8 @@ fn pay_internal(
         )
         .map_err(InvoicePaymentError::Routing)?;
 
-    let payment_secret = Some(*invoice.payment_secret());
-    match channel_manager.send_payment(&route, payment_hash, &payment_secret, payment_id) {
+    let onion_fields = RecipientOnionFields::secret_only(invoice.payment_secret().clone());
+    match channel_manager.send_payment_with_route(&route, payment_hash, onion_fields, payment_id) {
         Ok(()) => Ok(payment_id),
         Err(e) => match e {
             PaymentSendFailure::ParameterError(_) => Err(e),
@@ -480,8 +491,8 @@ fn retry_payment(
     attempts: &mut usize,
     errors: &mut Vec<APIError>,
 ) -> Result<(), PaymentError> {
-    let payer = channel_manager.node_id();
-    let first_hops = channel_manager.first_hops();
+    let payer = channel_manager.get_our_node_id();
+    let first_hops = channel_manager.list_usable_channels();
     let inflight_htlcs = channel_manager.compute_inflight_htlcs();
     let route = router
         .find_route(

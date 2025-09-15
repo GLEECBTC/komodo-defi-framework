@@ -161,6 +161,7 @@ lightning.workspace = true
 lightning-background-processor.workspace = true
 lightning-invoice.workspace = true
 lightning-net-tokio.workspace = true
+lightning-persister = "0.0.119"
 rust-ini.workspace = true
 rustls = { workspace = true, features = ["dangerous_configuration"] }
 timed-map = { workspace = true, features = ["rustc-hash"] }

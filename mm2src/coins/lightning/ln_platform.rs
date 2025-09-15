@@ -9,7 +9,7 @@ use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::utxo_standard::UtxoStandardCoin;
 use crate::utxo::GetConfirmedTxError;
 use crate::{MarketCoinOps, MmCoin, WaitForHTLCTxSpendArgs, WeakSpawner};
-use bitcoin::blockdata::block::BlockHeader;
+use bitcoin::blockdata::block::Header as BlockHeader;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::consensus::encode::{deserialize, serialize_hex};
@@ -20,6 +20,7 @@ use common::log::{debug, error, info};
 use common::{block_on_f01, wait_until_sec};
 use futures::compat::Future01CompatExt;
 use futures::future::join_all;
+use hex::FromHexError;
 use keys::hash::H256;
 use lightning::chain::{
     chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator},
@@ -616,42 +617,49 @@ impl FeeEstimator for Platform {
 }
 
 impl BroadcasterInterface for Platform {
-    fn broadcast_transaction(&self, tx: &Transaction) {
-        let txid = tx.txid();
-        let tx_hex = serialize_hex(tx);
-        debug!("Trying to broadcast transaction: {}", tx_hex);
-        let tx_bytes = match hex::decode(&tx_hex) {
-            Ok(b) => b,
+    // TODO: If multiple transactions are passed, they should be broadcast in a package. (check the doc comment of the trait method)
+    fn broadcast_transactions(&self, tx: &[&Transaction]) {
+        let txids_and_tx_bytes = match tx
+            .iter()
+            .map(|tx| hex::decode(serialize_hex(tx)).map(|tx_bytes| (tx.txid(), tx_bytes)))
+            .collect::<Result<HashMap<_, _>, FromHexError>>()
+        {
+            Ok(map) => map,
             Err(e) => {
-                error!("Converting transaction to bytes error:{}", e);
+                error!("Converting transaction to bytes error: {}", e);
                 return;
             },
         };
 
         let platform_coin = self.coin.clone();
         let fut = async move {
-            loop {
-                match platform_coin
-                    .as_ref()
-                    .rpc_client
-                    .send_raw_transaction(tx_bytes.clone().into())
-                    .compat()
-                    .await
-                {
-                    Ok(id) => {
-                        info!("Transaction broadcasted successfully: {:?} ", id);
-                        break;
-                    },
-                    // Todo: broadcast transaction through p2p network instead in case of error
-                    // Todo: I don't want to rely on p2p broadcasting for now since there is no way to know if there are nodes running bitcoin in native mode or not
-                    // Todo: Also we need to make sure that the transaction was broadcasted after relying on the p2p network
-                    Err(e) => {
-                        error!("Broadcast transaction {} failed: {}", txid, e);
-                        if !e.get_inner().is_network_error() {
+            for (txid, tx_bytes) in txids_and_tx_bytes {
+                debug!("Trying to broadcast transaction: {}", txid);
+
+                loop {
+                    match platform_coin
+                        .as_ref()
+                        .rpc_client
+                        .send_raw_transaction(tx_bytes.clone().into())
+                        .compat()
+                        .await
+                    {
+                        Ok(id) => {
+                            info!("Transaction broadcasted successfully: {:?} ", id);
                             break;
-                        }
-                        Timer::sleep(TRY_LOOP_INTERVAL).await;
-                    },
+                        },
+                        // Todo: broadcast transaction through p2p network instead in case of error
+                        // Todo: I don't want to rely on p2p broadcasting for now since there is no way to know if there are nodes running bitcoin in native mode or not
+                        // Todo: Also we need to make sure that the transaction was broadcasted after relying on the p2p network
+                        // TODO: After upgrading to lightning v0.0.119, looks like retrials are now handled via LDK. So this might not be needed anymore.
+                        Err(e) => {
+                            error!("Broadcast transaction {} failed: {}", txid, e);
+                            if !e.get_inner().is_network_error() {
+                                break;
+                            }
+                            Timer::sleep(TRY_LOOP_INTERVAL).await;
+                        },
+                    }
                 }
             }
         };
