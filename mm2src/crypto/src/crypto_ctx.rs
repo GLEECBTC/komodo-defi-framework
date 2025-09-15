@@ -31,6 +31,8 @@ pub enum CryptoInitError {
     #[display(fmt = "Invalid passphrase: '{_0}'")]
     InvalidPassphrase(PrivKeyError),
     Internal(String),
+    #[display(fmt = "Cannot initialize in no-login mode.")]
+    CannotInitInNoLoginMode,
 }
 
 impl From<PrivKeyError> for CryptoInitError {
@@ -54,6 +56,8 @@ pub enum CryptoCtxError {
     NotInitialized,
     #[display(fmt = "Internal error: {_0}")]
     Internal(String),
+    #[display(fmt = "Cannot use `CryptoCtx` in no-login mode.")]
+    CannotInitInNoLoginMode,
 }
 
 #[derive(Debug)]
@@ -111,11 +115,16 @@ impl CryptoCtx {
         match CryptoCtx::from_ctx(ctx).split_mm() {
             Ok(_) => Ok(true),
             Err((CryptoCtxError::NotInitialized, _trace)) => Ok(false),
+            Err((CryptoCtxError::CannotInitInNoLoginMode, _trace)) => Ok(false),
             Err((other, trace)) => MmError::err_with_trace(InternalError(other.to_string()), trace),
         }
     }
 
     pub fn from_ctx(ctx: &MmArc) -> MmResult<Arc<CryptoCtx>, CryptoCtxError> {
+        if ctx.is_no_login_mode() {
+            return MmError::err(CryptoCtxError::CannotInitInNoLoginMode);
+        }
+
         let ctx_field = ctx
             .crypto_ctx
             .lock()

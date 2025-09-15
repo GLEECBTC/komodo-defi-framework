@@ -541,7 +541,7 @@ where
     match CryptoCtx::from_ctx(ctx).split_mm() {
         Ok(crypto_ctx) => Ok(Some(CryptoCtx::mm2_internal_pubkey_hex(crypto_ctx.as_ref()))),
         Err((CryptoCtxError::NotInitialized, _)) => Ok(None),
-        Err((CryptoCtxError::Internal(error), trace)) => MmError::err_with_trace(err_construct(error), trace),
+        Err((e, trace)) => MmError::err_with_trace(err_construct(e.to_string()), trace),
     }
 }
 
