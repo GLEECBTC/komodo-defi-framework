@@ -440,7 +440,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93f2635620bf0b9d4576eb7bb9a38a55df78bd1205d26fa994b25911a69f212f"
 dependencies = [
  "bitcoin_hashes 0.11.0",
- "rand_core 0.6.4",
+ "rand_core 0.4.2",
  "zeroize",
 ]
 
@@ -1854,6 +1854,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.1.0"
+source = "git+https://github.com/komodoplatform/librustzcash.git?branch=upgrade-secp256k1#5535e5b4d84a81e6351e1087081e8661d33eb7a5"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -1872,7 +1873,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33d852cb9b869c2a9b3df2f71a3074817f01e1844f839a144f5fcef059a4eb5d"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1908,6 +1909,7 @@ dependencies = [
 [[package]]
 name = "ethcore-transaction"
 version = "0.1.0"
+source = "git+https://github.com/KomodoPlatform/mm2-parity-ethereum.git?branch=upgrade-secp256k1#8a12cefc6cc4779b04fea1ff326d6753f6202098"
 dependencies = [
  "ethereum-types",
  "ethkey",
@@ -1934,6 +1936,7 @@ dependencies = [
 [[package]]
 name = "ethkey"
 version = "0.3.0"
+source = "git+https://github.com/KomodoPlatform/mm2-parity-ethereum.git?branch=upgrade-secp256k1#8a12cefc6cc4779b04fea1ff326d6753f6202098"
 dependencies = [
  "byteorder",
  "edit-distance",
@@ -3750,6 +3753,7 @@ checksum = "60302e4db3a61da70c0cb7991976248362f30319e88850c487b9b95bbf059e00"
 [[package]]
 name = "mem"
 version = "0.1.0"
+source = "git+https://github.com/KomodoPlatform/mm2-parity-ethereum.git?branch=upgrade-secp256k1#8a12cefc6cc4779b04fea1ff326d6753f6202098"
 
 [[package]]
 name = "memchr"
@@ -5868,7 +5872,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7590,6 +7594,7 @@ dependencies = [
 [[package]]
 name = "unexpected"
 version = "0.1.0"
+source = "git+https://github.com/KomodoPlatform/mm2-parity-ethereum.git?branch=upgrade-secp256k1#8a12cefc6cc4779b04fea1ff326d6753f6202098"
 
 [[package]]
 name = "unicode-bidi"
@@ -8392,6 +8397,7 @@ checksum = "0f9079049688da5871a7558ddacb7f04958862c703e68258594cb7a862b5e33f"
 [[package]]
 name = "zcash_client_backend"
 version = "0.5.0"
+source = "git+https://github.com/komodoplatform/librustzcash.git?branch=upgrade-secp256k1#5535e5b4d84a81e6351e1087081e8661d33eb7a5"
 dependencies = [
  "async-trait",
  "base64 0.13.0",
@@ -8416,6 +8422,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_sqlite"
 version = "0.3.0"
+source = "git+https://github.com/komodoplatform/librustzcash.git?branch=upgrade-secp256k1#5535e5b4d84a81e6351e1087081e8661d33eb7a5"
 dependencies = [
  "async-trait",
  "bech32",
@@ -8437,6 +8444,7 @@ dependencies = [
 [[package]]
 name = "zcash_extras"
 version = "0.1.0"
+source = "git+https://github.com/komodoplatform/librustzcash.git?branch=upgrade-secp256k1#5535e5b4d84a81e6351e1087081e8661d33eb7a5"
 dependencies = [
  "async-trait",
  "ff 0.8.0",
@@ -8452,6 +8460,7 @@ dependencies = [
 [[package]]
 name = "zcash_note_encryption"
 version = "0.0.0"
+source = "git+https://github.com/komodoplatform/librustzcash.git?branch=upgrade-secp256k1#5535e5b4d84a81e6351e1087081e8661d33eb7a5"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -8465,6 +8474,7 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.5.0"
+source = "git+https://github.com/komodoplatform/librustzcash.git?branch=upgrade-secp256k1#5535e5b4d84a81e6351e1087081e8661d33eb7a5"
 dependencies = [
  "aes",
  "bitvec 0.18.5",
@@ -8494,6 +8504,7 @@ dependencies = [
 [[package]]
 name = "zcash_proofs"
 version = "0.5.0"
+source = "git+https://github.com/komodoplatform/librustzcash.git?branch=upgrade-secp256k1#5535e5b4d84a81e6351e1087081e8661d33eb7a5"
 dependencies = [
  "bellman",
  "blake2b_simd",

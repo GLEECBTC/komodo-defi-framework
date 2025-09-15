@@ -89,9 +89,9 @@ either = "1.6"
 enum-primitive-derive = "0.2"
 env_logger = { version = "0.11", default-features = false }
 ethabi = "17.0.0"
-ethcore-transaction = { path = "../mm2-parity-ethereum/ethcore/transaction" }
+ethcore-transaction = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git", branch = "upgrade-secp256k1" }
 ethereum-types = { version = "0.13", default-features = false, features = ["std", "serialize"] }
-ethkey = { path = "../mm2-parity-ethereum/ethkey" }
+ethkey = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git", branch = "upgrade-secp256k1" }
 # Waiting for https://github.com/rust-lang/rust/issues/54725 to use on Stable.
 #enum_dispatch = "0.1"
 ff = "0.8"
@@ -221,11 +221,11 @@ web-sys = {version = "0.3.55", default-features = false }
 web3 = { git = "https://github.com/komodoplatform/rust-web3", tag = "v0.20.0", default-features = false }
 winapi = "0.3"
 zbase32 = "0.1.2"
-zcash_client_backend = { path = "../librustzcash/zcash_client_backend" }
-zcash_client_sqlite = { path = "../librustzcash/zcash_client_sqlite" }
-zcash_extras = { path = "../librustzcash/zcash_extras" }
-zcash_primitives =  { path = "../librustzcash/zcash_primitives", features = ["transparent-inputs"] }
-zcash_proofs = { path = "../librustzcash/zcash_proofs", default-features = false }
+zcash_client_backend = { git = "https://github.com/komodoplatform/librustzcash.git", branch = "upgrade-secp256k1" }
+zcash_client_sqlite = { git = "https://github.com/komodoplatform/librustzcash.git", branch = "upgrade-secp256k1" }
+zcash_extras = { git = "https://github.com/komodoplatform/librustzcash.git", branch = "upgrade-secp256k1" }
+zcash_primitives = { git = "https://github.com/komodoplatform/librustzcash.git", branch = "upgrade-secp256k1", features = ["transparent-inputs"] }
+zcash_proofs = { git = "https://github.com/komodoplatform/librustzcash.git", branch = "upgrade-secp256k1", default-features = false }
 x25519-dalek = { version = "2.0", features = ["static_secrets"] }
 zeroize = { version = "1.8.1", features = ["zeroize_derive"] }
 
