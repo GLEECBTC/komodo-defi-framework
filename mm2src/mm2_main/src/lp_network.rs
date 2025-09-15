@@ -27,33 +27,21 @@ use compatible_time::{Duration, Instant};
 use derive_more::Display;
 use futures::{channel::oneshot, StreamExt};
 use keys::KeyPair;
-use lazy_static::lazy_static;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
 use mm2_libp2p::application::request_response::P2PRequest;
 use mm2_libp2p::p2p_ctx::P2PContext;
 use mm2_libp2p::{
-    decode_message, encode_message, DecodingError, GossipsubEvent, GossipsubMessage, Libp2pPublic, Libp2pSecpPublic,
-    MessageId, NetworkPorts, PeerId, TOPIC_SEPARATOR,
+    decode_message, encode_message, get_relay_mesh, DecodingError, GossipsubEvent, GossipsubMessage, Libp2pPublic,
+    Libp2pSecpPublic, MessageId, NetworkPorts, PeerId, TOPIC_SEPARATOR,
 };
 use mm2_libp2p::{AdexBehaviourCmd, AdexBehaviourEvent, AdexEventRx, AdexResponse};
 use mm2_libp2p::{PeerAddresses, RequestResponseBehaviourEvent};
 use mm2_metrics::{mm_label, mm_timing};
-use parking_lot::Mutex;
 use serde::de;
 use std::str::FromStr;
-use timed_map::{MapKind, TimedMap};
 
 use crate::{lp_healthcheck, lp_ordermatch, lp_stats, lp_swap};
-
-const TEMP_BAN_DURATION_SECS: u64 = 3600;
-const PER_PEER_SYNC_BAN_GRACE: Duration = Duration::from_secs(120);
-const SYNC_BAN_GRACE_TTL: Duration = Duration::from_secs(600);
-
-lazy_static! {
-    static ref SYNC_BAN_GRACE: Mutex<TimedMap<PeerId, Instant>> =
-        Mutex::new(TimedMap::new_with_map_kind(MapKind::FxHashMap));
-}
 
 pub type P2PRequestResult<T> = Result<T, MmError<P2PRequestError>>;
 pub type P2PProcessResult<T> = Result<T, MmError<P2PProcessError>>;
@@ -176,51 +164,40 @@ async fn process_p2p_message(
                     from_pubkey,
                     propagated_from,
                     unresolved_pairs,
+                    cause,
                 } = e.get_inner()
                 {
+                    // Determine if the failing peer is a relay (seed) or a light node.
+                    let is_remote_relay = is_peer_in_relay_mesh(&ctx, propagated_from).await;
+
+                    // Decide whether we are allowed to ban this peer given node roles and the failure cause.
+                    let allow_ban = sync_ban::decide_allow_ban(is_remote_relay, i_am_relay, cause);
+                    let action = if allow_ban { "grace_or_tempban" } else { "no_ban" };
+                    log::warn!(
+                        "Orderbook SyncFailure: peer={} pubkey={} pairs={:?} cause={:?} remote_is_relay={} local_is_relay={} action={}",
+                        propagated_from,
+                        from_pubkey,
+                        unresolved_pairs,
+                        cause,
+                        is_remote_relay,
+                        i_am_relay,
+                        action
+                    );
+
                     match PeerId::from_str(propagated_from) {
                         Ok(peer) => {
-                            let now = Instant::now();
-                            let mut map = SYNC_BAN_GRACE.lock();
-                            map.drop_expired_entries();
-
-                            if let Some(first_seen) = map.get(&peer) {
-                                let elapsed = now.duration_since(*first_seen);
-                                if elapsed >= PER_PEER_SYNC_BAN_GRACE {
-                                    // Grace elapsed: ban now and clear the entry.
-                                    map.remove(&peer);
-                                    log::warn!(
-                                        "Orderbook SyncFailure from {} (pubkey {}, pairs {:?}) after {}s grace; banning.",
-                                        propagated_from,
-                                        from_pubkey,
-                                        unresolved_pairs,
-                                        PER_PEER_SYNC_BAN_GRACE.as_secs()
-                                    );
-                                    temp_ban_peer(&ctx, peer, Duration::from_secs(TEMP_BAN_DURATION_SECS));
-                                    return;
-                                } else {
-                                    let remaining = PER_PEER_SYNC_BAN_GRACE.as_secs().saturating_sub(elapsed.as_secs());
-                                    log::warn!(
-                                        "Orderbook SyncFailure from {} (pubkey {}, pairs {:?}); {}s grace remaining; not banning.",
-                                        propagated_from,
-                                        from_pubkey,
-                                        unresolved_pairs,
-                                        remaining
-                                    );
-                                    return;
-                                }
-                            } else {
-                                // First SyncFailure observed: start grace window; this entry will auto-expire after SYNC_BAN_GRACE_TTL
-                                map.insert_expirable(peer, now, SYNC_BAN_GRACE_TTL);
-                                log::warn!(
-                                    "Orderbook SyncFailure from {} (pubkey {}, pairs {:?}); starting {}s per-peer grace; not banning yet.",
-                                    propagated_from,
-                                    from_pubkey,
-                                    unresolved_pairs,
-                                    PER_PEER_SYNC_BAN_GRACE.as_secs()
-                                );
+                            if !allow_ban {
                                 return;
                             }
+                            sync_ban::handle_sync_ban_grace(
+                                &ctx,
+                                peer,
+                                from_pubkey,
+                                propagated_from,
+                                unresolved_pairs,
+                                cause,
+                            );
+                            return;
                         },
                         Err(parse_err) => {
                             log::error!(
@@ -544,6 +521,15 @@ pub fn unban_peer(ctx: &MmArc, peer: PeerId) {
     }
 }
 
+/// Returns true if the given peer (string PeerId) is present in the current relay mesh.
+/// This clones the cmd_tx under the lock and drops the guard before awaiting to keep the future Send.
+pub async fn is_peer_in_relay_mesh(ctx: &MmArc, peer: &str) -> bool {
+    let p2p_ctx = P2PContext::fetch_from_mm_arc(ctx);
+    let cmd_tx = p2p_ctx.cmd_tx.lock().clone();
+    let mesh = get_relay_mesh(cmd_tx).await;
+    mesh.iter().any(|p| p == peer)
+}
+
 #[derive(Clone, Debug, Display, Serialize)]
 pub enum NetIdError {
     #[display(fmt = "Netid {netid} is larger than max {max_netid}")]
@@ -580,4 +566,97 @@ pub fn lp_network_ports(netid: u16) -> Result<NetworkPorts, MmError<NetIdError>>
 pub fn peer_id_from_secp_public(secp_public: &[u8]) -> Result<PeerId, MmError<DecodingError>> {
     let public_key = Libp2pSecpPublic::try_from_bytes(secp_public)?;
     Ok(PeerId::from_public_key(&Libp2pPublic::from(public_key)))
+}
+
+// --- Sync-ban policy and state tracking.
+//
+// Semantics:
+// - First failure starts a per-peer grace window (2 minutes).
+// - During grace, we do not ban; we log a warning.
+// - After grace, we may apply a temporary ban depending on roles and cause.
+// - Successes do NOT reset the grace clock; entries TTL out after 10 minutes of no failures.
+// - Role policy:
+//   * remote=relay: eligible for temp-ban on both causes.
+//   * local=relay, remote=light: eligible only on invalid_or_incomplete; unavailable => no-ban by policy.
+mod sync_ban {
+    use super::temp_ban_peer;
+    use crate::lp_ordermatch::SyncFailureCause;
+    use common::log;
+    use compatible_time::{Duration, Instant};
+    use lazy_static::lazy_static;
+    use mm2_core::mm_ctx::MmArc;
+    use mm2_libp2p::PeerId;
+    use parking_lot::Mutex;
+    use timed_map::{MapKind, TimedMap};
+
+    const TEMP_BAN_DURATION_SECS: u64 = 1200;
+    const PER_PEER_SYNC_BAN_GRACE: Duration = Duration::from_secs(120);
+    const SYNC_BAN_GRACE_TTL: Duration = Duration::from_secs(600);
+
+    lazy_static! {
+        static ref SYNC_BAN_GRACE: Mutex<TimedMap<PeerId, Instant>> =
+            Mutex::new(TimedMap::new_with_map_kind(MapKind::FxHashMap));
+    }
+
+    #[inline]
+    pub(super) fn decide_allow_ban(is_remote_relay: bool, i_am_relay: bool, cause: &SyncFailureCause) -> bool {
+        if is_remote_relay {
+            true
+        } else if i_am_relay {
+            matches!(cause, SyncFailureCause::InvalidOrIncomplete)
+        } else {
+            true
+        }
+    }
+
+    pub(super) fn handle_sync_ban_grace(
+        ctx: &MmArc,
+        peer: PeerId,
+        from_pubkey: &str,
+        propagated_from: &str,
+        unresolved_pairs: &[String],
+        cause: &SyncFailureCause,
+    ) {
+        let now = Instant::now();
+        let mut map = SYNC_BAN_GRACE.lock();
+        map.drop_expired_entries();
+
+        if let Some(first_seen) = map.get(&peer) {
+            let elapsed = now.duration_since(*first_seen);
+            if elapsed >= PER_PEER_SYNC_BAN_GRACE {
+                // Grace elapsed: ban now and clear the entry.
+                map.remove(&peer);
+                log::warn!(
+                    "Orderbook SyncFailure from {} (pubkey {}, pairs {:?}, cause {:?}) after {}s grace; banning.",
+                    propagated_from,
+                    from_pubkey,
+                    unresolved_pairs,
+                    cause,
+                    PER_PEER_SYNC_BAN_GRACE.as_secs()
+                );
+                temp_ban_peer(ctx, peer, Duration::from_secs(TEMP_BAN_DURATION_SECS));
+            } else {
+                let remaining = PER_PEER_SYNC_BAN_GRACE.as_secs().saturating_sub(elapsed.as_secs());
+                log::warn!(
+                    "Orderbook SyncFailure from {} (pubkey {}, pairs {:?}, cause {:?}); {}s grace remaining; not banning.",
+                    propagated_from,
+                    from_pubkey,
+                    unresolved_pairs,
+                    cause,
+                    remaining
+                );
+            }
+        } else {
+            // First SyncFailure observed: start grace window; this entry will auto-expire after SYNC_BAN_GRACE_TTL
+            map.insert_expirable(peer, now, SYNC_BAN_GRACE_TTL);
+            log::warn!(
+                "Orderbook SyncFailure from {} (pubkey {}, pairs {:?}, cause {:?}); starting {}s per-peer grace; not banning yet.",
+                propagated_from,
+                from_pubkey,
+                unresolved_pairs,
+                cause,
+                PER_PEER_SYNC_BAN_GRACE.as_secs()
+            );
+        }
+    }
 }

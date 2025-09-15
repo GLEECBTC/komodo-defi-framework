@@ -158,6 +158,14 @@ const SWAP_VERSION_DEFAULT: u8 = 2;
 
 pub type OrderbookP2PHandlerResult = Result<(), MmError<OrderbookP2PHandlerError>>;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SyncFailureCause {
+    /// Peer was unavailable: no response, timeout, or transport failure to SyncPubkeyOrderbookState.
+    Unavailable,
+    /// Peer responded but validation failed or did not resolve all requested pairs.
+    InvalidOrIncomplete,
+}
+
 #[derive(Debug, Display)]
 pub enum OrderbookP2PHandlerError {
     #[display(fmt = "'{_0}' is an invalid topic for the orderbook handler.")]
@@ -186,12 +194,13 @@ pub enum OrderbookP2PHandlerError {
     },
 
     #[display(
-        fmt = "Sync failure for pubkey '{from_pubkey}' via '{propagated_from}'; unresolved pairs: {unresolved_pairs:?}"
+        fmt = "Sync failure for pubkey '{from_pubkey}' via '{propagated_from}'; unresolved pairs: {unresolved_pairs:?}; cause: {cause:?}"
     )]
     SyncFailure {
         from_pubkey: String,
         propagated_from: String,
         unresolved_pairs: Vec<String>,
+        cause: SyncFailureCause,
     },
 }
 
@@ -327,19 +336,10 @@ fn process_trie_delta(
     new_root
 }
 
-fn build_pubkey_state_sync_request(
-    pubkey: &str,
-    pending_pairs: &HashSet<AlbOrderedOrderbookPair>,
-    expected_pair_roots: &HashMap<AlbOrderedOrderbookPair, H64>,
-) -> OrdermatchRequest {
-    let trie_roots = pending_pairs
-        .iter()
-        .filter_map(|p| expected_pair_roots.get(p).map(|&root| (p.clone(), root)))
-        .collect();
-    OrdermatchRequest::SyncPubkeyOrderbookState {
-        pubkey: pubkey.to_owned(),
-        trie_roots,
-    }
+#[derive(Clone, Copy, Debug)]
+struct SyncPlan {
+    from: H64,
+    to: H64,
 }
 
 fn apply_pair_orders_diff(
@@ -362,6 +362,89 @@ fn apply_pair_orders_diff(
     }
 }
 
+// TODO(sync-v2): Validate protocol_infos/conf_infos after binding them to a signature from the maker.
+#[allow(clippy::too_many_arguments)]
+fn apply_pair_sync_with_validation(
+    orderbook: &mut Orderbook,
+    from_pubkey: &str,
+    peer: &str,
+    pair: AlbOrderedOrderbookPair,
+    diff: DeltaOrFullTrie<Uuid, OrderbookP2PItem>,
+    expected_pair_roots: &HashMap<AlbOrderedOrderbookPair, H64>,
+    pending_pairs: &mut HashSet<AlbOrderedOrderbookPair>,
+    keep_alive_timestamp: u64,
+    protocol_infos: &HashMap<Uuid, BaseRelProtocolInfo>,
+    conf_infos: &HashMap<Uuid, OrderConfirmationsSettings>,
+) {
+    // Ignore unsolicited pairs we didn't request to prevent state poisoning.
+    if !pending_pairs.contains(&pair) {
+        return;
+    }
+
+    // Snapshot the current state for this (pubkey, pair) to allow non-destructive validation.
+    let snapshot_orders: Vec<OrderbookItem> = orderbook
+        .order_set
+        .values()
+        .filter(|o| o.pubkey == from_pubkey && alb_ordered_pair(&o.base, &o.rel) == pair)
+        .cloned()
+        .collect();
+
+    let (prev_pair_last_seen, prev_latest_root_ts) = {
+        let prev_state = orderbook.pubkeys_state.get(from_pubkey);
+        let prev_seen = prev_state.and_then(|s| s.pair_last_seen_local.get(&pair).copied());
+        let prev_ts = prev_state.and_then(|s| s.latest_root_timestamp_by_pair.get(&pair).copied());
+        (prev_seen, prev_ts)
+    };
+
+    // Apply diff and compute the new root.
+    let new_root = apply_pair_orders_diff(orderbook, from_pubkey, &pair, diff, protocol_infos, conf_infos);
+
+    if let Some(expected) = expected_pair_roots.get(&pair) {
+        if &new_root == expected {
+            // Accept: refresh maker timestamp floor and liveness.
+            pending_pairs.remove(&pair);
+            let state = pubkey_state_mut(&mut orderbook.pubkeys_state, from_pubkey);
+            state
+                .latest_root_timestamp_by_pair
+                .insert(pair.clone(), keep_alive_timestamp);
+            state.pair_last_seen_local.insert(pair.clone(), now_sec());
+        } else {
+            // Validation failed: revert to the snapshot non-destructively.
+            warn!(
+                "Sync validation failed for pubkey {} pair {} from {}: expected {:?}, got {:?}. Reverting pair.",
+                from_pubkey, pair, peer, expected, new_root
+            );
+
+            // Clear current pair state.
+            remove_pubkey_pair_orders(orderbook, from_pubkey, &pair);
+
+            // Restore orders from the snapshot.
+            for order in snapshot_orders {
+                orderbook.insert_or_update_order_update_trie(order);
+            }
+
+            // Restore timestamps as they were prior to applying the diff.
+            let state = pubkey_state_mut(&mut orderbook.pubkeys_state, from_pubkey);
+            match prev_pair_last_seen {
+                Some(ts) => {
+                    state.pair_last_seen_local.insert(pair.clone(), ts);
+                },
+                None => {
+                    state.pair_last_seen_local.remove(&pair);
+                },
+            }
+            match prev_latest_root_ts {
+                Some(ts) => {
+                    state.latest_root_timestamp_by_pair.insert(pair.clone(), ts);
+                },
+                None => {
+                    state.latest_root_timestamp_by_pair.remove(&pair);
+                },
+            }
+        }
+    }
+}
+
 fn apply_and_validate_pubkey_state_sync_response(
     orderbook_mutex: &PaMutex<Orderbook>,
     from_pubkey: &str,
@@ -371,73 +454,28 @@ fn apply_and_validate_pubkey_state_sync_response(
     pending_pairs: &mut HashSet<AlbOrderedOrderbookPair>,
     keep_alive_timestamp: u64,
 ) {
+    let SyncPubkeyOrderbookStateRes {
+        last_signed_pubkey_payload: _,
+        pair_orders_diff,
+        protocol_infos,
+        conf_infos,
+    } = response;
     let mut orderbook = orderbook_mutex.lock();
-    for (pair, diff) in response.pair_orders_diff {
-        // Ignore unsolicited pairs we didn't request to prevent state poisoning.
-        if !pending_pairs.contains(&pair) {
-            continue;
-        }
-
-        let new_root = apply_pair_orders_diff(
+    for (pair, diff) in pair_orders_diff {
+        // delegate per-pair apply/validate to a helper to keep nesting shallow
+        apply_pair_sync_with_validation(
             &mut orderbook,
             from_pubkey,
-            &pair,
-            diff,
-            &response.protocol_infos,
-            &response.conf_infos,
-        );
-
-        if let Some(expected) = expected_pair_roots.get(&pair) {
-            if &new_root == expected {
-                pending_pairs.remove(&pair);
-                // Mark per-pair maker-published timestamp once accepted
-                let state = pubkey_state_mut(&mut orderbook.pubkeys_state, from_pubkey);
-                state
-                    .latest_root_timestamp_by_pair
-                    .insert(pair.clone(), keep_alive_timestamp);
-                state.pair_last_seen_local.insert(pair.clone(), now_sec());
-            } else {
-                warn!(
-                    "Sync validation failed for pubkey {} pair {} from {}: expected {:?}, got {:?}. Reverting pair.",
-                    from_pubkey, pair, peer, expected, new_root
-                );
-                remove_pubkey_pair_orders(&mut orderbook, from_pubkey, &pair);
-            }
-        }
-    }
-}
-
-async fn request_and_apply_pubkey_state_sync_from_peer(
-    ctx: &MmArc,
-    orderbook: &PaMutex<Orderbook>,
-    from_pubkey: &str,
-    peer: &str,
-    expected_pair_roots: &HashMap<AlbOrderedOrderbookPair, H64>,
-    pending_pairs: &mut HashSet<AlbOrderedOrderbookPair>,
-    keep_alive_timestamp: u64,
-) -> OrderbookP2PHandlerResult {
-    let current_req = build_pubkey_state_sync_request(from_pubkey, pending_pairs, expected_pair_roots);
-
-    if let Some(resp) = request_one_peer::<SyncPubkeyOrderbookStateRes>(
-        ctx.clone(),
-        P2PRequest::Ordermatch(current_req),
-        peer.to_string(),
-    )
-    .await
-    .map_mm_err()?
-    {
-        apply_and_validate_pubkey_state_sync_response(
-            orderbook,
-            from_pubkey,
             peer,
-            resp,
+            pair,
+            diff,
             expected_pair_roots,
             pending_pairs,
             keep_alive_timestamp,
+            &protocol_infos,
+            &conf_infos,
         );
     }
-
-    Ok(())
 }
 
 async fn process_orders_keep_alive(
@@ -451,37 +489,90 @@ async fn process_orders_keep_alive(
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("from_ctx failed");
 
     // Update local state and decide whether to sync.
-    let trie_roots_to_request =
+    let plan_by_pair =
         ordermatch_ctx
             .orderbook
             .lock()
             .process_keep_alive(&from_pubkey, keep_alive, i_am_relay, &propagated_from)?;
 
-    if trie_roots_to_request.is_empty() {
+    if plan_by_pair.is_empty() {
         // The message was processed, return Ok to forward it
         return Ok(());
     }
 
-    // Query ONLY the keepalive propagator.
-    let mut remaining_pairs: HashSet<AlbOrderedOrderbookPair> = trie_roots_to_request.keys().cloned().collect();
-    let _ = request_and_apply_pubkey_state_sync_from_peer(
-        &ctx,
-        &ordermatch_ctx.orderbook,
-        &from_pubkey,
-        &propagated_from,
-        &trie_roots_to_request,
-        &mut remaining_pairs,
-        keep_alive_timestamp,
-    )
-    .await;
+    // Separate what we need for the request (from roots) and for validation (expected to roots)
+    let mut pending_pairs: HashSet<AlbOrderedOrderbookPair> = HashSet::new();
+    let mut from_roots_by_pair: HashMap<AlbOrderedOrderbookPair, H64> = HashMap::new();
+    let mut expected_pair_roots: HashMap<AlbOrderedOrderbookPair, H64> = HashMap::new();
 
-    // Phase 4: Finalize; if unresolved, mark unsynced and DO NOT FORWARD.
-    if !remaining_pairs.is_empty() {
-        let unresolved_pairs = remaining_pairs.into_iter().collect::<Vec<_>>();
+    for (pair, plan) in plan_by_pair {
+        pending_pairs.insert(pair.clone());
+        from_roots_by_pair.insert(pair.clone(), plan.from);
+        expected_pair_roots.insert(pair, plan.to);
+    }
+
+    // Build the V1 request using our local "from" roots (no extra lock needed)
+    // TODO(sync-v2): Extend this to include per-pair from_root and to_root,
+    // requesting an exact diff targeted at our state, even if the responder
+    // advanced after propagating the keep-alive. This should reduce false
+    // InvalidOrIncomplete classifications and unnecessary bans.
+    let current_req = OrdermatchRequest::SyncPubkeyOrderbookState {
+        pubkey: from_pubkey.clone(),
+        trie_roots: from_roots_by_pair,
+    };
+
+    let mut had_response = false;
+
+    match request_one_peer::<SyncPubkeyOrderbookStateRes>(
+        ctx.clone(),
+        P2PRequest::Ordermatch(current_req),
+        propagated_from.clone(),
+    )
+    .await
+    {
+        Ok(Some(resp)) => {
+            had_response = true;
+            apply_and_validate_pubkey_state_sync_response(
+                &ordermatch_ctx.orderbook,
+                &from_pubkey,
+                &propagated_from,
+                resp,
+                &expected_pair_roots,
+                &mut pending_pairs,
+                keep_alive_timestamp,
+            );
+        },
+        Ok(None) => {
+            // Peer responded but returned None for a diff request; classify as InvalidOrIncomplete.
+            // This is unexpected for SyncPubkeyOrderbookState.
+            had_response = true;
+            warn!(
+                "SyncPubkeyOrderbookState request to {} returned None; treating as InvalidOrIncomplete",
+                propagated_from
+            );
+        },
+        Err(e) => {
+            // Transport/timeout or other request error; treat as Unavailable.
+            warn!(
+                "SyncPubkeyOrderbookState request to {} failed: {}; treating as Unavailable",
+                propagated_from, e
+            );
+        },
+    }
+
+    // If anything remains unresolved, treat as sync failure
+    if !pending_pairs.is_empty() {
+        let unresolved_pairs = pending_pairs.into_iter().collect::<Vec<_>>();
+        let cause = if had_response {
+            SyncFailureCause::InvalidOrIncomplete
+        } else {
+            SyncFailureCause::Unavailable
+        };
         return MmError::err(OrderbookP2PHandlerError::SyncFailure {
             from_pubkey,
             propagated_from,
             unresolved_pairs,
+            cause,
         });
     }
 
@@ -3108,7 +3199,7 @@ impl Orderbook {
         message: new_protocol::PubkeyKeepAlive,
         i_am_relay: bool,
         propagated_from: &str,
-    ) -> Result<HashMap<AlbOrderedOrderbookPair, H64>, MmError<OrderbookP2PHandlerError>> {
+    ) -> Result<HashMap<AlbOrderedOrderbookPair, SyncPlan>, MmError<OrderbookP2PHandlerError>> {
         // TODO(rate-limit):
         // Add a single, shared in‑process rate limiter for OrdermatchMessage
         // types (e.g., a module in mm2_p2p or lp_network).
@@ -3120,7 +3211,8 @@ impl Orderbook {
         // so this is equivalent to checking that one pair. If multi-pair keep-alives return,
         // demote only stale pairs instead of rejecting the whole message.
         {
-            let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
+            // Read-only pre-scan: do not create a pubkey state for messages that will be rejected as stale.
+            let existing_state = self.pubkeys_state.get(from_pubkey);
             for (alb_pair, _) in message.trie_roots.iter() {
                 let subscribed = self
                     .topics_subscribed_to
@@ -3129,12 +3221,14 @@ impl Orderbook {
                     continue;
                 }
 
-                let last_pair_timestamp = *pubkey_state.latest_root_timestamp_by_pair.get(alb_pair).unwrap_or(&0);
+                let last_pair_timestamp = existing_state
+                    .and_then(|s| s.latest_root_timestamp_by_pair.get(alb_pair).copied())
+                    .unwrap_or(0);
 
                 if message.timestamp <= last_pair_timestamp {
                     log::debug!(
-                    "Ignoring a stale PubkeyKeepAlive from {} for pair {}: message.timestamp={} <= last_pair_timestamp={}",
-                    from_pubkey, alb_pair, message.timestamp, last_pair_timestamp
+                        "Ignoring a stale PubkeyKeepAlive from {} for pair {}: message.timestamp={} <= last_pair_timestamp={}",
+                        from_pubkey, alb_pair, message.timestamp, last_pair_timestamp
                     );
                     return MmError::err(OrderbookP2PHandlerError::StaleKeepAlive {
                         from_pubkey: from_pubkey.to_owned(),
@@ -3144,7 +3238,7 @@ impl Orderbook {
             }
         }
 
-        let mut trie_roots_to_request = HashMap::new();
+        let mut plan_by_pair = HashMap::new();
 
         for (alb_pair, trie_root) in message.trie_roots {
             let subscribed = self
@@ -3185,7 +3279,13 @@ impl Orderbook {
                 *order_pair_root_mut(&mut pubkey_state.trie_roots, &alb_pair)
             };
             if current_root != trie_root {
-                trie_roots_to_request.insert(alb_pair, trie_root);
+                plan_by_pair.insert(
+                    alb_pair.clone(),
+                    SyncPlan {
+                        from: current_root,
+                        to: trie_root,
+                    },
+                );
                 continue;
             }
             let state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
@@ -3195,7 +3295,7 @@ impl Orderbook {
             state.pair_last_seen_local.insert(alb_pair, now_sec());
         }
 
-        Ok(trie_roots_to_request)
+        Ok(plan_by_pair)
     }
 
     fn orderbook_item_with_proof(&self, order: OrderbookItem) -> OrderbookItemWithProof {
