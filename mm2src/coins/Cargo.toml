@@ -10,11 +10,13 @@ enable-sia = [
     "dep:sia-rust"
 ]
 enable-solana = [
+    "dep:solana-bincode",
     "dep:solana-keypair",
     "dep:solana-pubkey",
     "dep:solana-rpc-client-types",
     "dep:solana-rpc-client",
     "dep:solana-signer",
+    "dep:solana-transaction",
     "dep:spl-associated-token-account-client",
 ]
 default = []
@@ -125,11 +127,13 @@ zcash_extras.workspace = true
 zcash_primitives.workspace = true
 
 # Solana
+solana-bincode = { version = "2.2", default-features = false, optional = true }
 solana-keypair = { version = "2.2", default-features = false, optional = true }
 solana-pubkey = { version = "2.4", default-features = false, optional = true }
 solana-rpc-client = { version = "2.3", default-features = false, optional = true }
 solana-rpc-client-types= { version = "2.3", default-features = false, optional = true }
 solana-signer = { version = "2.2", default-features = false, optional = true }
+solana-transaction = { version = "2.2", default-features = false, optional = true }
 spl-associated-token-account-client = { version = "2.0", default-features = false, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

@@ -21,11 +21,13 @@ use nom::AsBytes;
 use num_traits::Zero;
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as RpcBytes, H264 as RpcH264};
+use solana_bincode::limited_deserialize;
 use solana_keypair::keypair_from_seed;
 use solana_pubkey::Pubkey as SolanaAddress;
 use solana_rpc_client::rpc_client::RpcClient;
 use solana_rpc_client_types::request::TokenAccountsFilter;
 use solana_signer::Signer;
+use solana_transaction::Transaction;
 use url::Url;
 
 use crate::{
@@ -41,6 +43,14 @@ use crate::{
 };
 
 pub const SOLANA_DECIMALS: u8 = 9;
+
+/// Maximum over-the-wire size of a Transaction
+///   1280 is IPv6 minimum MTU
+///   40 bytes is the size of the IPv6 header
+///   8 bytes is the size of the fragment header
+///
+/// Ported from: https://github.com/anza-xyz/solana-sdk/blob/ac902c4bdb8b0a1/packet/src/lib.rs#L28-L32
+pub const PACKET_DATA_SIZE: usize = 1280 - 40 - 8;
 
 #[derive(Clone, Deserialize)]
 pub struct RpcNode {
@@ -228,7 +238,7 @@ impl MmCoin for SolanaCoin {
     }
 
     fn spawner(&self) -> WeakSpawner {
-        todo!()
+        self.abortable_system.weak_spawner()
     }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
@@ -402,11 +412,23 @@ impl MarketCoinOps for SolanaCoin {
     }
 
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
-        todo!()
+        let bytes = try_fus!(hex::decode(tx));
+        self.send_raw_tx_bytes(&bytes)
     }
 
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
-        todo!()
+        let coin = self.clone();
+        let bytes = tx.to_vec();
+        let fut = async move {
+            let rpc = coin.rpc_client().await.map_err(|e| e.into_inner())?;
+
+            let tx: Transaction = limited_deserialize(&bytes, PACKET_DATA_SIZE as u64).map_err(|e| e.to_string())?;
+            let signature = rpc.send_transaction(&tx).map_err(|e| e.to_string())?;
+
+            // TX hash is just the base58 `String` form of the `Signature`.
+            Ok(signature.to_string())
+        };
+        Box::new(fut.boxed().compat())
     }
 
     #[inline(always)]
