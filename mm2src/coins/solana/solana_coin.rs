@@ -18,11 +18,13 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 use nom::AsBytes;
+use num_traits::ToPrimitive;
 use num_traits::Zero;
 use parking_lot::Mutex as PaMutex;
+use rpc::v1::types::Bytes as BytesJson;
 use rpc::v1::types::{Bytes as RpcBytes, H264 as RpcH264};
 use solana_bincode::limited_deserialize;
-use solana_keypair::keypair_from_seed;
+use solana_keypair::{keypair_from_seed, Keypair};
 use solana_pubkey::Pubkey as SolanaAddress;
 use solana_rpc_client::rpc_client::RpcClient;
 use solana_rpc_client_types::request::TokenAccountsFilter;
@@ -37,9 +39,10 @@ use crate::{
     FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy,
     RawTransactionFut, RawTransactionRequest, RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput,
     SendPaymentArgs, SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps, TradeFee, TradePreimageFut,
-    TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionResult, TxMarshalingErr,
-    UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentInput,
-    VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WithdrawFut, WithdrawRequest,
+    TradePreimageResult, TradePreimageValue, TransactionData, TransactionDetails, TransactionEnum, TransactionResult,
+    TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+    ValidateOtherPubKeyErr, ValidatePaymentInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
+    WithdrawError, WithdrawFut, WithdrawRequest,
 };
 
 pub const SOLANA_DECIMALS: u8 = 9;
@@ -63,6 +66,7 @@ pub struct SolanaCoin(Arc<SolanaCoinFields>);
 pub struct SolanaCoinFields {
     ticker: String,
     pub(crate) address: SolanaAddress,
+    keypair: Keypair,
     pub(crate) abortable_system: AbortableQueue,
     rpc_clients: AsyncMutex<Vec<Arc<RpcClient>>>,
     protocol_info: SolanaProtocolInfo,
@@ -167,6 +171,7 @@ impl SolanaCoin {
         let fields = SolanaCoinFields {
             ticker,
             address,
+            keypair,
             abortable_system,
             rpc_clients: AsyncMutex::new(rpc_clients),
             protocol_info,
@@ -225,6 +230,40 @@ impl SolanaCoin {
             unspendable: Default::default(),
         })
     }
+
+    async fn calculate_withdraw_amount(&self, req: &WithdrawRequest) -> MmResult<u64, WithdrawError> {
+        let rpc = self
+            .rpc_client()
+            .await
+            .map_err(|e| WithdrawError::Transport(e.into_inner()))?;
+
+        if req.max {
+            let balance = rpc
+                .get_balance(&self.address)
+                .map_err(|e| WithdrawError::Transport(e.to_string()))?;
+
+            let recent_blockhash = rpc
+                .get_latest_blockhash()
+                .map_err(|e| WithdrawError::Transport(e.to_string()))?;
+
+            // Dummy TX to estimate the fee.
+            let tx = solana_system_transaction::transfer(&self.keypair, &self.address, balance, recent_blockhash);
+
+            let fee = rpc
+                .get_fee_for_message(tx.message())
+                .map_err(|e| WithdrawError::Transport(e.to_string()))?;
+
+            Ok(balance.saturating_sub(fee))
+        } else {
+            let big_decimal = &req.amount * &BigDecimal::from(10u64.pow(SOLANA_DECIMALS as u32));
+
+            big_decimal.to_u64().ok_or_else(|| {
+                MmError::new(WithdrawError::InternalError(format!(
+                    "Couldn't convert {big_decimal} to u64."
+                )))
+            })
+        }
+    }
 }
 
 #[async_trait]
@@ -242,7 +281,67 @@ impl MmCoin for SolanaCoin {
     }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
-        todo!()
+        let coin = self.clone();
+        let fut = async move {
+            let to = SolanaAddress::from_str(&req.to).map_err(|e| WithdrawError::InvalidAddress(e.to_string()))?;
+
+            let rpc = coin
+                .rpc_client()
+                .await
+                .map_err(|e| WithdrawError::Transport(e.into_inner()))?;
+
+            let lamports = coin.calculate_withdraw_amount(&req).await?;
+
+            if lamports == 0 {
+                return MmError::err(WithdrawError::AmountTooLow {
+                    amount: req.amount,
+                    threshold: coin.min_tx_amount(),
+                });
+            }
+
+            let recent_blockhash = rpc
+                .get_latest_blockhash()
+                .map_err(|e| WithdrawError::Transport(e.to_string()))?;
+
+            // Actual TX
+            let tx = solana_system_transaction::transfer(&coin.keypair, &to, lamports, recent_blockhash);
+
+            let tx_hash = tx
+                .signatures
+                .first()
+                .map(|s| s.to_string())
+                .ok_or_else(|| WithdrawError::InternalError("Couldn't find the TX signature.".to_owned()))?;
+
+            let tx_bytes =
+                bincode::serialize(&tx).map_err(|e| MmError::new(WithdrawError::InternalError(e.to_string())))?;
+
+            let tx_data = TransactionData::new_signed(BytesJson(tx_bytes), tx_hash.clone());
+
+            let amount_dec = BigDecimal::from(lamports) / BigDecimal::from(10u64.pow(SOLANA_DECIMALS as u32));
+
+            Ok(TransactionDetails {
+                tx: tx_data,
+                from: vec![coin.address.to_string()],
+                to: vec![to.to_string()],
+                total_amount: amount_dec.clone(),
+                spent_by_me: amount_dec.clone(),
+                // TODO: calculate this field properly.
+                received_by_me: BigDecimal::from(0),
+                my_balance_change: -amount_dec,
+                block_height: 0,
+                timestamp: 0,
+                // TODO: handle fee_details here.
+                fee_details: None,
+                coin: req.coin,
+                internal_id: BytesJson(tx_hash.into_bytes()),
+                kmd_rewards: None,
+                transaction_type: TransactionType::StandardTransfer,
+                // TODO: add memo instruction to the TX.
+                memo: req.memo,
+            })
+        };
+
+        Box::new(fut.boxed().compat())
     }
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut<'_> {
@@ -466,7 +565,7 @@ impl MarketCoinOps for SolanaCoin {
 
     #[inline]
     fn min_tx_amount(&self) -> BigDecimal {
-        todo!()
+        BigDecimal::from(1) / BigDecimal::from(10u64.pow(SOLANA_DECIMALS as u32))
     }
 
     #[inline]

@@ -324,7 +324,7 @@ impl MarketCoinOps for SolanaToken {
 
     #[inline]
     fn min_tx_amount(&self) -> BigDecimal {
-        todo!()
+        self.platform_coin.min_tx_amount()
     }
 
     #[inline]

@@ -946,6 +946,7 @@ dependencies = [
  "async-std",
  "async-trait",
  "base64 0.21.7",
+ "bincode",
  "bip32",
  "bitcoin",
  "bitcoin_hashes",
@@ -1042,6 +1043,7 @@ dependencies = [
  "solana-rpc-client",
  "solana-rpc-client-types",
  "solana-signer",
+ "solana-system-transaction",
  "solana-transaction",
  "spl-associated-token-account-client",
  "spv_validation",
@@ -7656,6 +7658,21 @@ dependencies = [
  "solana-instruction",
  "solana-pubkey",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "solana-system-transaction"
+version = "2.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5bd98a25e5bcba8b6be8bcbb7b84b24c2a6a8178d7fb0e3077a916855ceba91a"
+dependencies = [
+ "solana-hash",
+ "solana-keypair",
+ "solana-message",
+ "solana-pubkey",
+ "solana-signer",
+ "solana-system-interface",
+ "solana-transaction",
 ]
 
 [[package]]
