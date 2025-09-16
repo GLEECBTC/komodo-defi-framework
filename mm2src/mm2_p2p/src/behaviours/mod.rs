@@ -3,6 +3,7 @@ pub mod atomicdex;
 mod ping;
 // mod peer_store;
 pub(crate) mod peers_exchange;
+pub mod policy;
 pub(crate) mod request_response;
 
 #[cfg(all(test, not(target_arch = "wasm32")))]

@@ -32,8 +32,8 @@ use mm2_err_handle::prelude::*;
 use mm2_libp2p::application::request_response::P2PRequest;
 use mm2_libp2p::p2p_ctx::P2PContext;
 use mm2_libp2p::{
-    decode_message, encode_message, get_relay_mesh, DecodingError, GossipsubEvent, GossipsubMessage, Libp2pPublic,
-    Libp2pSecpPublic, MessageId, NetworkPorts, PeerId, TOPIC_SEPARATOR,
+    remove_ban_reason, decode_message, encode_message, get_relay_mesh, DecodingError, GossipsubEvent, GossipsubMessage,
+    Libp2pPublic, Libp2pSecpPublic, MessageId, NetworkPorts, PeerId, TOPIC_SEPARATOR,
 };
 use mm2_libp2p::{AdexBehaviourCmd, AdexBehaviourEvent, AdexEventRx, AdexResponse};
 use mm2_libp2p::{PeerAddresses, RequestResponseBehaviourEvent};
@@ -518,6 +518,8 @@ pub fn unban_peer(ctx: &MmArc, peer: PeerId) {
     };
     if let Err(e) = send_res {
         log::error!("unban_peer cmd_tx.send error {:?}", e);
+    } else {
+        remove_ban_reason(&peer);
     }
 }
 
@@ -585,7 +587,7 @@ mod sync_ban {
     use compatible_time::{Duration, Instant};
     use lazy_static::lazy_static;
     use mm2_core::mm_ctx::MmArc;
-    use mm2_libp2p::PeerId;
+    use mm2_libp2p::{set_ban_reason, BanReason, PeerId};
     use parking_lot::Mutex;
     use timed_map::{MapKind, TimedMap};
 
@@ -606,6 +608,14 @@ mod sync_ban {
             matches!(cause, SyncFailureCause::InvalidOrIncomplete)
         } else {
             true
+        }
+    }
+
+    #[inline]
+    fn ban_reason_from_sync_failure(cause: &SyncFailureCause) -> BanReason {
+        match cause {
+            SyncFailureCause::Unavailable => BanReason::Connectivity,
+            SyncFailureCause::InvalidOrIncomplete => BanReason::Misbehavior,
         }
     }
 
@@ -634,6 +644,8 @@ mod sync_ban {
                     cause,
                     PER_PEER_SYNC_BAN_GRACE.as_secs()
                 );
+
+                set_ban_reason(peer, ban_reason_from_sync_failure(cause));
                 temp_ban_peer(ctx, peer, Duration::from_secs(TEMP_BAN_DURATION_SECS));
             } else {
                 let remaining = PER_PEER_SYNC_BAN_GRACE.as_secs().saturating_sub(elapsed.as_secs());

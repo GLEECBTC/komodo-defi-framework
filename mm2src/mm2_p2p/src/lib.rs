@@ -29,6 +29,9 @@ pub use behaviours::atomicdex::{
 // peers-exchange re-exports
 pub use behaviours::peers_exchange::PeerAddresses;
 
+// policy related re-exports
+pub use behaviours::policy::{remove_ban_reason, ban_reason, set_ban_reason, BanReason};
+
 // request-response related re-exports
 pub use behaviours::request_response::RequestResponseBehaviourEvent;
 

@@ -24,7 +24,7 @@ use log::{debug, error, info};
 use mm2_net::ip_addr::is_global_ipv4;
 use rand::seq::SliceRandom;
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::net::IpAddr;
 use std::sync::{Mutex, MutexGuard};
@@ -41,7 +41,10 @@ use crate::application::request_response::network_info::NetworkInfoRequest;
 use crate::application::request_response::P2PRequest;
 use crate::relay_address::{RelayAddress, RelayAddressError};
 use crate::swarm_runtime::SwarmRuntime;
-use crate::{decode_message, encode_message, NetworkInfo, NetworkPorts, RequestResponseBehaviourEvent};
+use crate::{
+    remove_ban_reason, decode_message, encode_message, ban_reason, BanReason, NetworkInfo, NetworkPorts,
+    RequestResponseBehaviourEvent,
+};
 
 pub use libp2p::gossipsub::{Behaviour as Gossipsub, IdentTopic, MessageAuthenticity, MessageId, Topic, TopicHash};
 pub use libp2p::gossipsub::{
@@ -916,6 +919,7 @@ fn start_gossipsub(
             for (peer, _) in expired {
                 {
                     swarm.behaviour_mut().core.banlist.unblock_peer(peer);
+                    remove_ban_reason(&peer);
                 }
             }
         }
@@ -944,17 +948,112 @@ fn start_gossipsub(
     Ok((cmd_tx, event_rx, local_peer_id))
 }
 
+/// Select temporary banned peers eligible for connectivity recovery, ordered by the earliest expiry,
+/// unban them just-in-time, and return as {peer -> dial addresses}.
+/// Only peers explicitly marked with BanReason::Connectivity are eligible.
+fn top_up_from_banned(
+    swarm: &mut AtomicDexSwarm,
+    needed: usize,
+    connected_len: usize,
+    target_mesh_n: usize,
+) -> HashMap<PeerId, HashSet<Multiaddr>> {
+    if needed == 0 {
+        return HashMap::new();
+    }
+
+    // Collect connectivity-related bans and order by the earliest expiry.
+    let mut candidates: Vec<(PeerId, Duration)> = {
+        let behaviour = swarm.behaviour();
+        let banned = &behaviour.banned_peers;
+
+        banned
+            .iter()
+            .filter(|(peer, _)| matches!(ban_reason(peer), Some(BanReason::Connectivity)))
+            .map(|(peer, _)| {
+                let remaining_duration = banned
+                    .get_remaining_duration(peer)
+                    .unwrap_or_else(|| Duration::from_secs(u64::MAX));
+                (*peer, remaining_duration)
+            })
+            .collect()
+    };
+    candidates.sort_unstable_by_key(|&(_, rem)| rem);
+
+    let mut selected: HashMap<PeerId, HashSet<Multiaddr>> = HashMap::new();
+
+    for (peer, _) in candidates.into_iter() {
+        if selected.len() >= needed {
+            break;
+        }
+
+        // 1) Gather known addresses for the peer
+        let addrs: Vec<Multiaddr> = {
+            let behaviour_mut = swarm.behaviour_mut();
+            behaviour_mut
+                .core
+                .peers_exchange
+                .request_response
+                .addresses_of_peer(&peer)
+        };
+        if addrs.is_empty() {
+            continue;
+        }
+
+        // 2) Skip if we're already connected to any known address.
+        let already_connected = {
+            let behaviour = swarm.behaviour();
+            addrs.iter().any(|a| behaviour.core.gossipsub.is_connected_to_addr(a))
+        };
+        if already_connected {
+            continue;
+        }
+
+        // 3) Deduplicate dials with a short critical section on the "recently dialed" map.
+        let to_dial: Vec<Multiaddr> = {
+            let mut recent = RECENTLY_DIALED_PEERS.lock().unwrap();
+            addrs
+                .into_iter()
+                .filter(|addr| check_and_mark_dialed(&mut recent, addr))
+                .collect()
+        };
+
+        if to_dial.is_empty() {
+            continue;
+        }
+
+        // 4) Just-in-time unban before dialing, then clear the auxiliary reason tag.
+        {
+            let behaviour_mut = swarm.behaviour_mut();
+            behaviour_mut.core.banlist.unblock_peer(peer);
+            behaviour_mut.banned_peers.remove(&peer);
+        }
+        remove_ban_reason(&peer);
+
+        info!(
+            "Auto-unban: peer {} (reason=Connectivity) to restore relay mesh (connected={}, target={})",
+            peer, connected_len, target_mesh_n
+        );
+
+        selected.insert(peer, to_dial.into_iter().collect());
+    }
+
+    selected
+}
+
 fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses: &[Multiaddr]) {
     let behaviour = swarm.behaviour();
     let connected_relays = behaviour.core.gossipsub.connected_relays();
-    let mesh_n_low = behaviour.core.gossipsub.get_config().mesh_n_low();
-    let mesh_n = behaviour.core.gossipsub.get_config().mesh_n();
+    let connected_len = connected_relays.len();
+
+    let cfg = behaviour.core.gossipsub.get_config();
+    let mesh_n_low = cfg.mesh_n_low();
+    let mesh_n = cfg.mesh_n();
     // allow 2 * mesh_n_high connections to other nodes
-    let max_n = behaviour.core.gossipsub.get_config().mesh_n_high() * 2;
+    let max_n = cfg.mesh_n_high() * 2;
 
     let mut rng = rand::thread_rng();
-    if connected_relays.len() < mesh_n_low {
-        let to_connect_num = mesh_n - connected_relays.len();
+    if connected_len < mesh_n_low {
+        let to_connect_num = mesh_n - connected_len;
         let mut to_connect = {
             let mut recently_dialed_peers = RECENTLY_DIALED_PEERS.lock().unwrap();
             swarm
@@ -970,7 +1069,14 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
         };
         to_connect.retain(|peer, _| !swarm.behaviour().is_peer_temp_banned(peer));
 
-        // choose some random bootstrap addresses to connect if peers exchange returned not enough peers
+        // If still short, iteratively top up from earliest-expiring banned peers
+        let deficit = to_connect_num.saturating_sub(to_connect.len());
+        if deficit > 0 {
+            let recovered = top_up_from_banned(swarm, deficit, connected_len, mesh_n);
+            to_connect.extend(recovered);
+        }
+
+        // If still short, use bootstrap addresses to fill the remaining deficit
         if to_connect.len() < to_connect_num {
             let connect_bootstrap_num = to_connect_num - to_connect.len();
             let mut recently_dialed_peers = RECENTLY_DIALED_PEERS.lock().unwrap();
@@ -1001,8 +1107,8 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
         }
     }
 
-    if connected_relays.len() > max_n {
-        let to_disconnect_num = connected_relays.len() - max_n;
+    if connected_len > max_n {
+        let to_disconnect_num = connected_len - max_n;
         let relays_mesh = swarm.behaviour().core.gossipsub.get_relay_mesh();
         let not_in_mesh: Vec<_> = connected_relays
             .iter()
