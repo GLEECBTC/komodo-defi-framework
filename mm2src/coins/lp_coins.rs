@@ -303,6 +303,8 @@ use z_coin::{ZCoin, ZcoinProtocolInfo};
 
 #[cfg(feature = "enable-solana")]
 pub mod solana;
+#[cfg(feature = "enable-solana")]
+use crate::solana::SolanaFeeDetails;
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
 pub type TransactionResult = Result<TransactionEnum, TransactionErr>;
@@ -2440,6 +2442,8 @@ pub enum TxFeeDetails {
     Qrc20(Qrc20FeeDetails),
     Slp(SlpFeeDetails),
     Tendermint(TendermintFeeDetails),
+    #[cfg(feature = "enable-solana")]
+    Solana(SolanaFeeDetails),
 }
 
 /// Deserialize the TxFeeDetails as an untagged enum.

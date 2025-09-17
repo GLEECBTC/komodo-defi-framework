@@ -32,6 +32,7 @@ use solana_signer::Signer;
 use solana_transaction::Transaction;
 use url::Url;
 
+use crate::TxFeeDetails;
 use crate::{
     coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentResult},
     hd_wallet::HDAddressSelector,
@@ -106,6 +107,11 @@ pub enum SolanaInitErrorKind {
     QueryError {
         reason: String,
     },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SolanaFeeDetails {
+    pub amount: BigDecimal,
 }
 
 impl SolanaCoin {
@@ -319,19 +325,28 @@ impl MmCoin for SolanaCoin {
 
             let amount_dec = BigDecimal::from(lamports) / BigDecimal::from(10u64.pow(SOLANA_DECIMALS as u32));
 
+            let fee = rpc
+                .get_fee_for_message(tx.message())
+                .map_err(|e| WithdrawError::Transport(e.to_string()))?;
+            let fee = BigDecimal::from(fee) / BigDecimal::from(10u64.pow(SOLANA_DECIMALS as u32));
+
+            let received_by_me = if to == coin.address {
+                amount_dec.clone()
+            } else {
+                BigDecimal::zero()
+            };
+
             Ok(TransactionDetails {
                 tx: tx_data,
                 from: vec![coin.address.to_string()],
                 to: vec![to.to_string()],
                 total_amount: amount_dec.clone(),
                 spent_by_me: amount_dec.clone(),
-                // TODO: calculate this field properly.
-                received_by_me: BigDecimal::from(0),
+                received_by_me,
                 my_balance_change: -amount_dec,
                 block_height: 0,
                 timestamp: 0,
-                // TODO: handle fee_details here.
-                fee_details: None,
+                fee_details: Some(TxFeeDetails::Solana(SolanaFeeDetails { amount: fee })),
                 coin: req.coin,
                 internal_id: BytesJson(tx_hash.into_bytes()),
                 kmd_rewards: None,
