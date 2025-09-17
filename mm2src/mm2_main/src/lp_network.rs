@@ -200,6 +200,10 @@ async fn process_p2p_message(
                     match PeerId::from_str(propagated_from) {
                         Ok(peer) => {
                             if allow_ban {
+                                // TODO:
+                                // Banning can be moved to `p2p_event_process_loop` for any `ValidationFailed` errors
+                                // as a node shouldn't forward an invalid message to other peers. No grace period should be
+                                // allowed then as it shouldn't be needed once all nodes update.
                                 sync_ban::handle_sync_ban_grace(
                                     &ctx,
                                     peer,
