@@ -12,7 +12,7 @@ use coins::{
     CoinBalance, CoinProtocol, MarketCoinOps, MmCoinEnum, PrivKeyBuildPolicy,
 };
 use common::Future01CompatExt;
-use futures::future::join_all;
+use futures::future::{join_all, try_join_all};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
@@ -251,10 +251,12 @@ impl TokenInitializer for SolanaCoin {
         &self,
         params: Vec<TokenActivationParams<Self::TokenActivationRequest, Self::TokenProtocol>>,
     ) -> Result<Vec<Self::Token>, MmError<Self::InitTokensError>> {
-        params
-            .into_iter()
-            .map(|param| SolanaToken::init(param.ticker, self.platform_coin().clone(), param.protocol.clone()))
-            .collect()
+        try_join_all(
+            params
+                .into_iter()
+                .map(|param| SolanaToken::init(param.ticker, self.platform_coin().clone(), param.protocol.clone())),
+        )
+        .await
     }
 
     fn platform_coin(&self) -> &<Self::Token as TokenOf>::PlatformCoin {

@@ -20,6 +20,7 @@ enable-solana = [
     "dep:solana-system-transaction",
     "dep:solana-transaction",
     "dep:spl-associated-token-account-client",
+    "dep:spl-token",
 ]
 default = []
 run-docker-tests = []
@@ -139,6 +140,7 @@ solana-signer = { version = "2.2", default-features = false, optional = true }
 solana-system-transaction = { version = "2.2", default-features = false, optional = true }
 solana-transaction = { version = "2.2", default-features = false, optional = true }
 spl-associated-token-account-client = { version = "2.0", default-features = false, optional = true }
+spl-token = { version = "4.0", default-features = false, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 blake2b_simd.workspace = true

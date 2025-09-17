@@ -67,7 +67,7 @@ pub struct SolanaCoin(Arc<SolanaCoinFields>);
 pub struct SolanaCoinFields {
     ticker: String,
     pub(crate) address: SolanaAddress,
-    keypair: Keypair,
+    pub(crate) keypair: Keypair,
     pub(crate) abortable_system: AbortableQueue,
     rpc_clients: AsyncMutex<Vec<Arc<RpcClient>>>,
     protocol_info: SolanaProtocolInfo,
@@ -353,8 +353,8 @@ impl MmCoin for SolanaCoin {
                 internal_id: BytesJson(tx_hash.into_bytes()),
                 kmd_rewards: None,
                 transaction_type: TransactionType::StandardTransfer,
-                // TODO: add memo instruction to the TX.
-                memo: req.memo,
+                // TODO: Add memo instruction to the TX.
+                memo: None,
             })
         };
 
