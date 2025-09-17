@@ -32,8 +32,8 @@ use mm2_err_handle::prelude::*;
 use mm2_libp2p::application::request_response::P2PRequest;
 use mm2_libp2p::p2p_ctx::P2PContext;
 use mm2_libp2p::{
-    remove_ban_reason, decode_message, encode_message, get_relay_mesh, DecodingError, GossipsubEvent, GossipsubMessage,
-    Libp2pPublic, Libp2pSecpPublic, MessageId, NetworkPorts, PeerId, TOPIC_SEPARATOR,
+    decode_message, encode_message, get_relay_mesh, remove_ban_reason, DecodingError, GossipsubEvent, GossipsubMessage,
+    Libp2pPublic, Libp2pSecpPublic, MessageAcceptance, MessageId, NetworkPorts, PeerId, TOPIC_SEPARATOR,
 };
 use mm2_libp2p::{AdexBehaviourCmd, AdexBehaviourEvent, AdexEventRx, AdexResponse};
 use mm2_libp2p::{PeerAddresses, RequestResponseBehaviourEvent};
@@ -74,8 +74,10 @@ pub enum P2PRequestError {
 #[allow(clippy::enum_variant_names)]
 pub enum P2PProcessError {
     /// The message could not be decoded.
+    #[display(fmt = "Message decode error: {_0}")]
     DecodeError(String),
     /// Message signature is invalid.
+    #[display(fmt = "Invalid message signature: {_0}")]
     InvalidSignature(String),
     /// Unexpected message sender.
     #[display(fmt = "Unexpected message sender {_0}")]
@@ -112,13 +114,21 @@ pub async fn p2p_event_process_loop(ctx: MmWeak, mut rx: AdexEventRx, i_am_relay
                     message,
                 } => {
                     let spawner = ctx.spawner();
-                    spawner.spawn(process_p2p_message(
-                        ctx,
-                        propagation_source,
-                        message_id,
-                        message,
-                        i_am_relay,
-                    ));
+                    let fut = async move {
+                        // TODO(peer-scoring): handle some errors as `MessageAcceptance::Reject` to apply P4 penalty
+                        let acceptance =
+                            match process_p2p_message(ctx.clone(), propagation_source, message, i_am_relay).await {
+                                Ok(()) => MessageAcceptance::Accept,
+                                Err(e) => {
+                                    log::warn!("Error on process P2P message: {}", e);
+                                    MessageAcceptance::Ignore
+                                },
+                            };
+                        // With gossipsub `validate_messages` config flag enabled, gossipsub waits for this callback before forwarding.
+                        // Accept leads to forwarding only on relay nodes per mesh policy; light nodes do not forward.
+                        report_message_validation(&ctx, propagation_source, message_id, acceptance);
+                    };
+                    spawner.spawn(fut);
                 },
                 GossipsubEvent::GossipsubNotSupported { peer_id } => {
                     log::error!("Received unsupported event from Peer: {peer_id}");
@@ -139,15 +149,18 @@ pub async fn p2p_event_process_loop(ctx: MmWeak, mut rx: AdexEventRx, i_am_relay
     }
 }
 
+/// Gossipsub validation policy (app-level)
+///
+/// - Known topic families: Accept on successful processing; on any error => Ignore.
+/// - Unknown or missing topic prefix: return P2PProcessError::ValidationFailed(...), which maps to Ignore.
+/// - Forwarding is handled by libp2p: when we report Accept, relays may forward per mesh policy; light nodes do not forward.
+/// - Future: clearly malformed inputs (e.g., decode/signature errors) may be mapped to Reject to enable peer-scoring penalties.
 async fn process_p2p_message(
     ctx: MmArc,
     peer_id: PeerId,
-    message_id: MessageId,
     message: GossipsubMessage,
     i_am_relay: bool,
-) {
-    let mut to_propagate = false;
-
+) -> P2PProcessResult<()> {
     let mut split = message.topic.as_str().split(TOPIC_SEPARATOR);
     match split.next() {
         Some(lp_ordermatch::ORDERBOOK_PREFIX) => {
@@ -186,74 +199,56 @@ async fn process_p2p_message(
 
                     match PeerId::from_str(propagated_from) {
                         Ok(peer) => {
-                            if !allow_ban {
-                                return;
+                            if allow_ban {
+                                sync_ban::handle_sync_ban_grace(
+                                    &ctx,
+                                    peer,
+                                    from_pubkey,
+                                    propagated_from,
+                                    unresolved_pairs,
+                                    cause,
+                                );
                             }
-                            sync_ban::handle_sync_ban_grace(
-                                &ctx,
-                                peer,
-                                from_pubkey,
-                                propagated_from,
-                                unresolved_pairs,
-                                cause,
-                            );
-                            return;
                         },
                         Err(parse_err) => {
-                            log::error!(
+                            return MmError::err(P2PProcessError::ValidationFailed(format!(
                                 "SyncFailure: invalid propagated_from '{}' ({}); skipping temp-ban",
-                                propagated_from,
-                                parse_err
-                            );
-                            return;
+                                propagated_from, parse_err
+                            )));
                         },
                     }
                 }
 
-                if e.get_inner().is_warning() {
-                    log::warn!("{}", e);
-                } else {
-                    log::error!("{}", e);
-                }
-                return;
+                return MmError::err(P2PProcessError::ValidationFailed(e.to_string()));
             }
-
-            to_propagate = true;
         },
         Some(lp_swap::SWAP_PREFIX) => {
             if let Err(e) =
                 lp_swap::process_swap_msg(ctx.clone(), split.next().unwrap_or_default(), &message.data).await
             {
-                log::error!("{}", e);
-                return;
+                return MmError::err(P2PProcessError::ValidationFailed(e.to_string()));
             }
-
-            to_propagate = true;
         },
         Some(lp_swap::SWAP_V2_PREFIX) => {
             if let Err(e) = lp_swap::process_swap_v2_msg(ctx.clone(), split.next().unwrap_or_default(), &message.data) {
-                log::error!("{}", e);
-                return;
+                return MmError::err(P2PProcessError::ValidationFailed(e.to_string()));
             }
-
-            to_propagate = true;
         },
         Some(lp_swap::WATCHER_PREFIX) => {
             if ctx.is_watcher() {
                 if let Err(e) = lp_swap::process_watcher_msg(ctx.clone(), &message.data) {
-                    log::error!("{}", e);
-                    return;
+                    return MmError::err(P2PProcessError::ValidationFailed(e.to_string()));
                 }
             }
-
-            to_propagate = true;
         },
         Some(lp_swap::TX_HELPER_PREFIX) => {
             if let Some(ticker) = split.next() {
                 if let Ok(Some(coin)) = lp_coinfind(&ctx, ticker).await {
                     if let Err(e) = coin.tx_enum_from_bytes(&message.data) {
-                        log::error!("Message cannot continue the process due to: {:?}", e);
-                        return;
+                        return MmError::err(P2PProcessError::ValidationFailed(format!(
+                            "Message cannot continue the process due to: {:?}",
+                            e
+                        )));
                     };
 
                     if coin.is_utxo_in_native_mode() {
@@ -269,24 +264,22 @@ async fn process_p2p_message(
                         })
                     }
                 }
-
-                to_propagate = true;
             }
         },
         Some(lp_healthcheck::PEER_HEALTHCHECK_PREFIX) => {
             if let Err(e) = lp_healthcheck::process_p2p_healthcheck_message(&ctx, message).await {
-                log::error!("{}", e);
-                return;
+                return MmError::err(P2PProcessError::ValidationFailed(e.to_string()));
             }
-
-            to_propagate = true;
         },
-        None | Some(_) => (),
+        None | Some(_) => {
+            return MmError::err(P2PProcessError::ValidationFailed(format!(
+                "Unknown or missing topic prefix in '{}'",
+                message.topic
+            )));
+        },
     }
 
-    if to_propagate && i_am_relay {
-        propagate_message(&ctx, message_id, peer_id);
-    }
+    Ok(())
 }
 
 fn process_p2p_request(
@@ -476,18 +469,6 @@ fn parse_peers_responses<T: de::DeserializeOwned>(
         .collect()
 }
 
-pub fn propagate_message(ctx: &MmArc, message_id: MessageId, propagation_source: PeerId) {
-    let ctx = ctx.clone();
-    let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
-    let cmd = AdexBehaviourCmd::PropagateMessage {
-        message_id,
-        propagation_source,
-    };
-    if let Err(e) = p2p_ctx.cmd_tx.lock().try_send(cmd) {
-        log::error!("propagate_message cmd_tx.send error {:?}", e);
-    };
-}
-
 pub fn add_reserved_peer_addresses(ctx: &MmArc, peer: PeerId, addresses: PeerAddresses) {
     let ctx = ctx.clone();
     let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
@@ -497,30 +478,40 @@ pub fn add_reserved_peer_addresses(ctx: &MmArc, peer: PeerId, addresses: PeerAdd
     };
 }
 
+fn report_message_validation(
+    ctx: &MmArc,
+    propagation_source: PeerId,
+    message_id: MessageId,
+    acceptance: MessageAcceptance,
+) {
+    let ctx = ctx.clone();
+    let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
+    let cmd = AdexBehaviourCmd::ReportMessageValidation {
+        message_id,
+        propagation_source,
+        acceptance,
+    };
+    if let Err(e) = p2p_ctx.cmd_tx.lock().try_send(cmd) {
+        log::error!("report_validation cmd_tx.send error {:?}", e);
+    };
+}
+
 pub fn temp_ban_peer(ctx: &MmArc, peer: PeerId, duration: Duration) {
     let p2p_ctx = P2PContext::fetch_from_mm_arc(ctx);
     let cmd = AdexBehaviourCmd::TempBanPeer { peer, duration };
-    let send_res = {
-        let mut tx = p2p_ctx.cmd_tx.lock();
-        tx.try_send(cmd)
-    };
-    if let Err(e) = send_res {
+    if let Err(e) = p2p_ctx.cmd_tx.lock().try_send(cmd) {
         log::error!("temp_ban_peer cmd_tx.send error {:?}", e);
-    }
+    };
 }
 
 pub fn unban_peer(ctx: &MmArc, peer: PeerId) {
     let p2p_ctx = P2PContext::fetch_from_mm_arc(ctx);
     let cmd = AdexBehaviourCmd::UnbanPeer { peer };
-    let send_res = {
-        let mut tx = p2p_ctx.cmd_tx.lock();
-        tx.try_send(cmd)
-    };
-    if let Err(e) = send_res {
+    if let Err(e) = p2p_ctx.cmd_tx.lock().try_send(cmd) {
         log::error!("unban_peer cmd_tx.send error {:?}", e);
     } else {
         remove_ban_reason(&peer);
-    }
+    };
 }
 
 /// Returns true if the given peer (string PeerId) is present in the current relay mesh.

@@ -204,12 +204,6 @@ pub enum OrderbookP2PHandlerError {
     },
 }
 
-impl OrderbookP2PHandlerError {
-    pub(crate) fn is_warning(&self) -> bool {
-        matches!(self, OrderbookP2PHandlerError::OrderNotFound(_))
-    }
-}
-
 impl From<P2PRequestError> for OrderbookP2PHandlerError {
     fn from(e: P2PRequestError) -> Self {
         OrderbookP2PHandlerError::P2PRequestError(e.to_string())

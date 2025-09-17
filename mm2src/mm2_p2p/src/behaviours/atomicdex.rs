@@ -42,13 +42,13 @@ use crate::application::request_response::P2PRequest;
 use crate::relay_address::{RelayAddress, RelayAddressError};
 use crate::swarm_runtime::SwarmRuntime;
 use crate::{
-    remove_ban_reason, decode_message, encode_message, ban_reason, BanReason, NetworkInfo, NetworkPorts,
+    ban_reason, decode_message, encode_message, remove_ban_reason, BanReason, NetworkInfo, NetworkPorts,
     RequestResponseBehaviourEvent,
 };
 
 pub use libp2p::gossipsub::{Behaviour as Gossipsub, IdentTopic, MessageAuthenticity, MessageId, Topic, TopicHash};
 pub use libp2p::gossipsub::{
-    ConfigBuilder as GossipsubConfigBuilder, Event as GossipsubEvent, Message as GossipsubMessage,
+    ConfigBuilder as GossipsubConfigBuilder, Event as GossipsubEvent, Message as GossipsubMessage, MessageAcceptance,
 };
 
 pub type AdexCmdTx = Sender<AdexBehaviourCmd>;
@@ -189,9 +189,11 @@ pub enum AdexBehaviourCmd {
         peer: PeerId,
         addresses: PeerAddresses,
     },
-    PropagateMessage {
-        message_id: MessageId,
+    /// Report gossipsub message validation result (Accept/Reject/Ignore).
+    ReportMessageValidation {
         propagation_source: PeerId,
+        message_id: MessageId,
+        acceptance: MessageAcceptance,
     },
     TempBanPeer {
         peer: PeerId,
@@ -568,13 +570,14 @@ impl AtomicDexBehaviour {
                     .peers_exchange
                     .add_peer_addresses_to_reserved_peers(&peer, addresses);
             },
-            AdexBehaviourCmd::PropagateMessage {
-                message_id,
+            AdexBehaviourCmd::ReportMessageValidation {
                 propagation_source,
+                message_id,
+                acceptance,
             } => {
                 self.core
                     .gossipsub
-                    .propagate_message(&message_id, &propagation_source)?;
+                    .report_message_validation_result(&message_id, &propagation_source, acceptance)?;
             },
             AdexBehaviourCmd::TempBanPeer { peer, duration } => {
                 self.core.banlist.block_peer(peer);
@@ -762,6 +765,7 @@ fn start_gossipsub(
             .mesh_n(mesh_n)
             .mesh_n_high(mesh_n_high)
             .validate_messages()
+            // TODO(signing): switch to Strict after revising how signing is done
             .validation_mode(ValidationMode::Permissive)
             .max_transmit_size(MAX_BUFFER_SIZE)
             .build()

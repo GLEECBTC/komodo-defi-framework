@@ -23,14 +23,14 @@ pub use crate::swarm_runtime::SwarmRuntime;
 pub use behaviours::atomicdex::{
     get_directly_connected_peers, get_gossip_mesh, get_gossip_peer_topics, get_gossip_topic_peers, get_relay_mesh,
     spawn_gossipsub, AdexBehaviourCmd, AdexBehaviourError, AdexBehaviourEvent, AdexCmdTx, AdexEventRx, AdexResponse,
-    AdexResponseChannel, GossipsubEvent, GossipsubMessage, MessageId, NodeType, TopicHash, WssCerts,
+    AdexResponseChannel, GossipsubEvent, GossipsubMessage, MessageAcceptance, MessageId, NodeType, TopicHash, WssCerts,
 };
 
 // peers-exchange re-exports
 pub use behaviours::peers_exchange::PeerAddresses;
 
 // policy related re-exports
-pub use behaviours::policy::{remove_ban_reason, ban_reason, set_ban_reason, BanReason};
+pub use behaviours::policy::{ban_reason, remove_ban_reason, set_ban_reason, BanReason};
 
 // request-response related re-exports
 pub use behaviours::request_response::RequestResponseBehaviourEvent;
