@@ -6428,7 +6428,7 @@ fn orderbook_address(
             }
         },
         CoinProtocol::ZHTLC { .. } => Ok(OrderbookAddress::Shielded),
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
         // Todo: Shielded address is used for lightning for now, the lightning node public key can be used for the orderbook entry pubkey
         // Todo: instead of the platform coin pubkey which is used right now. But lightning payments are supposed to be private,
         // Todo: so maybe we should hide the node address in the orderbook, only the sending node and the receiving node should know about a payment,

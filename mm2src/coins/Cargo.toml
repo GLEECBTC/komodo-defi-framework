@@ -10,6 +10,13 @@ enable-sia = [
 	"dep:blake2b_simd",
 	"dep:sia-rust"
 ]
+enable-lightning = [
+	"dep:lightning",
+	"dep:lightning-background-processor",
+	"dep:lightning-invoice",
+	"dep:lightning-net-tokio",
+	"dep:lightning-persister"
+]
 enable-solana = []
 default = []
 run-docker-tests = []
@@ -157,11 +164,11 @@ zcash_proofs = { workspace = true, features = ["local-prover"] }
 bitcoin.workspace = true
 hyper = { workspace = true, features = ["client", "http2", "server", "tcp"] }
 hyper-rustls = { workspace = true, default-features = false, features = ["http1", "http2", "webpki-tokio"] }
-lightning.workspace = true
-lightning-background-processor.workspace = true
-lightning-invoice.workspace = true
-lightning-net-tokio.workspace = true
-lightning-persister = "0.0.119"
+lightning = { workspace = true, optional = true }
+lightning-background-processor = { workspace = true, optional = true }
+lightning-invoice = { workspace = true, optional = true }
+lightning-net-tokio = { workspace = true, optional = true }
+lightning-persister = { workspace = true, optional = true }
 rust-ini.workspace = true
 rustls = { workspace = true, features = ["dangerous_configuration"] }
 timed-map = { workspace = true, features = ["rustc-hash"] }

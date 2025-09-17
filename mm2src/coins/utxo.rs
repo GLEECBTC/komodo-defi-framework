@@ -69,7 +69,7 @@ pub use keys::{
     Address, AddressBuilder, AddressFormat as UtxoAddressFormat, AddressHashEnum, AddressPrefix, AddressScriptType,
     KeyPair, LegacyAddress, Private, Public, Secret,
 };
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
 use lightning_invoice::Currency as LightningCurrency;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
@@ -489,7 +489,7 @@ impl From<BlockchainNetwork> for BitcoinNetwork {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
 impl From<BlockchainNetwork> for LightningCurrency {
     fn from(network: BlockchainNetwork) -> Self {
         match network {

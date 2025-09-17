@@ -131,6 +131,7 @@ lightning = "0.0.119"
 lightning-background-processor = "0.0.119"
 lightning-invoice = { version = "0.27.0", features = ["serde"] }
 lightning-net-tokio = "0.0.119"
+lightning-persister = "0.0.119"
 log = "0.4"
 metrics = "0.21"
 metrics-exporter-prometheus = "0.12.1"

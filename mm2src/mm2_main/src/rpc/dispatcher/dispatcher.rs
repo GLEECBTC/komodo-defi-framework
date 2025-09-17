@@ -90,6 +90,7 @@ use serde::de::DeserializeOwned;
 use serde_json::{self as json, Value as Json};
 use std::net::SocketAddr;
 
+#[cfg(feature = "enable-lightning")]
 cfg_native! {
     use coins::lightning::LightningCoin;
 }
@@ -212,7 +213,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         return experimental_rpcs_dispatcher(request, ctx, &experimental_method).await;
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
     if let Some(lightning_method) = request.method.strip_prefix("lightning::") {
         let lightning_method = lightning_method.to_owned();
         return lightning_dispatcher(request, ctx, &lightning_method).await;
@@ -382,7 +383,7 @@ async fn rpc_task_dispatcher(
         "enable_z_coin::cancel" => handle_mmrpc(ctx, request, cancel_init_standalone_coin::<ZCoin>).await,
         "enable_z_coin::status" => handle_mmrpc(ctx, request, init_standalone_coin_status::<ZCoin>).await,
         "enable_z_coin::user_action" => handle_mmrpc(ctx, request, init_standalone_coin_user_action::<ZCoin>).await,
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
         native_only_methods => match native_only_methods {
             "enable_lightning::cancel" => handle_mmrpc(ctx, request, cancel_init_l2::<LightningCoin>).await,
             "enable_lightning::init" => handle_mmrpc(ctx, request, init_l2::<LightningCoin>).await,
@@ -397,6 +398,8 @@ async fn rpc_task_dispatcher(
             "connect_metamask::status" => handle_mmrpc(ctx, request, connect_metamask_status).await,
             _ => MmError::err(DispatcherError::NoSuchMethod),
         },
+        #[cfg(not(feature = "enable-lightning"))]
+        _ => MmError::err(DispatcherError::NoSuchMethod),
     }
 }
 
@@ -452,7 +455,7 @@ async fn gui_storage_dispatcher(
 /// # Note
 ///
 /// `lightning_method` is a method name with the `lightning::` prefix removed.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
 async fn lightning_dispatcher(
     request: MmRpcRequest,
     ctx: MmArc,

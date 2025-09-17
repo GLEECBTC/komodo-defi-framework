@@ -1621,7 +1621,7 @@ pub async fn active_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
 
 // Todo: Maybe add a secret_hash_algo method to the SwapOps trait instead
 /// Selects secret hash algorithm depending on types of coins being swapped
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
 pub fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> SecretHashAlgo {
     match (maker_coin, taker_coin) {
         (MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_) | MmCoinEnum::LightningCoin(_), _) => {
@@ -1634,7 +1634,7 @@ pub fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum)
 }
 
 /// Selects secret hash algorithm depending on types of coins being swapped
-#[cfg(target_arch = "wasm32")]
+#[cfg(not(feature = "enable-lightning"))]
 pub fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> SecretHashAlgo {
     match (maker_coin, taker_coin) {
         (MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_), _) => SecretHashAlgo::SHA256,

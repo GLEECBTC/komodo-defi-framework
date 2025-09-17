@@ -12,5 +12,5 @@ pub mod init_withdraw;
 pub mod offline_keys;
 pub mod tendermint;
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
 pub mod lightning;
