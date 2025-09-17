@@ -88,7 +88,7 @@ impl KeyPair {
     }
 
     pub fn random_compressed() -> Self {
-        let secp_secret = SecretKey::new(&mut rand::thread_rng());
+        let secp_secret = SecretKey::new(&mut rand8::thread_rng());
         let pub_key = PublicKey::from_secret_key(&SECP_SIGN, &secp_secret);
 
         KeyPair {

@@ -1052,7 +1052,7 @@ impl LogState {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl LightningLogger for LogState {
-    fn log(&self, record: &LightningRecord) {
+    fn log(&self, record: LightningRecord) {
         let level = match record.level {
             LightningLevel::Gossip => Level::Trace,
             LightningLevel::Trace => Level::Debug,

@@ -6,7 +6,7 @@ use constants::{LOCKTIME_THRESHOLD, SEQUENCE_FINAL};
 use crypto::{dhash256, sha256};
 use ext_bitcoin::blockdata::transaction::{OutPoint as ExtOutpoint, Transaction as ExtTransaction, TxIn, TxOut};
 use ext_bitcoin::hash_types::Txid;
-use ext_bitcoin::{PackedLockTime, Sequence, Witness};
+use ext_bitcoin::{absolute::LockTime, Sequence, Witness};
 use hash::{CipherText, EncCipherText, OutCipherText, ZkProof, ZkProofSapling, H256, H512, H64};
 use hex::FromHex;
 use ser::{deserialize, serialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
@@ -44,7 +44,7 @@ impl OutPoint {
 impl From<OutPoint> for ExtOutpoint {
     fn from(outpoint: OutPoint) -> Self {
         ExtOutpoint {
-            txid: Txid::from_hash(outpoint.hash.to_sha256d()),
+            txid: Txid::from_raw_hash(outpoint.hash.to_sha256d()),
             vout: outpoint.index,
         }
     }
@@ -243,7 +243,7 @@ impl From<Transaction> for ExtTransaction {
     fn from(tx: Transaction) -> Self {
         ExtTransaction {
             version: tx.version,
-            lock_time: PackedLockTime(tx.lock_time),
+            lock_time: LockTime::from_consensus(tx.lock_time),
             input: tx.inputs.into_iter().map(|i| i.into()).collect(),
             output: tx.outputs.into_iter().map(|o| o.into()).collect(),
         }

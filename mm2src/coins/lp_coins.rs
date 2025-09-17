@@ -97,13 +97,17 @@ use std::{fmt, iter};
 use utxo_signer::with_key_pair::UtxoSignWithKeyPairError;
 use zcash_primitives::transaction::Transaction as ZTransaction;
 
+#[cfg(feature = "enable-lightning")]
 cfg_native! {
     use crate::lightning::LightningCoin;
     use crate::lightning::ln_conf::PlatformCoinConfirmationTargets;
     use ::lightning::ln::PaymentHash as LightningPayment;
+    use lightning_invoice::{Invoice, ParseOrSemanticError};
+}
+
+cfg_native! {
     use async_std::fs;
     use futures::AsyncWriteExt;
-    use lightning_invoice::{Invoice, ParseOrSemanticError};
     use std::io;
     use std::path::PathBuf;
 }
@@ -241,7 +245,7 @@ use hd_wallet::{
     HDWalletOps, HDWithdrawError, HDXPubExtractor, WithdrawSenderAddress,
 };
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
 pub mod lightning;
 #[cfg_attr(target_arch = "wasm32", allow(dead_code, unused_imports))]
 pub mod my_tx_history_v2;
@@ -616,23 +620,23 @@ pub enum TransactionEnum {
     SignedEthTx(SignedEthTx),
     ZTransaction(ZTransaction),
     CosmosTransaction(CosmosTransaction),
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
     LightningPayment(LightningPayment),
 }
 
 ifrom!(TransactionEnum, UtxoTx);
 ifrom!(TransactionEnum, SignedEthTx);
 ifrom!(TransactionEnum, ZTransaction);
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
 ifrom!(TransactionEnum, LightningPayment);
 
 impl TransactionEnum {
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
     pub fn supports_tx_helper(&self) -> bool {
         !matches!(self, TransactionEnum::LightningPayment(_))
     }
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(not(feature = "enable-lightning"))]
     pub fn supports_tx_helper(&self) -> bool {
         true
     }
@@ -647,7 +651,7 @@ impl Deref for TransactionEnum {
             TransactionEnum::SignedEthTx(ref t) => t,
             TransactionEnum::ZTransaction(ref t) => t,
             TransactionEnum::CosmosTransaction(ref t) => t,
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
             TransactionEnum::LightningPayment(ref p) => p,
         }
     }
@@ -1053,7 +1057,7 @@ pub struct WaitForHTLCTxSpendArgs<'a> {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum PaymentInstructions {
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
     Lightning(Invoice),
     WatcherReward(BigDecimal),
 }
@@ -1083,7 +1087,7 @@ pub enum ValidateInstructionsErr {
     DeserializationErr(String),
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
 impl From<ParseOrSemanticError> for ValidateInstructionsErr {
     fn from(e: ParseOrSemanticError) -> Self {
         ValidateInstructionsErr::ValidateLightningInvoiceErr(e.to_string())
@@ -3722,7 +3726,7 @@ pub enum MmCoinEnum {
     SlpToken(SlpToken),
     Tendermint(TendermintCoin),
     TendermintToken(TendermintToken),
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
     LightningCoin(LightningCoin),
     #[cfg(feature = "enable-sia")]
     SiaCoin(SiaCoin),
@@ -3787,7 +3791,7 @@ impl From<TendermintToken> for MmCoinEnum {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
 impl From<LightningCoin> for MmCoinEnum {
     fn from(c: LightningCoin) -> MmCoinEnum {
         MmCoinEnum::LightningCoin(c)
@@ -3827,7 +3831,7 @@ impl Deref for MmCoinEnum {
             MmCoinEnum::SlpToken(ref c) => c,
             MmCoinEnum::Tendermint(ref c) => c,
             MmCoinEnum::TendermintToken(ref c) => c,
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
             MmCoinEnum::LightningCoin(ref c) => c,
             MmCoinEnum::ZCoin(ref c) => c,
             #[cfg(feature = "enable-sia")]
@@ -3871,7 +3875,7 @@ impl MmCoinEnum {
             MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_) | MmCoinEnum::EthCoin(_) => {
                 SecretHashAlgo::SHA256
             },
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
             MmCoinEnum::LightningCoin(_) => SecretHashAlgo::SHA256,
             _ => SecretHashAlgo::DHASH160,
         }
@@ -4757,7 +4761,7 @@ pub enum CoinProtocol {
     },
     TENDERMINT(TendermintProtocolInfo),
     TENDERMINTTOKEN(TendermintTokenProtocolInfo),
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
     LIGHTNING {
         platform: String,
         network: BlockchainNetwork,
@@ -4802,7 +4806,7 @@ impl CoinProtocol {
             | CoinProtocol::SLPTOKEN { platform, .. }
             | CoinProtocol::NFT { platform, .. } => Some(platform),
             CoinProtocol::TENDERMINTTOKEN(info) => Some(&info.platform),
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
             CoinProtocol::LIGHTNING { platform, .. } => Some(platform),
             CoinProtocol::UTXO { .. }
             | CoinProtocol::QTUM
@@ -4832,7 +4836,7 @@ impl CoinProtocol {
             | CoinProtocol::TENDERMINTTOKEN(_)
             | CoinProtocol::ZHTLC(_)
             | CoinProtocol::NFT { .. } => None,
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
             CoinProtocol::LIGHTNING { .. } => None,
             #[cfg(feature = "enable-sia")]
             CoinProtocol::SIA => None,
@@ -5182,7 +5186,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         CoinProtocol::ZHTLC { .. } => return ERR!("ZHTLC protocol is not supported by lp_coininit"),
         CoinProtocol::NFT { .. } => return ERR!("NFT protocol is not supported by lp_coininit"),
         CoinProtocol::TRX { .. } => return ERR!("TRX protocol is not supported by lp_coininit"),
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
         CoinProtocol::LIGHTNING { .. } => return ERR!("Lightning protocol is not supported by lp_coininit"),
         #[cfg(feature = "enable-sia")]
         CoinProtocol::SIA => {
@@ -5824,7 +5828,7 @@ pub fn address_by_coin_conf_and_pubkey_str(
                 _ => ERR!("Platform protocol {:?} is not TENDERMINT", platform_protocol),
             }
         },
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
         CoinProtocol::LIGHTNING { .. } => {
             ERR!("address_by_coin_conf_and_pubkey_str is not implemented for lightning protocol yet!")
         },

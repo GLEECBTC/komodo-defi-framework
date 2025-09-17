@@ -2,15 +2,14 @@ use super::*;
 use common::executor::{spawn_abortable, SpawnFuture, Timer};
 use common::log::LogState;
 use derive_more::Display;
-use lightning::chain::Access;
-use lightning::ln::msgs::NetAddress;
+use lightning::ln::msgs::SocketAddress;
 use lightning::ln::peer_handler::{IgnoringMessageHandler, MessageHandler, SimpleArcPeerManager};
-use lightning::onion_message::SimpleArcOnionMessenger;
 use lightning::routing::gossip;
+use lightning::routing::utxo::UtxoLookup;
 use lightning_net_tokio::SocketDescriptor;
 use mm2_net::ip_addr::fetch_external_ip;
 use rand::RngCore;
-use secp256k1v24::PublicKey;
+use secp256k1::PublicKey;
 use std::net::{IpAddr, Ipv4Addr};
 use std::num::TryFromIntError;
 use tokio::net::TcpListener;
@@ -18,10 +17,15 @@ use tokio::net::TcpListener;
 const TRY_RECONNECTING_TO_NODE_INTERVAL: f64 = 60.;
 const BROADCAST_NODE_ANNOUNCEMENT_INTERVAL: u64 = 600;
 
-pub type NetworkGossip = gossip::P2PGossipSync<Arc<NetworkGraph>, Arc<dyn Access + Send + Sync>, Arc<LogState>>;
-type OnionMessenger = SimpleArcOnionMessenger<LogState>;
-pub type PeerManager =
-    SimpleArcPeerManager<SocketDescriptor, ChainMonitor, Platform, Platform, dyn Access + Send + Sync, LogState>;
+pub type NetworkGossip = gossip::P2PGossipSync<Arc<NetworkGraph>, Arc<dyn UtxoLookup + Send + Sync>, Arc<LogState>>;
+pub type PeerManager = SimpleArcPeerManager<
+    SocketDescriptor,
+    ChainMonitor,
+    Platform,
+    Platform,
+    Arc<dyn UtxoLookup + Send + Sync>,
+    LogState,
+>;
 
 #[derive(Display)]
 pub enum ConnectToNodeRes {
@@ -99,24 +103,6 @@ pub async fn connect_to_ln_nodes_loop(open_channels_nodes: NodesAddressesMapShar
     }
 }
 
-// TODO: add TOR address option
-fn netaddress_from_ipaddr(addr: IpAddr, port: u16) -> Vec<NetAddress> {
-    if addr == Ipv4Addr::new(0, 0, 0, 0) || addr == Ipv4Addr::new(127, 0, 0, 1) {
-        return Vec::new();
-    }
-    let address = match addr {
-        IpAddr::V4(addr) => NetAddress::IPv4 {
-            addr: u32::from(addr).to_be_bytes(),
-            port,
-        },
-        IpAddr::V6(addr) => NetAddress::IPv6 {
-            addr: u128::from(addr).to_be_bytes(),
-            port,
-        },
-    };
-    vec![address]
-}
-
 pub async fn ln_node_announcement_loop(
     peer_manager: Arc<PeerManager>,
     node_name: [u8; 32],
@@ -130,7 +116,8 @@ pub async fn ln_node_announcement_loop(
         let addresses = match fetch_external_ip().await {
             Ok(ip) => {
                 log::debug!("Fetch real IP successfully: {}:{}", ip, port);
-                netaddress_from_ipaddr(ip, port)
+                // TODO: add TOR address option
+                vec![SocketAddress::from(std::net::SocketAddr::new(ip, port))]
             },
             Err(e) => {
                 log::error!("Error while fetching external ip for node announcement: {}", e);
@@ -190,15 +177,11 @@ pub async fn init_peer_manager(
     // ephemeral_random_data is used to derive per-connection ephemeral keys
     let mut ephemeral_bytes = [0; 32];
     rand::thread_rng().fill_bytes(&mut ephemeral_bytes);
-    let onion_message_handler = Arc::new(OnionMessenger::new(
-        keys_manager.clone(),
-        logger.clone(),
-        IgnoringMessageHandler {},
-    ));
     let lightning_msg_handler = MessageHandler {
         chan_handler: channel_manager,
         route_handler: gossip_sync,
-        onion_message_handler,
+        onion_message_handler: IgnoringMessageHandler {},
+        custom_message_handler: IgnoringMessageHandler {},
     };
 
     let node_secret = keys_manager

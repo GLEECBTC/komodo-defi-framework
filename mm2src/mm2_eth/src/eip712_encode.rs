@@ -107,7 +107,7 @@ fn encode_custom(
         encoded_tokens.append(&mut encoded);
     }
 
-    Ok(keccak256(&encoded_tokens).as_ref().to_vec())
+    Ok(keccak256(&encoded_tokens).to_vec())
 }
 
 fn encode_bytes32(value: &Json, field_name: Option<&str>) -> Result<Vec<u8>> {

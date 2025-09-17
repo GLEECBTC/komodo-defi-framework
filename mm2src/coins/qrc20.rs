@@ -1414,11 +1414,11 @@ impl MmCoin for Qrc20Coin {
     }
 
     fn swap_contract_address(&self) -> Option<BytesJson> {
-        Some(BytesJson::from(self.swap_contract_address.0.as_ref()))
+        Some(BytesJson::new(self.swap_contract_address.0.to_vec()))
     }
 
     fn fallback_swap_contract(&self) -> Option<BytesJson> {
-        self.fallback_swap_contract.map(|a| BytesJson::from(a.0.as_ref()))
+        self.fallback_swap_contract.map(|a| BytesJson::new(a.0.to_vec()))
     }
 
     fn mature_confirmations(&self) -> Option<u32> {

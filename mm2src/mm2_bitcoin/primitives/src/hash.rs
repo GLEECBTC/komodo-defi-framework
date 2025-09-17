@@ -204,6 +204,6 @@ impl H256 {
 
     #[inline]
     pub fn to_sha256d(self) -> sha256d::Hash {
-        sha256d::Hash::from_inner(self.take())
+        sha256d::Hash::from_byte_array(self.take())
     }
 }

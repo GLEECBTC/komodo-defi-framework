@@ -8,6 +8,11 @@ doctest = false
 
 [features]
 enable-sia = []
+enable-lightning = [
+    "dep:lightning",
+    "dep:lightning-background-processor",
+    "dep:lightning-invoice",
+]
 enable-solana = []
 default = []
 for-tests = []
@@ -41,7 +46,6 @@ url.workspace = true
 mm2_metamask = { path = "../mm2_metamask" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-lightning.workspace = true
-lightning-background-processor.workspace = true
-lightning-invoice.workspace = true
-secp256k1v24.workspace = true
+lightning = { workspace = true, optional = true }
+lightning-background-processor = { workspace = true, optional = true }
+lightning-invoice = { workspace = true, optional = true }

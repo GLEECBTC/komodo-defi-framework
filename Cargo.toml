@@ -63,10 +63,10 @@ base64 = "0.21.2"
 bech32 = "0.9.1"
 bs58 = "0.4.0"
 bigdecimal = { version = "0.3", features = ["serde"] }
-bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "secp256k1-ffi"] }
+bip32 = { version = "0.5.0", default-features = false, features = ["alloc", "secp256k1-ffi"] }
 bip39 = { version = "2.0.0", features = ["rand_core", "zeroize"], default-features = false }
-bitcoin = "0.29"
-bitcoin_hashes = "0.11"
+bitcoin = "0.30"
+bitcoin_hashes = "0.12"
 blake2 = "0.10.6"
 blake2b_simd = "0.5.10"
 bytes = "1.1"
@@ -89,9 +89,9 @@ either = "1.6"
 enum-primitive-derive = "0.2"
 env_logger = { version = "0.11", default-features = false }
 ethabi = "17.0.0"
-ethcore-transaction = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git", rev = "mm2-v2.1.1" }
+ethcore-transaction = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git", branch = "upgrade-secp256k1" }
 ethereum-types = { version = "0.13", default-features = false, features = ["std", "serialize"] }
-ethkey = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git", rev = "mm2-v2.1.1" }
+ethkey = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git", branch = "upgrade-secp256k1" }
 # Waiting for https://github.com/rust-lang/rust/issues/54725 to use on Stable.
 #enum_dispatch = "0.1"
 ff = "0.8"
@@ -127,10 +127,11 @@ jsonrpc-core = "18.0.0"
 lazy_static = "1.4"
 libc = "0.2"
 libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.12", default-features = false }
-lightning = "0.0.113"
-lightning-background-processor = "0.0.113"
-lightning-invoice = { version = "0.21.0", features = ["serde"] }
-lightning-net-tokio = "0.0.113"
+lightning = "0.0.119"
+lightning-background-processor = "0.0.119"
+lightning-invoice = { version = "0.27.0", features = ["serde"] }
+lightning-net-tokio = "0.0.119"
+lightning-persister = "0.0.119"
 log = "0.4"
 metrics = "0.21"
 metrics-exporter-prometheus = "0.12.1"
@@ -169,8 +170,7 @@ rust-ini = "0.13"
 rustls = { version = "0.21", default-features = false }
 rustls-pemfile = "1.0.2"
 rusqlite = { version = "0.28", features = ["bundled"] }
-secp256k1 = "0.20"
-secp256k1v24 = { version = "0.24", package = "secp256k1" }
+secp256k1 = "0.27"
 serde = { version = "1", default-features = false }
 serde_bytes = "0.11.5"
 serde_derive = { version = "1", default-features = false }
@@ -222,11 +222,11 @@ web-sys = {version = "0.3.55", default-features = false }
 web3 = { git = "https://github.com/komodoplatform/rust-web3", tag = "v0.20.0", default-features = false }
 winapi = "0.3"
 zbase32 = "0.1.2"
-zcash_client_backend = { git = "https://github.com/komodoplatform/librustzcash.git", tag = "k-1.4.2" }
-zcash_client_sqlite = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.2" }
-zcash_extras = { git = "https://github.com/komodoplatform/librustzcash.git", tag = "k-1.4.2" }
-zcash_primitives =  { git = "https://github.com/komodoplatform/librustzcash.git", tag = "k-1.4.2", features = ["transparent-inputs"] }
-zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.2", default-features = false }
+zcash_client_backend = { git = "https://github.com/komodoplatform/librustzcash.git", branch = "upgrade-secp256k1" }
+zcash_client_sqlite = { git = "https://github.com/komodoplatform/librustzcash.git", branch = "upgrade-secp256k1" }
+zcash_extras = { git = "https://github.com/komodoplatform/librustzcash.git", branch = "upgrade-secp256k1" }
+zcash_primitives = { git = "https://github.com/komodoplatform/librustzcash.git", branch = "upgrade-secp256k1", features = ["transparent-inputs"] }
+zcash_proofs = { git = "https://github.com/komodoplatform/librustzcash.git", branch = "upgrade-secp256k1", default-features = false }
 x25519-dalek = { version = "2.0", features = ["static_secrets"] }
 zeroize = { version = "1.8.1", features = ["zeroize_derive"] }
 
@@ -249,3 +249,7 @@ codegen-units = 256
 
 [profile.release.package.mocktopus]
 opt-level = 1 # TODO: MIR fails on optimizing this dependency, remove that..
+
+# [patch.crates-io]
+# secp256k1-sys61 = { version = "0.6.1", git = "https://github.com/rust-bitcoin/rust-secp256k1.git", tag = "secp256k1-sys-0.6.1", package = "secp256k1-sys" }
+# secp256k1-sys42 = { version = "0.4.2", git = "https://github.com/rust-bitcoin/rust-secp256k1.git", tag = "secp256k1-sys-0.6.1", package = "secp256k1-sys" }

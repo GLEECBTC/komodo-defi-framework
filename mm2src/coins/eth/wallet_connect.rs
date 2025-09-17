@@ -18,7 +18,7 @@ use kdf_walletconnect::chain::{WcChainId, WcRequestMethods};
 use kdf_walletconnect::error::WalletConnectError;
 use kdf_walletconnect::{WalletConnectCtx, WalletConnectOps, WcTopic};
 use mm2_err_handle::prelude::*;
-use secp256k1::recovery::{RecoverableSignature, RecoveryId};
+use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 use secp256k1::{PublicKey, Secp256k1};
 use std::iter::FromIterator;
 use std::str::FromStr;
@@ -258,7 +258,7 @@ pub(crate) fn recover(signature: &Signature, message: &Message) -> Result<Public
         RecoveryId::from_i32(recovery_id as i32)?
     };
     let sig = RecoverableSignature::from_compact(&signature[0..64], recovery_id)?;
-    let pubkey = Secp256k1::new().recover(&secp256k1::Message::from_slice(&message[..])?, &sig)?;
+    let pubkey = Secp256k1::new().recover_ecdsa(&secp256k1::Message::from_slice(&message[..])?, &sig)?;
 
     Ok(pubkey)
 }

@@ -419,16 +419,16 @@ dependencies = [
 
 [[package]]
 name = "bip32"
-version = "0.2.2"
+version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2d0f0fc59c7ba0333eed9dcc1b6980baa7b7a4dc7c6c5885994d0674f7adf34"
+checksum = "db40d3dfbeab4e031d78c844642fa0caa0b0db11ce1607ac9d2986dff1405c69"
 dependencies = [
- "bs58 0.4.0",
- "hkd32",
- "hmac 0.11.0",
- "ripemd160",
- "secp256k1 0.20.3",
- "sha2 0.9.9",
+ "bs58 0.5.0",
+ "hmac 0.12.1",
+ "rand_core 0.6.4",
+ "ripemd",
+ "secp256k1",
+ "sha2 0.10.7",
  "subtle",
  "zeroize",
 ]
@@ -439,27 +439,44 @@ version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93f2635620bf0b9d4576eb7bb9a38a55df78bd1205d26fa994b25911a69f212f"
 dependencies = [
- "bitcoin_hashes",
- "rand_core 0.6.4",
+ "bitcoin_hashes 0.11.0",
+ "rand_core 0.5.1",
  "zeroize",
 ]
 
 [[package]]
 name = "bitcoin"
-version = "0.29.2"
+version = "0.30.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0694ea59225b0c5f3cb405ff3f670e4828358ed26aec49dc352f730f0cb1a8a3"
+checksum = "1945a5048598e4189e239d3f809b19bdad4845c4b2ba400d304d2dcf26d2c462"
 dependencies = [
  "bech32",
- "bitcoin_hashes",
- "secp256k1 0.24.3",
+ "bitcoin-private",
+ "bitcoin_hashes 0.12.0",
+ "hex_lit",
+ "secp256k1",
 ]
+
+[[package]]
+name = "bitcoin-private"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73290177011694f38ec25e165d0387ab7ea749a4b81cd4c80dae5988229f7a57"
 
 [[package]]
 name = "bitcoin_hashes"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90064b8dee6815a6470d60bad07bbbaee885c0e12d04177138fa3291a01b7bc4"
+
+[[package]]
+name = "bitcoin_hashes"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d7066118b13d4b20b23645932dfb3a81ce7e29f95726c2036fa33cd7b092501"
+dependencies = [
+ "bitcoin-private",
+]
 
 [[package]]
 name = "bitcrypto"
@@ -639,6 +656,7 @@ version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f5353f36341f7451062466f0b755b96ac3a9547e4d7f6b70d603fc721a7d7896"
 dependencies = [
+ "sha2 0.10.7",
  "tinyvec",
 ]
 
@@ -833,7 +851,7 @@ dependencies = [
  "base64 0.21.7",
  "bip32",
  "bitcoin",
- "bitcoin_hashes",
+ "bitcoin_hashes 0.12.0",
  "bitcrypto",
  "blake2b_simd",
  "bs58 0.4.0",
@@ -877,6 +895,7 @@ dependencies = [
  "lightning-background-processor",
  "lightning-invoice",
  "lightning-net-tokio",
+ "lightning-persister",
  "mm2_core",
  "mm2_db",
  "mm2_err_handle",
@@ -909,8 +928,7 @@ dependencies = [
  "rust-ini",
  "rustls 0.21.10",
  "script",
- "secp256k1 0.20.3",
- "secp256k1 0.24.3",
+ "secp256k1",
  "ser_error",
  "ser_error_derive",
  "serde",
@@ -977,7 +995,6 @@ dependencies = [
  "parking_lot",
  "rpc",
  "rpc_task",
- "secp256k1 0.24.3",
  "ser_error",
  "ser_error_derive",
  "serde",
@@ -1325,7 +1342,7 @@ dependencies = [
  "rpc",
  "rpc_task",
  "rustc-hex",
- "secp256k1 0.20.3",
+ "secp256k1",
  "ser_error",
  "ser_error_derive",
  "serde",
@@ -1367,16 +1384,6 @@ name = "crypto-mac"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b584a330336237c1eecd3e94266efb216c56ed91225d634cb2991c5f3fd1aeab"
-dependencies = [
- "generic-array",
- "subtle",
-]
-
-[[package]]
-name = "crypto-mac"
-version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1d1a86f49236c215f271d40892d5fc950490551400b02ef360692c29815c714"
 dependencies = [
  "generic-array",
  "subtle",
@@ -1847,7 +1854,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.1.0"
-source = "git+https://github.com/komodoplatform/librustzcash.git?tag=k-1.4.2#4e030a0f44cc17f100bf5f019563be25c5b8755f"
+source = "git+https://github.com/komodoplatform/librustzcash.git?branch=upgrade-secp256k1#5535e5b4d84a81e6351e1087081e8661d33eb7a5"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -1866,7 +1873,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33d852cb9b869c2a9b3df2f71a3074817f01e1844f839a144f5fcef059a4eb5d"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1902,7 +1909,7 @@ dependencies = [
 [[package]]
 name = "ethcore-transaction"
 version = "0.1.0"
-source = "git+https://github.com/KomodoPlatform/mm2-parity-ethereum.git?rev=mm2-v2.1.1#d5524212230c4773d01b2527e9b3c422a251e0dc"
+source = "git+https://github.com/KomodoPlatform/mm2-parity-ethereum.git?branch=upgrade-secp256k1#8a12cefc6cc4779b04fea1ff326d6753f6202098"
 dependencies = [
  "ethereum-types",
  "ethkey",
@@ -1929,16 +1936,16 @@ dependencies = [
 [[package]]
 name = "ethkey"
 version = "0.3.0"
-source = "git+https://github.com/KomodoPlatform/mm2-parity-ethereum.git?rev=mm2-v2.1.1#d5524212230c4773d01b2527e9b3c422a251e0dc"
+source = "git+https://github.com/KomodoPlatform/mm2-parity-ethereum.git?branch=upgrade-secp256k1#8a12cefc6cc4779b04fea1ff326d6753f6202098"
 dependencies = [
  "byteorder",
  "edit-distance",
  "ethereum-types",
  "log",
  "mem",
- "rand 0.6.5",
+ "rand 0.8.5",
  "rustc-hex",
- "secp256k1 0.20.3",
+ "secp256k1",
  "serde",
  "serde_derive",
  "tiny-keccak 1.4.4",
@@ -2518,22 +2525,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
+name = "hex-conservative"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "212ab92002354b4819390025006c897e8140934349e8635c9b077f47b4dcbd20"
+
+[[package]]
 name = "hex_fmt"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b07f60793ff0a4d9cef0f18e63b5357e06209987153a64648c972c1e5aff336f"
 
 [[package]]
-name = "hkd32"
-version = "0.6.0"
+name = "hex_lit"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84f2a5541afe0725f0b95619d6af614f48c1b176385b8aa30918cfb8c4bfafc8"
-dependencies = [
- "hmac 0.11.0",
- "rand_core 0.6.4",
- "sha2 0.9.9",
- "zeroize",
-]
+checksum = "3011d1213f159867b13cfd6ac92d2cd5f1345762c63be3554e84092d85a50bbd"
 
 [[package]]
 name = "hkdf"
@@ -2550,17 +2557,7 @@ version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "126888268dcc288495a26bf004b38c5fdbb31682f992c84ceb046a1f0fe38840"
 dependencies = [
- "crypto-mac 0.8.0",
- "digest 0.9.0",
-]
-
-[[package]]
-name = "hmac"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a2a2320eb7ec0ebe8da8f744d7812d9fc4cb4d09344ac01898dbcb6a20ae69b"
-dependencies = [
- "crypto-mac 0.11.1",
+ "crypto-mac",
  "digest 0.9.0",
 ]
 
@@ -2652,7 +2649,7 @@ dependencies = [
  "js-sys",
  "mm2_err_handle",
  "rusb",
- "secp256k1 0.20.3",
+ "secp256k1",
  "serde",
  "serde_derive",
  "wasm-bindgen",
@@ -3051,7 +3048,7 @@ dependencies = [
  "rand 0.8.5",
  "relay_client",
  "relay_rpc",
- "secp256k1 0.20.3",
+ "secp256k1",
  "serde",
  "serde_json",
  "sha2 0.10.7",
@@ -3093,8 +3090,9 @@ dependencies = [
  "lazy_static",
  "primitives",
  "rand 0.6.5",
+ "rand 0.8.5",
  "rustc-hex",
- "secp256k1 0.20.3",
+ "secp256k1",
  "serde",
  "serde_derive",
 ]
@@ -3588,18 +3586,19 @@ dependencies = [
 
 [[package]]
 name = "lightning"
-version = "0.0.113"
+version = "0.0.119"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "087add70f81d2fdc6d4409bc0cef69e11ad366ef1d0068550159bd22b3ac8664"
+checksum = "32899363dc48d297838ce1264c4bb6867ede6ec11f06f3b9823f3ff403f1ccc2"
 dependencies = [
  "bitcoin",
+ "hex-conservative",
 ]
 
 [[package]]
 name = "lightning-background-processor"
-version = "0.0.113"
+version = "0.0.119"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2288d211a2ab15e2c9fb492fb99c7998df1a37f228552f703824ee678b8980c9"
+checksum = "1dd4579eae0ba4479bdbee06b95380fa785b740843ab8211e38cedc96527e918"
 dependencies = [
  "bitcoin",
  "lightning",
@@ -3608,23 +3607,23 @@ dependencies = [
 
 [[package]]
 name = "lightning-invoice"
-version = "0.21.0"
+version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9680857590c3529cf8c7d32b04501f215f2bf1e029fdfa22f4112f66c1741e4"
+checksum = "fd3421ccfaeac77763114f68f3fc5308f11a0e8a880618b4f84d1d22493aa465"
 dependencies = [
  "bech32",
- "bitcoin_hashes",
+ "bitcoin",
  "lightning",
  "num-traits",
- "secp256k1 0.24.3",
+ "secp256k1",
  "serde",
 ]
 
 [[package]]
 name = "lightning-net-tokio"
-version = "0.0.113"
+version = "0.0.119"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e94b019ffcbd423c67bc8e65093d46cf5c00ff696b4b633936fce6e4d0cb845"
+checksum = "f67f8eafcb02c2ea3896f4c3ec274350487c4c34b7a21b28c4f5b1089bfbcd18"
 dependencies = [
  "bitcoin",
  "lightning",
@@ -3632,10 +3631,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "lightning-rapid-gossip-sync"
-version = "0.0.113"
+name = "lightning-persister"
+version = "0.0.119"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "488b68c7d24093d35a83f37c560e427f1085f4c5d37918b81b11d95cd3675a0f"
+checksum = "6e526d0c4fe135cf4c0d97221a833304f1150a335279edbf951100c22aa50a5c"
+dependencies = [
+ "bitcoin",
+ "lightning",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "lightning-rapid-gossip-sync"
+version = "0.0.119"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d6ae008f2992342421bb2871a84ae9cbba6d6ef10284282f752ca04f67c5465a"
 dependencies = [
  "bitcoin",
  "lightning",
@@ -3743,7 +3753,7 @@ checksum = "60302e4db3a61da70c0cb7991976248362f30319e88850c487b9b95bbf059e00"
 [[package]]
 name = "mem"
 version = "0.1.0"
-source = "git+https://github.com/KomodoPlatform/mm2-parity-ethereum.git?rev=mm2-v2.1.1#d5524212230c4773d01b2527e9b3c422a251e0dc"
+source = "git+https://github.com/KomodoPlatform/mm2-parity-ethereum.git?branch=upgrade-secp256k1#8a12cefc6cc4779b04fea1ff326d6753f6202098"
 
 [[package]]
 name = "memchr"
@@ -3985,7 +3995,7 @@ dependencies = [
  "indexmap 1.9.3",
  "itertools",
  "mm2_err_handle",
- "secp256k1 0.20.3",
+ "secp256k1",
  "serde",
  "serde_json",
  "web3",
@@ -4134,7 +4144,7 @@ dependencies = [
  "rustls 0.21.10",
  "rustls-pemfile 1.0.2",
  "script",
- "secp256k1 0.20.3",
+ "secp256k1",
  "ser_error",
  "ser_error_derive",
  "serde",
@@ -4287,7 +4297,7 @@ dependencies = [
  "rand 0.7.3",
  "regex",
  "rmp-serde",
- "secp256k1 0.20.3",
+ "secp256k1",
  "serde",
  "serde_bytes",
  "serde_json",
@@ -4990,7 +5000,7 @@ dependencies = [
 name = "primitives"
 version = "0.1.0"
 dependencies = [
- "bitcoin_hashes",
+ "bitcoin_hashes 0.12.0",
  "byteorder",
  "rustc-hex",
  "uint",
@@ -5862,7 +5872,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6061,38 +6071,20 @@ dependencies = [
 
 [[package]]
 name = "secp256k1"
-version = "0.20.3"
+version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97d03ceae636d0fed5bae6a7f4f664354c5f4fcedf6eef053fef17e49f837d0a"
+checksum = "25996b82292a7a57ed3508f052cfff8640d38d32018784acd714758b43da9c8f"
 dependencies = [
- "rand 0.6.5",
- "secp256k1-sys 0.4.2",
-]
-
-[[package]]
-name = "secp256k1"
-version = "0.24.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b1629c9c557ef9b293568b338dddfc8208c98a18c59d722a9d53f859d9c9b62"
-dependencies = [
- "bitcoin_hashes",
- "secp256k1-sys 0.6.1",
+ "bitcoin_hashes 0.12.0",
+ "rand 0.8.5",
+ "secp256k1-sys",
 ]
 
 [[package]]
 name = "secp256k1-sys"
-version = "0.4.2"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "957da2573cde917463ece3570eab4a0b3f19de6f1646cde62e6fd3868f566036"
-dependencies = [
- "cc",
-]
-
-[[package]]
-name = "secp256k1-sys"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83080e2c2fc1006e625be82e5d1eb6a43b7fd9578b617fcc55814daf286bba4b"
+checksum = "4473013577ec77b4ee3668179ef1186df3146e2cf2d927bd200974c6fe60fd99"
 dependencies = [
  "cc",
 ]
@@ -7602,7 +7594,7 @@ dependencies = [
 [[package]]
 name = "unexpected"
 version = "0.1.0"
-source = "git+https://github.com/KomodoPlatform/mm2-parity-ethereum.git?rev=mm2-v2.1.1#d5524212230c4773d01b2527e9b3c422a251e0dc"
+source = "git+https://github.com/KomodoPlatform/mm2-parity-ethereum.git?branch=upgrade-secp256k1#8a12cefc6cc4779b04fea1ff326d6753f6202098"
 
 [[package]]
 name = "unicode-bidi"
@@ -8405,7 +8397,7 @@ checksum = "0f9079049688da5871a7558ddacb7f04958862c703e68258594cb7a862b5e33f"
 [[package]]
 name = "zcash_client_backend"
 version = "0.5.0"
-source = "git+https://github.com/komodoplatform/librustzcash.git?tag=k-1.4.2#4e030a0f44cc17f100bf5f019563be25c5b8755f"
+source = "git+https://github.com/komodoplatform/librustzcash.git?branch=upgrade-secp256k1#5535e5b4d84a81e6351e1087081e8661d33eb7a5"
 dependencies = [
  "async-trait",
  "base64 0.13.0",
@@ -8430,7 +8422,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_sqlite"
 version = "0.3.0"
-source = "git+https://github.com/komodoplatform/librustzcash.git?tag=k-1.4.2#4e030a0f44cc17f100bf5f019563be25c5b8755f"
+source = "git+https://github.com/komodoplatform/librustzcash.git?branch=upgrade-secp256k1#5535e5b4d84a81e6351e1087081e8661d33eb7a5"
 dependencies = [
  "async-trait",
  "bech32",
@@ -8452,7 +8444,7 @@ dependencies = [
 [[package]]
 name = "zcash_extras"
 version = "0.1.0"
-source = "git+https://github.com/komodoplatform/librustzcash.git?tag=k-1.4.2#4e030a0f44cc17f100bf5f019563be25c5b8755f"
+source = "git+https://github.com/komodoplatform/librustzcash.git?branch=upgrade-secp256k1#5535e5b4d84a81e6351e1087081e8661d33eb7a5"
 dependencies = [
  "async-trait",
  "ff 0.8.0",
@@ -8468,7 +8460,7 @@ dependencies = [
 [[package]]
 name = "zcash_note_encryption"
 version = "0.0.0"
-source = "git+https://github.com/komodoplatform/librustzcash.git?tag=k-1.4.2#4e030a0f44cc17f100bf5f019563be25c5b8755f"
+source = "git+https://github.com/komodoplatform/librustzcash.git?branch=upgrade-secp256k1#5535e5b4d84a81e6351e1087081e8661d33eb7a5"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -8482,7 +8474,7 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.5.0"
-source = "git+https://github.com/komodoplatform/librustzcash.git?tag=k-1.4.2#4e030a0f44cc17f100bf5f019563be25c5b8755f"
+source = "git+https://github.com/komodoplatform/librustzcash.git?branch=upgrade-secp256k1#5535e5b4d84a81e6351e1087081e8661d33eb7a5"
 dependencies = [
  "aes",
  "bitvec 0.18.5",
@@ -8503,7 +8495,7 @@ dependencies = [
  "rand 0.7.3",
  "rand_core 0.5.1",
  "ripemd160",
- "secp256k1 0.20.3",
+ "secp256k1",
  "sha2 0.9.9",
  "subtle",
  "zcash_note_encryption",
@@ -8512,7 +8504,7 @@ dependencies = [
 [[package]]
 name = "zcash_proofs"
 version = "0.5.0"
-source = "git+https://github.com/komodoplatform/librustzcash.git?tag=k-1.4.2#4e030a0f44cc17f100bf5f019563be25c5b8755f"
+source = "git+https://github.com/komodoplatform/librustzcash.git?branch=upgrade-secp256k1#5535e5b4d84a81e6351e1087081e8661d33eb7a5"
 dependencies = [
  "bellman",
  "blake2b_simd",

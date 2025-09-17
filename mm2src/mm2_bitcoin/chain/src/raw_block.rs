@@ -34,14 +34,14 @@ impl RawBlockHeader {
     /// Extract the LE tx merkle root from the header
     pub fn extract_merkle_root(&self) -> H256 {
         let mut root = H256::default();
-        root.as_mut().copy_from_slice(&self.0.as_ref()[36..68]);
+        root.copy_from_slice(&self.0.as_ref()[36..68]);
         root
     }
 
     /// Extract the LE parent digest from the header
     pub fn parent(&self) -> H256 {
         let mut root = H256::default();
-        root.as_mut().copy_from_slice(&self.0.as_ref()[4..36]);
+        root.copy_from_slice(&self.0.as_ref()[4..36]);
         root
     }
 }

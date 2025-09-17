@@ -1,6 +1,7 @@
 mod bch_and_slp_tests;
 mod best_orders_tests;
 mod eth_tests;
+#[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
 mod lightning_tests;
 mod lp_bot_tests;
 mod mm2_tests_inner;

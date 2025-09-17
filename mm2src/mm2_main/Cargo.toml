@@ -22,6 +22,7 @@ default = []
 trezor-udp = ["crypto/trezor-udp"] # use for tests to connect to trezor emulator over udp
 run-device-tests = []
 enable-sia = ["coins/enable-sia", "coins_activation/enable-sia"]
+enable-lightning = ["coins/enable-lightning", "coins_activation/enable-lightning"]
 sepolia-maker-swap-v2-tests = []
 sepolia-taker-swap-v2-tests = []
 test-ext-api = ["trading_api/test-ext-api"]

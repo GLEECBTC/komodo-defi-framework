@@ -73,8 +73,8 @@ pub enum Payment {
         amount_in_msat: u64,
         // The number of blocks the payment will be locked for if not claimed by the destination,
         // It's can be assumed that 6 blocks = 1 hour. We can claim the payment amount back after this cltv expires.
-        // Minmum value allowed is MIN_FINAL_CLTV_EXPIRY which is currently 24 for rust-lightning.
-        expiry: u32,
+        // Minmum value allowed is MIN_FINAL_CLTV_EXPIRY_DELTA which is currently 24 for rust-lightning.
+        expiry: u16,
     },
 }
 

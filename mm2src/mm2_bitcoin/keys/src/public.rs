@@ -3,8 +3,8 @@ use crypto::dhash160;
 use hash::{H160, H264, H520};
 use hex::ToHex;
 use secp256k1::{
-    recovery::{RecoverableSignature, RecoveryId},
-    Error as SecpError, Message as SecpMessage, PublicKey, Signature as SecpSignature,
+    ecdsa::{RecoverableSignature, RecoveryId, Signature as SecpSignature},
+    Error as SecpError, Message as SecpMessage, PublicKey,
 };
 use std::{fmt, ops::Deref};
 use {CompactSignature, Error, Message, Signature};
@@ -53,7 +53,7 @@ impl Public {
         let mut signature = SecpSignature::from_der_lax(signature)?;
         signature.normalize_s();
         let message = SecpMessage::from_slice(&**message)?;
-        Ok(SECP_VERIFY.verify(&message, &signature, &public).is_ok())
+        Ok(SECP_VERIFY.verify_ecdsa(&message, &signature, &public).is_ok())
     }
 
     pub fn recover_compact(message: &Message, signature: &CompactSignature) -> Result<Self, Error> {
@@ -65,7 +65,7 @@ impl Public {
         let recovery_id = RecoveryId::from_i32(recovery_id as i32)?;
         let signature = RecoverableSignature::from_compact(&signature[1..65], recovery_id)?;
         let message = SecpMessage::from_slice(&**message)?;
-        let pubkey = SECP_VERIFY.recover(&message, &signature)?;
+        let pubkey = SECP_VERIFY.recover_ecdsa(&message, &signature)?;
         let public = if compressed {
             let serialized = pubkey.serialize();
             Public::Compressed(serialized.into())

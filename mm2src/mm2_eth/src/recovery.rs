@@ -1,5 +1,5 @@
 use mm2_err_handle::prelude::*;
-use secp256k1::recovery::{RecoverableSignature, RecoveryId};
+use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 use secp256k1::{Message as SecpMessage, Secp256k1};
 use web3::types::{H256, H520};
 
@@ -19,7 +19,7 @@ pub fn recover_pubkey(message_hash: H256, mut signature: Signature) -> MmResult<
     let recovery_id = RecoveryId::from_i32(signature[64] as i32)?;
     let sig = RecoverableSignature::from_compact(&signature[0..64], recovery_id)?;
     let secp_message = SecpMessage::from_slice(message_hash.as_ref())?;
-    let pubkey = Secp256k1::new().recover(&secp_message, &sig)?;
+    let pubkey = Secp256k1::new().recover_ecdsa(&secp_message, &sig)?;
     let serialized = pubkey.serialize_uncompressed();
 
     Ok(H520::from_slice(&serialized))

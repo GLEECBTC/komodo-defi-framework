@@ -26,7 +26,7 @@ impl Private {
     pub fn sign(&self, message: &Message) -> Result<Signature, Error> {
         let secret = SecretKey::from_slice(&*self.secret)?;
         let message = SecpMessage::from_slice(&**message)?;
-        let signature = SECP_SIGN.sign(&message, &secret);
+        let signature = SECP_SIGN.sign_ecdsa(&message, &secret);
         let data = signature.serialize_der();
         Ok(data.as_ref().to_vec().into())
     }
@@ -36,7 +36,7 @@ impl Private {
     pub fn sign_low_r(&self, message: &Message) -> Result<Signature, Error> {
         let secret = SecretKey::from_slice(&*self.secret)?;
         let message = SecpMessage::from_slice(&**message)?;
-        let signature = SECP_SIGN.sign_low_r(&message, &secret);
+        let signature = SECP_SIGN.sign_ecdsa_low_r(&message, &secret);
         let data = signature.serialize_der();
         Ok(data.as_ref().to_vec().into())
     }
@@ -45,7 +45,7 @@ impl Private {
     pub fn sign_compact(&self, message: &Message) -> Result<Signature, Error> {
         let secret = SecretKey::from_slice(&*self.secret)?;
         let message = SecpMessage::from_slice(&**message)?;
-        let signature = SECP_SIGN.sign_recoverable(&message, &secret);
+        let signature = SECP_SIGN.sign_ecdsa_recoverable(&message, &secret);
         let (recover_id, bytes) = signature.serialize_compact();
         let mut out = bytes.to_vec();
         let header = 27 + recover_id.to_i32() as u8;

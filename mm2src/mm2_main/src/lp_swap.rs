@@ -86,7 +86,7 @@ use mm2_number::{BigDecimal, MmNumber, MmNumberMultiRepr};
 use mm2_state_machine::storable_state_machine::StateMachineStorage;
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264};
-use secp256k1::{PublicKey, SecretKey, Signature};
+use secp256k1::{ecdsa::Signature, PublicKey, SecretKey};
 use serde::Serialize;
 use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};
@@ -1621,7 +1621,7 @@ pub async fn active_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
 
 // Todo: Maybe add a secret_hash_algo method to the SwapOps trait instead
 /// Selects secret hash algorithm depending on types of coins being swapped
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
 pub fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> SecretHashAlgo {
     match (maker_coin, taker_coin) {
         (MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_) | MmCoinEnum::LightningCoin(_), _) => {
@@ -1634,7 +1634,7 @@ pub fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum)
 }
 
 /// Selects secret hash algorithm depending on types of coins being swapped
-#[cfg(target_arch = "wasm32")]
+#[cfg(not(feature = "enable-lightning"))]
 pub fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> SecretHashAlgo {
     match (maker_coin, taker_coin) {
         (MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_), _) => SecretHashAlgo::SHA256,
@@ -1681,7 +1681,7 @@ pub fn broadcast_swap_v2_message<T: prost::Message>(
     let secp_secret = SecretKey::from_slice(&p2p_private).expect("valid secret key");
     let secp_message =
         secp256k1::Message::from_slice(sha256(&encoded_msg).as_slice()).expect("sha256 is 32 bytes hash");
-    let signature = SECP_SIGN.sign(&secp_message, &secp_secret);
+    let signature = SECP_SIGN.sign_ecdsa(&secp_message, &secp_secret);
 
     let signed_message = SignedMessage {
         from: PublicKey::from_secret_key(&*SECP_SIGN, &secp_secret).serialize().into(),
@@ -1732,7 +1732,7 @@ pub fn process_swap_v2_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PProcessRes
             .expect("sha256 is 32 bytes hash");
 
         SECP_VERIFY
-            .verify(&secp_message, &signature, &pubkey)
+            .verify_ecdsa(&secp_message, &signature, &pubkey)
             .map_to_mm(|e| P2PProcessError::InvalidSignature(e.to_string()))?;
 
         let swap_message = SwapMessage::decode(signed_message.payload.as_slice())

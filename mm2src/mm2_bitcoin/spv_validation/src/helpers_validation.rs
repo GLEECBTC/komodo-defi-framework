@@ -111,7 +111,7 @@ impl MerkleArray<'_> {
             return Err(SPVError::BadMerkleProof);
         }
         let mut digest = H256::default();
-        digest.as_mut().copy_from_slice(&self.0[index * 32..to_index]);
+        digest.copy_from_slice(&self.0[index * 32..to_index]);
         Ok(digest)
     }
 }

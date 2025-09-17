@@ -5,7 +5,7 @@ mod eth_with_token_activation;
 mod init_erc20_token_activation;
 mod init_token;
 mod l2;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
 mod lightning_activation;
 mod platform_coin_with_tokens;
 mod prelude;

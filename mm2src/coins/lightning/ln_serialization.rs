@@ -3,7 +3,7 @@ use crate::lightning::ln_platform::h256_json_from_txid;
 use crate::H256Json;
 use lightning::chain::channelmonitor::Balance;
 use lightning::ln::channelmanager::ChannelDetails;
-use secp256k1v24::PublicKey;
+use secp256k1::PublicKey;
 use serde::{de, Serialize, Serializer};
 use std::fmt;
 use std::net::{SocketAddr, ToSocketAddrs};
@@ -330,43 +330,44 @@ pub enum ClaimableBalance {
 impl From<Balance> for ClaimableBalance {
     fn from(balance: Balance) -> Self {
         match balance {
-            Balance::ClaimableOnChannelClose {
-                claimable_amount_satoshis,
-            } => ClaimableBalance::ClaimableOnChannelClose {
-                claimable_amount_satoshis,
+            Balance::ClaimableOnChannelClose { amount_satoshis } => ClaimableBalance::ClaimableOnChannelClose {
+                claimable_amount_satoshis: amount_satoshis,
             },
             Balance::ClaimableAwaitingConfirmations {
-                claimable_amount_satoshis,
+                amount_satoshis,
                 confirmation_height,
             } => ClaimableBalance::ClaimableAwaitingConfirmations {
-                claimable_amount_satoshis,
+                claimable_amount_satoshis: amount_satoshis,
                 confirmation_height,
             },
             Balance::ContentiousClaimable {
-                claimable_amount_satoshis,
+                amount_satoshis,
                 timeout_height,
+                ..
             } => ClaimableBalance::ContentiousClaimable {
-                claimable_amount_satoshis,
+                claimable_amount_satoshis: amount_satoshis,
                 timeout_height,
             },
             Balance::MaybeTimeoutClaimableHTLC {
-                claimable_amount_satoshis,
+                amount_satoshis,
                 claimable_height,
+                ..
             } => ClaimableBalance::MaybeTimeoutClaimableHTLC {
-                claimable_amount_satoshis,
+                claimable_amount_satoshis: amount_satoshis,
                 claimable_height,
             },
             Balance::MaybePreimageClaimableHTLC {
-                claimable_amount_satoshis,
+                amount_satoshis,
                 expiry_height,
+                ..
             } => ClaimableBalance::MaybePreimageClaimableHTLC {
-                claimable_amount_satoshis,
+                claimable_amount_satoshis: amount_satoshis,
                 expiry_height,
             },
-            Balance::CounterpartyRevokedOutputClaimable {
-                claimable_amount_satoshis,
-            } => ClaimableBalance::CounterpartyRevokedOutputClaimable {
-                claimable_amount_satoshis,
+            Balance::CounterpartyRevokedOutputClaimable { amount_satoshis } => {
+                ClaimableBalance::CounterpartyRevokedOutputClaimable {
+                    claimable_amount_satoshis: amount_satoshis,
+                }
             },
         }
     }

@@ -1,6 +1,6 @@
 use crate::eth_with_token_activation::EthTaskManagerShared;
 use crate::init_erc20_token_activation::Erc20TokenTaskManagerShared;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
 use crate::lightning_activation::LightningTaskManagerShared;
 #[cfg(feature = "enable-sia")]
 use crate::sia_coin_activation::SiaCoinTaskManagerShared;
@@ -21,7 +21,7 @@ pub struct CoinsActivationContext {
     pub(crate) init_eth_task_manager: EthTaskManagerShared,
     pub(crate) init_erc20_token_task_manager: Erc20TokenTaskManagerShared,
     pub(crate) init_tendermint_coin_task_manager: TendermintCoinTaskManagerShared,
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
     pub(crate) init_lightning_task_manager: LightningTaskManagerShared,
 }
 
@@ -39,7 +39,7 @@ impl CoinsActivationContext {
                 init_eth_task_manager: RpcTaskManager::new_shared(ctx.event_stream_manager.clone()),
                 init_erc20_token_task_manager: RpcTaskManager::new_shared(ctx.event_stream_manager.clone()),
                 init_tendermint_coin_task_manager: RpcTaskManager::new_shared(ctx.event_stream_manager.clone()),
-                #[cfg(not(target_arch = "wasm32"))]
+                #[cfg(all(not(target_arch = "wasm32"), feature = "enable-lightning"))]
                 init_lightning_task_manager: RpcTaskManager::new_shared(ctx.event_stream_manager.clone()),
             })
         })

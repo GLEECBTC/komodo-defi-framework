@@ -28,12 +28,13 @@ use lightning::chain::keysinterface::{KeysInterface, Recipient};
 use lightning::chain::Access;
 use lightning::routing::gossip;
 use lightning::routing::router::DefaultRouter;
+use lightning::routing::scoring::ProbabilisticScoringFeeParameters;
 use lightning_background_processor::{BackgroundProcessor, GossipSync};
 use lightning_invoice::payment;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use parking_lot::Mutex as PaMutex;
-use secp256k1v24::Secp256k1;
+use secp256k1::Secp256k1;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{self as json, Value as Json};
@@ -134,6 +135,7 @@ pub struct LightningValidatedParams {
     // as this is a good default value.
     pub payment_retries: Option<usize>,
     // Node's backup path for channels and other data that requires backup.
+    // TODO: This parameter is deprecated and not used anymore. But check if we must have it back for funds security?
     pub backup_path: Option<String>,
 }
 
@@ -378,7 +380,7 @@ async fn start_lightning(
     let node_id = node_id.to_string();
 
     // Initialize Persister
-    let persister = init_persister(ctx, &node_id, conf.ticker.clone(), params.backup_path).await?;
+    let persister = init_persister(ctx, &node_id, conf.ticker.clone()).await?;
 
     // Initialize the P2PGossipSync. This is used for providing routes to send payments over
     task_handle
@@ -396,6 +398,23 @@ async fn start_lightning(
         logger.clone(),
     ));
 
+    // Initialize routing Scorer
+    task_handle
+        .update_in_progress_status(LightningInProgressStatus::ReadingScorerFromFile)
+        .map_mm_err()?;
+    // status_notifier
+    //     .try_send(LightningInProgressStatus::ReadingScorerFromFile)
+    //     .debug_log_with_msg("No one seems interested in LightningInProgressStatus");
+    let scorer = Arc::new(persister.get_scorer(network_graph.clone(), logger.clone()).await?);
+
+    let router = DefaultRouter::new(
+        network_graph.clone(),
+        logger.clone(),
+        keys_manager.get_secure_random_bytes(),
+        scorer.clone(),
+        ProbabilisticScoringFeeParameters::default(),
+    );
+
     // Initialize DB
     let db = init_db(ctx, &node_id, conf.ticker.clone()).await?;
 
@@ -409,6 +428,7 @@ async fn start_lightning(
         persister.clone(),
         db.clone(),
         keys_manager.clone(),
+        router,
         conf.clone().into(),
     )
     .await?;
@@ -441,15 +461,6 @@ async fn start_lightning(
         trusted_nodes.clone(),
     ));
 
-    // Initialize routing Scorer
-    task_handle
-        .update_in_progress_status(LightningInProgressStatus::ReadingScorerFromFile)
-        .map_mm_err()?;
-    // status_notifier
-    //     .try_send(LightningInProgressStatus::ReadingScorerFromFile)
-    //     .debug_log_with_msg("No one seems interested in LightningInProgressStatus");
-    let scorer = Arc::new(persister.get_scorer(network_graph.clone(), logger.clone()).await?);
-
     // Create InvoicePayer
     // random_seed_bytes are additional random seed to improve privacy by adding a random CLTV expiry offset to each path's final hop.
     // This helps obscure the intended recipient from adversarial intermediate hops. The seed is also used to randomize candidate paths during route selection.
@@ -463,7 +474,9 @@ async fn start_lightning(
         logger.clone(),
         router_random_seed_bytes,
         scorer.clone(),
+        ProbabilisticScoringFeeParameters::default(),
     );
+
     let invoice_payer = Arc::new(InvoicePayer::new(
         channel_manager.clone(),
         router,
@@ -530,6 +543,7 @@ async fn start_lightning(
             logger.clone(),
             router_random_seed_bytes,
             scorer,
+            ProbabilisticScoringFeeParameters::default(),
         )),
         logger,
     })
