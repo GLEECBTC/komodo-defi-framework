@@ -186,11 +186,12 @@ pub enum OrderbookP2PHandlerError {
     Internal(String),
 
     #[display(
-        fmt = "Received stale keep alive from pubkey '{from_pubkey}' propagated from '{propagated_from}', will ignore it"
+        fmt = "Received stale keep alive from pubkey '{from_pubkey}' propagated from '{propagated_from}' (delay: {delay}s), will ignore it"
     )]
     StaleKeepAlive {
         from_pubkey: String,
         propagated_from: String,
+        delay: u64,
     },
 
     #[display(
@@ -3224,9 +3225,11 @@ impl Orderbook {
                         "Ignoring a stale PubkeyKeepAlive from {} for pair {}: message.timestamp={} <= last_pair_timestamp={}",
                         from_pubkey, alb_pair, message.timestamp, last_pair_timestamp
                     );
+                    let delay = last_pair_timestamp.saturating_sub(message.timestamp);
                     return MmError::err(OrderbookP2PHandlerError::StaleKeepAlive {
                         from_pubkey: from_pubkey.to_owned(),
                         propagated_from: propagated_from.to_owned(),
+                        delay,
                     });
                 }
             }
