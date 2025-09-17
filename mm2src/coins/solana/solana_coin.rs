@@ -263,6 +263,8 @@ impl SolanaCoin {
         } else {
             let big_decimal = &req.amount * &BigDecimal::from(10u64.pow(SOLANA_DECIMALS as u32));
 
+            // TODO: Check if user can afford the fee.
+
             big_decimal.to_u64().ok_or_else(|| {
                 MmError::new(WithdrawError::InternalError(format!(
                     "Couldn't convert {big_decimal} to u64."
