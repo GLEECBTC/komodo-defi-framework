@@ -53,7 +53,7 @@ pub fn sign_tx(
         .enumerate()
         .map(|(i, input)| {
             match input.prev_script.script_type() {
-                ScriptType::WitnessKey => p2wpkh_spend(&unsigned, i, key_pair, SignatureVersion::WitnessV0, fork_id),
+                ScriptType::WitnessKey => p2wpkh_spend(&unsigned, i, key_pair, fork_id),
                 ScriptType::PubKeyHash => p2pkh_spend(&unsigned, i, key_pair, signature_version, fork_id),
                 // Allow spending legacy P2PK utxos.
                 ScriptType::PubKey => p2pk_spend(&unsigned, i, key_pair, signature_version, fork_id),
@@ -168,7 +168,6 @@ pub fn p2wpkh_spend(
     signer: &TransactionInputSigner,
     input_index: usize,
     key_pair: &KeyPair,
-    signature_version: SignatureVersion,
     fork_id: u32,
 ) -> UtxoSignWithKeyPairResult<TransactionInput> {
     let unsigned_input = get_input(signer, input_index)?;
@@ -188,7 +187,7 @@ pub fn p2wpkh_spend(
         input_index,
         &script_code,
         key_pair,
-        signature_version,
+        SignatureVersion::WitnessV0,
         SIGHASH_ALL,
         fork_id,
     )?;

@@ -21,7 +21,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc::v1::types::ToTxHash;
 use rpc_task::RpcTaskError;
-use script::{SignatureVersion, TransactionInputSigner};
+use script::TransactionInputSigner;
 use serialization::{serialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
 use std::iter::once;
 use std::sync::Arc;
@@ -137,15 +137,6 @@ where
     fn sender_address_string(&self) -> String;
 
     fn request(&self) -> &WithdrawRequest;
-
-    fn signature_version(&self) -> SignatureVersion {
-        match self.sender_address().addr_format() {
-            UtxoAddressFormat::Segwit => SignatureVersion::WitnessV0,
-            UtxoAddressFormat::Standard | UtxoAddressFormat::CashAddress { .. } => {
-                self.coin().as_ref().conf.signature_version
-            },
-        }
-    }
 
     #[allow(clippy::result_large_err)]
     fn on_generating_transaction(&self) -> Result<(), MmError<WithdrawError>>;
@@ -349,7 +340,7 @@ where
         }
 
         sign_params
-            .with_signature_version(self.signature_version())
+            .with_signature_version(self.coin.as_ref().conf.signature_version)
             .with_unsigned_tx(unsigned_tx);
         let sign_params = sign_params.build().map_mm_err()?;
 
@@ -483,7 +474,7 @@ where
         Ok(with_key_pair::sign_tx(
             unsigned_tx,
             &self.key_pair,
-            self.signature_version(),
+            self.coin.as_ref().conf.signature_version,
             self.coin.as_ref().conf.fork_id,
         )
         .map_mm_err()?)
