@@ -4376,7 +4376,7 @@ pub(crate) fn tendermint_tx_internal_id(bytes: &[u8], token_id: Option<BytesJson
 }
 
 #[cfg(test)]
-pub mod tendermint_falsecoin_tests {
+pub mod tests {
     use super::*;
     use crate::DexFeeBurnDestination;
 
