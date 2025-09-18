@@ -127,30 +127,32 @@ impl SolanaToken {
             &protocol_info.mint_address,
         );
 
-        let rpc = platform_coin.rpc_client().await.map_err(|e| SolanaTokenInitError {
-            ticker: ticker.clone(),
-            kind: SolanaTokenInitErrorKind::UnhealthyRPCs,
-        })?;
+        // TODO: Handle non-existent mint accounts, then uncomment this code.
+        //
+        // let rpc = platform_coin.rpc_client().await.map_err(|e| SolanaTokenInitError {
+        //     ticker: ticker.clone(),
+        //     kind: SolanaTokenInitErrorKind::UnhealthyRPCs,
+        // })?;
 
-        let mint_account = rpc
-            .get_account(&protocol_info.mint_address)
-            .map_err(|e| SolanaTokenInitError {
-                ticker: ticker.clone(),
-                kind: SolanaTokenInitErrorKind::QueryError { reason: e.to_string() },
-            })?;
+        // let mint_account = rpc
+        //     .get_account(&protocol_info.mint_address)
+        //     .map_err(|e| SolanaTokenInitError {
+        //         ticker: ticker.clone(),
+        //         kind: SolanaTokenInitErrorKind::QueryError { reason: e.to_string() },
+        //     })?;
 
-        if mint_account.owner != spl_token_program::id() {
-            return MmError::err(SolanaTokenInitError {
-                ticker: ticker.clone(),
-                kind: SolanaTokenInitErrorKind::QueryError {
-                    reason: format!(
-                        "Unsupported SPL program. Expected Program ID: '{}', Got: '{}'.",
-                        spl_token_program::id(),
-                        mint_account.owner
-                    ),
-                },
-            });
-        }
+        // if mint_account.owner != spl_token_program::id() {
+        //     return MmError::err(SolanaTokenInitError {
+        //         ticker: ticker.clone(),
+        //         kind: SolanaTokenInitErrorKind::QueryError {
+        //             reason: format!(
+        //                 "Unsupported SPL program. Expected Program ID: '{}', Got: '{}'.",
+        //                 spl_token_program::id(),
+        //                 mint_account.owner
+        //             ),
+        //         },
+        //     });
+        // }
 
         let token_fields = SolanaTokenFields {
             ticker,
