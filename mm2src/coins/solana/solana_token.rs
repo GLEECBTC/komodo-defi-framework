@@ -190,6 +190,9 @@ impl MmCoin for SolanaToken {
                 .await
                 .map_err(|e| WithdrawError::Transport(e.into_inner()))?;
 
+            // TODO: If platform_coin balance is zero, they can't afford the
+            // fee, so do early-return here.
+
             // `to` can be either a Solana address, or a token address. We create
             // `to_token_account` regardless to support the both cases.
             let to = SolanaAddress::from_str(&req.to).map_err(|e| WithdrawError::InvalidAddress(e.to_string()))?;
