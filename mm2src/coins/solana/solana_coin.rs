@@ -333,7 +333,7 @@ impl MmCoin for SolanaCoin {
             let fee = BigDecimal::from(fee) / BigDecimal::from(10u64.pow(SOLANA_DECIMALS as u32));
 
             let received_by_me = if to == coin.address {
-                amount_dec.clone()
+                &amount_dec - &fee
             } else {
                 BigDecimal::zero()
             };
