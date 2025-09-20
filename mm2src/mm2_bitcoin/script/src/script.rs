@@ -72,6 +72,14 @@ impl ScriptAddress {
             hash,
         }
     }
+
+    /// Creates P2TR-type ScriptAddress
+    pub fn new_p2tr(hash: AddressHashEnum) -> Self {
+        ScriptAddress {
+            kind: keys::AddressScriptType::P2TR,
+            hash,
+        }
+    }
 }
 
 /// Serialized script, used inside transaction inputs and outputs.
@@ -159,6 +167,11 @@ impl Script {
     /// Extra-fast test for pay-to-witness-key-hash scripts.
     pub fn is_pay_to_witness_key_hash(&self) -> bool {
         self.data.len() == 22 && self.data[0] == Opcode::OP_0 as u8 && self.data[1] == Opcode::OP_PUSHBYTES_20 as u8
+    }
+
+    /// Extra-fast test for pay-to-taproot scripts.
+    pub fn is_pay_to_taproot(&self) -> bool {
+        self.data.len() == 34 && self.data[0] == Opcode::OP_1 as u8 && self.data[1] == Opcode::OP_PUSHBYTES_32 as u8
     }
 
     /// Parse witness program. Returns Some(witness program version, code) or None if not a witness program.
@@ -370,8 +383,11 @@ impl Script {
             ScriptType::WitnessKey
         } else if self.is_pay_to_witness_script_hash() {
             ScriptType::WitnessScript
-            // TODO add Call
-        } else {
+        } else if self.is_pay_to_taproot() {
+            ScriptType::Taproot
+        }
+        // TODO add Call
+        else {
             ScriptType::NonStandard
         }
     }
@@ -487,7 +503,11 @@ impl Script {
                 Ok(vec![ScriptAddress::new_p2wpkh(address_hash)])
             },
             ScriptType::Taproot => {
-                Ok(vec![]) // TODO
+                let bytes = self.data.get(2..34).ok_or(keys::Error::InvalidAddress)?;
+                let hash: [u8; 32] = bytes.try_into().map_err(|_| keys::Error::InvalidAddress)?;
+                // FIXME: Don't use AddressHashEnum::WitnessScriptHash variant.
+                let address_hash = AddressHashEnum::WitnessScriptHash(hash.into());
+                Ok(vec![ScriptAddress::new_p2tr(address_hash)])
             },
             ScriptType::CallSender => {
                 Ok(vec![]) // TODO

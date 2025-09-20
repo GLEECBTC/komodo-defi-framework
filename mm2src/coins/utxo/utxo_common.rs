@@ -343,6 +343,8 @@ pub fn addresses_from_script<T: UtxoCommonOps>(coin: &T, script: &Script) -> Res
                 ),
                 AddressScriptType::P2WPKH => (UtxoAddressFormat::Segwit, AddressBuilderOption::PubkeyHash(dst.hash)),
                 AddressScriptType::P2WSH => (UtxoAddressFormat::Segwit, AddressBuilderOption::ScriptHash(dst.hash)),
+                // FIXME: Differentiate P2TR from P2WSH.
+                AddressScriptType::P2TR => (UtxoAddressFormat::Segwit, AddressBuilderOption::ScriptHash(dst.hash)),
             };
 
             AddressBuilder::new(

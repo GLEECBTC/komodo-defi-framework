@@ -53,6 +53,7 @@ pub fn sign_tx(
         .enumerate()
         .map(|(i, input)| {
             match input.prev_script.script_type() {
+                ScriptType::Taproot => p2tr_spend(&unsigned, i, key_pair, fork_id),
                 ScriptType::WitnessKey => p2wpkh_spend(&unsigned, i, key_pair, fork_id),
                 ScriptType::PubKeyHash => p2pkh_spend(&unsigned, i, key_pair, signature_version, fork_id),
                 // Allow spending legacy P2PK utxos.
@@ -197,6 +198,19 @@ pub fn p2wpkh_spend(
         fork_id,
         signature,
     ))
+}
+
+/// Creates signed input spending p2tr output
+pub fn p2tr_spend(
+    signer: &TransactionInputSigner,
+    input_index: usize,
+    _key_pair: &KeyPair,
+    _fork_id: u32,
+) -> UtxoSignWithKeyPairResult<TransactionInput> {
+    // Don't support signing p2tr with key pair for now
+    return MmError::err(UtxoSignWithKeyPairError::UnspendableUTXO {
+        script: get_input(signer, input_index)?.prev_script.clone(),
+    });
 }
 
 /// Calculates the input script hash and sign it using `key_pair`.

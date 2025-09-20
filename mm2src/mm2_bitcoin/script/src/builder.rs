@@ -61,6 +61,18 @@ impl Builder {
         }
     }
 
+    /// Builds p2tr script pubkey
+    pub fn build_p2tr(address_hash: &AddressHashEnum) -> Result<Script, Error> {
+        match address_hash {
+            // FIXME: Don't use AddressHashEnum::WitnessScriptHash variant.
+            AddressHashEnum::WitnessScriptHash(x_only_pubkey) => Ok(Builder::default()
+                .push_opcode(Opcode::OP_1)
+                .push_data(x_only_pubkey.as_ref())
+                .into_script()),
+            AddressHashEnum::AddressHash(_) => Err(Error::WitnessHashMismatched),
+        }
+    }
+
     /// Builds op_return script
     pub fn build_nulldata(bytes: &[u8]) -> Script {
         Builder::default()

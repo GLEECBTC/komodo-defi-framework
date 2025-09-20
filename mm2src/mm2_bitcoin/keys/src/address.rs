@@ -43,6 +43,11 @@ pub enum AddressScriptType {
     /// as the scripthash, eg: bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3.
     /// https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki
     P2WSH,
+    /// Pay to Taproot
+    /// Segwit v1 P2TR which begins with the human readable part followed by 1 followed by 59 base32 characters
+    /// as the scripthash, eg: bc1p6gps4j04duwphrhkwx0vhl6r9kkq8m8n7r9r02rvwzrekjt0f4pskz8zas.
+    /// https://github.com/bitcoin/bips/blob/master/bip-0350.mediawiki
+    P2TR,
 }
 
 #[derive(Clone, Debug, Default, Display, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -55,7 +60,8 @@ pub enum AddressFormat {
     #[default]
     Standard,
     /// Segwit Address
-    /// https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki
+    /// https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki (bech32 for v0)
+    /// https://github.com/bitcoin/bips/blob/master/bip-0350.mediawiki (bech32m for v1+)
     #[serde(rename = "segwit")]
     Segwit,
     /// Bitcoin Cash specific address format.

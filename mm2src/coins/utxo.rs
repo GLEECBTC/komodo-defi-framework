@@ -1921,6 +1921,7 @@ pub fn output_script(address: &Address) -> Result<Script, keys::Error> {
         AddressScriptType::P2SH => Ok(Builder::build_p2sh(address.hash())),
         AddressScriptType::P2WPKH => Builder::build_p2wpkh(address.hash()),
         AddressScriptType::P2WSH => Builder::build_p2wsh(address.hash()),
+        AddressScriptType::P2TR => Builder::build_p2tr(address.hash()),
     }
 }
 
