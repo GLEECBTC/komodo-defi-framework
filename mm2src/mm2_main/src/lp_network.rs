@@ -223,6 +223,15 @@ async fn process_p2p_message(
                     }
                 }
 
+                // TODO(stale-keep-alive):
+                // - Currently we do not ban on StaleKeepAlive as the reason for some identical payloads is not known;
+                //   we only don't process / ignore these payloads based on maker timestamp checks.
+                //   Once all nodes update to this version, we still can't ban unless we are sure that dedup cache is working well
+                //   and the stale messages that are delivered to the app layer are truly a sign of misbehavior.
+                // - App-layer timestamp checks are sufficient for now since banning risks penalizing good peers.
+                // - Once we use a stable, content-derived MessageId and tune the dedup cache, we can implement banning.
+                //   This will result in better memory and resource usage, nothing more.
+
                 return MmError::err(P2PProcessError::ValidationFailed(e.to_string()));
             }
         },

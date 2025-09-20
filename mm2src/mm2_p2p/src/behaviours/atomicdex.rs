@@ -749,6 +749,33 @@ fn start_gossipsub(
         // to set default parameters for gossipsub use:
         // let gossipsub_config = gossipsub::GossipsubConfig::default();
 
+        // TODO(message-id/dedup):
+        // - Switch to a stable, content-derived MessageId.
+        //   Hash choice: BLAKE3 (very fast) or SHA-256 (ubiquitous); both are collision-resistant.
+        // - Why: `DefaultHasher` varies across Rust versions/targets and is randomized per process,
+        //   making it unsuitable for cross-run/impl dedup. A content-derived id also improves IHAVE/IWANT
+        //   behavior, reduces replays, and makes ops/memory usage more predictable.
+        // - Core rules:
+        //   * While we rely on app-layer signatures embedded in the payload, hash the canonical application
+        //     payload bytes only (exclude `sequence_number`, author/pubkey, per-peer metadata, or other
+        //     ephemeral fields).
+        //   * Emit a fixed-size ID (32 bytes); use the raw digest bytes as `MessageId`.
+        //   * Apply domain separation to avoid cross-topic collisions
+        //     (e.g., hash(topic_hash.as_str() || 0x00 || payload_bytes_pre_sign)).
+        //   * After migrating to libp2p Strict (author+seqno signatures), include the author pubkey
+        //     in the digest (and optionally the seqno) to preserve per-publisher identity and avoid
+        //     cross-publisher dedup (e.g., hash(topic || 0x00 || author_pubkey || 0x01 || payload_pre_sign
+        //     [|| 0x02 || seqno])).
+        // - Integration:
+        //   * Keep `ValidationMode::Permissive` during rollout. Plan migration to libp2p-level signing:
+        //     move signing/verification into libp2p’s signature path (author pubkey + per-sender seqno).
+        //     Once all publishers attach libp2p signatures and peers verify them, enable `Strict` and
+        //     update the MessageId input as above; deprecate the app-layer signature wrapper (or keep as
+        //     defense-in-depth).
+        //   * Duplicate-cache TTL: libp2p defaults to ~60s; consider pinning and logging it at startup.
+        // - Security: prefer cryptographic hashes (BLAKE3 or SHA-256); avoid non-crypto hashes in adversarial settings.
+        // - MessageId is for dedup only; authenticity is enforced by signatures (libp2p `Strict` once migrated).
+
         // To content-address message, we can take the hash of message and use it as an ID.
         let message_id_fn = |message: &GossipsubMessage| {
             let mut s = DefaultHasher::new();

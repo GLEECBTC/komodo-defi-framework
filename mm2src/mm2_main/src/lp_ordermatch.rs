@@ -3188,6 +3188,14 @@ impl Orderbook {
     /// Notes:
     /// - Maker timestamps are used for monotonicity/anti‑replay; GC uses local receive times.
     /// - The caller must ignore Unsolicited pairs in sync responses when applying the response.
+    // TODO(message-id/dedup):
+    // - We occasionally see “stale” keep-alives reappear, one reason maybe be peers re-broadcasting identical
+    //   payloads with different gossipsub sequence numbers. We currently reject these at the
+    //   application layer based on maker timestamps.
+    // - Potential improvement: use a stable, content-derived MessageId to reduce duplicates. We can then ban
+    //  peers that send the same message twice within the dedup cache ttl. Maker timestamps would still be checked
+    //  per pair to prevent any type of replays,  so this is purely an optimization to reduce redundant processing.
+    // - Note: app-layer signatures still prevent hijacking; this is purely for dedup/content-addressing.
     fn process_keep_alive(
         &mut self,
         from_pubkey: &str,
@@ -3200,6 +3208,7 @@ impl Orderbook {
         // types (e.g., a module in mm2_p2p or lp_network).
         // For keep-alive, enforce a minimum interval per pubkey (>= 20–30s) or X messages/minute.
         // When throttled, early‑return without syncing/propagating, before any state mutation.
+        // Temp ban peers that exceed their limits.
 
         // Pre-scan: if any single pair is stale => treat the whole message as stale.
         // Note: We currently send keep-alives per pair (trie_roots has a single entry),
