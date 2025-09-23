@@ -62,6 +62,8 @@ pub enum SegwitAddrType {
     P2wpkh,
     /// pay-to-witness-script-hash
     P2wsh,
+    /// pay-to-taproot
+    P2tr,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -84,6 +86,16 @@ impl SegwitAddress {
         }
     }
 
+    // TODO: This is test-only for now because we don't want to use a potentially panicing code in production.
+    #[cfg(test)]
+    pub fn new_with_version(hash: &AddressHashEnum, hrp: String, version: u8) -> SegwitAddress {
+        SegwitAddress {
+            hrp,
+            version: bech32::u5::try_from_u8(version).expect("0<32"),
+            program: hash.to_vec(),
+        }
+    }
+
     /// Get the address type of the address.
     /// None if unknown or non-standard.
     pub fn address_type(&self) -> Option<SegwitAddrType> {
@@ -92,6 +104,10 @@ impl SegwitAddress {
             0 => match self.program.len() {
                 20 => Some(SegwitAddrType::P2wpkh),
                 32 => Some(SegwitAddrType::P2wsh),
+                _ => None,
+            },
+            1 => match self.program.len() {
+                32 => Some(SegwitAddrType::P2tr),
                 _ => None,
             },
             _ => None,
@@ -214,6 +230,7 @@ mod tests {
     use super::*;
     use crypto::sha256;
     use hex::ToHex;
+    use primitives::hash::H256;
     use Public;
 
     fn hex_to_bytes(s: &str) -> Option<Vec<u8>> {
@@ -252,6 +269,20 @@ mod tests {
             "bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3"
         );
         assert_eq!(addr.address_type(), Some(SegwitAddrType::P2wsh));
+    }
+
+    #[test]
+    fn test_p2tr_address() {
+        let x_only_pub = "d5e89e0b73605abba690ba5e00484e279d006283bed0055a0530fb6a8c9adac7";
+        let bytes = hex_to_bytes(x_only_pub).unwrap();
+        let x_only_pub = H256::from_slice(&bytes).unwrap();
+        let hrp = "tb";
+        let addr = SegwitAddress::new_with_version(&AddressHashEnum::WitnessScriptHash(x_only_pub), hrp.to_string(), 1);
+        assert_eq!(
+            &addr.to_string(),
+            "tb1p6h5fuzmnvpdthf5shf0qqjzwy7wsqc5rhmgq2ks9xrak4ry6mtrscsqvzp"
+        );
+        assert_eq!(addr.address_type(), Some(SegwitAddrType::P2tr));
     }
 
     #[test]
