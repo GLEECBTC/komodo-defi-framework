@@ -83,7 +83,7 @@ pub(super) fn utxo_coin_fields_for_test(
         None
     };
     let addr_format = if is_segwit_coin {
-        UtxoAddressFormat::Segwit
+        UtxoAddressFormat::Segwit { version: 0 }
     } else {
         UtxoAddressFormat::Standard
     };

@@ -1876,7 +1876,6 @@ async fn generate_tx<T>(
 where
     T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps + UtxoTxBroadcastOps,
 {
-    let my_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err().await);
     let key_pair = try_tx_s!(coin.as_ref().priv_key_policy.activated_key_or_err());
     let mut builder = UtxoTxBuilder::new(coin)
         .await
@@ -1899,15 +1898,10 @@ where
         })
         .collect();
 
-    let signature_version = match my_address.addr_format() {
-        UtxoAddressFormat::Segwit => SignatureVersion::WitnessV0,
-        _ => coin.as_ref().conf.signature_version,
-    };
-
     let signed = try_tx_s!(sign_tx(
         unsigned,
         key_pair,
-        signature_version,
+        coin.as_ref().conf.signature_version,
         coin.as_ref().conf.fork_id
     ));
 

@@ -63,7 +63,10 @@ pub enum AddressFormat {
     /// https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki (bech32 for v0)
     /// https://github.com/bitcoin/bips/blob/master/bip-0350.mediawiki (bech32m for v1+)
     #[serde(rename = "segwit")]
-    Segwit,
+    Segwit {
+        #[serde(default)]
+        version: u8,
+    },
     /// Bitcoin Cash specific address format.
     /// https://github.com/bitcoincashorg/bitcoincash.org/blob/master/spec/cashaddr.md
     #[serde(rename = "cashaddress")]
@@ -78,8 +81,16 @@ pub enum AddressFormat {
 }
 
 impl AddressFormat {
-    pub fn is_segwit(&self) -> bool {
-        matches!(*self, AddressFormat::Segwit)
+    pub fn is_segwit_v0(&self) -> bool {
+        matches!(*self, AddressFormat::Segwit { version: 0 })
+    }
+
+    pub fn is_segwit_v1(&self) -> bool {
+        matches!(*self, AddressFormat::Segwit { version: 1 })
+    }
+
+    pub fn is_not_segwit(&self) -> bool {
+        matches!(*self, AddressFormat::CashAddress { .. } | AddressFormat::Standard)
     }
 
     pub fn is_cashaddress(&self) -> bool {
@@ -179,10 +190,12 @@ impl Address {
 
     /// Returns true if output script type is pubkey hash (p2pkh or p2wpkh)
     pub fn is_pubkey_hash(&self) -> bool {
-        if matches!(self.addr_format, AddressFormat::Segwit) {
+        if self.addr_format.is_segwit_v0() {
             self.script_type == AddressScriptType::P2WPKH
-        } else {
+        } else if self.addr_format.is_not_segwit() {
             self.script_type == AddressScriptType::P2PKH
+        } else {
+            false
         }
     }
 
@@ -191,8 +204,8 @@ impl Address {
             AddressFormat::Standard => {
                 Ok(LegacyAddress::new(&self.hash, self.prefix.clone(), self.checksum_type).to_string())
             },
-            AddressFormat::Segwit => match &self.hrp {
-                Some(hrp) => Ok(SegwitAddress::new(&self.hash, hrp.clone()).to_string()),
+            AddressFormat::Segwit { version } => match &self.hrp {
+                Some(hrp) => Ok(SegwitAddress::new(&self.hash, hrp.clone(), *version).to_string()),
                 None => Err("Cannot display segwit address for a coin with no bech32_hrp in config".into()),
             },
             AddressFormat::CashAddress {
@@ -293,14 +306,20 @@ impl Address {
     pub fn from_segwitaddress(segaddr: &str, checksum_type: ChecksumType) -> Result<Address, String> {
         let address = SegwitAddress::from_str(segaddr).map_err(|e| e.to_string())?;
 
-        let (script_type, mut hash) = if address.program.len() == 20 {
-            (AddressScriptType::P2WPKH, AddressHashEnum::default_address_hash())
-        } else if address.program.len() == 32 {
-            (AddressScriptType::P2WSH, AddressHashEnum::default_witness_script_hash())
-        } else {
-            return Err("Expect either 20 or 32 bytes long hash".into());
+        let (script_type, mut hash) = match (address.version_as_u8(), address.program.len()) {
+            (0, 20) => (AddressScriptType::P2WPKH, AddressHashEnum::default_address_hash()),
+            (0, 32) => (AddressScriptType::P2WSH, AddressHashEnum::default_witness_script_hash()),
+            (0, _) => return Err("Expect either 20 or 32 bytes long hash for witness v0 address".into()),
+            (1, 32) => (AddressScriptType::P2TR, AddressHashEnum::default_witness_script_hash()),
+            (1, _) => return Err("Expect 32 bytes long public key for witness v1 address".into()),
+            (v, _) => return Err(format!("Unsupported segwit version: {v}")),
         };
+
         hash.copy_from_slice(address.program.as_slice());
+
+        let addr_format = AddressFormat::Segwit {
+            version: address.version_as_u8(),
+        };
 
         let hrp = Some(address.hrp);
 
@@ -310,15 +329,17 @@ impl Address {
             checksum_type,
             hrp,
             pubkey: None,
-            addr_format: AddressFormat::Segwit,
+            addr_format,
             script_type,
         })
     }
 
     pub fn to_segwitaddress(&self) -> Result<SegwitAddress, String> {
-        match &self.hrp {
-            Some(hrp) => Ok(SegwitAddress::new(&self.hash, hrp.to_string())),
-            None => Err("hrp must be provided for segwit address".into()),
+        match (&self.hrp, &self.addr_format) {
+            (Some(hrp), AddressFormat::Segwit { version }) => {
+                Ok(SegwitAddress::new(&self.hash, hrp.to_string(), *version))
+            },
+            _ => Err("hrp and segwit version must be provided for segwit address".into()),
         }
     }
 }
@@ -326,9 +347,12 @@ impl Address {
 impl fmt::Display for Address {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self.addr_format {
-            AddressFormat::Segwit => {
-                SegwitAddress::new(&self.hash, self.hrp.clone().expect("Segwit address should have an hrp")).fmt(f)
-            },
+            AddressFormat::Segwit { version } => SegwitAddress::new(
+                &self.hash,
+                self.hrp.clone().expect("Segwit address should have an hrp"),
+                *version,
+            )
+            .fmt(f),
             AddressFormat::CashAddress {
                 network,
                 pub_addr_prefix,

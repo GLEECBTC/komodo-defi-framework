@@ -260,7 +260,7 @@ impl InitL2ActivationOps for LightningCoin {
         // Channel funding transactions need to spend segwit outputs
         // and while the witness script can be generated from pubkey and be used
         // it's better for the coin to be enabled in segwit to check if balance is enough for funding transaction, etc...
-        if !platform_coin.addr_format().is_segwit() {
+        if !platform_coin.addr_format().is_segwit_v0() {
             return MmError::err(
                 LightningValidationErr::UnsupportedMode("Lightning network".into(), "segwit".into()).into(),
             );

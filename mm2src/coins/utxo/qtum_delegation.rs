@@ -131,7 +131,7 @@ impl QtumDelegationOps for QtumCoin {
 
 impl QtumCoin {
     async fn remove_delegation_impl(&self) -> DelegationResult {
-        if self.addr_format().is_segwit() {
+        if self.addr_format().is_segwit_v0() {
             return MmError::err(DelegationError::DelegationOpsNotSupported {
                 reason: "Qtum doesn't support delegation for segwit".to_string(),
             });
@@ -236,7 +236,7 @@ impl QtumCoin {
                 amount,
                 staker,
                 am_i_staking,
-                is_staking_supported: !my_address.addr_format().is_segwit(),
+                is_staking_supported: !my_address.addr_format().is_segwit_v0(),
             }
             .into(),
         };
@@ -244,7 +244,7 @@ impl QtumCoin {
     }
 
     async fn add_delegation_impl(&self, request: QtumDelegationRequest) -> DelegationResult {
-        if self.addr_format().is_segwit() {
+        if self.addr_format().is_segwit_v0() {
             return MmError::err(DelegationError::DelegationOpsNotSupported {
                 reason: "Qtum doesn't support delegation for segwit".to_string(),
             });

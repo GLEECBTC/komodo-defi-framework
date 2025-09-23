@@ -529,7 +529,7 @@ pub trait UtxoCoinBuilderCommonOps {
 
         let mut address_format = match format_from_req {
             Some(from_req) => {
-                if from_req.is_segwit() != format_from_conf.is_segwit() {
+                if from_req.is_segwit_v0() != format_from_conf.is_segwit_v0() {
                     let error = format!(
                         "Both conf {format_from_conf:?} and request {from_req:?} must be either Segwit or Standard/CashAddress"
                     );
@@ -552,7 +552,7 @@ pub trait UtxoCoinBuilderCommonOps {
         }
 
         let is_segwit_in_conf = self.conf()["segwit"].as_bool().unwrap_or(false);
-        if address_format.is_segwit() && (!is_segwit_in_conf || self.conf()["bech32_hrp"].is_null()) {
+        if address_format.is_segwit_v0() && (!is_segwit_in_conf || self.conf()["bech32_hrp"].is_null()) {
             let error =
                 "Cannot use Segwit address format for coin without segwit support or bech32_hrp in config".to_owned();
             return MmError::err(UtxoCoinBuildError::from(UtxoConfError::InvalidAddressFormat(error)));

@@ -80,7 +80,7 @@ impl AddressBuilder {
                 addr_format: self.addr_format.clone(),
                 script_type: self.get_legacy_script_type(build_option),
             }),
-            AddressFormat::Segwit => {
+            AddressFormat::Segwit { .. } => {
                 self.check_segwit_hrp()?;
                 self.check_segwit_hash(build_option)?;
                 Ok(Address {

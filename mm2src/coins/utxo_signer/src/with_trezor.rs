@@ -57,7 +57,7 @@ impl<TxP: TxProvider + Send + Sync> TrezorTxSigner<'_, TxP> {
     async fn get_trezor_unsigned_tx(&self) -> UtxoSignTxResult<UnsignedUtxoTx> {
         let mut inputs = Vec::with_capacity(self.params.unsigned_tx.inputs.len());
         for (unsigned_input, input_info) in self.params.inputs() {
-            let unsigned_input = self
+            let unsigned_input: UnsignedTxInput = self
                 .get_trezor_unsigned_input(unsigned_input, input_info)
                 .await
                 .map_mm_err()?;

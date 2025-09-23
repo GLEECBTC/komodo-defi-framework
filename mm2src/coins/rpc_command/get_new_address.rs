@@ -348,7 +348,8 @@ impl RpcTask for InitGetNewAddressTask {
                     AddressFormat::Standard | AddressFormat::CashAddress { .. } => {
                         Some(TrezorInputScriptType::SpendAddress)
                     },
-                    AddressFormat::Segwit => Some(TrezorInputScriptType::SpendWitness),
+                    AddressFormat::Segwit { version: 0 } => Some(TrezorInputScriptType::SpendWitness),
+                    _ => panic!("FIXME: Implement erroring here and add segwit v1 support"),
                 };
                 Ok(GetNewAddressResponseEnum::Map(
                     get_new_address_helper(
@@ -368,7 +369,8 @@ impl RpcTask for InitGetNewAddressTask {
                     AddressFormat::Standard | AddressFormat::CashAddress { .. } => {
                         Some(TrezorInputScriptType::SpendAddress)
                     },
-                    AddressFormat::Segwit => Some(TrezorInputScriptType::SpendWitness),
+                    AddressFormat::Segwit { version: 0 } => Some(TrezorInputScriptType::SpendWitness),
+                    _ => panic!("FIXME: Implement erroring here and add segwit v1 support"),
                 };
                 Ok(GetNewAddressResponseEnum::Map(
                     get_new_address_helper(

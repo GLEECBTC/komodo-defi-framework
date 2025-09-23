@@ -64,7 +64,9 @@ impl SendingOutputInfo {
     #[inline]
     pub fn trezor_output_script_type(&self) -> TrezorOutputScriptType {
         match self.destination_address {
-            OutputDestination::Change { ref addr_format, .. } if *addr_format == AddressFormat::Segwit => {
+            OutputDestination::Change { ref addr_format, .. }
+                if matches!(*addr_format, AddressFormat::Segwit { .. }) =>
+            {
                 TrezorOutputScriptType::PayToWitness
             },
             OutputDestination::Change { .. } | OutputDestination::Plain { .. } => TrezorOutputScriptType::PayToAddress,

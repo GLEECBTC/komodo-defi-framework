@@ -25,6 +25,8 @@ const ZCASH_SIG_HASH_PERSONALIZATION: &[u8] = b"ZcashSigHash";
 pub enum SignatureVersion {
     #[serde(rename = "base")]
     Base,
+    // FIXME: Remove the version labelling from here since it's already encoded in AddressFormat.
+    // Matter of fact, we can remove this variant entirely as the AddressFormat already implies it.
     #[serde(rename = "witness_v0")]
     WitnessV0,
     #[serde(rename = "fork_id")]

@@ -213,7 +213,7 @@ where
             amount: big_decimal_from_sat(data.fee_amount as i64, decimals),
         };
         let tx_hex = match coin.addr_format() {
-            UtxoAddressFormat::Segwit => serialize_with_flags(&signed, SERIALIZE_TRANSACTION_WITNESS).into(),
+            UtxoAddressFormat::Segwit { .. } => serialize_with_flags(&signed, SERIALIZE_TRANSACTION_WITNESS).into(),
             _ => serialize(&signed).into(),
         };
         Ok(TransactionDetails {
@@ -308,7 +308,7 @@ where
                 .inputs
                 .iter()
                 .map(|_input| match self.from_address.addr_format() {
-                    AddressFormat::Segwit => SpendingInputInfo::P2WPKH {
+                    AddressFormat::Segwit { version: 0 } => SpendingInputInfo::P2WPKH {
                         address_derivation_path: self.from_derivation_path.clone(),
                         address_pubkey: self.from_pubkey,
                     },
@@ -316,6 +316,8 @@ where
                         address_derivation_path: self.from_derivation_path.clone(),
                         address_pubkey: self.from_pubkey,
                     },
+                    AddressFormat::Segwit { version: 1 } => panic!("FIXME: Implement this"),
+                    _ => panic!("FIXME: this is unreachable if we trust our AddressFormat construction already validates the version, but we better handle this as an error instead.")
                 }),
         );
         sign_params.add_outputs_infos(once(SendingOutputInfo {

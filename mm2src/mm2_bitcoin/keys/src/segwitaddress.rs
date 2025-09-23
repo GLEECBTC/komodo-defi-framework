@@ -79,19 +79,24 @@ pub struct SegwitAddress {
 }
 
 impl SegwitAddress {
-    pub fn new(hash: &AddressHashEnum, hrp: String) -> SegwitAddress {
+    pub fn new(hash: &AddressHashEnum, hrp: String, version: u8) -> SegwitAddress {
         SegwitAddress {
             hrp,
-            version: bech32::u5::try_from_u8(0).expect("0<32"),
+            // FIXME: Better not panic here since version is supplied from outside.
+            version: bech32::u5::try_from_u8(version).expect("version must be < 32"),
             program: hash.to_vec(),
         }
+    }
+
+    pub fn version_as_u8(&self) -> u8 {
+        self.version.to_u8()
     }
 
     /// Get the address type of the address.
     /// None if unknown or non-standard.
     pub fn address_type(&self) -> Option<SegwitAddrType> {
         // BIP-141 p2wpkh or p2wsh addresses.
-        match self.version.to_u8() {
+        match self.version_as_u8() {
             0 => match self.program.len() {
                 20 => Some(SegwitAddrType::P2wpkh),
                 32 => Some(SegwitAddrType::P2wsh),
@@ -137,7 +142,14 @@ impl fmt::Display for SegwitAddress {
         } else {
             fmt as &mut dyn fmt::Write
         };
-        let mut bech32_writer = bech32::Bech32Writer::new(self.hrp.as_str(), bech32::Variant::Bech32, writer)?;
+        let bech32_version = match self.version.to_u8() {
+            0 => bech32::Variant::Bech32,
+            1 => bech32::Variant::Bech32m,
+            // Ideally, all v1+ segwit addresses should be formatted using Bech32m.
+            // But let's error on such attempts unless we explicitly support higher versions.
+            _ => return Err(fmt::Error),
+        };
+        let mut bech32_writer = bech32::Bech32Writer::new(self.hrp.as_str(), bech32_version, writer)?;
         bech32::WriteBase32::write_u5(&mut bech32_writer, self.version)?;
         bech32::ToBase32::write_base32(&self.program, &mut bech32_writer)
     }
@@ -155,11 +167,10 @@ impl FromStr for SegwitAddress {
             return Err(Error::EmptyBech32Payload);
         }
 
-        let mut is_bech32_non_modified = false;
+        // We perform this match to trigger a compilation error if a new variant gets added that we didn't handle yet.
         match variant {
-            bech32::Variant::Bech32 => is_bech32_non_modified = true,
+            bech32::Variant::Bech32 => (),
             bech32::Variant::Bech32m => (),
-            // Important: If a new variant is added we should return an error until we support the new variant
         }
 
         // Get the script version and program (converted from 5-bit to 8-bit)
@@ -173,8 +184,10 @@ impl FromStr for SegwitAddress {
             return Err(Error::InvalidWitnessVersion(version.to_u8()));
         }
 
-        // Only support segwit v0 and v1.
-        if [0, 1].contains(&version.to_u8()) {
+        // Only support segwit v0 and v1. Note that we are relaxing this check in tests
+        // so to test the detection of other errors (invalid length, wrong encoding used, etc...)
+        #[cfg(not(test))]
+        if ![0, 1].contains(&version.to_u8()) {
             return Err(Error::UnsupportedWitnessVersion(version.to_u8()));
         }
 
@@ -182,16 +195,23 @@ impl FromStr for SegwitAddress {
             return Err(Error::InvalidWitnessProgramLength(program.len()));
         }
 
-        // Bech32 length check for segwit v0 (later versions use bech32m which isn't vulnerable to this problem).
-        // Important: we should be careful when using new program lengths since a valid Bech32 string can be modified according to
-        // the below 2 links while still having a valid checksum.
-        // https://github.com/bitcoin/bips/blob/master/bip-0350.mediawiki#motivation
-        // https://github.com/sipa/bech32/issues/51
-        if version.to_u8() == 0 && program.len() != 20 && program.len() != 32 {
-            return Err(Error::InvalidSegwitV0ProgramLength(program.len()));
+        if version.to_u8() == 0 {
+            // Bech32 length check for segwit v0 (later versions use bech32m which isn't vulnerable to this problem).
+            // Important: we should be careful when using new program lengths since a valid Bech32 string can be modified according to
+            // the below 2 links while still having a valid checksum.
+            // https://github.com/bitcoin/bips/blob/master/bip-0350.mediawiki#motivation
+            // https://github.com/sipa/bech32/issues/51
+            if program.len() != 20 && program.len() != 32 {
+                return Err(Error::InvalidSegwitV0ProgramLength(program.len()));
+            }
+            if variant == bech32::Variant::Bech32m {
+                return Err(Error::UnsupportedAddressVariant(
+                    "Bech32m is not supported for witness version 0. Bech32 should be used instead.".into(),
+                ));
+            }
         }
 
-        if version.to_u8() != 0 && is_bech32_non_modified {
+        if version.to_u8() != 0 && variant == bech32::Variant::Bech32 {
             return Err(Error::UnsupportedAddressVariant(format!(
                 "Bech32 is not supported for witness version {}. Bech32m should be used instead.",
                 version.to_u8()
@@ -228,7 +248,7 @@ mod tests {
         let public_key = Public::from_slice(&bytes).unwrap();
         let hash = public_key.address_hash();
         let hrp = "bc";
-        let addr = SegwitAddress::new(&AddressHashEnum::AddressHash(hash), hrp.to_string());
+        let addr = SegwitAddress::new(&AddressHashEnum::AddressHash(hash), hrp.to_string(), 0);
         assert_eq!(&addr.to_string(), "bc1qvzvkjn4q3nszqxrv3nraga2r822xjty3ykvkuw");
         assert_eq!(addr.address_type(), Some(SegwitAddrType::P2wpkh));
     }
@@ -239,7 +259,7 @@ mod tests {
         let bytes = hex_to_bytes(script).unwrap();
         let hash = sha256(&bytes);
         let hrp = "bc";
-        let addr = SegwitAddress::new(&AddressHashEnum::WitnessScriptHash(hash), hrp.to_string());
+        let addr = SegwitAddress::new(&AddressHashEnum::WitnessScriptHash(hash), hrp.to_string(), 0);
         assert_eq!(
             &addr.to_string(),
             "bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3"

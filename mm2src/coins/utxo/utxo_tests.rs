@@ -3650,7 +3650,7 @@ fn test_withdraw_to_p2wpkh() {
 
     // Create a p2wpkh address for the test coin
     let p2wpkh_address = AddressBuilder::new(
-        UtxoAddressFormat::Segwit,
+        UtxoAddressFormat::Segwit { version: 0 },
         *block_on(coin.as_ref().derivation_method.unwrap_single_addr()).checksum_type(),
         NetworkAddressPrefixes::default(),
         coin.as_ref().conf.bech32_hrp.clone(),
@@ -3902,11 +3902,14 @@ fn test_split_qtum() {
     // fee_amount must be higher than the minimum fee
     assert!(data.fee_amount > 400_000);
     log!("Unsigned tx = {:?}", unsigned);
-    let signature_version = match p2pkh_address.addr_format() {
-        UtxoAddressFormat::Segwit => SignatureVersion::WitnessV0,
-        _ => coin.as_ref().conf.signature_version,
-    };
-    let signed = sign_tx(unsigned, key_pair, signature_version, coin.as_ref().conf.fork_id).unwrap();
+
+    let signed = sign_tx(
+        unsigned,
+        key_pair,
+        coin.as_ref().conf.signature_version,
+        coin.as_ref().conf.fork_id,
+    )
+    .unwrap();
     log!("Signed tx = {:?}", signed);
     let res = block_on(coin.broadcast_tx(&signed)).unwrap();
     log!("Res = {:?}", res);
