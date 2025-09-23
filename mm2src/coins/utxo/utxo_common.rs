@@ -343,6 +343,9 @@ pub fn addresses_from_script<T: UtxoCommonOps>(coin: &T, script: &Script) -> Res
                 ),
                 AddressScriptType::P2WPKH => (UtxoAddressFormat::Segwit, AddressBuilderOption::PubkeyHash(dst.hash)),
                 AddressScriptType::P2WSH => (UtxoAddressFormat::Segwit, AddressBuilderOption::ScriptHash(dst.hash)),
+                AddressScriptType::P2TR => {
+                    unreachable!("Currently we don't parse taproot addresses from scripts in `extract_destinations`.")
+                },
             };
 
             AddressBuilder::new(

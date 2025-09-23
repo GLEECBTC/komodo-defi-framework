@@ -70,7 +70,7 @@ pub struct SegwitAddress {
     /// The human-readable part
     pub hrp: String,
     /// The witness program version
-    version: bech32::u5,
+    pub version: bech32::u5,
     /// The witness program
     pub program: Vec<u8>,
 }
@@ -147,9 +147,11 @@ impl FromStr for SegwitAddress {
         if payload.is_empty() {
             return Err(Error::EmptyBech32Payload);
         }
+
+        let mut is_bech32_non_modified = false;
         match variant {
-            bech32::Variant::Bech32 => (),
-            bech32::Variant::Bech32m => return Err(Error::UnsupportedAddressVariant("Bech32m".into())),
+            bech32::Variant::Bech32 => is_bech32_non_modified = true,
+            bech32::Variant::Bech32m => (),
             // Important: If a new variant is added we should return an error until we support the new variant
         }
 
@@ -163,22 +165,30 @@ impl FromStr for SegwitAddress {
         if version.to_u8() > 16 {
             return Err(Error::InvalidWitnessVersion(version.to_u8()));
         }
+
+        // Only support segwit v0 and v1.
+        if ![0, 1].contains(&version.to_u8()) {
+            return Err(Error::UnsupportedWitnessVersion(version.to_u8()));
+        }
+
         if program.len() < 2 || program.len() > 40 {
             return Err(Error::InvalidWitnessProgramLength(program.len()));
         }
 
-        // Specific segwit v0 check.
-        if version.to_u8() != 0 {
-            return Err(Error::UnsupportedWitnessVersion(version.to_u8()));
-        }
-
-        // Bech32 length check.
+        // Bech32 length check for segwit v0 (later versions use bech32m which isn't vulnerable to this problem).
         // Important: we should be careful when using new program lengths since a valid Bech32 string can be modified according to
         // the below 2 links while still having a valid checksum.
         // https://github.com/bitcoin/bips/blob/master/bip-0350.mediawiki#motivation
         // https://github.com/sipa/bech32/issues/51
-        if program.len() != 20 && program.len() != 32 {
+        if version.to_u8() == 0 && program.len() != 20 && program.len() != 32 {
             return Err(Error::InvalidSegwitV0ProgramLength(program.len()));
+        }
+
+        if version.to_u8() != 0 && is_bech32_non_modified {
+            return Err(Error::UnsupportedAddressVariant(format!(
+                "Bech32 is not supported for witness version {}. Bech32m should be used instead.",
+                version.to_u8()
+            )));
         }
 
         Ok(SegwitAddress { hrp, version, program })

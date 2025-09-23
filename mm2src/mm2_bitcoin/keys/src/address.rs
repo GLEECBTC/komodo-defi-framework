@@ -43,6 +43,11 @@ pub enum AddressScriptType {
     /// as the scripthash, eg: bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3.
     /// https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki
     P2WSH,
+    /// Pay to Taproot
+    /// Segwit v1 P2TR which begins with the human readable part followed by 1 followed by 59 base32 characters
+    /// as the scripthash, eg: bc1p6gps4j04duwphrhkwx0vhl6r9kkq8m8n7r9r02rvwzrekjt0f4pskz8zas.
+    /// https://github.com/bitcoin/bips/blob/master/bip-0350.mediawiki
+    P2TR,
 }
 
 #[derive(Clone, Debug, Default, Display, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -287,12 +292,13 @@ impl Address {
     pub fn from_segwitaddress(segaddr: &str, checksum_type: ChecksumType) -> Result<Address, String> {
         let address = SegwitAddress::from_str(segaddr).map_err(|e| e.to_string())?;
 
-        let (script_type, mut hash) = if address.program.len() == 20 {
-            (AddressScriptType::P2WPKH, AddressHashEnum::default_address_hash())
-        } else if address.program.len() == 32 {
-            (AddressScriptType::P2WSH, AddressHashEnum::default_witness_script_hash())
-        } else {
-            return Err("Expect either 20 or 32 bytes long hash".into());
+        let (script_type, mut hash) = match (address.version.to_u8(), address.program.len()) {
+            (0, 20) => (AddressScriptType::P2WPKH, AddressHashEnum::default_address_hash()),
+            (0, 32) => (AddressScriptType::P2WSH, AddressHashEnum::default_witness_script_hash()),
+            (0, _) => return Err("Expect either 20 or 32 bytes long hash".into()),
+            (1, 32) => (AddressScriptType::P2TR, AddressHashEnum::default_witness_script_hash()),
+            (1, _) => return Err("Expect 32 bytes long public key".into()),
+            (v, _) => return Err(format!("Unsupported segwit version: {v}")),
         };
         hash.copy_from_slice(address.program.as_slice());
 

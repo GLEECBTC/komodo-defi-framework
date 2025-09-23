@@ -1227,7 +1227,7 @@ fn test_withdraw_segwit() {
     assert!(withdraw_error.get("error_type").is_none());
     assert!(withdraw_error.get("error_data").is_none());
 
-    // Withdraw to taproot addresses should fail
+    // Withdraw to taproot addresses should should also work
     let withdraw = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "withdraw",
@@ -1237,13 +1237,8 @@ fn test_withdraw_segwit() {
     })))
     .unwrap();
 
-    assert!(withdraw.0.is_server_error(), "tBTC withdraw: {}", withdraw.1);
-    log!("{:?}", withdraw.1);
-    let withdraw_error: Json = json::from_str(&withdraw.1).unwrap();
-    assert!(withdraw_error["error"]
-        .as_str()
-        .expect("Expected 'error' field")
-        .contains("address variant/format Bech32m is not supported yet"));
+    assert!(withdraw.0.is_success(), "tBTC withdraw: {}", withdraw.1);
+    let _: TransactionDetails = json::from_str(&withdraw.1).expect("Expected 'TransactionDetails'");
 
     block_on(mm_alice.stop()).unwrap();
 }
