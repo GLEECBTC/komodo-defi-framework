@@ -1227,7 +1227,7 @@ fn test_withdraw_segwit() {
     assert!(withdraw_error.get("error_type").is_none());
     assert!(withdraw_error.get("error_data").is_none());
 
-    // Withdraw to taproot addresses should should also work
+    // Withdraw to taproot addresses should also work
     let withdraw = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "withdraw",
