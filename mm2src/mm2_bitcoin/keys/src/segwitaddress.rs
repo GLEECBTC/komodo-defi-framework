@@ -130,7 +130,14 @@ impl fmt::Display for SegwitAddress {
         } else {
             fmt as &mut dyn fmt::Write
         };
-        let mut bech32_writer = bech32::Bech32Writer::new(self.hrp.as_str(), bech32::Variant::Bech32, writer)?;
+        let bech32_version = match self.version.to_u8() {
+            0 => bech32::Variant::Bech32,
+            1 => bech32::Variant::Bech32m,
+            // Ideally, all v1+ segwit addresses should be formatted using Bech32m.
+            // But let's error on such attempts unless we explicitly support higher versions.
+            _ => return Err(fmt::Error),
+        };
+        let mut bech32_writer = bech32::Bech32Writer::new(self.hrp.as_str(), bech32_version, writer)?;
         bech32::WriteBase32::write_u5(&mut bech32_writer, self.version)?;
         bech32::ToBase32::write_base32(&self.program, &mut bech32_writer)
     }
@@ -175,13 +182,20 @@ impl FromStr for SegwitAddress {
             return Err(Error::InvalidWitnessProgramLength(program.len()));
         }
 
-        // Bech32 length check for segwit v0 (later versions use bech32m which isn't vulnerable to this problem).
-        // Important: we should be careful when using new program lengths since a valid Bech32 string can be modified according to
-        // the below 2 links while still having a valid checksum.
-        // https://github.com/bitcoin/bips/blob/master/bip-0350.mediawiki#motivation
-        // https://github.com/sipa/bech32/issues/51
-        if version.to_u8() == 0 && program.len() != 20 && program.len() != 32 {
-            return Err(Error::InvalidSegwitV0ProgramLength(program.len()));
+        if version.to_u8() == 0 {
+            // Bech32 length check for segwit v0 (later versions use bech32m which isn't vulnerable to this problem).
+            // Important: we should be careful when using new program lengths since a valid Bech32 string can be modified according to
+            // the below 2 links while still having a valid checksum.
+            // https://github.com/bitcoin/bips/blob/master/bip-0350.mediawiki#motivation
+            // https://github.com/sipa/bech32/issues/51
+            if program.len() != 20 && program.len() != 32 {
+                return Err(Error::InvalidSegwitV0ProgramLength(program.len()));
+            }
+            if variant == bech32::Variant::Bech32m {
+                return Err(Error::UnsupportedAddressVariant(
+                    "Bech32m is nost supported for witness version 0. Bech32 should be used instead.".into(),
+                ));
+            }
         }
 
         if version.to_u8() != 0 && is_bech32_non_modified {
