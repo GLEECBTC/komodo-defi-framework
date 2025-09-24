@@ -514,6 +514,7 @@ async fn process_orders_keep_alive(
     let current_req = OrdermatchRequest::SyncPubkeyOrderbookState {
         pubkey: from_pubkey.clone(),
         trie_roots: from_roots_by_pair,
+        expected_roots: None,
     };
 
     let mut had_response = false;
@@ -925,8 +926,12 @@ impl TryFromBytes for Uuid {
 pub fn process_peer_request(ctx: MmArc, request: OrdermatchRequest) -> Result<Option<Vec<u8>>, String> {
     match request {
         OrdermatchRequest::GetOrderbook { base, rel } => process_get_orderbook_request(ctx, base, rel),
-        OrdermatchRequest::SyncPubkeyOrderbookState { pubkey, trie_roots } => {
-            let response = process_sync_pubkey_orderbook_state(ctx, pubkey, trie_roots);
+        OrdermatchRequest::SyncPubkeyOrderbookState {
+            pubkey,
+            trie_roots,
+            expected_roots,
+        } => {
+            let response = process_sync_pubkey_orderbook_state(ctx, pubkey, trie_roots, expected_roots);
             response.map(|res| res.map(|r| encode_message(&r).expect("Serialization failed")))
         },
         OrdermatchRequest::BestOrders { coin, action, volume } => {
@@ -1177,6 +1182,7 @@ fn process_sync_pubkey_orderbook_state(
     ctx: MmArc,
     pubkey: String,
     trie_roots: HashMap<AlbOrderedOrderbookPair, H64>,
+    _expected_roots: Option<HashMap<AlbOrderedOrderbookPair, H64>>,
 ) -> Result<Option<SyncPubkeyOrderbookStateRes>, String> {
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     let orderbook = ordermatch_ctx.orderbook.lock();

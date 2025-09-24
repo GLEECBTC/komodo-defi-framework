@@ -21,11 +21,19 @@ pub enum BestOrdersAction {
 pub enum OrdermatchRequest {
     /// Get an orderbook for the given pair.
     GetOrderbook { base: String, rel: String },
-    /// Sync specific pubkey orderbook state if our known Patricia trie state doesn't match the latest keep alive message
+    /// Sync specific pubkey orderbook state if our known Patricia trie state doesn't match the latest keep alive message.
+    ///
+    /// New nodes treat `trie_roots` as from_roots when `expected_roots` is present and require an
+    /// exact from→to diff per pair (to the corresponding `expected_roots` entry).
+    /// Legacy nodes ignore `expected_roots` (it is optional with serde default).
     SyncPubkeyOrderbookState {
         pubkey: String,
-        /// Request using this condition
+        /// Request using this condition (interpreted as from_roots when `expected_roots` is provided)
         trie_roots: HashMap<AlbOrderedOrderbookPair, H64>,
+        /// Optional expected roots to land on exactly (mirrors trie_roots keys).
+        /// Backward compatible via serde default so legacy nodes ignore it.
+        #[serde(default)]
+        expected_roots: Option<HashMap<AlbOrderedOrderbookPair, H64>>,
     },
     /// Request best orders for a specific coin and action.
     BestOrders {

@@ -2479,7 +2479,7 @@ fn test_process_sync_pubkey_orderbook_state_after_new_orders_added() {
         insert_or_update_order(&ctx, order.clone());
     }
 
-    let mut result = process_sync_pubkey_orderbook_state(ctx.clone(), pubkey.clone(), prev_pairs_state)
+    let mut result = process_sync_pubkey_orderbook_state(ctx.clone(), pubkey.clone(), prev_pairs_state, None)
         .unwrap()
         .unwrap();
 
@@ -2556,7 +2556,7 @@ fn test_process_sync_pubkey_orderbook_state_after_orders_removed() {
         remove_order(&ctx, order.uuid);
     }
 
-    let mut result = process_sync_pubkey_orderbook_state(ctx.clone(), pubkey.clone(), prev_pairs_state)
+    let mut result = process_sync_pubkey_orderbook_state(ctx.clone(), pubkey.clone(), prev_pairs_state, None)
         .unwrap()
         .unwrap();
 
@@ -2763,7 +2763,7 @@ fn test_process_sync_pubkey_orderbook_state_points_to_not_uptodate_trie_root() {
 
     let SyncPubkeyOrderbookStateRes {
         mut pair_orders_diff, ..
-    } = process_sync_pubkey_orderbook_state(ctx, pubkey, roots)
+    } = process_sync_pubkey_orderbook_state(ctx, pubkey, roots, None)
         .expect("!process_sync_pubkey_orderbook_state")
         .expect("Expected MORTY:RICK delta, returned None");
 
