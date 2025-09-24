@@ -57,6 +57,8 @@ pub enum AddressHashEnum {
     AddressHash(H160),
     /// 32 bytes long hash derived from script `sha256(script)` used in P2WSH
     WitnessScriptHash(H256),
+    /// 32 byte long tweaked x-only pubkey used in P2TR
+    TweakedXOnlyPubkey(H256),
 }
 
 impl AddressHashEnum {
@@ -72,6 +74,7 @@ impl AddressHashEnum {
         match self {
             AddressHashEnum::AddressHash(h) => h.copy_from_slice(src),
             AddressHashEnum::WitnessScriptHash(s) => s.copy_from_slice(src),
+            AddressHashEnum::TweakedXOnlyPubkey(p) => p.copy_from_slice(src),
         }
     }
 
@@ -79,6 +82,7 @@ impl AddressHashEnum {
         match self {
             AddressHashEnum::AddressHash(h) => h.to_vec(),
             AddressHashEnum::WitnessScriptHash(s) => s.to_vec(),
+            AddressHashEnum::TweakedXOnlyPubkey(p) => p.to_vec(),
         }
     }
 
@@ -89,6 +93,10 @@ impl AddressHashEnum {
     pub fn is_witness_script_hash(&self) -> bool {
         matches!(*self, AddressHashEnum::WitnessScriptHash(_))
     }
+
+    pub fn is_tweaked_xonly_pubkey(&self) -> bool {
+        matches!(*self, AddressHashEnum::TweakedXOnlyPubkey(_))
+    }
 }
 
 impl fmt::Display for AddressHashEnum {
@@ -96,6 +104,7 @@ impl fmt::Display for AddressHashEnum {
         match self {
             AddressHashEnum::AddressHash(h) => f.write_str(&h.to_string()),
             AddressHashEnum::WitnessScriptHash(s) => f.write_str(&s.to_string()),
+            AddressHashEnum::TweakedXOnlyPubkey(p) => f.write_str(&p.to_string()),
         }
     }
 }

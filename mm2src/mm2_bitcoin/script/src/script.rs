@@ -504,9 +504,8 @@ impl Script {
             },
             ScriptType::Taproot => {
                 let bytes = self.data.get(2..34).ok_or(keys::Error::InvalidAddress)?;
-                let hash: [u8; 32] = bytes.try_into().map_err(|_| keys::Error::InvalidAddress)?;
-                // FIXME: Don't use AddressHashEnum::WitnessScriptHash variant.
-                let address_hash = AddressHashEnum::WitnessScriptHash(hash.into());
+                let tweaked_pub: [u8; 32] = bytes.try_into().map_err(|_| keys::Error::InvalidAddress)?;
+                let address_hash = AddressHashEnum::TweakedXOnlyPubkey(tweaked_pub.into());
                 Ok(vec![ScriptAddress::new_p2tr(address_hash)])
             },
             ScriptType::CallSender => {

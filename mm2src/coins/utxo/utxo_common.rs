@@ -349,10 +349,9 @@ pub fn addresses_from_script<T: UtxoCommonOps>(coin: &T, script: &Script) -> Res
                     UtxoAddressFormat::Segwit { version: 0 },
                     AddressBuilderOption::ScriptHash(dst.hash),
                 ),
-                // FIXME: Differentiate P2TR from P2WSH.
                 AddressScriptType::P2TR => (
                     UtxoAddressFormat::Segwit { version: 1 },
-                    AddressBuilderOption::ScriptHash(dst.hash),
+                    AddressBuilderOption::TweakedXOnlyPubkey(dst.hash),
                 ),
             };
 

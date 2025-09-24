@@ -1366,6 +1366,9 @@ pub fn contract_addr_from_utxo_addr(address: Address) -> MmResult<H160, ScriptHa
         AddressHashEnum::WitnessScriptHash(_) => MmError::err(ScriptHashTypeNotSupported {
             script_hash_type: "Witness".to_owned(),
         }),
+        AddressHashEnum::TweakedXOnlyPubkey(_) => MmError::err(ScriptHashTypeNotSupported {
+            script_hash_type: "Taproot Script".to_owned(),
+        }),
     }
 }
 

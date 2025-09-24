@@ -83,6 +83,7 @@ impl Public {
                 res.copy_from_slice(&pubkey.as_slice()[1..33]);
                 Some(res)
             },
+            // FIXME: Compute this and return a non-option type.
             Public::Normal(_) => None,
         }
     }
