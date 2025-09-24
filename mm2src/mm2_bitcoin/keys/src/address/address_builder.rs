@@ -94,6 +94,7 @@ impl AddressBuilder {
             },
             AddressFormat::Segwit { .. } => {
                 self.check_segwit_hash(build_option)?;
+                self.check_segwit_version(build_option)?;
                 self.check_segwit_hrp()?;
                 Ok(Address {
                     prefix: AddressPrefix::default(),
@@ -209,5 +210,25 @@ impl AddressBuilder {
             return Err("invalid hash for segwit address".to_owned());
         }
         Ok(())
+    }
+
+    fn check_segwit_version(&self, build_option: &AddressBuilderOption) -> Result<(), String> {
+        match self.addr_format {
+            AddressFormat::Segwit { version: 0 } => match build_option {
+                AddressBuilderOption::PubkeyHash(_)
+                | AddressBuilderOption::ScriptHash(_)
+                | AddressBuilderOption::FromPubKey(_) => Ok(()),
+                AddressBuilderOption::TweakedXOnlyPubkey(_) => {
+                    Err("Tweaked x-only pubkey is not valid for segwit v0 address".to_owned())
+                },
+            },
+            AddressFormat::Segwit { version: 1 } => match build_option {
+                AddressBuilderOption::FromPubKey(_) | AddressBuilderOption::TweakedXOnlyPubkey(_) => Ok(()),
+                AddressBuilderOption::PubkeyHash(_) | AddressBuilderOption::ScriptHash(_) => {
+                    Err("Pubkey/Script-Hash build options are not supported for segwit v1 address".to_owned())
+                },
+            },
+            _ => Err("only segwit v0 and v1 are supported".to_owned()),
+        }
     }
 }
