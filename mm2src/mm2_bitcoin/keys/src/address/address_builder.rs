@@ -54,7 +54,7 @@ impl AddressBuilder {
     }
 
     /// Sets Address tx output script type as p2pkh or p2wpkh, but also keep the public key stored.
-    pub fn as_pkh_from_pk(mut self, pubkey: Public) -> Self {
+    pub fn using_pk(mut self, pubkey: Public) -> Self {
         self.build_option = Some(AddressBuilderOption::FromPubKey(pubkey));
         self
     }

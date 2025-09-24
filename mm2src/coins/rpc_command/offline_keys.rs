@@ -433,7 +433,7 @@ async fn offline_hd_keys_export_internal(
 
                             let address =
                                 AddressBuilder::new(address_format, ChecksumType::DSHA256, address_prefixes, bech32_hrp)
-                                    .as_pkh_from_pk(*key_pair.public())
+                                    .using_pk(*key_pair.public())
                                     .build()
                                     .map_err(OfflineKeysError::Internal)?;
 
@@ -554,7 +554,7 @@ async fn offline_iguana_keys_export_internal(
 
                     let address =
                         AddressBuilder::new(AddressFormat::Standard, ChecksumType::DSHA256, address_prefixes, None)
-                            .as_pkh_from_pk(*key_pair.public())
+                            .using_pk(*key_pair.public())
                             .build()
                             .map_err(OfflineKeysError::Internal)?;
 

@@ -88,7 +88,7 @@ pub(super) fn utxo_coin_fields_for_test(
         UtxoAddressFormat::Standard
     };
     let my_address = AddressBuilder::new(addr_format, checksum_type, prefixes, hrp)
-        .as_pkh_from_pk(*key_pair.public())
+        .using_pk(*key_pair.public())
         .build()
         .expect("valid address props");
     let my_script_pubkey = Builder::build_p2pkh(my_address.hash()).to_bytes();

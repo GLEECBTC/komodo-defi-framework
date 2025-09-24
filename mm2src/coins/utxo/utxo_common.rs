@@ -4769,7 +4769,7 @@ pub fn address_from_raw_pubkey(
     addr_format: UtxoAddressFormat,
 ) -> Result<Address, String> {
     AddressBuilder::new(addr_format, checksum_type, prefixes, hrp)
-        .as_pkh_from_pk(try_s!(Public::from_slice(pub_key)))
+        .using_pk(try_s!(Public::from_slice(pub_key)))
         .build()
 }
 
@@ -4781,7 +4781,7 @@ pub fn address_from_pubkey(
     addr_format: UtxoAddressFormat,
 ) -> Address {
     AddressBuilder::new(addr_format, checksum_type, prefixes, hrp)
-        .as_pkh_from_pk(*pubkey)
+        .using_pk(*pubkey)
         .build()
         .expect("valid address props")
 }

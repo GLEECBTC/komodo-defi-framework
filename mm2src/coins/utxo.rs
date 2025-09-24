@@ -1956,7 +1956,7 @@ pub fn address_by_conf_and_pubkey_str(
         utxo_conf.address_prefixes,
         utxo_conf.bech32_hrp,
     )
-    .as_pkh_from_pk(pubkey)
+    .using_pk(pubkey)
     .build()?;
     address.display_address()
 }
