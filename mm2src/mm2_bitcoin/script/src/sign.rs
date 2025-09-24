@@ -13,6 +13,9 @@ use serde::Deserialize;
 use std::convert::TryInto;
 use {Builder, Script};
 
+#[cfg(not(target_arch = "wasm32"))]
+use ext_bitcoin;
+
 const ZCASH_PREVOUTS_HASH_PERSONALIZATION: &[u8] = b"ZcashPrevoutHash";
 const ZCASH_SEQUENCE_HASH_PERSONALIZATION: &[u8] = b"ZcashSequencHash";
 const ZCASH_OUTPUTS_HASH_PERSONALIZATION: &[u8] = b"ZcashOutputsHash";
@@ -119,6 +122,18 @@ impl From<TransactionInput> for UnsignedTransactionInput {
             prev_script: Vec::new().into(),
             sequence: i.sequence,
             amount: 0,
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<UnsignedTransactionInput> for ext_bitcoin::TxIn {
+    fn from(i: UnsignedTransactionInput) -> Self {
+        ext_bitcoin::TxIn {
+            previous_output: i.previous_output.into(),
+            script_sig: ext_bitcoin::Script::default(),
+            sequence: ext_bitcoin::Sequence(i.sequence),
+            witness: ext_bitcoin::Witness::default(),
         }
     }
 }
@@ -230,6 +245,18 @@ impl From<TransactionInputSigner> for Transaction {
             str_d_zeel: t.str_d_zeel,
             tx_hash_algo: t.hash_algo.into(),
             v_extra_payload: t.v_extra_payload,
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<TransactionInputSigner> for ext_bitcoin::Transaction {
+    fn from(tx: TransactionInputSigner) -> Self {
+        ext_bitcoin::Transaction {
+            version: tx.version,
+            lock_time: ext_bitcoin::PackedLockTime(tx.lock_time),
+            input: tx.inputs.into_iter().map(|i| i.into()).collect(),
+            output: tx.outputs.into_iter().map(|o| o.into()).collect(),
         }
     }
 }

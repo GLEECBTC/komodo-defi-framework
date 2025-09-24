@@ -1,6 +1,6 @@
 use crate::sign_common::{
     complete_tx, p2pk_spend_with_signature, p2pkh_spend_with_signature, p2sh_spend_with_signature,
-    p2wpkh_spend_with_signature,
+    p2tr_spend_with_signature, p2wpkh_spend_with_signature,
 };
 use crate::Signature;
 use chain::{Transaction as UtxoTx, TransactionInput};
@@ -201,13 +201,80 @@ pub fn p2wpkh_spend(
 }
 
 /// Creates signed input spending p2tr output
+#[cfg(not(target_arch = "wasm32"))]
+pub fn p2tr_spend(
+    signer: &TransactionInputSigner,
+    input_index: usize,
+    key_pair: &KeyPair,
+    fork_id: u32,
+) -> UtxoSignWithKeyPairResult<TransactionInput> {
+    use bitcoin::psbt::Prevouts;
+    use bitcoin::schnorr::TapTweak;
+    use bitcoin::secp256k1::{KeyPair, Secp256k1};
+    use bitcoin::util::sighash::SighashCache;
+    use bitcoin::SchnorrSighashType;
+
+    // Note that we can't use our secp256k1 dependency and must use the one re-exported by `rust-bitcoin`
+    // since that one will have the key tweaking implementations over secp256k1 keys.
+    // Only if our secp256k1 dependency was of the same version as `rust-bitcoin`'s they would be interchangeable.
+    // TODO: Once https://github.com/KomodoPlatform/komodo-defi-framework/pull/2623 is merged,
+    //       we should use the global signing SECP object found in mm2_bitcoin::keys and possibly
+    //       move signing and tweaking function calls over there too.
+    let secp = Secp256k1::new();
+
+    // Convert the key pair to the secp256k1::KeyPair.
+    let key_pair = KeyPair::from_seckey_slice(&secp, &key_pair.private_bytes())
+        .map_err(|_| UtxoSignWithKeyPairError::ErrorSigning(keys::Error::InvalidSecret))?;
+
+    // Tweak the key pair for taproot script constructions and signing later.
+    let tweaked_keypair = key_pair.tap_tweak(&secp, None).to_inner();
+    let (x_only_pub, _) = key_pair.x_only_public_key();
+    let (tweaked_pub, _) = x_only_pub.tap_tweak(&secp, None);
+
+    // Make sure our key is authorized to spend this input (i.e. make sure we got the expected `prev_script`).
+    let script_pub_key = Builder::build_p2tr(&keys::AddressHashEnum::WitnessScriptHash(
+        tweaked_pub.serialize().into(),
+    ))?;
+    let unsigned_input = get_input(signer, input_index)?;
+    if script_pub_key != unsigned_input.prev_script {
+        return MmError::err(UtxoSignWithKeyPairError::MismatchScript {
+            script_type: "P2TR".to_owned(),
+            script: script_pub_key,
+            prev_script: unsigned_input.prev_script.clone(),
+        });
+    }
+
+    // Calculate the sighash that we want to sign.
+    let prevouts: Vec<_> = signer
+        .inputs
+        .iter()
+        .map(|i| bitcoin::TxOut {
+            value: i.amount,
+            script_pubkey: i.prev_script.to_vec().into(),
+        })
+        .collect();
+    let sighash = SighashCache::new(&mut signer.clone().into())
+        .taproot_key_spend_signature_hash(input_index, &Prevouts::All(&prevouts), SchnorrSighashType::All)
+        .map_err(|_| UtxoSignWithKeyPairError::ErrorSigning(keys::Error::InvalidSecret))?;
+
+    // Sign the sighash
+    let signature = secp.sign_schnorr_with_aux_rand(&sighash.into(), &tweaked_keypair, &rand::random());
+
+    Ok(p2tr_spend_with_signature(
+        unsigned_input,
+        fork_id,
+        Bytes::from(signature.as_ref().to_vec()),
+    ))
+}
+
+#[cfg(target_arch = "wasm32")]
 pub fn p2tr_spend(
     signer: &TransactionInputSigner,
     input_index: usize,
     _key_pair: &KeyPair,
     _fork_id: u32,
 ) -> UtxoSignWithKeyPairResult<TransactionInput> {
-    // Don't support signing p2tr with key pair for now
+    // TODO: Taproot signing isn't supported yet in wasm.
     return MmError::err(UtxoSignWithKeyPairError::UnspendableUTXO {
         script: get_input(signer, input_index)?.prev_script.clone(),
     });
