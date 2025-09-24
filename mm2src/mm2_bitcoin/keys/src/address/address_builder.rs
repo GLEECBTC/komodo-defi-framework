@@ -162,7 +162,10 @@ impl AddressBuilder {
                 },
                 // For segwit v1 (taproot) use the x coordinate of the tweaked pubkey.
                 AddressFormat::Segwit { version: 1 } => {
-                    // FIXME: you forgot tweaking me :)
+                    // FIXME: don't forget to tweak me :)
+                    // FromPubkey variant means that the original (wallet) pubkey was supplied and it must be tweaked
+                    // to be used for taproot purposes. on the other hand, TweakedXOnlyPubkey comes from uncontrolled
+                    // source where we don't have the pubkey (e.g. parsing blockchain tx, etc...)
                     AddressHashEnum::TweakedXOnlyPubkey(pubkey.compressed_unprefixed().unwrap().into())
                 },
                 _ => return Err("Don't know how to get address hash/pubkey of advanced segwit format!".to_owned()),
