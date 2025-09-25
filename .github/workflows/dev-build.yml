@@ -213,9 +213,9 @@ jobs:
         run: |
           AARCH64_BIN="target/aarch64-apple-darwin/release/kdf"
           X86_64_BIN="target/x86_64-apple-darwin/release/kdf"
-          OUT_DIR="target/universal-apple-darwin/release/kdf"
+          OUT_DIR="target/universal-apple-darwin/release"
           OUT_BIN="$OUT_DIR/kdf"
-          mkdir target/universal-apple-darwin/release
+          mkdir -p "$OUT_DIR"
           lipo -create "$AARCH64_BIN" "$X86_64_BIN" -output "$OUT_BIN"
           lipo -info "$OUT_BIN"
 
