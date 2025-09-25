@@ -77,7 +77,7 @@ impl Sighash {
     }
 
     /// Creates Sighash from any u, even if is_defined() == false
-    pub fn from_u32(version: SignatureVersion, u: u32) -> Self {
+    pub fn from_u32(u: u32) -> Self {
         let anyone_can_pay = (u & 0x80) == 0x80;
         let base = match u & 0x1f {
             2 => SighashBase::None,
@@ -253,7 +253,7 @@ impl TransactionInputSigner {
         sigversion: SignatureVersion,
         sighashtype: u32,
     ) -> H256 {
-        let sighash = Sighash::from_u32(sigversion, sighashtype);
+        let sighash = Sighash::from_u32(sighashtype);
         match sigversion {
             SignatureVersion::ForkId => {
                 // Make sure the `fork_id` bit (0x40) is set.
@@ -778,7 +778,7 @@ mod tests {
         let script: Script = script.into();
         let expected = H256::from_reversed_str(result);
 
-        let sighash = Sighash::from_u32(SignatureVersion::Base, hash_type as u32);
+        let sighash = Sighash::from_u32(hash_type as u32);
         let hash = signer.signature_hash_original(input_index, &script, hash_type as u32, sighash);
         assert_eq!(expected, hash);
     }
@@ -818,7 +818,7 @@ mod tests {
         signer.inputs[0].amount = 50000000;
         signer.consensus_branch_id = 0x76b809bb;
 
-        let sig_hash = Sighash::from_u32(SignatureVersion::Base, 1);
+        let sig_hash = Sighash::from_u32(1);
         let hash = signer.signature_hash_overwintered(
             0,
             &Script::from("1976a914507173527b4c3318a2aecd793bf1cfed705950cf88ac"),
@@ -852,7 +852,7 @@ mod tests {
         signer.inputs[0].amount = 9924260;
         signer.consensus_branch_id = 0x76b809bb;
 
-        let sig_hash = Sighash::from_u32(SignatureVersion::Base, 1);
+        let sig_hash = Sighash::from_u32(1);
         let hash = signer.signature_hash_overwintered(
             0,
             &Script::from("76a91405aab5342166f8594baf17a7d9bef5d56744332788ac"),
@@ -886,7 +886,7 @@ mod tests {
         signer.inputs[0].amount = 100000000;
         signer.consensus_branch_id = 0x76b809bb;
 
-        let sig_hash = Sighash::from_u32(SignatureVersion::Base, 1);
+        let sig_hash = Sighash::from_u32(1);
         let hash = signer.signature_hash_overwintered(
 			0,
 			&Script::from("6304e5928060b17521031c632dad67a611de77d9666cbc61e65957c7d7544c25e384f4e76de729e6a1bfac6782012088a914b78f0b837e2c710f8b28e59d06473d489e5315c88821037310a8fb9fd8f198a1a21db830252ad681fccda580ed4101f3f6bfb98b34fab5ac68"),
