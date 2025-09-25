@@ -188,7 +188,7 @@ pub fn p2wpkh_spend(
         input_index,
         &script_code,
         key_pair,
-        SignatureVersion::WitnessV0,
+        SignatureVersion::Witness,
         SIGHASH_ALL,
         fork_id,
     )?;

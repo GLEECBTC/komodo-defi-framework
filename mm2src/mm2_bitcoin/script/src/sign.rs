@@ -28,10 +28,12 @@ const ZCASH_SIG_HASH_PERSONALIZATION: &[u8] = b"ZcashSigHash";
 pub enum SignatureVersion {
     #[serde(rename = "base")]
     Base,
-    // FIXME: Remove the version labelling from here since it's already encoded in AddressFormat.
-    // Matter of fact, we can remove this variant entirely as the AddressFormat already implies it.
-    #[serde(rename = "witness_v0")]
-    WitnessV0,
+    // Disallow deserializing the witness variant. This variant is only used internally for marking
+    // and shouldn't be supplied from an outside source (i.e. coins config).
+    // We can already internally detect that a signature should use witness format based
+    // the address format of the coin.
+    #[serde(skip_deserializing)]
+    Witness,
     #[serde(rename = "fork_id")]
     ForkId,
 }
@@ -263,7 +265,7 @@ impl TransactionInputSigner {
                 self.signature_hash_witness0(input_index, input_amount, script_pubkey, sighashtype, sighash)
             },
             SignatureVersion::Base => self.signature_hash_original(input_index, script_pubkey, sighashtype, sighash),
-            SignatureVersion::WitnessV0 => {
+            SignatureVersion::Witness => {
                 self.signature_hash_witness0(input_index, input_amount, script_pubkey, sighashtype, sighash)
             },
         }

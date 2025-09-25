@@ -215,7 +215,7 @@ async fn sign_funding_transaction(
     let signed = sign_tx(
         unsigned,
         key_pair,
-        SignatureVersion::WitnessV0,
+        SignatureVersion::Witness,
         coin.as_ref().conf.fork_id,
     )
     .map_err(|e| SignFundingTransactionError::TxSignFailed(e.to_string()))?;
