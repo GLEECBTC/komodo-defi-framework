@@ -211,7 +211,7 @@ jobs:
       - name: Install build deps
         uses: ./.github/actions/deps-install
         with:
-          deps: ('python3')
+          deps: ('protoc', 'python3', 'paramiko')
 
       - name: Calculate build tag (commit hash) for PR commit
         if: github.event_name == 'pull_request'

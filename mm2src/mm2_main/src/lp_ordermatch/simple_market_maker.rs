@@ -197,6 +197,7 @@ pub enum StartSimpleMakerBotError {
     InternalError(String),
 }
 
+#[cfg_attr(not(target_arch = "wasm32"), expect(dead_code))]
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum SwapUpdateNotificationError {
