@@ -55,29 +55,11 @@ impl From<SighashBase> for u32 {
 pub struct Sighash {
     pub base: SighashBase,
     pub anyone_can_pay: bool,
-    pub fork_id: bool,
-}
-
-impl From<Sighash> for u32 {
-    fn from(s: Sighash) -> Self {
-        let base = s.base as u32;
-        let base = if s.anyone_can_pay { base | 0x80 } else { base };
-
-        if s.fork_id {
-            base | 0x40
-        } else {
-            base
-        }
-    }
 }
 
 impl Sighash {
-    pub fn new(base: SighashBase, anyone_can_pay: bool, fork_id: bool) -> Self {
-        Sighash {
-            base,
-            anyone_can_pay,
-            fork_id,
-        }
+    pub fn new(base: SighashBase, anyone_can_pay: bool) -> Self {
+        Sighash { base, anyone_can_pay }
     }
 
     /// Used by SCRIPT_VERIFY_STRICTENC
@@ -95,14 +77,13 @@ impl Sighash {
     /// Creates Sighash from any u, even if is_defined() == false
     pub fn from_u32(version: SignatureVersion, u: u32) -> Self {
         let anyone_can_pay = (u & 0x80) == 0x80;
-        let fork_id = version == SignatureVersion::ForkId && (u & 0x40) == 0x40;
         let base = match u & 0x1f {
             2 => SighashBase::None,
             3 => SighashBase::Single,
             _ => SighashBase::All,
         };
 
-        Sighash::new(base, anyone_can_pay, fork_id)
+        Sighash::new(base, anyone_can_pay)
     }
 }
 
@@ -272,8 +253,10 @@ impl TransactionInputSigner {
     ) -> H256 {
         let sighash = Sighash::from_u32(sigversion, sighashtype);
         match sigversion {
-            SignatureVersion::ForkId if sighash.fork_id => {
-                self.signature_hash_fork_id(input_index, input_amount, script_pubkey, sighashtype, sighash)
+            SignatureVersion::ForkId if (sighashtype & 0x40) == 0x40 => {
+                // For a `fork_id` chain that has the `fork_id` bit (0x40) set in the sighash,
+                // we should use segwit v0 sighash. Examples of these chains are: BCH, XRG, XEC.
+                self.signature_hash_witness0(input_index, input_amount, script_pubkey, sighashtype, sighash)
             },
             SignatureVersion::Base | SignatureVersion::ForkId => {
                 self.signature_hash_original(input_index, script_pubkey, sighashtype, sighash)
@@ -426,6 +409,14 @@ impl TransactionInputSigner {
         sighashtype: u32,
         sighash: Sighash,
     ) -> H256 {
+        if input_index >= self.inputs.len() {
+            return 1u8.into();
+        }
+
+        if sighash.base == SighashBase::Single && input_index >= self.outputs.len() {
+            return 1u8.into();
+        }
+
         let hash_prevouts = compute_hash_prevouts(sighash, &self.inputs);
         let hash_sequence = compute_hash_sequence(sighash, &self.inputs);
         let hash_outputs = compute_hash_outputs(sighash, input_index, &self.outputs);
@@ -443,25 +434,6 @@ impl TransactionInputSigner {
         stream.append(&sighashtype); // this also includes 24-bit fork id. which is 0 for BitcoinCash
         let out = stream.out();
         dhash256(&out)
-    }
-
-    fn signature_hash_fork_id(
-        &self,
-        input_index: usize,
-        input_amount: u64,
-        script_pubkey: &Script,
-        sighashtype: u32,
-        sighash: Sighash,
-    ) -> H256 {
-        if input_index >= self.inputs.len() {
-            return 1u8.into();
-        }
-
-        if sighash.base == SighashBase::Single && input_index >= self.outputs.len() {
-            return 1u8.into();
-        }
-
-        self.signature_hash_witness0(input_index, input_amount, script_pubkey, sighashtype, sighash)
     }
 
     /// https://github.com/zcash/zips/blob/master/zip-0243.rst#notes
