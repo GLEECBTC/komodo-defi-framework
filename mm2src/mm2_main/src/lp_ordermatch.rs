@@ -1203,19 +1203,42 @@ fn process_sync_pubkey_orderbook_state(
     let order_getter = |uuid: &Uuid| orderbook.order_set.get(uuid).cloned();
     let pair_orders_diff: Result<HashMap<_, _>, _> = trie_roots
         .into_iter()
-        .map(|(pair, root)| {
-            let actual_pair_root = pubkey_state
+        .map(|(pair, from_root)| {
+            let latest_known_root = pubkey_state
                 .trie_roots
                 .get(&pair)
                 .ok_or(ERRL!("No pair trie root for {}", pair))?;
 
+            // Determine the target (to) root:
+            // - exact v2 sync: use the requester’s expected root
+            // - legacy sync: use our latest known root
+            let maybe_expected = expected_roots.as_ref().and_then(|roots| roots.get(&pair));
+            let target_root = maybe_expected.unwrap_or(latest_known_root);
+
+            // NOTE(exact-sync): We allow FullTrie fallback even when `expected_roots` is present.
+            // Rationale: `from_root` may originate from GetOrderbook or other flows and is not
+            // verifiable today if the sender was malicious; an exact delta chain from `from_root`
+            // to `target_root` might be unavailable. Falling back to a FullTrie at `target_root`
+            // still lets the requester land exactly on the expected root and pass the apply gate.
+            //
+            // TODO(exact-sync, removal conditions):
+            // - Persist the last KeepAlive root per pubkey and include it with GetOrderbook so
+            //   the requester’s `from_root` can be anchored/validated against a recent KA.
+            // - Once `from_root` is verifiable, change exact mode to error (no fallback) when
+            //   history cannot reconstruct the from→to chain.
+            // - Consider TRIE_STATE_HISTORY_TIMEOUT tuning: larger window ⇒ fewer missing chains;
+            //   smaller window ⇒ more missing chains but lower memory. Coordinate with gossipsub
+            //   dedup (~60s) so alternate-source retries are effective within the history window.
+
             let delta_result = match pubkey_state.order_pairs_trie_state_history.get(&pair) {
-                Some(history) => {
-                    DeltaOrFullTrie::from_history(history, root, *actual_pair_root, &orderbook.memory_db, order_getter)
-                },
-                None => {
-                    get_full_trie(actual_pair_root, &orderbook.memory_db, order_getter).map(DeltaOrFullTrie::FullTrie)
-                },
+                Some(history) => DeltaOrFullTrie::from_history(
+                    history,
+                    from_root,
+                    *target_root,
+                    &orderbook.memory_db,
+                    order_getter,
+                ),
+                None => get_full_trie(target_root, &orderbook.memory_db, order_getter).map(DeltaOrFullTrie::FullTrie),
             };
 
             let delta = try_s!(delta_result);
