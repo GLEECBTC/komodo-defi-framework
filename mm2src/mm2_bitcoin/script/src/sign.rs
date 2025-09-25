@@ -253,14 +253,16 @@ impl TransactionInputSigner {
     ) -> H256 {
         let sighash = Sighash::from_u32(sigversion, sighashtype);
         match sigversion {
-            SignatureVersion::ForkId if (sighashtype & 0x40) == 0x40 => {
+            SignatureVersion::ForkId => {
+                // Make sure the `fork_id` bit (0x40) is set.
+                if (sighashtype & 0x40) != 0x40 {
+                    return 1.into();
+                }
                 // For a `fork_id` chain that has the `fork_id` bit (0x40) set in the sighash,
                 // we should use segwit v0 sighash. Examples of these chains are: BCH, XRG, XEC.
                 self.signature_hash_witness0(input_index, input_amount, script_pubkey, sighashtype, sighash)
             },
-            SignatureVersion::Base | SignatureVersion::ForkId => {
-                self.signature_hash_original(input_index, script_pubkey, sighashtype, sighash)
-            },
+            SignatureVersion::Base => self.signature_hash_original(input_index, script_pubkey, sighashtype, sighash),
             SignatureVersion::WitnessV0 => {
                 self.signature_hash_witness0(input_index, input_amount, script_pubkey, sighashtype, sighash)
             },
