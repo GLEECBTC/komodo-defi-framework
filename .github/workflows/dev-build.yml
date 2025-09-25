@@ -225,13 +225,13 @@ jobs:
         uses: actions/download-artifact@v5
         with:
           name: x86_64-apple-darwin-release-kdf
-          path: target/x86_64-apple-darwin/release/kdf
+          path: target/x86_64-apple-darwin/release
 
       - name: Download macos aarch64 build
         uses: actions/download-artifact@v5
         with:
           name: aarch64-apple-darwin-release-kdf
-          path: target/aarch64-apple-darwin/release/kdf
+          path: target/aarch64-apple-darwin/release
 
       - name: Make universal kdf build output
         run: |
