@@ -506,15 +506,15 @@ async fn process_orders_keep_alive(
         expected_pair_roots.insert(pair, plan.to);
     }
 
-    // Build the V1 request using our local "from" roots (no extra lock needed)
-    // TODO(sync-v2): Extend this to include per-pair from_root and to_root,
-    // requesting an exact diff targeted at our state, even if the responder
-    // advanced after propagating the keep-alive. This should reduce false
-    // InvalidOrIncomplete classifications and unnecessary bans.
+    // Build the V2 request using our local "from" roots and the keep-alive "to_root"
+    // values we intend to land on. This requests an exact diff targeted at our state,
+    // even if the responder advanced after propagating the keep-alive. This should reduce
+    // false InvalidOrIncomplete classifications and unnecessary bans.
+    // Backward-compatibility: legacy peers ignore `expected_roots` optional field.
     let current_req = OrdermatchRequest::SyncPubkeyOrderbookState {
         pubkey: from_pubkey.clone(),
         trie_roots: from_roots_by_pair,
-        expected_roots: None,
+        expected_roots: Some(expected_pair_roots.clone()),
     };
 
     let mut had_response = false;
@@ -1182,8 +1182,20 @@ fn process_sync_pubkey_orderbook_state(
     ctx: MmArc,
     pubkey: String,
     trie_roots: HashMap<AlbOrderedOrderbookPair, H64>,
-    _expected_roots: Option<HashMap<AlbOrderedOrderbookPair, H64>>,
+    expected_roots: Option<HashMap<AlbOrderedOrderbookPair, H64>>,
 ) -> Result<Option<SyncPubkeyOrderbookStateRes>, String> {
+    if let Some(exp) = expected_roots.as_ref() {
+        if exp.len() != trie_roots.len() || trie_roots.keys().any(|pair| !exp.contains_key(pair)) {
+            // TODO(rate-limit/ban): accept at most one SyncPubkeyOrderbookState per peer we sent a KeepAlive to.
+            return ERR!(
+                "Rejecting SyncPubkeyOrderbookState for pubkey {}: expected_roots keys mismatch vs trie_roots (expected_roots: {}, trie_roots: {})",
+                pubkey,
+                exp.len(),
+                trie_roots.len()
+            );
+        }
+    }
+
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     let orderbook = ordermatch_ctx.orderbook.lock();
     let pubkey_state = some_or_return_ok_none!(orderbook.pubkeys_state.get(&pubkey));
