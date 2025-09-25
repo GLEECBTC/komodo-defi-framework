@@ -511,6 +511,10 @@ async fn process_orders_keep_alive(
     // even if the responder advanced after propagating the keep-alive. This should reduce
     // false InvalidOrIncomplete classifications and unnecessary bans.
     // Backward-compatibility: legacy peers ignore `expected_roots` optional field.
+    // TODO(tests/serde-interop):
+    // - Old -> new: new node tolerates missing `expected_roots` (#[serde(default)]).
+    // - New -> old: legacy peer ignores `expected_roots` without failing.
+    // - New -> new: exact path works when history is present (serve/apply Delta landing on the expected to-root).
     let current_req = OrdermatchRequest::SyncPubkeyOrderbookState {
         pubkey: from_pubkey.clone(),
         trie_roots: from_roots_by_pair,
@@ -1187,6 +1191,7 @@ fn process_sync_pubkey_orderbook_state(
     if let Some(exp) = expected_roots.as_ref() {
         if exp.len() != trie_roots.len() || trie_roots.keys().any(|pair| !exp.contains_key(pair)) {
             // TODO(rate-limit/ban): accept at most one SyncPubkeyOrderbookState per peer we sent a KeepAlive to.
+            // Note: this is considered as an unavailable error on the requester side, not InvalidOrIncomplete. But this is fine for now.
             return ERR!(
                 "Rejecting SyncPubkeyOrderbookState for pubkey {}: expected_roots keys mismatch vs trie_roots (expected_roots: {}, trie_roots: {})",
                 pubkey,
@@ -1231,13 +1236,9 @@ fn process_sync_pubkey_orderbook_state(
             //   dedup (~60s) so alternate-source retries are effective within the history window.
 
             let delta_result = match pubkey_state.order_pairs_trie_state_history.get(&pair) {
-                Some(history) => DeltaOrFullTrie::from_history(
-                    history,
-                    from_root,
-                    *target_root,
-                    &orderbook.memory_db,
-                    order_getter,
-                ),
+                Some(history) => {
+                    DeltaOrFullTrie::from_history(history, from_root, *target_root, &orderbook.memory_db, order_getter)
+                },
                 None => get_full_trie(target_root, &orderbook.memory_db, order_getter).map(DeltaOrFullTrie::FullTrie),
             };
 
