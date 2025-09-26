@@ -89,6 +89,7 @@ jobs:
         run: |
           rustup toolchain install nightly-2023-06-01 --no-self-update --profile=minimal
           rustup default nightly-2023-06-01
+          rustup target add x86_64-apple-darwin
 
       - name: Install build deps
         uses: ./.github/actions/deps-install
