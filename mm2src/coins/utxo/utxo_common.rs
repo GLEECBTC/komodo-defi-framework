@@ -4433,8 +4433,8 @@ where
     T: MarketCoinOps + UtxoCommonOps,
 {
     let (amount, fee_policy) = match value {
-        TradePreimageValue::UpperBound(ref upper_bound) => (upper_bound.clone(), FeePolicy::DeductFromOutput(0)),
-        TradePreimageValue::Exact(ref amount) => (amount.clone(), FeePolicy::SendExact),
+        TradePreimageValue::UpperBound(upper_bound) => (upper_bound, FeePolicy::DeductFromOutput(0)),
+        TradePreimageValue::Exact(amount) => (amount, FeePolicy::SendExact),
     };
 
     // pass the dummy params

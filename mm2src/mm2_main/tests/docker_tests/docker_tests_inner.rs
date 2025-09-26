@@ -2246,19 +2246,19 @@ fn test_get_max_taker_vol_with_kmd() {
     block_on(mm_alice.stop()).unwrap();
 }
 
-#[test]
-fn test_get_max_maker_vol() {
+fn test_get_max_maker_vol_impl(is_tpu: bool, expected_volume: MmNumber) {
     let (_ctx, _, priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 1.into());
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
-    let conf = Mm2TestConf::seednode(&format!("0x{}", hex::encode(priv_key)), &coins);
+    let conf = if is_tpu {
+        Mm2TestConf::seednode_trade_v2(&format!("0x{}", hex::encode(priv_key)), &coins)
+    } else {
+        Mm2TestConf::seednode(&format!("0x{}", hex::encode(priv_key)), &coins)
+    };
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
     let (_dump_log, _dump_dashboard) = mm_dump(&mm.log_path);
 
     log!("{:?}", block_on(enable_native(&mm, "MYCOIN", &[], None)));
     log!("{:?}", block_on(enable_native(&mm, "MYCOIN1", &[], None)));
-
-    // 1 - tx_fee (274)
-    let expected_volume = MmNumber::from("0.99999726");
     let expected = MaxMakerVolResponse {
         coin: "MYCOIN1".to_string(),
         volume: MmNumberMultiRepr::from(expected_volume.clone()),
@@ -2270,6 +2270,16 @@ fn test_get_max_maker_vol() {
 
     let res = block_on(set_price(&mm, "MYCOIN1", "MYCOIN", "1", "0", true, None));
     assert_eq!(res.result.max_base_vol, expected_volume.to_decimal());
+}
+
+#[test]
+fn test_get_max_maker_vol() {
+    test_get_max_maker_vol_impl(true, MmNumber::from("0.99999726")); // 1 - tx_fee (274)
+}
+
+#[test]
+fn test_get_max_maker_vol_v2() {
+    test_get_max_maker_vol_impl(true, MmNumber::from("0.99999726"));
 }
 
 #[test]
