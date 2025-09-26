@@ -788,15 +788,6 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
             self.sum_outputs += change;
             self.update_tx_fee(from.addr_format(), &actual_fee_rate); // recalculate txfee with the change output, if added
             if self.sum_inputs + self.interest >= self.sum_outputs + self.total_tx_fee_needed() {
-                println!(
-                    "build n_inputs={} n_outputs={} sum_inputs={} interest={} sum_outputs={} total_tx_fee_needed={}",
-                    self.tx.inputs.len(),
-                    self.tx.outputs.len(),
-                    self.sum_inputs,
-                    self.interest,
-                    self.sum_outputs,
-                    self.total_tx_fee_needed(),
-                );
                 break;
             }
         }
@@ -4419,17 +4410,8 @@ where
                 let tx = UtxoTx::from(tx);
                 let tx_bytes = serialize(&tx);
                 // take into account the change output
-                let x = fee_rate.get_tx_fee_for_change(tx_bytes.len() as u64);
-                println!(
-                    "preimage_trade_fee_required_to_send_outputs {stage:?} data.fee_amount={} get_tx_fee_for_change={}",
-                    data.fee_amount, x
-                );
-                data.fee_amount + x
+                data.fee_amount + fee_rate.get_tx_fee_for_change(tx_bytes.len() as u64)
             } else {
-                println!(
-                    "preimage_trade_fee_required_to_send_outputs {stage:?} data.fee_amount={}",
-                    data.fee_amount
-                );
                 // the change output is included already
                 data.fee_amount
             };

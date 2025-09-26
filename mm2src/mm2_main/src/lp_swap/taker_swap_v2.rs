@@ -2700,12 +2700,6 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
     }
 
     async fn get_my_coin_fees(&self, upper_bound_amount: bool) -> CheckBalanceResult<TradeFee> {
-        /*let trading_amount = if upper_bound_amount {
-            &self.volume - &self.dex_fee.total_spend_amount()
-        } else {
-            self.volume.clone()
-        };
-        println!("get_my_coin_fees trading_amount={:?}", trading_amount.to_fraction());*/
         let funding_fee = self
             .my_coin
             .get_fee_to_send_taker_funding(GetTakerFundingFeeArgs {
@@ -2723,10 +2717,12 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             .get_fee_to_spend_taker_funding(self.stage)
             .await
             .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, self.my_coin.ticker()))?;
-        println!("get_my_coin_fees spend_fees={}", spend_fees.amount);
         // Add fees both to send taker funding and spend funding
         let mut total_amount = funding_fee.amount + spend_fees.amount;
-        if matches!(self.stage, FeeApproxStage::OrderIssueMax | FeeApproxStage::TradePreimageMax) {
+        if matches!(
+            self.stage,
+            FeeApproxStage::OrderIssueMax | FeeApproxStage::TradePreimageMax
+        ) {
             // Also add min_tx_amount to absorb dust for utxo coins
             let min_tx_amount = MmNumber::from(self.my_coin.min_tx_amount());
             total_amount += min_tx_amount;

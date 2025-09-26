@@ -1127,7 +1127,6 @@ fn test_max_taker_vol_swap_impl(is_tpu: bool, expected_vol: MmNumber) {
 
     let status_response: Json = serde_json::from_str(&rc.1).unwrap();
     let events_array = status_response["result"]["events"].as_array().unwrap();
-    println!("events_array={:?}", events_array);
     if is_tpu {
         let first_event_type = events_array[0]["event_type"].as_str().unwrap();
         assert_eq!("Initialized", first_event_type);
@@ -1142,7 +1141,7 @@ fn test_max_taker_vol_swap_impl(is_tpu: bool, expected_vol: MmNumber) {
 #[test]
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/888
 fn test_max_taker_vol_swap() {
-    test_max_taker_vol_swap_impl(false, MmNumber::from((1294999606579, 25930000000)));
+    test_max_taker_vol_swap_impl(false, MmNumber::from((1294999865579, 25930000000)));
 }
 
 #[test]
