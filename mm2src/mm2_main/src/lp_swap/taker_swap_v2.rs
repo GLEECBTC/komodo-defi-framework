@@ -2717,13 +2717,28 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             .get_fee_to_spend_taker_funding(self.stage)
             .await
             .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, self.my_coin.ticker()))?;
-        // Add fees both to send taker funding and spend funding
+        // Add fees both to send taker funding and spend funding.
         let mut total_amount = funding_fee.amount + spend_fees.amount;
         if matches!(
             self.stage,
             FeeApproxStage::OrderIssueMax | FeeApproxStage::TradePreimageMax
         ) {
-            // Also add min_tx_amount to absorb dust for utxo coins
+            // Also add min_tx_amount to compensate dust in the change for utxo coins, when calculating max vol.
+            // Why do we ever need this? Example:
+            // Suppose we have one input of 50.0 coins and would like to spend it as max taker vol.
+            // See calc_max_taker_vol fn:
+            // Then we get total trade fees to send the whole 50.0 as taker funding and (then spend that funding):
+            // Let this be 0.00000274 + 0.00000497 = 0.00000771. We subtract it from balance: 50.0 - 0.00000771 = 49.99999229
+            // Because we subtract trade fees *from* the input the dust does not make any difference.
+            // Then we estimate the needed max vol by removing dexfee: 49.99999229 / (1 + 9/7770) = 49.9421442464713
+            //
+            // Later we call "sell" to start a swap with this amount 49.9421442464713
+            // In the "sell" we check the required balance and again get total fees.
+            // We again get fee to send taker funding and required fee is still 0.00000274
+            // but now a change output appears (because now it's not upper bound), as 50.0 - 49.9421442464713 - 0.00000274 = 0.00000497
+            // If the latter amount is dust it is added to txfee and the total estimated fee becomes greater: 0.00000771 + 0.00000497 = 0.00001268
+            // so check balance may fail due to insufficient balance.
+            // To compensate this possible tx fee grow we add dust at the calc_max_taker_vol stage.
             let min_tx_amount = MmNumber::from(self.my_coin.min_tx_amount());
             total_amount += min_tx_amount;
         }
