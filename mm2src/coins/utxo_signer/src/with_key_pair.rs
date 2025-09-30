@@ -274,7 +274,8 @@ pub fn p2tr_spend(
     _key_pair: &KeyPair,
     _fork_id: u32,
 ) -> UtxoSignWithKeyPairResult<TransactionInput> {
-    // TODO: Taproot signing isn't supported yet in wasm.
+    // TODO: remove this function and the non-wasm cfg in the function above to enable taproot support
+    // for wasm once https://github.com/KomodoPlatform/komodo-defi-framework/pull/2623 is merged.
     return MmError::err(UtxoSignWithKeyPairError::UnspendableUTXO {
         script: get_input(signer, input_index)?.prev_script.clone(),
     });

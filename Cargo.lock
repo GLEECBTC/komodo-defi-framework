@@ -3354,6 +3354,7 @@ name = "keys"
 version = "0.1.0"
 dependencies = [
  "bech32",
+ "bitcoin",
  "bitcrypto",
  "bs58 0.4.0",
  "derive_more",

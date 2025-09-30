@@ -1,6 +1,11 @@
 use crate::Public;
 use crypto::ChecksumType;
 
+#[cfg(not(target_arch = "wasm32"))]
+use bitcoin::schnorr::TapTweak;
+#[cfg(not(target_arch = "wasm32"))]
+use bitcoin::secp256k1::{PublicKey, Secp256k1};
+
 use {Address, AddressFormat, AddressHashEnum, AddressPrefix, AddressScriptType, NetworkAddressPrefixes};
 
 /// Params for AddressBuilder to select output script type
@@ -161,12 +166,18 @@ impl AddressBuilder {
                     AddressHashEnum::AddressHash(pubkey.address_hash())
                 },
                 // For segwit v1 (taproot) use the x coordinate of the tweaked pubkey.
+                #[cfg(not(target_arch = "wasm32"))]
                 AddressFormat::Segwit { version: 1 } => {
-                    // FIXME: don't forget to tweak me :)
-                    // FromPubkey variant means that the original (wallet) pubkey was supplied and it must be tweaked
-                    // to be used for taproot purposes. on the other hand, TweakedXOnlyPubkey comes from uncontrolled
-                    // source where we don't have the pubkey (e.g. parsing blockchain tx, etc...)
-                    AddressHashEnum::TweakedXOnlyPubkey(pubkey.compressed_unprefixed().unwrap().into())
+                    let public_key = PublicKey::from_slice(pubkey).map_err(|e| e.to_string())?;
+                    let (x_only_pub, _) = public_key.x_only_public_key();
+                    let (tweaked_pub, _) = x_only_pub.tap_tweak(&Secp256k1::new(), None);
+                    AddressHashEnum::TweakedXOnlyPubkey(tweaked_pub.serialize().into())
+                },
+                // TODO: remove this match arm and the non-wasm cfg in the arm above to enable taproot support
+                // for wasm once https://github.com/KomodoPlatform/komodo-defi-framework/pull/2623 is merged.
+                #[cfg(target_arch = "wasm32")]
+                AddressFormat::Segwit { version: 1 } => {
+                    return Err("taproot address extraction is not yet supported in wasm".into())
                 },
                 _ => return Err("Don't know how to get address hash/pubkey of advanced segwit format!".to_owned()),
             },

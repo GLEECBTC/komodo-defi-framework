@@ -1,6 +1,8 @@
 //! Bitcoin keys.
 
 extern crate bech32;
+#[cfg(not(target_arch = "wasm32"))]
+extern crate bitcoin;
 extern crate bitcrypto as crypto;
 extern crate bs58;
 extern crate derive_more;
