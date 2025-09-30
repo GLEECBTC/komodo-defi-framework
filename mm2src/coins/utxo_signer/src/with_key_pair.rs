@@ -232,7 +232,7 @@ pub fn p2tr_spend(
     let (tweaked_pub, _) = x_only_pub.tap_tweak(&secp, None);
 
     // Make sure our key is authorized to spend this input (i.e. make sure we got the expected `prev_script`).
-    let script_pub_key = Builder::build_p2tr(&keys::AddressHashEnum::WitnessScriptHash(
+    let script_pub_key = Builder::build_p2tr(&keys::AddressHashEnum::TweakedXOnlyPubkey(
         tweaked_pub.serialize().into(),
     ))?;
     let unsigned_input = get_input(signer, input_index)?;
