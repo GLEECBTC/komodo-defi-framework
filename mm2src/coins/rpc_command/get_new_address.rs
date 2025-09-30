@@ -350,10 +350,10 @@ impl RpcTask for InitGetNewAddressTask {
                     },
                     AddressFormat::Segwit { version: 0 } => Some(TrezorInputScriptType::SpendWitness),
                     AddressFormat::Segwit { version: 1 } => Some(TrezorInputScriptType::SpendTaproot),
-                    AddressFormat::Segwit { version: _ } => {
-                        return Err(GetNewAddressRpcError::ErrorDerivingAddress(
-                            "The only segwit address types supported for UTXO are segwit v0 & v1".into(),
-                        ))?
+                    AddressFormat::Segwit { version: v } => {
+                        return Err(GetNewAddressRpcError::ErrorDerivingAddress(format!(
+                            "Segwit v{v} addresses are not supported for UTXO"
+                        )))?
                     },
                 };
                 Ok(GetNewAddressResponseEnum::Map(
@@ -375,10 +375,10 @@ impl RpcTask for InitGetNewAddressTask {
                         Some(TrezorInputScriptType::SpendAddress)
                     },
                     AddressFormat::Segwit { version: 0 } => Some(TrezorInputScriptType::SpendWitness),
-                    AddressFormat::Segwit { version: _ } => {
-                        return Err(GetNewAddressRpcError::ErrorDerivingAddress(
-                            "The only segwit address type supported for Qtum is segwit v0".into(),
-                        ))?
+                    AddressFormat::Segwit { version: v } => {
+                        return Err(GetNewAddressRpcError::ErrorDerivingAddress(format!(
+                            "Segwit v{v} addresses are not supported for Qtum"
+                        )))?
                     },
                 };
                 Ok(GetNewAddressResponseEnum::Map(

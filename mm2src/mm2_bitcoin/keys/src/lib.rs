@@ -54,6 +54,7 @@ pub type Secret = H256;
 pub type Message = H256;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+// FIXME: (dimxy) change this name since we have a tweaked x-only pubkey as a variant here
 pub enum AddressHashEnum {
     /// 20 bytes long hash derived from public `ripemd160(sha256(public/script))` used in P2PKH, P2SH, P2WPKH
     AddressHash(H160),

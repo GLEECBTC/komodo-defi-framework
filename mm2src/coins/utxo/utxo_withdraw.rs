@@ -303,23 +303,25 @@ where
         let mut sign_params = UtxoSignTxParamsBuilder::new();
 
         // TODO refactor [`UtxoTxBuilder::build`] to return `SpendingInputInfo` and `SendingOutputInfo` within `AdditionalTxData`.
-        sign_params.add_inputs_infos(
-            unsigned_tx
-                .inputs
-                .iter()
-                .map(|_input| match self.from_address.addr_format() {
-                    AddressFormat::Segwit { version: 0 } => SpendingInputInfo::P2WPKH {
-                        address_derivation_path: self.from_derivation_path.clone(),
-                        address_pubkey: self.from_pubkey,
-                    },
-                    AddressFormat::Standard | AddressFormat::CashAddress { .. } => SpendingInputInfo::P2PKH {
-                        address_derivation_path: self.from_derivation_path.clone(),
-                        address_pubkey: self.from_pubkey,
-                    },
-                    AddressFormat::Segwit { version: 1 } => panic!("FIXME: Implement this"),
-                    _ => panic!("FIXME: this is unreachable if we trust our AddressFormat construction already validates the version, but we better handle this as an error instead.")
-                }),
-        );
+        let spending_input_info = match self.from_address.addr_format() {
+            AddressFormat::Standard | AddressFormat::CashAddress { .. } => SpendingInputInfo::P2PKH {
+                address_derivation_path: self.from_derivation_path.clone(),
+                address_pubkey: self.from_pubkey,
+            },
+            AddressFormat::Segwit { version: 0 } => SpendingInputInfo::P2WPKH {
+                address_derivation_path: self.from_derivation_path.clone(),
+                address_pubkey: self.from_pubkey,
+            },
+            AddressFormat::Segwit { version: 1 } => SpendingInputInfo::P2TR {
+                address_derivation_path: self.from_derivation_path.clone(),
+            },
+            AddressFormat::Segwit { version: v } => {
+                return Err(WithdrawError::InvalidAddress(format!(
+                    "Unsupported segwit version v{v}"
+                )))?;
+            },
+        };
+        sign_params.add_inputs_infos(std::iter::repeat_n(spending_input_info, unsigned_tx.inputs.len()));
         sign_params.add_outputs_infos(once(SendingOutputInfo {
             destination_address: OutputDestination::plain(self.req.to.clone()),
         }));

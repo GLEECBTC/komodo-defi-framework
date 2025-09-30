@@ -16,6 +16,7 @@ impl UtxoSignTxError {
 }
 
 /// An additional info of a spending input.
+#[derive(Clone)]
 pub enum SpendingInputInfo {
     P2PKH {
         address_derivation_path: DerivationPath,
@@ -24,6 +25,9 @@ pub enum SpendingInputInfo {
     P2WPKH {
         address_derivation_path: DerivationPath,
         address_pubkey: PublicKey,
+    },
+    P2TR {
+        address_derivation_path: DerivationPath,
     },
     // The fields are used to generate `trezor::proto::messages_bitcoin::MultisigRedeemScriptType`
     // P2SH {}
@@ -64,10 +68,11 @@ impl SendingOutputInfo {
     #[inline]
     pub fn trezor_output_script_type(&self) -> TrezorOutputScriptType {
         match self.destination_address {
-            OutputDestination::Change { ref addr_format, .. }
-                if matches!(*addr_format, AddressFormat::Segwit { .. }) =>
-            {
+            OutputDestination::Change { ref addr_format, .. } if addr_format.is_segwit_v0() => {
                 TrezorOutputScriptType::PayToWitness
+            },
+            OutputDestination::Change { ref addr_format, .. } if addr_format.is_segwit_v1() => {
+                TrezorOutputScriptType::PayToTaproot
             },
             OutputDestination::Change { .. } | OutputDestination::Plain { .. } => TrezorOutputScriptType::PayToAddress,
         }

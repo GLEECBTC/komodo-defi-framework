@@ -1,4 +1,6 @@
-use crate::sign_common::{complete_tx, p2pkh_spend_with_signature, p2wpkh_spend_with_signature};
+use crate::sign_common::{
+    complete_tx, p2pkh_spend_with_signature, p2tr_spend_with_signature, p2wpkh_spend_with_signature,
+};
 use crate::sign_params::{OutputDestination, SendingOutputInfo, SpendingInputInfo, UtxoSignTxParams};
 use crate::{TxProvider, UtxoSignTxError, UtxoSignTxResult};
 use chain::{Transaction as UtxoTx, TransactionOutput};
@@ -48,6 +50,9 @@ impl<TxP: TxProvider + Send + Sync> TrezorTxSigner<'_, TxP> {
                 },
                 SpendingInputInfo::P2WPKH { address_pubkey, .. } => {
                     p2wpkh_spend_with_signature(unsigned_input, address_pubkey, self.fork_id, Bytes::from(signature))
+                },
+                SpendingInputInfo::P2TR { .. } => {
+                    p2tr_spend_with_signature(unsigned_input, self.fork_id, Bytes::from(signature))
                 },
             })
             .collect();
@@ -119,6 +124,12 @@ impl<TxP: TxProvider + Send + Sync> TrezorTxSigner<'_, TxP> {
             } => (
                 Some(address_derivation_path.clone()),
                 TrezorInputScriptType::SpendWitness,
+            ),
+            SpendingInputInfo::P2TR {
+                address_derivation_path,
+            } => (
+                Some(address_derivation_path.clone()),
+                TrezorInputScriptType::SpendTaproot,
             ),
         };
 

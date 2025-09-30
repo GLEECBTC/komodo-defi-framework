@@ -1,6 +1,6 @@
 use crate::sign_common::{
     complete_tx, p2pk_spend_with_signature, p2pkh_spend_with_signature, p2sh_spend_with_signature,
-    p2tr_spend_with_signature, p2wpkh_spend_with_signature,
+    p2wpkh_spend_with_signature,
 };
 use crate::Signature;
 use chain::{Transaction as UtxoTx, TransactionInput};
@@ -208,6 +208,7 @@ pub fn p2tr_spend(
     key_pair: &KeyPair,
     fork_id: u32,
 ) -> UtxoSignWithKeyPairResult<TransactionInput> {
+    use crate::sign_common::p2tr_spend_with_signature;
     use bitcoin::psbt::Prevouts;
     use bitcoin::schnorr::TapTweak;
     use bitcoin::secp256k1::{KeyPair, Secp256k1};
@@ -276,9 +277,9 @@ pub fn p2tr_spend(
 ) -> UtxoSignWithKeyPairResult<TransactionInput> {
     // TODO: remove this function and the non-wasm cfg in the function above to enable taproot support
     // for wasm once https://github.com/KomodoPlatform/komodo-defi-framework/pull/2623 is merged.
-    return MmError::err(UtxoSignWithKeyPairError::UnspendableUTXO {
+    MmError::err(UtxoSignWithKeyPairError::UnspendableUTXO {
         script: get_input(signer, input_index)?.prev_script.clone(),
-    });
+    })
 }
 
 /// Calculates the input script hash and sign it using `key_pair`.
