@@ -72,6 +72,10 @@ impl LockingDestination {
         LockingDestination::WitnessScriptHash(H256::default())
     }
 
+    pub fn default_tweaked_xonly_pubkey() -> Self {
+        LockingDestination::TweakedXOnlyPubkey(H256::default())
+    }
+
     pub fn copy_from_slice(&mut self, src: &[u8]) {
         match self {
             LockingDestination::AddressHash(h) => h.copy_from_slice(src),

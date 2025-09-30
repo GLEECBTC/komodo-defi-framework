@@ -315,10 +315,9 @@ impl Address {
                 LockingDestination::default_witness_script_hash(),
             ),
             (0, _) => return Err("Expect either 20 or 32 bytes long hash for witness v0 address".into()),
-            // FIXME: (IN A DIFFERENT COMMIT) THIS SHOULDN'T BE WITNESS SCRIPT HASH.
             (1, 32) => (
                 AddressScriptType::P2TR,
-                LockingDestination::default_witness_script_hash(),
+                LockingDestination::default_tweaked_xonly_pubkey(),
             ),
             (1, _) => return Err("Expect 32 bytes long public key for witness v1 address".into()),
             (v, _) => return Err(format!("Unsupported segwit version: {v}")),
