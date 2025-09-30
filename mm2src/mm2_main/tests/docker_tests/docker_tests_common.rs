@@ -32,7 +32,7 @@ use ethereum_types::{H160 as H160Eth, U256};
 use futures::TryFutureExt;
 use http::StatusCode;
 use keys::{
-    Address, AddressBuilder, AddressHashEnum, AddressPrefix, KeyPair, NetworkAddressPrefixes,
+    Address, AddressBuilder, AddressPrefix, KeyPair, LockingDestination, NetworkAddressPrefixes,
     NetworkPrefix as CashAddrPrefix,
 };
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
@@ -1198,7 +1198,7 @@ pub fn utxo_burn_address() -> Address {
         },
         None,
     )
-    .as_pkh(AddressHashEnum::default_address_hash())
+    .as_pkh(LockingDestination::default_address_hash())
     .build()
     .expect("valid address props")
 }

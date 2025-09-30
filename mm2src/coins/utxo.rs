@@ -65,8 +65,8 @@ use keys::bytes::Bytes;
 use keys::NetworkAddressPrefixes;
 use keys::Signature;
 pub use keys::{
-    Address, AddressBuilder, AddressFormat as UtxoAddressFormat, AddressHashEnum, AddressPrefix, AddressScriptType,
-    KeyPair, LegacyAddress, Private, Public, Secret,
+    Address, AddressBuilder, AddressFormat as UtxoAddressFormat, AddressPrefix, AddressScriptType, KeyPair,
+    LegacyAddress, LockingDestination, Private, Public, Secret,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use lightning_invoice::Currency as LightningCurrency;
@@ -1911,11 +1911,11 @@ where
 /// Builds transaction output script for an Address struct
 pub fn output_script(address: &Address) -> Result<Script, keys::Error> {
     match address.script_type() {
-        AddressScriptType::P2PKH => Ok(Builder::build_p2pkh(address.hash())),
-        AddressScriptType::P2SH => Ok(Builder::build_p2sh(address.hash())),
-        AddressScriptType::P2WPKH => Builder::build_p2wpkh(address.hash()),
-        AddressScriptType::P2WSH => Builder::build_p2wsh(address.hash()),
-        AddressScriptType::P2TR => Builder::build_p2tr(address.hash()),
+        AddressScriptType::P2PKH => Ok(Builder::build_p2pkh(address.locking_destination())),
+        AddressScriptType::P2SH => Ok(Builder::build_p2sh(address.locking_destination())),
+        AddressScriptType::P2WPKH => Builder::build_p2wpkh(address.locking_destination()),
+        AddressScriptType::P2WSH => Builder::build_p2wsh(address.locking_destination()),
+        AddressScriptType::P2TR => Builder::build_p2tr(address.locking_destination()),
     }
 }
 

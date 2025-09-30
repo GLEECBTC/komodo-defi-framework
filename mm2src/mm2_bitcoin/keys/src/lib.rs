@@ -54,8 +54,7 @@ pub type Secret = H256;
 pub type Message = H256;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-// FIXME: (dimxy) change this name since we have a tweaked x-only pubkey as a variant here
-pub enum AddressHashEnum {
+pub enum LockingDestination {
     /// 20 bytes long hash derived from public `ripemd160(sha256(public/script))` used in P2PKH, P2SH, P2WPKH
     AddressHash(H160),
     /// 32 bytes long hash derived from script `sha256(script)` used in P2WSH
@@ -64,57 +63,57 @@ pub enum AddressHashEnum {
     TweakedXOnlyPubkey(H256),
 }
 
-impl AddressHashEnum {
+impl LockingDestination {
     pub fn default_address_hash() -> Self {
-        AddressHashEnum::AddressHash(H160::default())
+        LockingDestination::AddressHash(H160::default())
     }
 
     pub fn default_witness_script_hash() -> Self {
-        AddressHashEnum::WitnessScriptHash(H256::default())
+        LockingDestination::WitnessScriptHash(H256::default())
     }
 
     pub fn copy_from_slice(&mut self, src: &[u8]) {
         match self {
-            AddressHashEnum::AddressHash(h) => h.copy_from_slice(src),
-            AddressHashEnum::WitnessScriptHash(s) => s.copy_from_slice(src),
-            AddressHashEnum::TweakedXOnlyPubkey(p) => p.copy_from_slice(src),
+            LockingDestination::AddressHash(h) => h.copy_from_slice(src),
+            LockingDestination::WitnessScriptHash(s) => s.copy_from_slice(src),
+            LockingDestination::TweakedXOnlyPubkey(p) => p.copy_from_slice(src),
         }
     }
 
     pub fn to_vec(&self) -> Vec<u8> {
         match self {
-            AddressHashEnum::AddressHash(h) => h.to_vec(),
-            AddressHashEnum::WitnessScriptHash(s) => s.to_vec(),
-            AddressHashEnum::TweakedXOnlyPubkey(p) => p.to_vec(),
+            LockingDestination::AddressHash(h) => h.to_vec(),
+            LockingDestination::WitnessScriptHash(s) => s.to_vec(),
+            LockingDestination::TweakedXOnlyPubkey(p) => p.to_vec(),
         }
     }
 
-    pub fn is_address_hash(&self) -> bool {
-        matches!(*self, AddressHashEnum::AddressHash(_))
+    pub fn is_address_or_script_hash(&self) -> bool {
+        matches!(*self, LockingDestination::AddressHash(_))
     }
 
     pub fn is_witness_script_hash(&self) -> bool {
-        matches!(*self, AddressHashEnum::WitnessScriptHash(_))
+        matches!(*self, LockingDestination::WitnessScriptHash(_))
     }
 
     pub fn is_tweaked_xonly_pubkey(&self) -> bool {
-        matches!(*self, AddressHashEnum::TweakedXOnlyPubkey(_))
+        matches!(*self, LockingDestination::TweakedXOnlyPubkey(_))
     }
 }
 
-impl fmt::Display for AddressHashEnum {
+impl fmt::Display for LockingDestination {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            AddressHashEnum::AddressHash(h) => f.write_str(&h.to_string()),
-            AddressHashEnum::WitnessScriptHash(s) => f.write_str(&s.to_string()),
-            AddressHashEnum::TweakedXOnlyPubkey(p) => f.write_str(&p.to_string()),
+            LockingDestination::AddressHash(h) => f.write_str(&h.to_string()),
+            LockingDestination::WitnessScriptHash(s) => f.write_str(&s.to_string()),
+            LockingDestination::TweakedXOnlyPubkey(p) => f.write_str(&p.to_string()),
         }
     }
 }
 
-impl From<H160> for AddressHashEnum {
+impl From<H160> for LockingDestination {
     fn from(hash: H160) -> Self {
-        AddressHashEnum::AddressHash(hash)
+        LockingDestination::AddressHash(hash)
     }
 }
 

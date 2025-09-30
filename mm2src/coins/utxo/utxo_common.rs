@@ -50,8 +50,8 @@ use keys::bytes::Bytes;
 #[cfg(test)]
 use keys::prefixes::{KMD_PREFIXES, T_QTUM_PREFIXES};
 use keys::{
-    Address, AddressBuilder, AddressBuilderOption, AddressFormat as UtxoAddressFormat, AddressFormat, AddressHashEnum,
-    AddressScriptType, CompactSignature, Public, SegwitAddress,
+    Address, AddressBuilder, AddressBuilderOption, AddressFormat as UtxoAddressFormat, AddressFormat,
+    AddressScriptType, CompactSignature, LockingDestination, Public, SegwitAddress,
 };
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -335,23 +335,23 @@ pub fn addresses_from_script<T: UtxoCommonOps>(coin: &T, script: &Script) -> Res
             let (addr_format, build_option) = match dst.kind {
                 AddressScriptType::P2PKH => (
                     coin.addr_format_for_standard_scripts(),
-                    AddressBuilderOption::PubkeyHash(dst.hash),
+                    AddressBuilderOption::PubkeyHash(dst.destination),
                 ),
                 AddressScriptType::P2SH => (
                     coin.addr_format_for_standard_scripts(),
-                    AddressBuilderOption::ScriptHash(dst.hash),
+                    AddressBuilderOption::ScriptHash(dst.destination),
                 ),
                 AddressScriptType::P2WPKH => (
                     UtxoAddressFormat::Segwit { version: 0 },
-                    AddressBuilderOption::PubkeyHash(dst.hash),
+                    AddressBuilderOption::PubkeyHash(dst.destination),
                 ),
                 AddressScriptType::P2WSH => (
                     UtxoAddressFormat::Segwit { version: 0 },
-                    AddressBuilderOption::ScriptHash(dst.hash),
+                    AddressBuilderOption::ScriptHash(dst.destination),
                 ),
                 AddressScriptType::P2TR => (
                     UtxoAddressFormat::Segwit { version: 1 },
-                    AddressBuilderOption::TweakedXOnlyPubkey(dst.hash),
+                    AddressBuilderOption::TweakedXOnlyPubkey(dst.destination),
                 ),
             };
 
@@ -1092,7 +1092,8 @@ async fn gen_taker_funding_spend_preimage<T: UtxoCommonOps>(
 
     let payment_output = TransactionOutput {
         value: funding_amount - fee,
-        script_pubkey: Builder::build_p2sh(&AddressHashEnum::AddressHash(dhash160(&payment_redeem_script))).to_bytes(),
+        script_pubkey: Builder::build_p2sh(&LockingDestination::AddressHash(dhash160(&payment_redeem_script)))
+            .to_bytes(),
     };
 
     p2sh_spending_tx_preimage(
@@ -1616,7 +1617,7 @@ where
 
             let mut outputs = vec![TransactionOutput {
                 value: fee_amount,
-                script_pubkey: Builder::build_p2pkh(dex_address.hash()).to_bytes(),
+                script_pubkey: Builder::build_p2pkh(dex_address.locking_destination()).to_bytes(),
             }];
 
             if let DexFee::WithBurn {
@@ -1634,7 +1635,7 @@ where
                     },
                     DexFeeBurnDestination::PreBurnAccount => TransactionOutput {
                         value: burn_amount_u64,
-                        script_pubkey: Builder::build_p2pkh(burn_address.hash()).to_bytes(),
+                        script_pubkey: Builder::build_p2pkh(burn_address.locking_destination()).to_bytes(),
                     },
                 };
                 outputs.push(burn_output);
@@ -2417,7 +2418,7 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps + SwapOps>(
             let dex_address = dex_address(&coin).map_to_mm(ValidatePaymentError::TxDeserializationError)?;
             match taker_fee_tx.outputs.get(output_index) {
                 Some(out) => {
-                    let expected_script_pubkey = Builder::build_p2pkh(dex_address.hash()).to_bytes();
+                    let expected_script_pubkey = Builder::build_p2pkh(dex_address.locking_destination()).to_bytes();
                     if out.script_pubkey != expected_script_pubkey {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "{}: Provided dex fee tx output script_pubkey doesn't match expected {:?} {:?}",
@@ -2449,7 +2450,7 @@ fn validate_dex_output<T: UtxoCommonOps + SwapOps>(
     let fee_amount_u64 = sat_from_big_decimal(&fee_amount.to_decimal(), coin.as_ref().decimals).map_mm_err()?;
     match tx.outputs.get(output_index) {
         Some(out) => {
-            let expected_script_pubkey = Builder::build_p2pkh(dex_address.hash()).to_bytes();
+            let expected_script_pubkey = Builder::build_p2pkh(dex_address.locking_destination()).to_bytes();
             if out.script_pubkey != expected_script_pubkey {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                     "{}: Provided dex fee tx output script_pubkey doesn't match expected {:?} {:?}",
@@ -2571,7 +2572,7 @@ pub fn validate_fee<T: UtxoCommonOps + SwapOps>(
                     validate_burn_output(&coin, &tx, output_index + 1, &burn_script_pubkey, &burn_amount)?;
                 },
                 DexFeeBurnDestination::PreBurnAccount => {
-                    let burn_script_pubkey = Builder::build_p2pkh(burn_address.hash());
+                    let burn_script_pubkey = Builder::build_p2pkh(burn_address.locking_destination());
                     validate_dex_output(&coin, &tx, output_index, &dex_address, &fee_amount)?;
                     validate_burn_output(&coin, &tx, output_index + 1, &burn_script_pubkey, &burn_amount)?;
                 },
@@ -3092,7 +3093,7 @@ pub fn verify_message<T: UtxoCommonOps>(
         .map_to_mm(|err| VerificationError::SignatureDecodingError(err.to_string()))?;
     let recovered_pubkey = Public::recover_compact(&H256::from(message_hash), &signature)?;
     let received_address = checked_address_from_str(coin, address).map_mm_err()?;
-    Ok(AddressHashEnum::from(recovered_pubkey.address_hash()) == *received_address.hash())
+    Ok(LockingDestination::from(recovered_pubkey.address_hash()) == *received_address.locking_destination())
 }
 
 pub fn my_balance<T>(coin: T) -> BalanceFut<CoinBalance>
@@ -3569,7 +3570,7 @@ pub fn convert_to_address<T: UtxoCommonOps>(coin: &T, from: &str, to_address_for
         UtxoAddressFormat::Standard => {
             // assuming convertion to p2pkh
             Ok(LegacyAddress::new(
-                from_address.hash(),
+                from_address.locking_destination(),
                 coin.as_ref().conf.address_prefixes.p2pkh.clone(),
                 coin.as_ref().conf.checksum_type,
             )
@@ -3578,7 +3579,12 @@ pub fn convert_to_address<T: UtxoCommonOps>(coin: &T, from: &str, to_address_for
         UtxoAddressFormat::Segwit { version } => {
             let bech32_hrp = &coin.as_ref().conf.bech32_hrp;
             match bech32_hrp {
-                Some(hrp) => Ok(try_s!(SegwitAddress::new(from_address.hash(), hrp.clone(), version)).to_string()),
+                Some(hrp) => Ok(try_s!(SegwitAddress::new(
+                    from_address.locking_destination(),
+                    hrp.clone(),
+                    version
+                ))
+                .to_string()),
                 None => ERR!("Cannot convert to a segwit address for a coin with no bech32_hrp in config"),
             }
         },
@@ -5437,7 +5443,7 @@ where
     );
     let expected_output = TransactionOutput {
         value: expected_amount_sat,
-        script_pubkey: Builder::build_p2sh(&AddressHashEnum::AddressHash(dhash160(&redeem_script))).into(),
+        script_pubkey: Builder::build_p2sh(&LockingDestination::AddressHash(dhash160(&redeem_script))).into(),
     };
 
     if args.funding_tx.outputs.first() != Some(&expected_output) {
@@ -5810,7 +5816,7 @@ fn test_generate_taker_fee_tx_outputs_with_standard_dex_fee() {
     assert_eq!(outputs[0].value, fee_uamount);
     assert_eq!(
         outputs[0].script_pubkey,
-        Builder::build_p2pkh(dex_address.hash()).to_bytes()
+        Builder::build_p2pkh(dex_address.locking_destination()).to_bytes()
     );
 }
 
@@ -5839,12 +5845,12 @@ fn test_generate_taker_fee_tx_outputs_with_non_kmd_burn() {
     assert_eq!(outputs[0].value, fee_uamount);
     assert_eq!(
         outputs[0].script_pubkey,
-        Builder::build_p2pkh(dex_address.hash()).to_bytes()
+        Builder::build_p2pkh(dex_address.locking_destination()).to_bytes()
     );
     assert_eq!(outputs[1].value, burn_uamount);
     assert_eq!(
         outputs[1].script_pubkey,
-        Builder::build_p2pkh(burn_address.hash()).to_bytes()
+        Builder::build_p2pkh(burn_address.locking_destination()).to_bytes()
     );
 }
 
@@ -5879,7 +5885,7 @@ fn test_generate_taker_fee_tx_outputs_with_kmd_burn() {
     assert_eq!(outputs[0].value, fee_uamount);
     assert_eq!(
         outputs[0].script_pubkey,
-        Builder::build_p2pkh(dex_address.hash()).to_bytes()
+        Builder::build_p2pkh(dex_address.locking_destination()).to_bytes()
     );
     assert_eq!(outputs[1].value, burn_uamount);
     assert_eq!(

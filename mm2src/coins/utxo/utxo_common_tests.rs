@@ -91,7 +91,7 @@ pub(super) fn utxo_coin_fields_for_test(
         .using_pk(*key_pair.public())
         .build()
         .expect("valid address props");
-    let my_script_pubkey = Builder::build_p2pkh(my_address.hash()).to_bytes();
+    let my_script_pubkey = Builder::build_p2pkh(my_address.locking_destination()).to_bytes();
 
     let priv_key_policy = PrivKeyPolicy::Iguana(key_pair);
     let derivation_method = DerivationMethod::SingleAddress(my_address);

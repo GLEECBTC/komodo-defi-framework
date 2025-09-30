@@ -250,8 +250,10 @@ fn test_generate_transaction() {
     }];
 
     let outputs = vec![TransactionOutput {
-        script_pubkey: Builder::build_p2pkh(block_on(coin.as_ref().derivation_method.unwrap_single_addr()).hash())
-            .to_bytes(),
+        script_pubkey: Builder::build_p2pkh(
+            block_on(coin.as_ref().derivation_method.unwrap_single_addr()).locking_destination(),
+        )
+        .to_bytes(),
         value: 100000,
     }];
 
@@ -1020,8 +1022,10 @@ fn test_utxo_lock() {
     let coin = utxo_coin_for_test(client.into(), None, false);
     let output = TransactionOutput {
         value: 1000000,
-        script_pubkey: Builder::build_p2pkh(block_on(coin.as_ref().derivation_method.unwrap_single_addr()).hash())
-            .to_bytes(),
+        script_pubkey: Builder::build_p2pkh(
+            block_on(coin.as_ref().derivation_method.unwrap_single_addr()).locking_destination(),
+        )
+        .to_bytes(),
     };
     let mut futures = vec![];
     for _ in 0..5 {
@@ -1742,8 +1746,10 @@ fn test_spam_rick() {
 
     let output = TransactionOutput {
         value: 1000000,
-        script_pubkey: Builder::build_p2pkh(block_on(coin.as_ref().derivation_method.unwrap_single_addr()).hash())
-            .to_bytes(),
+        script_pubkey: Builder::build_p2pkh(
+            block_on(coin.as_ref().derivation_method.unwrap_single_addr()).locking_destination(),
+        )
+        .to_bytes(),
     };
     let mut futures = vec![];
     for _ in 0..5 {
@@ -1838,7 +1844,7 @@ fn test_qtum_generate_pod() {
         &coin.as_ref().conf.address_prefixes,
     )
     .unwrap();
-    let res = coin.generate_pod(address.hash().clone()).unwrap();
+    let res = coin.generate_pod(address.locking_destination().clone()).unwrap();
     assert_eq!(expected_res, res.to_string());
 }
 
@@ -3545,7 +3551,7 @@ fn test_withdraw_to_p2pkh() {
     )
     .as_pkh(
         block_on(coin.as_ref().derivation_method.unwrap_single_addr())
-            .hash()
+            .locking_destination()
             .clone(),
     )
     .build()
@@ -3561,7 +3567,7 @@ fn test_withdraw_to_p2pkh() {
     let transaction: UtxoTx = deserialize(tx_details.tx.tx_hex().unwrap().as_slice()).unwrap();
     let output_script: Script = transaction.outputs[0].script_pubkey.clone().into();
 
-    let expected_script = Builder::build_p2pkh(p2pkh_address.hash());
+    let expected_script = Builder::build_p2pkh(p2pkh_address.locking_destination());
 
     assert_eq!(output_script, expected_script);
 }
@@ -3601,7 +3607,7 @@ fn test_withdraw_to_p2sh() {
     )
     .as_sh(
         block_on(coin.as_ref().derivation_method.unwrap_single_addr())
-            .hash()
+            .locking_destination()
             .clone(),
     )
     .build()
@@ -3617,7 +3623,7 @@ fn test_withdraw_to_p2sh() {
     let transaction: UtxoTx = deserialize(tx_details.tx.tx_hex().unwrap().as_slice()).unwrap();
     let output_script: Script = transaction.outputs[0].script_pubkey.clone().into();
 
-    let expected_script = Builder::build_p2sh(p2sh_address.hash());
+    let expected_script = Builder::build_p2sh(p2sh_address.locking_destination());
 
     assert_eq!(output_script, expected_script);
 }
@@ -3657,7 +3663,7 @@ fn test_withdraw_to_p2wpkh() {
     )
     .as_pkh(
         block_on(coin.as_ref().derivation_method.unwrap_single_addr())
-            .hash()
+            .locking_destination()
             .clone(),
     )
     .build()
@@ -3673,7 +3679,7 @@ fn test_withdraw_to_p2wpkh() {
     let transaction: UtxoTx = deserialize(tx_details.tx.tx_hex().unwrap().as_slice()).unwrap();
     let output_script: Script = transaction.outputs[0].script_pubkey.clone().into();
 
-    let expected_script = Builder::build_p2wpkh(p2wpkh_address.hash()).expect("valid p2wpkh script");
+    let expected_script = Builder::build_p2wpkh(p2wpkh_address.locking_destination()).expect("valid p2wpkh script");
 
     assert_eq!(output_script, expected_script);
 }
@@ -3725,7 +3731,7 @@ fn test_withdraw_p2pk_balance() {
 
     // The change should be in a p2pkh script.
     let output_script: Script = transaction.outputs[1].script_pubkey.clone().into();
-    let expected_script = Builder::build_p2pkh(my_p2pkh_address.hash());
+    let expected_script = Builder::build_p2pkh(my_p2pkh_address.locking_destination());
     assert_eq!(output_script, expected_script);
 
     // And it should have this value (p2pk balance - amount sent - fees).

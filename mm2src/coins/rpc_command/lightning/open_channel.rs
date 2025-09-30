@@ -15,7 +15,7 @@ use common::{async_blocking, new_uuid, HttpStatusCode};
 use db_common::sqlite::rusqlite::Error as SqlError;
 use derive_more::Display;
 use http::StatusCode;
-use keys::AddressHashEnum;
+use keys::LockingDestination;
 use lightning::util::config::UserConfig;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -185,7 +185,7 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
 
     // The actual script_pubkey will replace this before signing the transaction after receiving the required
     // output script from the other node when the channel is accepted
-    let script_pubkey = match Builder::build_p2wsh(&AddressHashEnum::WitnessScriptHash(Default::default())) {
+    let script_pubkey = match Builder::build_p2wsh(&LockingDestination::WitnessScriptHash(Default::default())) {
         Ok(script) => script.to_bytes(),
         Err(err) => return MmError::err(OpenChannelError::InternalError(err.to_string())),
     };

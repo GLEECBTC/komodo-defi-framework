@@ -3,7 +3,7 @@ use std::{convert::TryInto, fmt};
 
 use crypto::{checksum, ChecksumType};
 use std::ops::Deref;
-use {AddressHashEnum, AddressPrefix, DisplayLayout};
+use {AddressPrefix, DisplayLayout, LockingDestination};
 
 use crate::{address::detect_checksum, Error};
 
@@ -101,11 +101,11 @@ impl fmt::Display for LegacyAddress {
 }
 
 impl LegacyAddress {
-    pub fn new(hash: &AddressHashEnum, prefix: AddressPrefix, checksum_type: ChecksumType) -> LegacyAddress {
+    pub fn new(address_hash: &LockingDestination, prefix: AddressPrefix, checksum_type: ChecksumType) -> LegacyAddress {
         LegacyAddress {
             prefix,
             checksum_type,
-            hash: hash.to_vec(),
+            hash: address_hash.to_vec(),
         }
     }
 }

@@ -45,7 +45,7 @@ use bitcrypto::sign_message_hash;
 use common::executor::{AbortableSystem, AbortedError};
 use ethereum_types::H160;
 use futures::{FutureExt, TryFutureExt};
-use keys::AddressHashEnum;
+use keys::LockingDestination;
 use mm2_metrics::MetricsArc;
 use mm2_number::MmNumber;
 use rpc::v1::types::H264 as H264Json;
@@ -106,7 +106,7 @@ pub trait QtumDelegationOps {
     fn remove_delegation(&self) -> DelegationFut;
 
     #[allow(clippy::result_large_err)]
-    fn generate_pod(&self, addr_hash: AddressHashEnum) -> Result<keys::Signature, MmError<DelegationError>>;
+    fn generate_pod(&self, addr_hash: LockingDestination) -> Result<keys::Signature, MmError<DelegationError>>;
 }
 
 #[async_trait]
@@ -163,7 +163,7 @@ pub trait QtumBasedCoin: UtxoCommonOps + MarketCoinOps {
             utxo.conf.address_prefixes.clone(),
             utxo.conf.bech32_hrp.clone(),
         )
-        .as_pkh(AddressHashEnum::AddressHash(address.0.into()))
+        .as_pkh(LockingDestination::AddressHash(address.0.into()))
         .build()
         .expect("valid address props")
     }
@@ -1361,12 +1361,12 @@ pub fn contract_addr_from_str(addr: &str) -> Result<H160, String> {
 }
 
 pub fn contract_addr_from_utxo_addr(address: Address) -> MmResult<H160, ScriptHashTypeNotSupported> {
-    match address.hash() {
-        AddressHashEnum::AddressHash(h) => Ok(h.take().into()),
-        AddressHashEnum::WitnessScriptHash(_) => MmError::err(ScriptHashTypeNotSupported {
+    match address.locking_destination() {
+        LockingDestination::AddressHash(h) => Ok(h.take().into()),
+        LockingDestination::WitnessScriptHash(_) => MmError::err(ScriptHashTypeNotSupported {
             script_hash_type: "Witness".to_owned(),
         }),
-        AddressHashEnum::TweakedXOnlyPubkey(_) => MmError::err(ScriptHashTypeNotSupported {
+        LockingDestination::TweakedXOnlyPubkey(_) => MmError::err(ScriptHashTypeNotSupported {
             script_hash_type: "Taproot Script".to_owned(),
         }),
     }

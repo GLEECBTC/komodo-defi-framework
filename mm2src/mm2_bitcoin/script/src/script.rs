@@ -1,7 +1,7 @@
 //! Serialized script, used inside transaction inputs and outputs.
 
 use bytes::Bytes;
-use keys::{self, AddressHashEnum, Public};
+use keys::{self, LockingDestination, Public};
 use std::convert::TryInto;
 use std::{fmt, ops};
 use {Error, Opcode};
@@ -36,48 +36,48 @@ pub enum ScriptType {
 pub struct ScriptAddress {
     /// The type of the address.
     pub kind: keys::AddressScriptType,
-    /// Public key hash.
-    pub hash: AddressHashEnum,
+    /// The locking destination (address hash, script hash, witness script hash, or tweaked x-only pubkey).
+    pub destination: LockingDestination,
 }
 
 impl ScriptAddress {
     /// Creates P2PKH-type ScriptAddress
-    pub fn new_p2pkh(hash: AddressHashEnum) -> Self {
+    pub fn new_p2pkh(address_hash: LockingDestination) -> Self {
         ScriptAddress {
             kind: keys::AddressScriptType::P2PKH,
-            hash,
+            destination: address_hash,
         }
     }
 
     /// Creates P2SH-type ScriptAddress
-    pub fn new_p2sh(hash: AddressHashEnum) -> Self {
+    pub fn new_p2sh(script_hash: LockingDestination) -> Self {
         ScriptAddress {
             kind: keys::AddressScriptType::P2SH,
-            hash,
+            destination: script_hash,
         }
     }
 
     /// Creates P2WPKH-type ScriptAddress
-    pub fn new_p2wpkh(hash: AddressHashEnum) -> Self {
+    pub fn new_p2wpkh(address_hash: LockingDestination) -> Self {
         ScriptAddress {
             kind: keys::AddressScriptType::P2WPKH,
-            hash,
+            destination: address_hash,
         }
     }
 
     /// Creates P2WSH-type ScriptAddress
-    pub fn new_p2wsh(hash: AddressHashEnum) -> Self {
+    pub fn new_p2wsh(witness_script_hash: LockingDestination) -> Self {
         ScriptAddress {
             kind: keys::AddressScriptType::P2WSH,
-            hash,
+            destination: witness_script_hash,
         }
     }
 
     /// Creates P2TR-type ScriptAddress
-    pub fn new_p2tr(hash: AddressHashEnum) -> Self {
+    pub fn new_p2tr(tweaked_x_only_pubkey: LockingDestination) -> Self {
         ScriptAddress {
             kind: keys::AddressScriptType::P2TR,
-            hash,
+            destination: tweaked_x_only_pubkey,
         }
     }
 }
@@ -456,7 +456,7 @@ impl Script {
                     _ => unreachable!(), // because we are relying on script_type() checks here
                 })
                 .map(|public| {
-                    vec![ScriptAddress::new_p2pkh(AddressHashEnum::AddressHash(
+                    vec![ScriptAddress::new_p2pkh(LockingDestination::AddressHash(
                         public.address_hash(),
                     ))]
                 })
@@ -464,14 +464,14 @@ impl Script {
             ScriptType::PubKeyHash => {
                 let bytes = self.data.get(3..23).ok_or(keys::Error::InvalidAddress)?;
                 let hash: [u8; 20] = bytes.try_into().map_err(|_| keys::Error::InvalidAddress)?;
-                let address_hash = AddressHashEnum::AddressHash(hash.into());
+                let address_hash = LockingDestination::AddressHash(hash.into());
                 Ok(vec![ScriptAddress::new_p2pkh(address_hash)])
             },
             ScriptType::ScriptHash => {
                 let bytes = self.data.get(2..22).ok_or(keys::Error::InvalidAddress)?;
                 let hash: [u8; 20] = bytes.try_into().map_err(|_| keys::Error::InvalidAddress)?;
-                let address_hash = AddressHashEnum::AddressHash(hash.into());
-                Ok(vec![ScriptAddress::new_p2sh(address_hash)])
+                let script_hash = LockingDestination::AddressHash(hash.into());
+                Ok(vec![ScriptAddress::new_p2sh(script_hash)])
             },
             ScriptType::Multisig => {
                 let mut addresses: Vec<ScriptAddress> = Vec::new();
@@ -484,7 +484,7 @@ impl Script {
                         .data
                         .expect("this method depends on previous check in script_type()");
                     let address = Public::from_slice(data)?.address_hash();
-                    addresses.push(ScriptAddress::new_p2pkh(AddressHashEnum::AddressHash(address)));
+                    addresses.push(ScriptAddress::new_p2pkh(LockingDestination::AddressHash(address)));
                     pc += instruction.step;
                 }
                 Ok(addresses)
@@ -493,20 +493,20 @@ impl Script {
             ScriptType::WitnessScript => {
                 let bytes = self.data.get(2..34).ok_or(keys::Error::InvalidAddress)?;
                 let hash: [u8; 32] = bytes.try_into().map_err(|_| keys::Error::InvalidAddress)?;
-                let address_hash = AddressHashEnum::WitnessScriptHash(hash.into());
-                Ok(vec![ScriptAddress::new_p2wsh(address_hash)])
+                let witness_script_hash = LockingDestination::WitnessScriptHash(hash.into());
+                Ok(vec![ScriptAddress::new_p2wsh(witness_script_hash)])
             },
             ScriptType::WitnessKey => {
                 let bytes = self.data.get(2..22).ok_or(keys::Error::InvalidAddress)?;
                 let hash: [u8; 20] = bytes.try_into().map_err(|_| keys::Error::InvalidAddress)?;
-                let address_hash = AddressHashEnum::AddressHash(hash.into());
+                let address_hash = LockingDestination::AddressHash(hash.into());
                 Ok(vec![ScriptAddress::new_p2wpkh(address_hash)])
             },
             ScriptType::Taproot => {
                 let bytes = self.data.get(2..34).ok_or(keys::Error::InvalidAddress)?;
                 let tweaked_pub: [u8; 32] = bytes.try_into().map_err(|_| keys::Error::InvalidAddress)?;
-                let address_hash = AddressHashEnum::TweakedXOnlyPubkey(tweaked_pub.into());
-                Ok(vec![ScriptAddress::new_p2tr(address_hash)])
+                let x_only_pubkey = LockingDestination::TweakedXOnlyPubkey(tweaked_pub.into());
+                Ok(vec![ScriptAddress::new_p2tr(x_only_pubkey)])
             },
             ScriptType::CallSender => {
                 Ok(vec![]) // TODO
@@ -869,7 +869,7 @@ OP_ADD
     fn test_extract_destinations_pub_key_hash() {
         let address = Address::from_legacyaddress("13NMTpfNVVJQTNH4spP4UeqBGqLdqDo27S", &BTC_PREFIXES)
             .unwrap()
-            .hash()
+            .locking_destination()
             .clone();
         let script = Builder::build_p2pkh(&address);
         assert_eq!(script.script_type(), ScriptType::PubKeyHash);
@@ -883,7 +883,7 @@ OP_ADD
     fn test_extract_destinations_script_hash() {
         let address = Address::from_legacyaddress("13NMTpfNVVJQTNH4spP4UeqBGqLdqDo27S", &BTC_PREFIXES)
             .unwrap()
-            .hash()
+            .locking_destination()
             .clone();
         let script = Builder::build_p2sh(&address);
         assert_eq!(script.script_type(), ScriptType::ScriptHash);
@@ -898,7 +898,7 @@ OP_ADD
         let address_hash =
             Address::from_segwitaddress("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4", ChecksumType::DSHA256)
                 .unwrap()
-                .hash()
+                .locking_destination()
                 .clone();
         let script = Builder::build_p2wpkh(&address_hash).expect("build p2wpkh ok");
         assert_eq!(script.script_type(), ScriptType::WitnessKey);
@@ -915,7 +915,7 @@ OP_ADD
             ChecksumType::DSHA256,
         )
         .unwrap()
-        .hash()
+        .locking_destination()
         .clone();
         let script = Builder::build_p2wsh(&address_hash).expect("build p2wsh ok");
         assert_eq!(script.script_type(), ScriptType::WitnessScript);

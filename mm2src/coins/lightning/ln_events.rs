@@ -520,7 +520,7 @@ impl LightningEventHandler {
                     return;
                 },
             };
-            let change_destination_script = match Builder::build_p2wpkh(my_address.hash()) {
+            let change_destination_script = match Builder::build_p2wpkh(my_address.locking_destination()) {
                 Ok(script) => script.to_bytes().take().into(),
                 Err(err) => {
                     error!(

@@ -6,20 +6,20 @@ use bitcoin::schnorr::TapTweak;
 #[cfg(not(target_arch = "wasm32"))]
 use bitcoin::secp256k1::{PublicKey, Secp256k1};
 
-use {Address, AddressFormat, AddressHashEnum, AddressPrefix, AddressScriptType, NetworkAddressPrefixes};
+use {Address, AddressFormat, AddressPrefix, AddressScriptType, LockingDestination, NetworkAddressPrefixes};
 
 /// Params for AddressBuilder to select output script type
 #[derive(PartialEq)]
 pub enum AddressBuilderOption {
     /// build for pay to pubkey hash output (witness or legacy)
-    PubkeyHash(AddressHashEnum),
+    PubkeyHash(LockingDestination),
     /// build for pay to script hash output (witness or legacy)
-    ScriptHash(AddressHashEnum),
+    ScriptHash(LockingDestination),
     /// build for pay to pubkey hash but using a public key as an input (not pubkey hash)
     FromPubKey(Public),
     /// build for pay to taproot output using a tweaked x-only pubkey as an input.
     /// Note that the address format in this case must be segwit and v1.
-    TweakedXOnlyPubkey(AddressHashEnum),
+    TweakedXOnlyPubkey(LockingDestination),
 }
 
 /// Builds Address struct depending on addr_format, validates params to build Address
@@ -65,20 +65,20 @@ impl AddressBuilder {
     }
 
     /// Sets Address tx output script type as p2pkh or p2wpkh
-    pub fn as_pkh(mut self, hash: AddressHashEnum) -> Self {
-        self.build_option = Some(AddressBuilderOption::PubkeyHash(hash));
+    pub fn as_pkh(mut self, address_hash: LockingDestination) -> Self {
+        self.build_option = Some(AddressBuilderOption::PubkeyHash(address_hash));
         self
     }
 
     /// Sets Address tx output script type as p2sh or p2wsh
-    pub fn as_sh(mut self, hash: AddressHashEnum) -> Self {
-        self.build_option = Some(AddressBuilderOption::ScriptHash(hash));
+    pub fn as_sh(mut self, script_hash: LockingDestination) -> Self {
+        self.build_option = Some(AddressBuilderOption::ScriptHash(script_hash));
         self
     }
 
     /// Sets Address tx output script type as p2tr
-    pub fn as_tr(mut self, hash: AddressHashEnum) -> Self {
-        self.build_option = Some(AddressBuilderOption::TweakedXOnlyPubkey(hash));
+    pub fn as_tr(mut self, x_only_pubkey: LockingDestination) -> Self {
+        self.build_option = Some(AddressBuilderOption::TweakedXOnlyPubkey(x_only_pubkey));
         self
     }
 
@@ -90,7 +90,7 @@ impl AddressBuilder {
                 Ok(Address {
                     prefix: self.get_address_prefix(build_option)?,
                     hrp: None,
-                    hash: self.get_hash(build_option)?,
+                    locking_destination: self.get_locking_destination(build_option)?,
                     pubkey: self.get_pubkey(build_option),
                     checksum_type: self.checksum_type,
                     addr_format: self.addr_format.clone(),
@@ -104,7 +104,7 @@ impl AddressBuilder {
                 Ok(Address {
                     prefix: AddressPrefix::default(),
                     hrp: self.hrp.clone(),
-                    hash: self.get_hash(build_option)?,
+                    locking_destination: self.get_locking_destination(build_option)?,
                     pubkey: self.get_pubkey(build_option),
                     checksum_type: self.checksum_type,
                     addr_format: self.addr_format.clone(),
@@ -116,7 +116,7 @@ impl AddressBuilder {
                 Ok(Address {
                     prefix: self.get_address_prefix(build_option)?,
                     hrp: None,
-                    hash: self.get_hash(build_option)?,
+                    locking_destination: self.get_locking_destination(build_option)?,
                     pubkey: self.get_pubkey(build_option),
                     checksum_type: self.checksum_type,
                     addr_format: self.addr_format.clone(),
@@ -156,14 +156,14 @@ impl AddressBuilder {
         }
     }
 
-    fn get_hash(&self, build_option: &AddressBuilderOption) -> Result<AddressHashEnum, String> {
+    fn get_locking_destination(&self, build_option: &AddressBuilderOption) -> Result<LockingDestination, String> {
         let hash = match build_option {
             AddressBuilderOption::PubkeyHash(hash) => hash.clone(),
             AddressBuilderOption::ScriptHash(hash) => hash.clone(),
             AddressBuilderOption::FromPubKey(pubkey) => match self.addr_format {
                 // For legacy, segwit v0 and cashaddr use address hash (dhash160).
                 AddressFormat::Standard | AddressFormat::Segwit { version: 0 } | AddressFormat::CashAddress { .. } => {
-                    AddressHashEnum::AddressHash(pubkey.address_hash())
+                    LockingDestination::AddressHash(pubkey.address_hash())
                 },
                 // For segwit v1 (taproot) use the x coordinate of the tweaked pubkey.
                 #[cfg(not(target_arch = "wasm32"))]
@@ -171,7 +171,7 @@ impl AddressBuilder {
                     let public_key = PublicKey::from_slice(pubkey).map_err(|e| e.to_string())?;
                     let (x_only_pub, _) = public_key.x_only_public_key();
                     let (tweaked_pub, _) = x_only_pub.tap_tweak(&Secp256k1::new(), None);
-                    AddressHashEnum::TweakedXOnlyPubkey(tweaked_pub.serialize().into())
+                    LockingDestination::TweakedXOnlyPubkey(tweaked_pub.serialize().into())
                 },
                 // TODO: remove this match arm and the non-wasm cfg in the arm above to enable taproot support
                 // for wasm once https://github.com/KomodoPlatform/komodo-defi-framework/pull/2623 is merged.
@@ -181,7 +181,7 @@ impl AddressBuilder {
                 },
                 _ => return Err("Don't know how to get address hash/pubkey of advanced segwit format!".to_owned()),
             },
-            AddressBuilderOption::TweakedXOnlyPubkey(hash) => hash.clone(),
+            AddressBuilderOption::TweakedXOnlyPubkey(tweaked_x_only_pubkey) => tweaked_x_only_pubkey.clone(),
         };
         Ok(hash)
     }
@@ -202,8 +202,8 @@ impl AddressBuilder {
 
     fn check_legacy_hash(&self, build_option: &AddressBuilderOption) -> Result<(), String> {
         let is_hash_valid = match build_option {
-            AddressBuilderOption::PubkeyHash(hash) => hash.is_address_hash(),
-            AddressBuilderOption::ScriptHash(hash) => hash.is_address_hash(),
+            AddressBuilderOption::PubkeyHash(hash) => hash.is_address_or_script_hash(),
+            AddressBuilderOption::ScriptHash(hash) => hash.is_address_or_script_hash(),
             AddressBuilderOption::FromPubKey(_) => true,
             AddressBuilderOption::TweakedXOnlyPubkey(_) => false,
         };
@@ -215,7 +215,7 @@ impl AddressBuilder {
 
     fn check_segwit_hash(&self, build_option: &AddressBuilderOption) -> Result<(), String> {
         let is_hash_valid = match build_option {
-            AddressBuilderOption::PubkeyHash(hash) => hash.is_address_hash(),
+            AddressBuilderOption::PubkeyHash(hash) => hash.is_address_or_script_hash(),
             AddressBuilderOption::ScriptHash(hash) => hash.is_witness_script_hash(),
             AddressBuilderOption::FromPubKey(_) => true,
             AddressBuilderOption::TweakedXOnlyPubkey(pubkey) => pubkey.is_tweaked_xonly_pubkey(),
