@@ -827,6 +827,8 @@ pub enum InputScriptType {
     Spendwitness = 3,
     /// SegWit over P2SH (backward compatible)
     Spendp2shwitness = 4,
+    /// Taproot
+    Spendtaproot = 5,
 }
 ///*
 /// Type of script which will be used for transaction output
@@ -845,6 +847,8 @@ pub enum OutputScriptType {
     Paytowitness = 4,
     /// only for change output
     Paytop2shwitness = 5,
+    /// only for change output
+    Paytotaproot = 6,
 }
 ///*
 /// Type of script which will be used for decred stake transaction input

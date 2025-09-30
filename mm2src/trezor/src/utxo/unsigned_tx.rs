@@ -17,6 +17,8 @@ pub enum TrezorInputScriptType {
     SpendWitness,
     /// SegWit over P2SH (backward compatible).
     SpendP2SHWitness,
+    /// Taproot input (P2TR).
+    SpendTaproot,
 }
 
 impl From<TrezorInputScriptType> for proto_bitcoin::InputScriptType {
@@ -27,6 +29,7 @@ impl From<TrezorInputScriptType> for proto_bitcoin::InputScriptType {
             TrezorInputScriptType::External => proto_bitcoin::InputScriptType::External,
             TrezorInputScriptType::SpendWitness => proto_bitcoin::InputScriptType::Spendwitness,
             TrezorInputScriptType::SpendP2SHWitness => proto_bitcoin::InputScriptType::Spendp2shwitness,
+            TrezorInputScriptType::SpendTaproot => proto_bitcoin::InputScriptType::Spendtaproot,
         }
     }
 }
@@ -39,6 +42,8 @@ pub enum TrezorOutputScriptType {
     PayToOpReturn,
     /// pay to witness v0, used for the change output
     PayToWitness,
+    /// Taproot output (P2TR), used for the change output
+    PayToTaproot,
 }
 
 impl From<TrezorOutputScriptType> for proto_bitcoin::OutputScriptType {
@@ -47,6 +52,7 @@ impl From<TrezorOutputScriptType> for proto_bitcoin::OutputScriptType {
             TrezorOutputScriptType::PayToAddress => proto_bitcoin::OutputScriptType::Paytoaddress,
             TrezorOutputScriptType::PayToOpReturn => proto_bitcoin::OutputScriptType::Paytoopreturn,
             TrezorOutputScriptType::PayToWitness => proto_bitcoin::OutputScriptType::Paytowitness,
+            TrezorOutputScriptType::PayToTaproot => proto_bitcoin::OutputScriptType::Paytotaproot,
         }
     }
 }

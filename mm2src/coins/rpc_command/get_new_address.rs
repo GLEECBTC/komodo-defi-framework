@@ -349,7 +349,12 @@ impl RpcTask for InitGetNewAddressTask {
                         Some(TrezorInputScriptType::SpendAddress)
                     },
                     AddressFormat::Segwit { version: 0 } => Some(TrezorInputScriptType::SpendWitness),
-                    _ => panic!("FIXME: Implement erroring here and add segwit v1 support"),
+                    AddressFormat::Segwit { version: 1 } => Some(TrezorInputScriptType::SpendTaproot),
+                    AddressFormat::Segwit { version: _ } => {
+                        return Err(GetNewAddressRpcError::ErrorDerivingAddress(
+                            "The only segwit address types supported for UTXO are segwit v0 & v1".into(),
+                        ))?
+                    },
                 };
                 Ok(GetNewAddressResponseEnum::Map(
                     get_new_address_helper(
@@ -370,7 +375,11 @@ impl RpcTask for InitGetNewAddressTask {
                         Some(TrezorInputScriptType::SpendAddress)
                     },
                     AddressFormat::Segwit { version: 0 } => Some(TrezorInputScriptType::SpendWitness),
-                    _ => panic!("FIXME: Implement erroring here and add segwit v1 support"),
+                    AddressFormat::Segwit { version: _ } => {
+                        return Err(GetNewAddressRpcError::ErrorDerivingAddress(
+                            "The only segwit address type supported for Qtum is segwit v0".into(),
+                        ))?
+                    },
                 };
                 Ok(GetNewAddressResponseEnum::Map(
                     get_new_address_helper(
