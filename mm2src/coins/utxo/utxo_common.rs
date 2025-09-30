@@ -3578,7 +3578,7 @@ pub fn convert_to_address<T: UtxoCommonOps>(coin: &T, from: &str, to_address_for
         UtxoAddressFormat::Segwit { version } => {
             let bech32_hrp = &coin.as_ref().conf.bech32_hrp;
             match bech32_hrp {
-                Some(hrp) => Ok(SegwitAddress::new(from_address.hash(), hrp.clone(), version).to_string()),
+                Some(hrp) => Ok(try_s!(SegwitAddress::new(from_address.hash(), hrp.clone(), version)).to_string()),
                 None => ERR!("Cannot convert to a segwit address for a coin with no bech32_hrp in config"),
             }
         },

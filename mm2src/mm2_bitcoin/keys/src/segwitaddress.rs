@@ -79,13 +79,15 @@ pub struct SegwitAddress {
 }
 
 impl SegwitAddress {
-    pub fn new(hash: &AddressHashEnum, hrp: String, version: u8) -> SegwitAddress {
-        SegwitAddress {
-            hrp,
-            // FIXME: Better not panic here since version is supplied from outside.
-            version: bech32::u5::try_from_u8(version).expect("version must be < 32"),
-            program: hash.to_vec(),
+    pub fn new(hash: &AddressHashEnum, hrp: String, version: u8) -> Result<SegwitAddress, Error> {
+        if version > 16 {
+            return Err(Error::InvalidWitnessVersion(version));
         }
+        Ok(SegwitAddress {
+            hrp,
+            version: bech32::u5::try_from_u8(version).expect("version must be < 16, thus also < 32"),
+            program: hash.to_vec(),
+        })
     }
 
     pub fn version_as_u8(&self) -> u8 {
@@ -248,7 +250,7 @@ mod tests {
         let public_key = Public::from_slice(&bytes).unwrap();
         let hash = public_key.address_hash();
         let hrp = "bc";
-        let addr = SegwitAddress::new(&AddressHashEnum::AddressHash(hash), hrp.to_string(), 0);
+        let addr = SegwitAddress::new(&AddressHashEnum::AddressHash(hash), hrp.to_string(), 0).unwrap();
         assert_eq!(&addr.to_string(), "bc1qvzvkjn4q3nszqxrv3nraga2r822xjty3ykvkuw");
         assert_eq!(addr.address_type(), Some(SegwitAddrType::P2wpkh));
     }
@@ -259,7 +261,7 @@ mod tests {
         let bytes = hex_to_bytes(script).unwrap();
         let hash = sha256(&bytes);
         let hrp = "bc";
-        let addr = SegwitAddress::new(&AddressHashEnum::WitnessScriptHash(hash), hrp.to_string(), 0);
+        let addr = SegwitAddress::new(&AddressHashEnum::WitnessScriptHash(hash), hrp.to_string(), 0).unwrap();
         assert_eq!(
             &addr.to_string(),
             "bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3"

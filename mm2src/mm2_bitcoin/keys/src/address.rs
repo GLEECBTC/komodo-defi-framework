@@ -205,7 +205,9 @@ impl Address {
                 Ok(LegacyAddress::new(&self.hash, self.prefix.clone(), self.checksum_type).to_string())
             },
             AddressFormat::Segwit { version } => match &self.hrp {
-                Some(hrp) => Ok(SegwitAddress::new(&self.hash, hrp.clone(), *version).to_string()),
+                Some(hrp) => Ok(SegwitAddress::new(&self.hash, hrp.clone(), *version)
+                    .map_err(|e| e.to_string())?
+                    .to_string()),
                 None => Err("Cannot display segwit address for a coin with no bech32_hrp in config".into()),
             },
             AddressFormat::CashAddress {
@@ -337,7 +339,7 @@ impl Address {
     pub fn to_segwitaddress(&self) -> Result<SegwitAddress, String> {
         match (&self.hrp, &self.addr_format) {
             (Some(hrp), AddressFormat::Segwit { version }) => {
-                Ok(SegwitAddress::new(&self.hash, hrp.to_string(), *version))
+                Ok(SegwitAddress::new(&self.hash, hrp.to_string(), *version).map_err(|e| e.to_string())?)
             },
             _ => Err("hrp and segwit version must be provided for segwit address".into()),
         }
@@ -352,6 +354,8 @@ impl fmt::Display for Address {
                 self.hrp.clone().expect("Segwit address should have an hrp"),
                 *version,
             )
+            // FIXME: Is it safe to do that? We perform validation while creation just like hrp.
+            .expect("Segwit address should be valid")
             .fmt(f),
             AddressFormat::CashAddress {
                 network,
