@@ -1317,7 +1317,8 @@ impl WalletRead for WalletIndexedDb {
             .cursor_builder()
             .only("ticker", &self.ticker)
             .map_mm_err()?
-            .bound("block", 0u32, u32::from(anchor_height + 1))
+            .only("block", u32::from(anchor_height))
+            .map_mm_err()?
             .open_cursor(WalletDbSaplingWitnessesTable::TICKER_BLOCK_INDEX)
             .await
             .map_mm_err()?
