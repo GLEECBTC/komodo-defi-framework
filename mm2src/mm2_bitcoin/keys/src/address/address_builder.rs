@@ -108,7 +108,7 @@ impl AddressBuilder {
                     pubkey: self.get_pubkey(build_option),
                     checksum_type: self.checksum_type,
                     addr_format: self.addr_format.clone(),
-                    script_type: self.get_segwit_script_type(build_option),
+                    script_type: self.get_segwit_script_type(build_option)?,
                 })
             },
             AddressFormat::CashAddress { .. } => {
@@ -148,16 +148,29 @@ impl AddressBuilder {
         }
     }
 
-    fn get_segwit_script_type(&self, build_option: &AddressBuilderOption) -> AddressScriptType {
-        match build_option {
-            AddressBuilderOption::PubkeyHash(_) | AddressBuilderOption::FromPubKey(_) => AddressScriptType::P2WPKH,
+    fn get_segwit_script_type(&self, build_option: &AddressBuilderOption) -> Result<AddressScriptType, String> {
+        let script_type = match build_option {
+            AddressBuilderOption::PubkeyHash(_) => AddressScriptType::P2WPKH,
             AddressBuilderOption::ScriptHash(_) => AddressScriptType::P2WSH,
             AddressBuilderOption::TweakedXOnlyPubkey(_) => AddressScriptType::P2TR,
-        }
+            AddressBuilderOption::FromPubKey(_) => match self.addr_format {
+                AddressFormat::Segwit { version: 0 } => AddressScriptType::P2WPKH,
+                AddressFormat::Segwit { version: 1 } => AddressScriptType::P2TR,
+                AddressFormat::Segwit { version } => {
+                    return Err(format!(
+                        "unsupported segwit version {version} for FromPubKey build option"
+                    ))
+                },
+                AddressFormat::Standard | AddressFormat::CashAddress { .. } => {
+                    return Err("The address format is wrongfully assumed to be segwit?".into())
+                },
+            },
+        };
+        Ok(script_type)
     }
 
     fn get_locking_destination(&self, build_option: &AddressBuilderOption) -> Result<LockingDestination, String> {
-        let hash = match build_option {
+        let locking_destination = match build_option {
             AddressBuilderOption::PubkeyHash(hash) => hash.clone(),
             AddressBuilderOption::ScriptHash(hash) => hash.clone(),
             AddressBuilderOption::FromPubKey(pubkey) => match self.addr_format {
@@ -183,7 +196,7 @@ impl AddressBuilder {
             },
             AddressBuilderOption::TweakedXOnlyPubkey(tweaked_x_only_pubkey) => tweaked_x_only_pubkey.clone(),
         };
-        Ok(hash)
+        Ok(locking_destination)
     }
 
     fn get_pubkey(&self, build_option: &AddressBuilderOption) -> Option<Public> {

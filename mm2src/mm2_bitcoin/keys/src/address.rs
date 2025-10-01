@@ -81,6 +81,10 @@ pub enum AddressFormat {
 }
 
 impl AddressFormat {
+    pub fn is_segwit(&self) -> bool {
+        matches!(*self, AddressFormat::Segwit { .. })
+    }
+
     pub fn is_segwit_v0(&self) -> bool {
         matches!(*self, AddressFormat::Segwit { version: 0 })
     }

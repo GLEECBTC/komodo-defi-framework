@@ -235,6 +235,7 @@ pub enum Bip43Purpose {
     Bip44 = 44,
     Bip49 = 49,
     Bip84 = 84,
+    Bip86 = 86,
 }
 
 #[derive(Clone, PartialEq)]
@@ -268,11 +269,12 @@ impl Bip32ChildValue for Bip32PurposeValue {
             44 => Bip43Purpose::Bip44,
             49 => Bip43Purpose::Bip49,
             84 => Bip43Purpose::Bip84,
+            86 => Bip43Purpose::Bip86,
             _chain => {
                 return Err(Bip32DerPathError::UnexpectedChildValue {
                     child_at,
                     actual: child_number.0,
-                    expected: "one of the following: 32, 44, 49, 84".to_string(),
+                    expected: "one of the following: 32, 44, 49, 84, 86".to_string(),
                 })
             },
         };
