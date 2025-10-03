@@ -531,6 +531,8 @@ pub trait UtxoCoinBuilderCommonOps {
 
         let mut address_format = match format_from_req {
             Some(from_req) => {
+                // FIXME: Some test fails cuz we get one format as Standard and the other as CashAddress.
+                //        Keep this as is and adapt that test and announce breaking change.
                 if from_req != format_from_conf {
                     let error = format!(
                         "Both conf {format_from_conf:?} and request {from_req:?} must be either Segwit or Standard/CashAddress"
