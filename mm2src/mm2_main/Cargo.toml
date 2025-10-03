@@ -76,7 +76,6 @@ mm2_rpc = { path = "../mm2_rpc", features = ["rpc_facilities"] }
 mm2_state_machine = { path = "../mm2_state_machine" }
 trading_api = { path = "../trading_api" }
 num-traits.workspace = true
-parity-util-mem.workspace = true
 parking_lot = { workspace = true, features = ["nightly"] }
 primitives = { path = "../mm2_bitcoin/primitives" }
 primitive-types.workspace = true

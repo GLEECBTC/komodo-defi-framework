@@ -2543,17 +2543,8 @@ fn order_pair_root_mut<'a>(state: &'a mut HashMap<AlbOrderedOrderbookPair, H64>,
     }
 }
 
-/// `parity_util_mem::malloc_size` crushes for some reason on wasm32
-#[cfg(target_arch = "wasm32")]
-fn collect_orderbook_metrics(_ctx: &MmArc, _orderbook: &Orderbook) {}
-
-#[cfg(not(target_arch = "wasm32"))]
 fn collect_orderbook_metrics(ctx: &MmArc, orderbook: &Orderbook) {
-    use parity_util_mem::malloc_size;
-
-    let memory_db_size = malloc_size(&orderbook.memory_db);
     mm_gauge!(ctx.metrics, "orderbook.len", orderbook.order_set.len() as f64);
-    mm_gauge!(ctx.metrics, "orderbook.memory_db", memory_db_size as f64);
 }
 
 struct Orderbook {
