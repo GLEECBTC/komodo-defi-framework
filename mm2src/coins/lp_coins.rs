@@ -2493,17 +2493,11 @@ impl From<TendermintFeeDetails> for TxFeeDetails {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct KmdRewardsDetails {
     amount: BigDecimal,
-    /// Note that we don't have a case where this boolean is set to false.
-    /// It persists here though for backward compatibility and potential future use cases.
-    claimed_by_me: bool,
 }
 
 impl KmdRewardsDetails {
-    pub fn claimed_by_me(amount: BigDecimal) -> KmdRewardsDetails {
-        KmdRewardsDetails {
-            amount,
-            claimed_by_me: true,
-        }
+    pub fn new(amount: BigDecimal) -> KmdRewardsDetails {
+        KmdRewardsDetails { amount }
     }
 }
 

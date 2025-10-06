@@ -933,10 +933,7 @@ fn test_withdraw_kmd_rewards_impl(
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
     assert_eq!(tx_details.fee_details, Some(expected_fee));
 
-    let expected_rewards = expected_rewards.map(|amount| KmdRewardsDetails {
-        amount,
-        claimed_by_me: true,
-    });
+    let expected_rewards = expected_rewards.map(|amount| KmdRewardsDetails { amount });
     assert_eq!(tx_details.kmd_rewards, expected_rewards);
 }
 
@@ -3345,14 +3342,13 @@ fn test_tx_details_kmd_rewards() {
 
     let expected_kmd_rewards = KmdRewardsDetails {
         amount: BigDecimal::from_str("0.10431954").unwrap(),
-        claimed_by_me: true,
     };
     assert_eq!(tx_details.kmd_rewards, Some(expected_kmd_rewards));
 }
 
-/// If the ticker is `KMD` AND no rewards were accrued due to a value less than 10 or for any other reasons,
-/// then `TransactionDetails::kmd_rewards` has to be `Some(0)`, not `None`.
 /// https://kmdexplorer.io/tx/f09e8894959e74c1e727ffa5a753a30bf2dc6d5d677cc1f24b7ee5bb64e32c7d
+/// If the rewards were not claimed by us (claimed by a different address than `my_address`), `kmd_rewards`
+/// should still show up in the transaction details (as it's independent of `my_address`).
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_tx_details_kmd_rewards_claimed_by_other() {
@@ -3424,7 +3420,6 @@ fn test_update_kmd_rewards() {
 
     let expected_rewards = KmdRewardsDetails {
         amount: BigDecimal::from_str("0.10431954").unwrap(),
-        claimed_by_me: true,
     };
     assert_eq!(tx_details.kmd_rewards, Some(expected_rewards));
 
