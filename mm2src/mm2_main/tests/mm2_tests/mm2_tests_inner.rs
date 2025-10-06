@@ -1823,7 +1823,6 @@ fn test_order_should_not_be_displayed_when_node_is_down() {
             "coins": coins,
             "seednodes": [mm_bob.ip.to_string()],
             "rpc_password": "pass",
-            "maker_order_timeout": 5,
         }),
         "pass".into(),
         None,
@@ -1870,7 +1869,7 @@ fn test_order_should_not_be_displayed_when_node_is_down() {
     assert_eq!(asks.len(), 1, "Alice RICK/MORTY orderbook must have exactly 1 ask");
 
     block_on(mm_bob.stop()).unwrap();
-    thread::sleep(Duration::from_secs(6));
+    thread::sleep(Duration::from_secs(16));
 
     let rc = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
@@ -1910,7 +1909,6 @@ fn test_own_orders_should_not_be_removed_from_orderbook() {
             "coins": coins,
             "i_am_seed": true,
             "rpc_password": "pass",
-            "maker_order_timeout": 5,
             "is_bootstrap_node": true
         }),
         "pass".into(),
@@ -1939,7 +1937,7 @@ fn test_own_orders_should_not_be_removed_from_orderbook() {
     .unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
-    thread::sleep(Duration::from_secs(6));
+    thread::sleep(Duration::from_secs(16));
 
     let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
@@ -2121,7 +2119,7 @@ fn set_price_with_cancel_previous_should_broadcast_cancelled_message() {
     ]);
 
     // start bob and immediately place the order
-    let mm_bob = MarketMakerIt::start(
+    let mut mm_bob = MarketMakerIt::start(
         json! ({
             "gui": "nogui",
             "netid": 9998,
@@ -2159,7 +2157,7 @@ fn set_price_with_cancel_previous_should_broadcast_cancelled_message() {
     let rc = block_on(mm_bob.rpc(&set_price_json)).unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
-    let mm_alice = MarketMakerIt::start(
+    let mut mm_alice = MarketMakerIt::start(
         json! ({
             "gui": "nogui",
             "netid": 9998,
@@ -2204,9 +2202,13 @@ fn set_price_with_cancel_previous_should_broadcast_cancelled_message() {
     let rc = block_on(mm_bob.rpc(&set_price_json)).unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
-    let pause = 2;
-    log!("Waiting ({} seconds) for Bob to broadcast messages…", pause);
-    thread::sleep(Duration::from_secs(pause));
+    block_on(mm_bob.wait_for_log(10., |log| log.contains("maker_order_cancelled_p2p_notify called")))
+        .expect("Cancel broadcast not seen in Bob's logs within the expected time");
+
+    block_on(mm_alice.wait_for_log(10., |log| {
+        log.contains("received ordermatch message MakerOrderCancelled")
+    }))
+    .expect("Alice did not log MakerOrderCancelled in time");
 
     // Bob orderbook must show 1 order
     log!("Get RICK/MORTY orderbook on Bob side");
