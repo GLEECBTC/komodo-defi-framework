@@ -537,12 +537,9 @@ impl Script {
     /// Usable for P2PK and P2PKH scripts.
     pub fn extract_signature(&self) -> Result<Vec<u8>, String> {
         match self.get_instruction(0) {
-            Some(Ok(instruction)) => match instruction.opcode {
-                Opcode::OP_PUSHBYTES_70 | Opcode::OP_PUSHBYTES_71 | Opcode::OP_PUSHBYTES_72 => match instruction.data {
-                    Some(bytes) => Ok(bytes.to_vec()),
-                    None => Err(format!("No data at instruction 0 of script {self:?}")),
-                },
-                opcode => Err(format!("Unexpected opcode {opcode:?}")),
+            Some(Ok(instruction)) => match instruction.data {
+                Some(bytes) if !bytes.is_empty() => Ok(bytes.to_vec()),
+                Some(_) | None => Err(format!("No data at instruction 0 of script {self:?}")),
             },
             Some(Err(e)) => Err(format!("Error {e} on getting instruction 0 of script {self:?}")),
             None => Err(format!("None instruction 0 of script {self:?}")),

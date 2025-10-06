@@ -13,6 +13,8 @@ mod prelude;
 mod sia_coin_activation;
 mod slp_token_activation;
 #[cfg(feature = "enable-solana")]
+mod solana_token_activation;
+#[cfg(feature = "enable-solana")]
 mod solana_with_assets;
 mod standalone_coin;
 mod tendermint_token_activation;

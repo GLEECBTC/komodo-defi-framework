@@ -26,6 +26,7 @@ impl From<TendermintTokenInitError> for EnableTokenError {
                 EnableTokenError::Internal(e)
             },
             TendermintTokenInitError::CouldNotFetchBalance(e) => EnableTokenError::CouldNotFetchBalance(e),
+            TendermintTokenInitError::PlatformCoinMismatch => EnableTokenError::PlatformCoinMismatch,
         }
     }
 }

@@ -1,224 +1,128 @@
-#![allow(unused_variables)]
 #![allow(dead_code)]
+#![allow(unused_variables)]
 
+use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::{collections::HashMap, ops::Deref};
 
 use async_trait::async_trait;
-use common::executor::{
-    abortable_queue::{AbortableQueue, WeakSpawner},
-    AbortableSystem, AbortedError,
-};
+use common::executor::abortable_queue::{AbortableQueue, WeakSpawner};
+use common::executor::{AbortableSystem, AbortedError};
 use derive_more::Display;
-use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
-use nom::AsBytes;
-use num_traits::Zero;
-use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as RpcBytes, H264 as RpcH264};
-use solana_keypair::keypair_from_seed;
-use solana_pubkey::Pubkey as SolanaAddress;
-use solana_rpc_client::rpc_client::RpcClient;
-use solana_rpc_client_types::request::TokenAccountsFilter;
-use solana_signer::Signer;
-use url::Url;
+use serde::Deserialize;
 
+use crate::coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentResult};
+use crate::hd_wallet::HDAddressSelector;
 use crate::{
-    coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentResult},
-    hd_wallet::HDAddressSelector,
-    BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInput, DexFee, FeeApproxStage,
-    FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy,
-    RawTransactionFut, RawTransactionRequest, RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput,
-    SendPaymentArgs, SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps, TradeFee, TradePreimageFut,
-    TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionResult, TxMarshalingErr,
-    UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentInput,
-    VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WithdrawFut, WithdrawRequest,
+    solana::SolanaCoin, BalanceFut, CoinBalance, RawTransactionFut, RawTransactionRequest, WithdrawFut, WithdrawRequest,
 };
+use crate::{
+    CheckIfMyPaymentSentArgs, ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
+    MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, RawTransactionResult, RefundPaymentArgs,
+    SearchForSwapTxSpendInput, SendPaymentArgs, SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps,
+    TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionResult,
+    TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr,
+    ValidatePaymentInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
+};
+use solana_pubkey::Pubkey as SolanaAddress;
 
-pub const SOLANA_DECIMALS: u8 = 9;
-
-#[derive(Clone, Deserialize)]
-pub struct RpcNode {
-    url: Url,
+pub struct SolanaTokenFields {
+    pub ticker: String,
+    pub platform_coin: SolanaCoin,
+    pub protocol_info: SolanaTokenProtocolInfo,
+    abortable_system: AbortableQueue,
 }
 
-#[derive(Clone)]
-pub struct SolanaCoin(Arc<SolanaCoinFields>);
-
-pub struct SolanaCoinFields {
-    ticker: String,
-    pub(crate) address: SolanaAddress,
-    pub(crate) abortable_system: AbortableQueue,
-    rpc_clients: AsyncMutex<Vec<Arc<RpcClient>>>,
-    protocol_info: SolanaProtocolInfo,
-    pub tokens_info: PaMutex<HashMap<String, super::SolanaTokenProtocolInfo>>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct SolanaProtocolInfo {}
-
-impl Deref for SolanaCoin {
-    type Target = SolanaCoinFields;
+impl Deref for SolanaToken {
+    type Target = SolanaTokenFields;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
+#[derive(Clone)]
+pub struct SolanaToken(Arc<SolanaTokenFields>);
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SolanaTokenProtocolInfo {
+    pub platform: String,
+    pub decimals: u8,
+    #[serde(serialize_with = "serialize_pubkey", deserialize_with = "deserialize_pubkey")]
+    pub mint_address: SolanaAddress,
+}
+
+pub fn serialize_pubkey<S>(public_key: &SolanaAddress, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_str(&public_key.to_string())
+}
+
+pub fn deserialize_pubkey<'de, D>(deserializer: D) -> Result<SolanaAddress, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    SolanaAddress::from_str(&s).map_err(serde::de::Error::custom)
+}
+
 #[derive(Clone, Debug)]
-pub struct SolanaInitError {
+pub struct SolanaTokenInitError {
     pub ticker: String,
-    pub kind: SolanaInitErrorKind,
+    pub kind: SolanaTokenInitErrorKind,
 }
 
 #[derive(Display, Debug, Clone)]
-pub enum SolanaInitErrorKind {
-    EmptyRpcUrls,
-    RpcClientInitError {
+pub enum SolanaTokenInitErrorKind {
+    QueryError {
         reason: String,
     },
     Internal {
         reason: String,
     },
-    #[display(fmt = "Unsupported private-key policy: {policy_type}")]
-    UnsupportedPrivKeyPolicy {
-        policy_type: &'static str,
-    },
-    QueryError {
-        reason: String,
+    #[display(
+        fmt = "Expected platform coin is '{expected_platform_coin}' but requested one is '{actual_platform_coin}'."
+    )]
+    PlatformCoinMismatch {
+        expected_platform_coin: String,
+        actual_platform_coin: String,
     },
 }
 
-impl SolanaCoin {
-    pub async fn init(
-        ctx: &MmArc,
+impl SolanaToken {
+    pub fn init(
         ticker: String,
-        protocol_info: SolanaProtocolInfo,
-        nodes: Vec<RpcNode>,
-        priv_key_policy: PrivKeyBuildPolicy,
-    ) -> MmResult<SolanaCoin, SolanaInitError> {
-        if nodes.is_empty() {
-            return MmError::err(SolanaInitError {
-                ticker,
-                kind: SolanaInitErrorKind::EmptyRpcUrls,
-            });
-        }
+        platform_coin: SolanaCoin,
+        protocol_info: SolanaTokenProtocolInfo,
+    ) -> MmResult<Self, SolanaTokenInitError> {
+        let abortable_system = platform_coin
+            .abortable_system
+            .create_subsystem()
+            .map_err(|e| SolanaTokenInitError {
+                ticker: ticker.clone(),
+                kind: SolanaTokenInitErrorKind::Internal { reason: e.to_string() },
+            })?;
 
-        // TODO: This isn't fully right and needs to be fixed before prod.
-        // ref: https://github.com/KomodoPlatform/komodo-defi-framework/pull/2598#discussion_r2311756777
-        let priv_key = match priv_key_policy {
-            PrivKeyBuildPolicy::IguanaPrivKey(priv_key) => priv_key,
-            PrivKeyBuildPolicy::Trezor => {
-                return MmError::err(SolanaInitError {
-                    ticker,
-                    kind: SolanaInitErrorKind::UnsupportedPrivKeyPolicy { policy_type: "Trezor" },
-                })
-            },
-            PrivKeyBuildPolicy::GlobalHDAccount(_) => {
-                return MmError::err(SolanaInitError {
-                    ticker,
-                    kind: SolanaInitErrorKind::UnsupportedPrivKeyPolicy {
-                        policy_type: "GlobalHDAccount",
-                    },
-                })
-            },
-            PrivKeyBuildPolicy::WalletConnect { .. } => {
-                return MmError::err(SolanaInitError {
-                    ticker,
-                    kind: SolanaInitErrorKind::UnsupportedPrivKeyPolicy {
-                        policy_type: "WalletConnect",
-                    },
-                })
-            },
-        };
-
-        let keypair = keypair_from_seed(priv_key.as_bytes()).map_to_mm(|e| SolanaInitError {
-            ticker: ticker.clone(),
-            kind: SolanaInitErrorKind::Internal { reason: e.to_string() },
-        })?;
-
-        let address = SolanaAddress::from_str(&keypair.pubkey().to_string()).map_to_mm(|e| SolanaInitError {
-            ticker: ticker.clone(),
-            kind: SolanaInitErrorKind::Internal { reason: e.to_string() },
-        })?;
-
-        let rpc_clients: Vec<Arc<RpcClient>> = nodes.iter().map(|n| Arc::new(RpcClient::new(&n.url))).collect();
-
-        let abortable_system = ctx.abortable_system.create_subsystem().map_to_mm(|e| SolanaInitError {
-            ticker: ticker.clone(),
-            kind: SolanaInitErrorKind::Internal { reason: e.to_string() },
-        })?;
-
-        let fields = SolanaCoinFields {
+        let token_fields = SolanaTokenFields {
             ticker,
-            address,
-            abortable_system,
-            rpc_clients: AsyncMutex::new(rpc_clients),
+            platform_coin,
             protocol_info,
-            tokens_info: PaMutex::new(HashMap::new()),
+            abortable_system,
         };
 
-        Ok(SolanaCoin(Arc::new(fields)))
-    }
-
-    pub(crate) async fn rpc_client(&self) -> MmResult<Arc<RpcClient>, String> {
-        let mut rpcs = self.rpc_clients.lock().await;
-
-        if let Some(index) = rpcs.iter().position(|rpc| rpc.get_health().is_ok()) {
-            // Put healthy one to the front.
-            rpcs.rotate_left(index);
-
-            return Ok(rpcs[0].clone());
-        }
-
-        MmError::err("No healthy RPC client found.".to_owned())
-    }
-
-    pub fn add_activated_token(&self, ticker: String, info: super::SolanaTokenProtocolInfo) {
-        self.tokens_info.lock().insert(ticker, info);
-    }
-
-    pub async fn token_balance(&self, mint_address: &SolanaAddress) -> Result<CoinBalance, MmError<BalanceError>> {
-        let rpc = self
-            .rpc_client()
-            .map_err(|e| BalanceError::Transport(e.into_inner()))
-            .await?;
-
-        if let Err(e) = rpc.get_token_accounts_by_owner(&self.address, TokenAccountsFilter::Mint(*mint_address)) {
-            if e.kind.to_string().contains("could not find mint") {
-                return Ok(CoinBalance {
-                    spendable: BigDecimal::zero(),
-                    unspendable: BigDecimal::zero(),
-                });
-            }
-
-            return MmError::err(BalanceError::Transport(e.to_string()));
-        };
-
-        let token_account =
-            spl_associated_token_account_client::address::get_associated_token_address(&self.address, mint_address);
-
-        let balance_string = rpc
-            .get_token_account_balance(&token_account)
-            .map_err(|e| BalanceError::Transport(e.to_string()))?
-            .ui_amount_string;
-
-        let balance = BigDecimal::from_str(&balance_string).map_err(|e| BalanceError::Internal(e.to_string()))?;
-
-        Ok(CoinBalance {
-            spendable: balance,
-            unspendable: Default::default(),
-        })
+        Ok(SolanaToken(Arc::new(token_fields)))
     }
 }
 
 #[async_trait]
-impl MmCoin for SolanaCoin {
+impl MmCoin for SolanaToken {
     fn is_asset_chain(&self) -> bool {
         todo!()
     }
@@ -244,7 +148,7 @@ impl MmCoin for SolanaCoin {
     }
 
     fn decimals(&self) -> u8 {
-        SOLANA_DECIMALS
+        self.protocol_info.decimals
     }
 
     fn convert_to_address(&self, from: &str, to_address_format: serde_json::Value) -> Result<String, String> {
@@ -339,13 +243,13 @@ impl MmCoin for SolanaCoin {
 }
 
 #[async_trait]
-impl MarketCoinOps for SolanaCoin {
+impl MarketCoinOps for SolanaToken {
     fn ticker(&self) -> &str {
         &self.ticker
     }
 
     fn my_address(&self) -> MmResult<String, MyAddressError> {
-        Ok(self.address.to_string())
+        self.platform_coin.my_address()
     }
 
     fn address_from_pubkey(&self, pubkey: &RpcH264) -> MmResult<String, AddressFromPubkeyError> {
@@ -369,36 +273,20 @@ impl MarketCoinOps for SolanaCoin {
     }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
-        let coin = self.clone();
+        let token = self.clone();
+        let platform_coin = self.platform_coin.clone();
 
-        let fut = async move {
-            let rpc_client = coin
-                .rpc_client()
-                .map_err(|e| BalanceError::Internal(e.into_inner()))
-                .await?;
-
-            let balance_u64 = rpc_client
-                .get_balance(&coin.address)
-                .map_err(|e| BalanceError::Transport(e.to_string()))?;
-
-            let scale = BigDecimal::from(10u64.pow(SOLANA_DECIMALS as u32));
-            let balance_decimal = BigDecimal::from(balance_u64) / scale;
-
-            Ok(CoinBalance {
-                spendable: balance_decimal,
-                unspendable: BigDecimal::zero(),
-            })
-        };
+        let fut = async move { platform_coin.token_balance(&token.protocol_info.mint_address).await };
 
         Box::new(fut.boxed().compat())
     }
 
     fn platform_coin_balance(&self) -> BalanceFut<BigDecimal> {
-        Box::new(self.my_balance().map(|coin_balance| coin_balance.spendable))
+        todo!()
     }
 
     fn platform_ticker(&self) -> &str {
-        &self.ticker
+        self.platform_coin.ticker()
     }
 
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
@@ -427,15 +315,7 @@ impl MarketCoinOps for SolanaCoin {
     }
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> {
-        let coin = self.clone();
-
-        let fut = async move {
-            let rpc_client = try_s!(coin.rpc_client().await);
-
-            rpc_client.get_block_height().map_err(|e| e.to_string())
-        };
-
-        Box::new(fut.boxed().compat())
+        self.platform_coin.current_block()
     }
 
     fn display_priv_key(&self) -> Result<String, String> {
@@ -463,7 +343,7 @@ impl MarketCoinOps for SolanaCoin {
 }
 
 #[async_trait]
-impl SwapOps for SolanaCoin {
+impl SwapOps for SolanaToken {
     async fn send_taker_fee(&self, dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionResult {
         todo!()
     }
@@ -563,4 +443,4 @@ impl SwapOps for SolanaCoin {
 }
 
 #[async_trait]
-impl WatcherOps for SolanaCoin {}
+impl WatcherOps for SolanaToken {}

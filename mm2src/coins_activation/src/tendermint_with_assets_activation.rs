@@ -165,6 +165,23 @@ impl TokenInitializer for TendermintTokenInitializer {
     fn platform_coin(&self) -> &<Self::Token as TokenOf>::PlatformCoin {
         &self.platform_coin
     }
+
+    fn validate_token_params(
+        &self,
+        params: &[TokenActivationParams<Self::TokenActivationRequest, Self::TokenProtocol>],
+    ) -> MmResult<(), Self::InitTokensError> {
+        for token_param in params {
+            match &token_param.protocol {
+                TendermintTokenProtocolInfo { platform, .. } if platform == self.platform_coin().ticker() => {},
+                _ => {
+                    return MmError::err(TendermintTokenInitializerErr(
+                        TendermintTokenInitError::PlatformCoinMismatch,
+                    ))
+                },
+            }
+        }
+        Ok(())
+    }
 }
 
 impl TryFromCoinProtocol for TendermintProtocolInfo {
@@ -194,6 +211,7 @@ impl From<TendermintTokenInitializerErr> for InitTokensAsMmCoinsError {
             TendermintTokenInitError::CouldNotFetchBalance(error) => {
                 InitTokensAsMmCoinsError::CouldNotFetchBalance(error)
             },
+            TendermintTokenInitError::PlatformCoinMismatch => InitTokensAsMmCoinsError::PlatformCoinMismatch,
         }
     }
 }

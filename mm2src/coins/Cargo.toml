@@ -6,11 +6,17 @@ edition = "2018"
 [features]
 zhtlc-native-tests = []
 enable-sia = [
-	"dep:reqwest",
-	"dep:blake2b_simd",
-	"dep:sia-rust"
+    "dep:blake2b_simd",
+    "dep:sia-rust"
 ]
-enable-solana = []
+enable-solana = [
+    "dep:solana-keypair",
+    "dep:solana-pubkey",
+    "dep:solana-rpc-client-types",
+    "dep:solana-rpc-client",
+    "dep:solana-signer",
+    "dep:spl-associated-token-account-client",
+]
 default = []
 run-docker-tests = []
 for-tests = ["dep:mocktopus"]
@@ -86,7 +92,6 @@ protobuf.workspace = true
 proxy_signature = { path = "../proxy_signature" }
 rand = { workspace = true, features = ["std", "small_rng"] }
 regex.workspace = true
-reqwest = { workspace = true, optional = true }
 rlp.workspace = true
 rmp-serde.workspace = true
 rpc = { path = "../mm2_bitcoin/rpc" }
@@ -118,6 +123,14 @@ zbase32.workspace = true
 zcash_client_backend.workspace = true
 zcash_extras.workspace = true
 zcash_primitives.workspace = true
+
+# Solana
+solana-keypair = { version = "2.2", default-features = false, optional = true }
+solana-pubkey = { version = "2.4", default-features = false, optional = true }
+solana-rpc-client = { version = "2.3", default-features = false, optional = true }
+solana-rpc-client-types= { version = "2.3", default-features = false, optional = true }
+solana-signer = { version = "2.2", default-features = false, optional = true }
+spl-associated-token-account-client = { version = "2.0", default-features = false, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 blake2b_simd.workspace = true
@@ -166,7 +179,6 @@ mocktopus.workspace = true
 mm2_p2p = { path = "../mm2_p2p", features = ["application"] }
 ff.workspace = true
 jubjub.workspace = true
-reqwest.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wagyu-zcash-parameters.workspace = true

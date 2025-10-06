@@ -36,6 +36,8 @@ use coins::eth::EthCoin;
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
 use coins::rpc_command::{
     account_balance::account_balance,
+    consolidate_utxos::consolidate_utxos_rpc,
+    fetch_utxos::fetch_utxos_rpc,
     get_current_mtp::get_current_mtp_rpc,
     get_enabled_coins::get_enabled_coins_rpc,
     get_new_address::{
@@ -63,8 +65,8 @@ use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::z_coin::ZCoin;
 use coins::{
     add_delegation, claim_staking_rewards, delegations_info, get_my_address, get_raw_transaction,
-    get_swap_transaction_fee_policy, nft, ongoing_undelegations_info, remove_delegation,
-    set_swap_transaction_fee_policy, sign_message, sign_raw_transaction, validators_info, verify_message, withdraw,
+    get_swap_gas_fee_policy, nft, ongoing_undelegations_info, remove_delegation, set_swap_gas_fee_policy, sign_message,
+    sign_raw_transaction, validators_info, verify_message, withdraw,
 };
 use coins_activation::{
     cancel_init_l2, cancel_init_platform_coin_with_tokens, cancel_init_standalone_coin, cancel_init_token,
@@ -177,6 +179,22 @@ async fn experimental_rpcs_dispatcher(
     ctx: MmArc,
     experimental_method: &str,
 ) -> DispatcherResult<Response<Vec<u8>>> {
+    #[cfg(feature = "enable-solana")]
+    match request.method.as_str() {
+        "experimental::enable_solana_with_assets" => {
+            return handle_mmrpc(
+                ctx,
+                request,
+                enable_platform_coin_with_tokens::<coins::solana::SolanaCoin>,
+            )
+            .await
+        },
+        "experimental::enable_solana_token" => {
+            return handle_mmrpc(ctx, request, enable_token::<coins::solana::SolanaToken>).await
+        },
+        _ => {},
+    };
+
     if let Some(staking_method) = experimental_method.strip_prefix("staking::") {
         return staking_dispatcher(request, ctx, staking_method).await;
     }
@@ -224,6 +242,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "get_token_allowance" => handle_mmrpc(ctx, request, get_token_allowance_rpc).await,
         "best_orders" => handle_mmrpc(ctx, request, best_orders_rpc_v2).await,
         "clear_nft_db" => handle_mmrpc(ctx, request, clear_nft_db).await,
+        "consolidate_utxos" => handle_mmrpc(ctx, request, consolidate_utxos_rpc).await,
         "delete_wallet" => handle_mmrpc(ctx, request, delete_wallet_rpc).await,
         "enable_bch_with_tokens" => handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<BchCoin>).await,
         "enable_slp" => handle_mmrpc(ctx, request, enable_token::<SlpToken>).await,
@@ -234,6 +253,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
             handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<TendermintCoin>).await
         },
         "enable_tendermint_token" => handle_mmrpc(ctx, request, enable_token::<TendermintToken>).await,
+        "fetch_utxos" => handle_mmrpc(ctx, request, fetch_utxos_rpc).await,
         "get_current_mtp" => handle_mmrpc(ctx, request, get_current_mtp_rpc).await,
         "get_enabled_coins" => handle_mmrpc(ctx, request, get_enabled_coins_rpc).await,
         "get_locked_amount" => handle_mmrpc(ctx, request, get_locked_amount_rpc).await,
@@ -274,8 +294,8 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "peer_connection_healthcheck" => handle_mmrpc(ctx, request, peer_connection_healthcheck_rpc).await,
         "withdraw_nft" => handle_mmrpc(ctx, request, withdraw_nft).await,
         "get_eth_estimated_fee_per_gas" => handle_mmrpc(ctx, request, get_eth_estimated_fee_per_gas).await,
-        "get_swap_transaction_fee_policy" => handle_mmrpc(ctx, request, get_swap_transaction_fee_policy).await,
-        "set_swap_transaction_fee_policy" => handle_mmrpc(ctx, request, set_swap_transaction_fee_policy).await,
+        "get_swap_gas_fee_policy" => handle_mmrpc(ctx, request, get_swap_gas_fee_policy).await,
+        "set_swap_gas_fee_policy" => handle_mmrpc(ctx, request, set_swap_gas_fee_policy).await,
         "send_asked_data" => handle_mmrpc(ctx, request, send_asked_data_rpc).await,
         "z_coin_tx_history" => handle_mmrpc(ctx, request, coins::my_tx_history_v2::z_coin_tx_history_rpc).await,
         "wc_new_connection" => handle_mmrpc(ctx, request, new_connection).await,

@@ -600,15 +600,6 @@ pub async fn handle_orderbook_msg(
 pub async fn process_msg(ctx: MmArc, from_peer: String, msg: &[u8], i_am_relay: bool) -> OrderbookP2PHandlerResult {
     match decode_signed::<new_protocol::OrdermatchMessage>(msg) {
         Ok((message, _sig, pubkey)) => {
-            {
-                let my_persistent = mm2_internal_pubkey_hex(&ctx, String::from).ok().flatten();
-                let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("from_ctx failed");
-                let my_p2p = &ordermatch_ctx.orderbook.lock().my_p2p_pubkeys;
-                if is_my_order(&pubkey.to_hex(), &my_persistent, my_p2p) {
-                    return Ok(());
-                }
-            }
-
             if is_pubkey_banned(&ctx, &pubkey.unprefixed().into()) {
                 return MmError::err(OrderbookP2PHandlerError::PubkeyNotAllowed(pubkey.to_hex()));
             }
@@ -623,14 +614,14 @@ pub async fn process_msg(ctx: MmArc, from_peer: String, msg: &[u8], i_am_relay: 
                 },
                 new_protocol::OrdermatchMessage::TakerRequest(taker_request) => {
                     let msg = TakerRequest::from_new_proto_and_pubkey(taker_request, pubkey.unprefixed().into());
-                    process_taker_request(ctx, msg).await;
+                    process_taker_request(ctx, pubkey.unprefixed().into(), msg).await;
                     Ok(())
                 },
                 new_protocol::OrdermatchMessage::MakerReserved(maker_reserved) => {
                     let msg = MakerReserved::from_new_proto_and_pubkey(maker_reserved, pubkey.unprefixed().into());
                     // spawn because process_maker_reserved may take significant time to run
                     let spawner = ctx.spawner();
-                    spawner.spawn(process_maker_reserved(ctx, msg));
+                    spawner.spawn(process_maker_reserved(ctx, pubkey.unprefixed().into(), msg));
                     Ok(())
                 },
                 new_protocol::OrdermatchMessage::TakerConnect(taker_connect) => {
@@ -2582,12 +2573,8 @@ impl<Key, Value> TrieDiffHistory<Key, Value> {
 type TrieOrderHistory = TrieDiffHistory<Uuid, OrderbookItem>;
 
 struct OrderbookPubkeyState {
-    /// Local receive time (seconds) when we last accepted a keep-alive from this pubkey.
-    /// Used by inactivity GC to purge stale pubkeys and their orders.
+    /// Timestamp of the latest keep alive message received
     last_keep_alive: u64,
-    /// Monotonic maker-published timestamp of the last processed PubkeyKeepAlive.
-    /// Used to ignore out-of-order or replayed keep-alive messages from this pubkey.
-    latest_maker_timestamp: u64,
     /// The map storing historical data about specific pair subtrie changes
     /// Used to get diffs of orders of pair between specific root hashes
     order_pairs_trie_state_history: TimedMap<AlbOrderedOrderbookPair, TrieOrderHistory>,
@@ -2600,10 +2587,7 @@ struct OrderbookPubkeyState {
 impl OrderbookPubkeyState {
     pub fn new() -> OrderbookPubkeyState {
         OrderbookPubkeyState {
-            // Keep `last_keep_alive` based on local receive time. This is used for cleaning up orders of an inactive pubkey.
             last_keep_alive: now_sec(),
-            // Start at 0 so the first message from this pubkey always passes the monotonic check.
-            latest_maker_timestamp: 0,
             order_pairs_trie_state_history: TimedMap::new_with_map_kind(MapKind::FxHashMap),
             orders_uuids: HashSet::default(),
             trie_roots: HashMap::default(),
@@ -2923,23 +2907,9 @@ impl Orderbook {
         message: new_protocol::PubkeyKeepAlive,
         i_am_relay: bool,
     ) -> Option<OrdermatchRequest> {
-        {
-            let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
-            if message.timestamp <= pubkey_state.latest_maker_timestamp {
-                log::debug!(
-                    "Ignoring PubkeyKeepAlive from {}: message.timestamp={} <= last_processed_timestamp={} (stale/replayed)",
-                    from_pubkey,
-                    message.timestamp,
-                    pubkey_state.latest_maker_timestamp
-                );
-                return None;
-            }
-            pubkey_state.latest_maker_timestamp = message.timestamp;
-            pubkey_state.last_keep_alive = now_sec();
-        }
-
+        let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
+        pubkey_state.last_keep_alive = now_sec();
         let mut trie_roots_to_request = HashMap::new();
-
         for (alb_pair, trie_root) in message.trie_roots {
             let subscribed = self
                 .topics_subscribed_to
@@ -2948,8 +2918,6 @@ impl Orderbook {
                 continue;
             }
 
-            // Empty/null root: clear local orders for (pubkey, pair),
-            // remember the null root, and don't request a sync.
             if trie_root == H64::default() || trie_root == hashed_null_node::<Layout>() {
                 log::debug!(
                     "Received zero or hashed_null_node pair {} trie root from pub {}",
@@ -2957,24 +2925,10 @@ impl Orderbook {
                     from_pubkey
                 );
 
-                // Clear local orders for this pubkey/pair.
-                remove_pubkey_pair_orders(self, from_pubkey, &alb_pair);
-
-                // Remember that the latest known root for this pair is null/empty.
-                {
-                    let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
-                    pubkey_state.trie_roots.insert(alb_pair.clone(), trie_root);
-                }
-
                 continue;
             }
-
-            // For non-null roots, compare with our current view and request sync if it differs.
-            let current_root = {
-                let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
-                *order_pair_root_mut(&mut pubkey_state.trie_roots, &alb_pair)
-            };
-            if current_root != trie_root {
+            let actual_trie_root = order_pair_root_mut(&mut pubkey_state.trie_roots, &alb_pair);
+            if *actual_trie_root != trie_root {
                 trie_roots_to_request.insert(alb_pair, trie_root);
             }
         }
@@ -4008,7 +3962,7 @@ async fn handle_timed_out_maker_matches(ctx: MmArc, ordermatch_ctx: &OrdermatchC
     }
 }
 
-async fn process_maker_reserved(ctx: MmArc, reserved_msg: MakerReserved) {
+async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg: MakerReserved) {
     log::debug!("Processing MakerReserved {:?}", reserved_msg);
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     {
@@ -4016,6 +3970,15 @@ async fn process_maker_reserved(ctx: MmArc, reserved_msg: MakerReserved) {
         if !my_taker_orders.contains_key(&reserved_msg.taker_order_uuid) {
             return;
         }
+    }
+
+    // Taker order existence is checked previously - it can't be created if CryptoCtx is not initialized
+    let our_public_id = CryptoCtx::from_ctx(&ctx)
+        .expect("'CryptoCtx' must be initialized already")
+        .mm2_internal_public_id();
+    if our_public_id.bytes == from_pubkey.0 {
+        log::warn!("Skip maker reserved from our pubkey");
+        return;
     }
 
     let uuid = reserved_msg.taker_order_uuid;
@@ -4078,9 +4041,6 @@ async fn process_maker_reserved(ctx: MmArc, reserved_msg: MakerReserved) {
                     false,
                 )
             {
-                let our_public_id = CryptoCtx::from_ctx(&ctx)
-                    .expect("'CryptoCtx' must be initialized already")
-                    .mm2_internal_public_id();
                 let connect = TakerConnect {
                     sender_pubkey: H256Json::from(our_public_id.bytes),
                     dest_pub_key: reserved_msg.sender_pubkey,
@@ -4119,6 +4079,17 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: PublicKey, connected: 
     log::debug!("Processing MakerConnected {:?}", connected);
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
 
+    let our_public_id = match CryptoCtx::from_ctx(&ctx) {
+        Ok(ctx) => ctx.mm2_internal_public_id(),
+        Err(_) => return,
+    };
+
+    let unprefixed_from = from_pubkey.unprefixed();
+    if our_public_id.bytes == unprefixed_from {
+        log::warn!("Skip maker connected from our pubkey");
+        return;
+    }
+
     let mut my_taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
     let my_order_entry = match my_taker_orders.entry(connected.taker_order_uuid) {
         Entry::Occupied(e) => e,
@@ -4135,7 +4106,7 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: PublicKey, connected: 
         },
     };
 
-    if order_match.reserved.sender_pubkey != from_pubkey.unprefixed().into() {
+    if order_match.reserved.sender_pubkey != unprefixed_from.into() {
         error!("Connected message sender pubkey != reserved message sender pubkey");
         return;
     }
@@ -4161,13 +4132,17 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: PublicKey, connected: 
         .ok();
 }
 
-async fn process_taker_request(ctx: MmArc, taker_request: TakerRequest) {
-    log::debug!("Processing request {:?}", taker_request);
-
+async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request: TakerRequest) {
     let our_public_id: H256Json = match CryptoCtx::from_ctx(&ctx) {
         Ok(ctx) => ctx.mm2_internal_public_id().bytes.into(),
         Err(_) => return,
     };
+
+    if our_public_id == from_pubkey {
+        log::warn!("Skip the request originating from our pubkey");
+        return;
+    }
+    log::debug!("Processing request {:?}", taker_request);
 
     if !taker_request.can_match_with_maker_pubkey(&our_public_id) {
         return;
@@ -4273,6 +4248,17 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: PublicKey, connect_msg
     log::debug!("Processing TakerConnect {:?}", connect_msg);
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
 
+    let our_public_id = match CryptoCtx::from_ctx(&ctx) {
+        Ok(ctx) => ctx.mm2_internal_public_id(),
+        Err(_) => return,
+    };
+
+    let sender_unprefixed = sender_pubkey.unprefixed();
+    if our_public_id.bytes == sender_unprefixed {
+        log::warn!("Skip taker connect from our pubkey");
+        return;
+    }
+
     let order_mutex = {
         match ordermatch_ctx
             .maker_orders_ctx
@@ -4295,16 +4281,12 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: PublicKey, connect_msg
             return;
         },
     };
-    if order_match.request.sender_pubkey != sender_pubkey.unprefixed().into() {
+    if order_match.request.sender_pubkey != sender_unprefixed.into() {
         log::warn!("Connect message sender pubkey != request message sender pubkey");
         return;
     }
 
     if order_match.connected.is_none() && order_match.connect.is_none() {
-        // Taker order existence is checked previously - it can't be created if CryptoCtx is not initialized
-        let our_public_id = CryptoCtx::from_ctx(&ctx)
-            .expect("'CryptoCtx' must be initialized already")
-            .mm2_internal_public_id();
         let connected = MakerConnected {
             sender_pubkey: our_public_id.bytes.into(),
             dest_pub_key: connect_msg.sender_pubkey,
@@ -6438,5 +6420,9 @@ fn orderbook_address(
         // TODO implement for SIA "this is needed to show the address in the orderbook"
         #[cfg(feature = "enable-sia")]
         CoinProtocol::SIA => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
+        #[cfg(feature = "enable-solana")]
+        CoinProtocol::SOLANA(_) => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
+        #[cfg(feature = "enable-solana")]
+        CoinProtocol::SOLANATOKEN(_) => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
     }
 }

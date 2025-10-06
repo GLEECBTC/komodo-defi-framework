@@ -121,6 +121,7 @@ impl From<BalanceError> for CreateAccountRpcError {
             BalanceError::WalletStorageError(internal) | BalanceError::Internal(internal) => {
                 CreateAccountRpcError::Internal(internal)
             },
+            BalanceError::NoSuchCoin { coin } => CreateAccountRpcError::NoSuchCoin { coin },
         }
     }
 }

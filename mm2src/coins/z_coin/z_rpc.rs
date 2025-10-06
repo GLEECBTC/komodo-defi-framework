@@ -339,7 +339,7 @@ impl ZRpcOps for LightRpcClient {
                 match client.get_transaction(request).await {
                     Ok(_) => break,
                     Err(e) => {
-                        error!("Error on getting tx {}: err: {}", tx_id, e.to_string());
+                        error!("Error on getting tx {}: err: {}", tx_id, e);
                         if attempts >= 5 {
                             return false;
                         }
@@ -481,7 +481,7 @@ impl ZRpcOps for NativeClient {
             match tx {
                 Ok(_) => break,
                 Err(e) => {
-                    error!("Error on getting tx {}: err: {}", tx_id, e.to_string());
+                    error!("Error on getting tx {}: err: {}", tx_id, e);
                     if attempts >= 5 {
                         return false;
                     }

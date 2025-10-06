@@ -71,6 +71,7 @@ pub enum EnableTokenError {
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     #[display(fmt = "Custom token error: {_0}")]
     CustomTokenError(CustomTokenError),
+    PlatformCoinMismatch,
 }
 
 impl From<RegisterCoinError> for EnableTokenError {
@@ -106,6 +107,7 @@ impl From<BalanceError> for EnableTokenError {
             BalanceError::Transport(e) | BalanceError::InvalidResponse(e) => EnableTokenError::Transport(e),
             BalanceError::UnexpectedDerivationMethod(e) => EnableTokenError::UnexpectedDerivationMethod(e),
             BalanceError::Internal(e) | BalanceError::WalletStorageError(e) => EnableTokenError::Internal(e),
+            BalanceError::NoSuchCoin { .. } => EnableTokenError::Internal(e.clone().to_string()),
         }
     }
 }
@@ -182,6 +184,7 @@ impl HttpStatusCode for EnableTokenError {
             | EnableTokenError::TokenConfigIsNotFound { .. }
             | EnableTokenError::UnexpectedTokenProtocol { .. }
             | EnableTokenError::InvalidPayload(_)
+            | EnableTokenError::PlatformCoinMismatch
             | EnableTokenError::CustomTokenError(_) => StatusCode::BAD_REQUEST,
             EnableTokenError::TokenProtocolParseError { .. }
             | EnableTokenError::UnsupportedPlatformCoin { .. }

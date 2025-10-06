@@ -1,5 +1,5 @@
 use super::check_balance::{
-    check_base_coin_balance_for_swap, check_my_coin_balance_for_swap, CheckBalanceError, CheckBalanceResult,
+    check_my_coin_balance_for_swap, check_platform_coin_balance_for_swap, CheckBalanceError, CheckBalanceResult,
 };
 use super::pubkey_banning::ban_pubkey_on_failed_swap;
 use super::swap_lock::{SwapLock, SwapLockOps};
@@ -2537,8 +2537,10 @@ pub async fn calc_max_maker_vol(
         volume = &volume - &trade_fee.amount;
         required_to_pay_fee = trade_fee.amount;
     } else {
-        let base_coin_balance = coin.base_coin_balance().compat().await.map_mm_err()?;
-        check_base_coin_balance_for_swap(ctx, &MmNumber::from(base_coin_balance), trade_fee.clone(), None).await?;
+        let platform_coin_balance = coin.platform_coin_balance().compat().await.map_mm_err()?;
+        check_platform_coin_balance_for_swap(ctx, &MmNumber::from(platform_coin_balance), trade_fee.clone(), None)
+            .await
+            .map_mm_err()?;
     }
     let min_tx_amount = MmNumber::from(coin.min_tx_amount());
     if volume < min_tx_amount {

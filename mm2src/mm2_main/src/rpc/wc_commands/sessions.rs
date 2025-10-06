@@ -20,7 +20,7 @@ pub struct GetSessionsResponse {
 /// `Get all sessions connection` RPC command implementation.
 pub async fn get_all_sessions(
     ctx: MmArc,
-    _req: EmptyRpcRequest,
+    _req: Option<EmptyRpcRequest>,
 ) -> MmResult<GetSessionsResponse, WalletConnectRpcError> {
     let wc_ctx =
         WalletConnectCtx::from_ctx(&ctx).mm_err(|err| WalletConnectRpcError::InitializationError(err.to_string()))?;

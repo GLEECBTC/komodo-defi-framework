@@ -297,6 +297,9 @@ pub async fn qtum_coin_with_policy(
     activation_params: &UtxoActivationParams,
     priv_key_policy: PrivKeyBuildPolicy,
 ) -> Result<QtumCoin, String> {
+    if conf["coin"].as_str() != Some(ticker) {
+        return ERR!("Failed to activate '{}': ticker does not match coins config", ticker);
+    }
     let coin = try_s!(
         QtumCoinBuilder::new(ctx, ticker, conf, activation_params, priv_key_policy)
             .build()
@@ -830,8 +833,8 @@ impl MarketCoinOps for QtumCoin {
         utxo_common::my_balance(self.clone())
     }
 
-    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
-        utxo_common::base_coin_balance(self)
+    fn platform_coin_balance(&self) -> BalanceFut<BigDecimal> {
+        utxo_common::platform_coin_balance(self)
     }
 
     fn platform_ticker(&self) -> &str {

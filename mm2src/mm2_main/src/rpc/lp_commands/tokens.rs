@@ -1,7 +1,7 @@
 //! This source file is for RPCs specific for EVM platform
 use coins::eth::erc20::{get_erc20_ticker_by_contract_address, get_erc20_token_info, Erc20TokenInfo};
 use coins::eth::valid_addr_from_str;
-use coins::eth::{u256_to_big_decimal, wei_from_big_decimal, EthCoin, Web3RpcError};
+use coins::eth::{u256_from_big_decimal, u256_to_big_decimal, EthCoin, Web3RpcError};
 use coins::{
     lp_coinfind_or_err, CoinFindError, CoinProtocol, MmCoin, MmCoinEnum, NumConversError, Transaction, TransactionErr,
 };
@@ -84,7 +84,7 @@ pub async fn get_token_info(ctx: MmArc, req: TokenInfoRequest) -> MmResult<Token
                     .ok_or(TokenInfoError::UnsupportedTokenProtocol {
                         protocol: platform.to_string(),
                     })?;
-            let contract_address = valid_addr_from_str(contract_address_str).map_to_mm(|e| {
+            let contract_address = valid_addr_from_str(&contract_address_str).map_to_mm(|e| {
                 let error = format!("Invalid contract address: {e}");
                 TokenInfoError::InvalidRequest(error)
             })?;
@@ -159,7 +159,7 @@ pub struct Erc20ApproveRequest {
 /// Returns approval transaction hash.
 pub async fn approve_token_rpc(ctx: MmArc, req: Erc20ApproveRequest) -> MmResult<String, Erc20CallError> {
     let eth_coin = find_erc20_eth_coin(&ctx, &req.coin).await?;
-    let amount = wei_from_big_decimal(&req.amount, eth_coin.decimals()).map_mm_err()?;
+    let amount = u256_from_big_decimal(&req.amount, eth_coin.decimals()).map_mm_err()?;
     let tx = eth_coin.approve(req.spender, amount).compat().await?;
     Ok(format!("0x{:02x}", tx.tx_hash_as_bytes()))
 }

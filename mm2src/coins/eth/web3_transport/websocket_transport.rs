@@ -6,8 +6,8 @@
 //! for each request.
 
 use super::http_transport::de_rpc_response;
-use crate::eth::eth_rpc::ETH_RPC_REQUEST_TIMEOUT;
 use crate::eth::web3_transport::Web3SendOut;
+use crate::eth::WEB3_REQUEST_TIMEOUT_S;
 use crate::eth::{EthCoin, RpcTransportEventHandlerShared};
 use crate::{MmCoin, RpcTransportEventHandler};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
@@ -150,7 +150,7 @@ impl WebsocketTransport {
                     request_id,
                     response_notifier,
                     // Since request will be cancelled when timeout occurs, we are free to drop its state.
-                    ETH_RPC_REQUEST_TIMEOUT,
+                    WEB3_REQUEST_TIMEOUT_S,
                 );
 
                 let mut should_continue = Default::default();

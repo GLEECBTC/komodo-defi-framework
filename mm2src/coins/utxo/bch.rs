@@ -659,6 +659,9 @@ pub async fn bch_coin_with_policy(
     slp_addr_prefix: CashAddrPrefix,
     priv_key_policy: PrivKeyBuildPolicy,
 ) -> Result<BchCoin, String> {
+    if conf["coin"].as_str() != Some(ticker) {
+        return ERR!("Failed to activate '{}': ticker does not match coins config", ticker);
+    }
     if params.bchd_urls.is_empty() && !params.allow_slp_unsafe_conf {
         return Err("Using empty bchd_urls is unsafe for SLP users!".into());
     }
@@ -1213,8 +1216,8 @@ impl MarketCoinOps for BchCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
-        utxo_common::base_coin_balance(self)
+    fn platform_coin_balance(&self) -> BalanceFut<BigDecimal> {
+        utxo_common::platform_coin_balance(self)
     }
 
     fn platform_ticker(&self) -> &str {

@@ -18,7 +18,7 @@ use mm2_metrics::{MetricType, MetricsJson};
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::{BalanceResponse, ElectrumProtocol};
 use rand::Rng;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{self as json, json, Value as Json};
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -41,6 +41,7 @@ cfg_native! {
     use futures::task::SpawnExt;
     use http::Request;
     use regex::Regex;
+    use serde::Deserialize;
     use std::fs;
     use std::io::Write;
     use std::net::Ipv4Addr;
@@ -1844,6 +1845,7 @@ where
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Serialize, Deserialize, Debug)]
 struct ToWaitForLogRe {
     ctx: u32,

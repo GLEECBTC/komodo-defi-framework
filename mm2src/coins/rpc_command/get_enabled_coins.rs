@@ -22,7 +22,7 @@ impl HttpStatusCode for GetEnabledCoinsError {
 }
 
 #[derive(Deserialize)]
-pub struct GetEnabledCoinsRequest;
+pub struct GetEnabledCoinsRequest {}
 
 #[derive(Debug, Serialize)]
 pub struct GetEnabledCoinsResponse {
@@ -36,7 +36,7 @@ pub struct EnabledCoinV2 {
 
 pub async fn get_enabled_coins_rpc(
     ctx: MmArc,
-    _req: GetEnabledCoinsRequest,
+    _req: Option<GetEnabledCoinsRequest>,
 ) -> MmResult<GetEnabledCoinsResponse, GetEnabledCoinsError> {
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(GetEnabledCoinsError::Internal)?;
     let coins_map = coins_ctx.coins.lock().await;

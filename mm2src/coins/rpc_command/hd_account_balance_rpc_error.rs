@@ -76,6 +76,7 @@ impl From<BalanceError> for HDAccountBalanceRpcError {
             BalanceError::InvalidResponse(rpc) => HDAccountBalanceRpcError::RpcInvalidResponse(rpc),
             BalanceError::UnexpectedDerivationMethod(der_method) => HDAccountBalanceRpcError::from(der_method),
             BalanceError::WalletStorageError(e) | BalanceError::Internal(e) => HDAccountBalanceRpcError::Internal(e),
+            BalanceError::NoSuchCoin { coin } => HDAccountBalanceRpcError::NoSuchCoin { coin },
         }
     }
 }

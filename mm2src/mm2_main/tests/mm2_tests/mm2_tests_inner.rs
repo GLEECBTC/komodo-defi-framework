@@ -6725,7 +6725,7 @@ mod trezor_tests {
 
         CryptoCtx::init_with_iguana_passphrase(ctx.clone(), "123456").unwrap(); // for now we need passphrase seed for init
         let req: RpcInitReq<InitHwRequest> = serde_json::from_value(json!({ "device_pubkey": null })).unwrap();
-        let res = match init_trezor(ctx.clone(), req).await {
+        let res = match init_trezor(ctx.clone(), Some(req)).await {
             Ok(res) => res,
             _ => {
                 panic!("cannot start init trezor task");

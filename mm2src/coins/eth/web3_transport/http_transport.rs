@@ -1,3 +1,5 @@
+#[cfg(not(target_arch = "wasm32"))]
+use crate::eth::WEB3_REQUEST_TIMEOUT_S;
 use crate::eth::{web3_transport::Web3SendOut, RpcTransportEventHandler, RpcTransportEventHandlerShared, Web3RpcError};
 use common::APPLICATION_JSON;
 use common::X_AUTH_PAYLOAD;
@@ -104,8 +106,6 @@ async fn send_request(request: Call, transport: HttpTransport) -> Result<Json, E
     use http::header::HeaderValue;
     use mm2_net::transport::slurp_req;
 
-    const REQUEST_TIMEOUT_S: f64 = 20.;
-
     let serialized_request = to_string(&request);
     let request_bytes = serialized_request.as_bytes();
 
@@ -133,7 +133,7 @@ async fn send_request(request: Call, transport: HttpTransport) -> Result<Json, E
             .insert(X_AUTH_PAYLOAD, proxy_sign_serialized.parse().unwrap());
     }
 
-    let timeout = Timer::sleep(REQUEST_TIMEOUT_S);
+    let timeout = Timer::sleep(WEB3_REQUEST_TIMEOUT_S.as_secs_f64());
     let req = Box::pin(slurp_req(req));
     let rc = select(req, timeout).await;
     let res = match rc {
@@ -146,7 +146,10 @@ async fn send_request(request: Call, transport: HttpTransport) -> Result<Json, E
             };
             let error = format!(
                 "Error requesting '{}': {}s timeout expired, method: '{}', id: {:?}",
-                transport.node.uri, REQUEST_TIMEOUT_S, method, id
+                transport.node.uri,
+                WEB3_REQUEST_TIMEOUT_S.as_secs_f64(),
+                method,
+                id
             );
             warn!("{}", error);
             return Err(request_failed_error(&request, Web3RpcError::Transport(error)));

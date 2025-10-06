@@ -1,12 +1,12 @@
 use super::{
-    checksum_address, u256_to_big_decimal, wei_from_big_decimal, ChainSpec, EthCoinType, EthDerivationMethod,
+    checksum_address, u256_from_big_decimal, u256_to_big_decimal, ChainSpec, EthCoinType, EthDerivationMethod,
     EthPrivKeyPolicy, Public, WithdrawError, WithdrawRequest, WithdrawResult, ERC20_CONTRACT, H160, H256,
 };
 use crate::eth::wallet_connect::WcEthTxParams;
 use crate::eth::{
     calc_total_fee, get_eth_gas_details_from_withdraw_fee, tx_builder_with_pay_for_gas_option,
     tx_type_from_pay_for_gas_option, Action, Address, EthTxFeeDetails, KeyPair, PayForGasOption, SignedEthTx,
-    TransactionWrapper, UnSignedEthTxBuilder,
+    TransactionWrapper, UnSignedEthTxBuilder, ETH_RPC_REQUEST_TIMEOUT_S,
 };
 use crate::hd_wallet::{HDAddressSelector, HDCoinWithdrawOps, HDWalletOps, WithdrawSenderAddress};
 use crate::rpc_command::init_withdraw::{WithdrawInProgressStatus, WithdrawTaskHandleShared};
@@ -237,7 +237,7 @@ where
         let (mut wei_amount, dec_amount) = if req.max {
             (my_balance, my_balance_dec.clone())
         } else {
-            let wei_amount = wei_from_big_decimal(&req.amount, coin.decimals).map_mm_err()?;
+            let wei_amount = u256_from_big_decimal(&req.amount, coin.decimals).map_mm_err()?;
             (wei_amount, req.amount.clone())
         };
         if wei_amount > my_balance {
@@ -287,13 +287,13 @@ where
 
         let (tx_hash, tx_hex) = match coin.priv_key_policy {
             EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. } | EthPrivKeyPolicy::Trezor => {
-                let address_lock = coin.get_address_lock(my_address.to_string()).await;
+                let address_lock = coin.get_address_lock(my_address).await;
                 let _nonce_lock = address_lock.lock().await;
                 let (nonce, _) = coin
                     .clone()
                     .get_addr_nonce(my_address)
                     .compat()
-                    .timeout_secs(30.)
+                    .timeout(ETH_RPC_REQUEST_TIMEOUT_S)
                     .await?
                     .map_to_mm(WithdrawError::Transport)?;
 
@@ -338,11 +338,12 @@ where
                 ))?;
                 let gas_price = pay_for_gas_option.get_gas_price();
                 let (max_fee_per_gas, max_priority_fee_per_gas) = pay_for_gas_option.get_fee_per_gas();
+                // TODO: we should get _nonce_lock here (when WalletConnect is supported for swaps)
                 let (nonce, _) = coin
                     .clone()
                     .get_addr_nonce(my_address)
                     .compat()
-                    .timeout_secs(30.)
+                    .timeout(ETH_RPC_REQUEST_TIMEOUT_S)
                     .await?
                     .map_to_mm(WithdrawError::Transport)?;
                 let params = WcEthTxParams {

@@ -11,7 +11,7 @@ use mm2_libp2p::application::request_response::network_info::NetworkInfoRequest;
 use mm2_libp2p::{encode_message, NetworkInfo, PeerId, RelayAddress, RelayAddressError};
 use mm2_net::ip_addr::ParseAddressError;
 use serde_json::{self as json, Value as Json};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::convert::TryInto;
 use std::sync::Arc;
 
@@ -180,11 +180,6 @@ pub async fn remove_node_from_version_stat(ctx: MmArc, req: Json) -> NodeVersion
     delete_node_info_from_db(&ctx, node_name).map_to_mm(NodeVersionError::DatabaseError)?;
 
     Ok("success".into())
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct Mm2VersionRes {
-    nodes: HashMap<String, String>,
 }
 
 fn process_get_version_request(ctx: MmArc) -> Result<Vec<u8>, String> {

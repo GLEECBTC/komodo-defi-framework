@@ -92,6 +92,7 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
                 "Hardware wallet must be used within rpc task manager".to_string(),
             ),
             EthActivationV2Error::CustomTokenError(e) => EnablePlatformCoinWithTokensError::CustomTokenError(e),
+            EthActivationV2Error::PlatformCoinMismatch => EnablePlatformCoinWithTokensError::PlatformCoinMismatch,
         }
     }
 }
@@ -127,6 +128,7 @@ impl From<EthTokenActivationError> for InitTokensAsMmCoinsError {
             },
             EthTokenActivationError::PrivKeyPolicyNotAllowed(e) => InitTokensAsMmCoinsError::Internal(e.to_string()),
             EthTokenActivationError::CustomTokenError(e) => InitTokensAsMmCoinsError::CustomTokenError(e),
+            EthTokenActivationError::PlatformCoinMismatch => InitTokensAsMmCoinsError::PlatformCoinMismatch,
         }
     }
 }
@@ -168,6 +170,19 @@ impl TokenInitializer for Erc20Initializer {
 
     fn platform_coin(&self) -> &EthCoin {
         &self.platform_coin
+    }
+
+    fn validate_token_params(
+        &self,
+        params: &[TokenActivationParams<Self::TokenActivationRequest, Self::TokenProtocol>],
+    ) -> MmResult<(), Self::InitTokensError> {
+        for token_param in params {
+            match &token_param.protocol {
+                Erc20Protocol { platform, .. } if platform == self.platform_coin().ticker() => {},
+                _ => return MmError::err(EthTokenActivationError::PlatformCoinMismatch),
+            }
+        }
+        Ok(())
     }
 }
 

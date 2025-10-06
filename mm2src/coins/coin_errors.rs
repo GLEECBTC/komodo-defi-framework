@@ -54,6 +54,7 @@ pub enum ValidatePaymentError {
     TimelockOverflow(TryFromIntError),
     ProtocolNotSupported(String),
     InvalidData(String),
+    CheckSignatureError(String),
 }
 
 impl From<SPVError> for ValidatePaymentError {
@@ -84,6 +85,7 @@ impl From<Web3RpcError> for ValidatePaymentError {
             Web3RpcError::NftProtocolNotSupported => {
                 ValidatePaymentError::ProtocolNotSupported("Nft protocol is not supported".to_string())
             },
+            Web3RpcError::NoSuchCoin { .. } => ValidatePaymentError::InternalError(e.to_string()),
         }
     }
 }

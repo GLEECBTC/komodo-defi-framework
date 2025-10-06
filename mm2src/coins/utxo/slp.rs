@@ -76,6 +76,7 @@ pub enum EnableSlpError {
     GetBalanceError(UtxoRpcError),
     UnexpectedDerivationMethod(String),
     Internal(String),
+    PlatformCoinMismatch,
 }
 
 impl From<MyAddressError> for EnableSlpError {
@@ -1227,7 +1228,7 @@ impl MarketCoinOps for SlpToken {
         Box::new(fut.boxed().compat())
     }
 
-    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
+    fn platform_coin_balance(&self) -> BalanceFut<BigDecimal> {
         Box::new(self.platform_coin.my_balance().map(|res| res.spendable))
     }
 
@@ -2182,7 +2183,9 @@ mod slp_tests {
 
         let err = match tx_err.clone() {
             TransactionErr::TxRecoverable(_tx, err) => err,
-            TransactionErr::Plain(err) | TransactionErr::ProtocolNotSupported(err) => err,
+            TransactionErr::Plain(err)
+            | TransactionErr::ProtocolNotSupported(err)
+            | TransactionErr::InternalError(err) => err,
         };
 
         println!("{err:?}");

@@ -2637,36 +2637,14 @@ pub async fn check_balance_for_taker_swap(
     prepared_params: Option<TakerSwapPreparedParams>,
     stage: FeeApproxStage,
 ) -> CheckBalanceResult<()> {
-    let params = match prepared_params {
+    let fee_params = match prepared_params {
         Some(params) => params,
-        None => {
-            let dex_fee = DexFee::new_from_taker_coin(my_coin, other_coin.ticker(), &volume); // taker_pubkey is not known yet so we get max dexfee to estimate max swap amount
-            let fee_to_send_dex_fee = my_coin
-                .get_fee_to_send_taker_fee(dex_fee.clone(), stage)
-                .await
-                .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, my_coin.ticker()))?;
-            let preimage_value = TradePreimageValue::Exact(volume.to_decimal());
-            let taker_payment_trade_fee = my_coin
-                .get_sender_trade_fee(preimage_value, stage)
-                .await
-                .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, my_coin.ticker()))?;
-            let maker_payment_spend_trade_fee = other_coin
-                .get_receiver_trade_fee(stage)
-                .compat()
-                .await
-                .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, other_coin.ticker()))?;
-            TakerSwapPreparedParams {
-                dex_fee: dex_fee.total_spend_amount(),
-                fee_to_send_dex_fee,
-                taker_payment_trade_fee,
-                maker_payment_spend_trade_fee,
-            }
-        },
+        None => create_taker_swap_default_params(my_coin, other_coin, volume.clone(), stage).await?,
     };
 
     let taker_fee = TakerFeeAdditionalInfo {
-        dex_fee: params.dex_fee,
-        fee_to_send_dex_fee: params.fee_to_send_dex_fee,
+        dex_fee: fee_params.dex_fee,
+        fee_to_send_dex_fee: fee_params.fee_to_send_dex_fee,
     };
 
     check_my_coin_balance_for_swap(
@@ -2674,12 +2652,12 @@ pub async fn check_balance_for_taker_swap(
         my_coin,
         swap_uuid,
         volume,
-        params.taker_payment_trade_fee,
+        fee_params.taker_payment_trade_fee,
         Some(taker_fee),
     )
     .await?;
-    if !params.maker_payment_spend_trade_fee.paid_from_trading_vol {
-        check_other_coin_balance_for_swap(ctx, other_coin, swap_uuid, params.maker_payment_spend_trade_fee).await?;
+    if !fee_params.maker_payment_spend_trade_fee.paid_from_trading_vol {
+        check_other_coin_balance_for_swap(ctx, other_coin, swap_uuid, fee_params.maker_payment_spend_trade_fee).await?;
     }
     Ok(())
 }
@@ -2974,6 +2952,36 @@ pub fn max_taker_vol_from_available(
         });
     }
     Ok(max_vol)
+}
+
+/// Get dex fee and trade fee, including fee to spend maker coin (if requested)
+pub async fn create_taker_swap_default_params(
+    my_coin: &dyn MmCoin,
+    other_coin: &dyn MmCoin,
+    volume: MmNumber,
+    stage: FeeApproxStage,
+) -> CheckBalanceResult<TakerSwapPreparedParams> {
+    let dex_fee = DexFee::new_from_taker_coin(my_coin, other_coin.ticker(), &volume); // taker_pubkey is not known yet so we get max dexfee to estimate max swap amount
+    let fee_to_send_dex_fee = my_coin
+        .get_fee_to_send_taker_fee(dex_fee.clone(), stage)
+        .await
+        .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, my_coin.ticker()))?;
+    let preimage_value = TradePreimageValue::Exact(volume.to_decimal());
+    let taker_payment_trade_fee = my_coin
+        .get_sender_trade_fee(preimage_value, stage)
+        .await
+        .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, my_coin.ticker()))?;
+    let maker_payment_spend_trade_fee = other_coin
+        .get_receiver_trade_fee(stage)
+        .compat()
+        .await
+        .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, other_coin.ticker()))?;
+    Ok(TakerSwapPreparedParams {
+        dex_fee: dex_fee.total_spend_amount(),
+        fee_to_send_dex_fee,
+        taker_payment_trade_fee,
+        maker_payment_spend_trade_fee,
+    })
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
