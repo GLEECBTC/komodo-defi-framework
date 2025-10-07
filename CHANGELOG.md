@@ -1,3 +1,25 @@
+## v2.5.2-beta - 2025-10-10
+
+### Enhancements/Fixes:
+
+**Metrics**:
+- The `memory_db` size metric that relied on `parity-util-mem::malloc_size` was removed because it intermittently segfaulted on Linux due to allocator conflicts. [#2632](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2632)
+
+**Build and Dependency Management**:
+- A CI job was added to build macOS Universal2 artifacts for KDF, this combines `x86_64-apple-darwin` and `aarch64-apple-darwin` binaries via `lipo` to produce a single binary that runs natively on both Intel and Apple Silicon. The universal binary is uploaded as `kdf_<commit>-mac-universal.zip`. [#2628](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2628)
+- The `parity-util-mem` dependency was removed. [#2632](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2632)
+
+---
+
+## v2.5.1-beta - 2025-07-28
+
+### Enhancements/Fixes:
+
+**Wallet**:
+- A comprehensive `get_private_keys` RPC was implemented to export private keys, public keys, and addresses for any configured coin without requiring activation. HD and Iguana modes with protocol-specific logic for UTXO, EVM, Tendermint, and ZHTLC coins were supported, enabling offline recovery workflows (implemented by Devin AI). [#2542](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2542)
+
+---
+
 ## v2.5.0-beta - 2025-07-04
 
 ### Features:
