@@ -22,6 +22,7 @@ use serde::Deserialize;
 
 use crate::coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentResult};
 use crate::hd_wallet::HDAddressSelector;
+use crate::solana::solana_coin::lamports_to_big_decimal;
 use crate::solana::SolanaFeeDetails;
 use crate::{
     solana::SolanaCoin, BalanceFut, CoinBalance, RawTransactionFut, RawTransactionRequest, TxFeeDetails, WithdrawFut,
@@ -283,14 +284,12 @@ impl MmCoin for SolanaToken {
 
             let tx_data = crate::TransactionData::new_signed(rpc::v1::types::Bytes(tx_bytes), tx_hash.clone());
 
-            let amount_dec =
-                BigDecimal::from(amount_u64) / BigDecimal::from(10u64.pow(token.protocol_info.decimals as u32));
+            let amount_dec = lamports_to_big_decimal(amount_u64, token.protocol_info.decimals);
 
             let fee_lamports = rpc
                 .get_fee_for_message(tx.message())
                 .map_err(|e| WithdrawError::Transport(e.to_string()))?;
-            let fee_dec = BigDecimal::from(fee_lamports)
-                / BigDecimal::from(10u64.pow(super::solana_coin::SOLANA_DECIMALS as u32));
+            let fee_dec = lamports_to_big_decimal(fee_lamports, super::solana_coin::SOLANA_DECIMALS);
 
             let received_by_me = if to == coin.address {
                 amount_dec.clone()

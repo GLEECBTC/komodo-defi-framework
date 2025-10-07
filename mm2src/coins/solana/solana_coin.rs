@@ -243,34 +243,61 @@ impl SolanaCoin {
             .await
             .map_err(|e| WithdrawError::Transport(e.into_inner()))?;
 
+        let recent_blockhash = rpc
+            .get_latest_blockhash()
+            .map_err(|e| WithdrawError::Transport(e.to_string()))?;
+
+        // Dummy TX to estimate the fee.
+        let tx = solana_system_transaction::transfer(&self.keypair, &self.address, 0, recent_blockhash);
+        let fee_u64 = rpc
+            .get_fee_for_message(tx.message())
+            .map_err(|e| WithdrawError::Transport(e.to_string()))?;
+
+        let balance_u64 = rpc
+            .get_balance(&self.address)
+            .map_err(|e| WithdrawError::Transport(e.to_string()))?;
+
         if req.max {
-            let balance = rpc
-                .get_balance(&self.address)
-                .map_err(|e| WithdrawError::Transport(e.to_string()))?;
+            let amount = balance_u64.saturating_sub(fee_u64);
+            let amount_big_decimal = lamports_to_big_decimal(amount, SOLANA_DECIMALS);
 
-            let recent_blockhash = rpc
-                .get_latest_blockhash()
-                .map_err(|e| WithdrawError::Transport(e.to_string()))?;
+            // Amount must be bigger than min_tx_amount.
+            if amount_big_decimal < self.min_tx_amount() {
+                return MmError::err(WithdrawError::AmountTooLow {
+                    amount: amount_big_decimal,
+                    threshold: self.min_tx_amount(),
+                });
+            }
 
-            // Dummy TX to estimate the fee.
-            let tx = solana_system_transaction::transfer(&self.keypair, &self.address, balance, recent_blockhash);
-
-            let fee = rpc
-                .get_fee_for_message(tx.message())
-                .map_err(|e| WithdrawError::Transport(e.to_string()))?;
-
-            Ok(balance.saturating_sub(fee))
-        } else {
-            let big_decimal = &req.amount * &BigDecimal::from(10u64.pow(SOLANA_DECIMALS as u32));
-
-            // TODO: Check if user can afford the fee.
-
-            big_decimal.to_u64().ok_or_else(|| {
-                MmError::new(WithdrawError::InternalError(format!(
-                    "Couldn't convert {big_decimal} to u64."
-                )))
-            })
+            return Ok(balance_u64.saturating_sub(fee_u64));
         }
+
+        let requested_amount = &req.amount * &BigDecimal::from(10u64.pow(SOLANA_DECIMALS as u32));
+
+        // Amount must be bigger than min_tx_amount.
+        if requested_amount < self.min_tx_amount() {
+            return MmError::err(WithdrawError::AmountTooLow {
+                amount: requested_amount,
+                threshold: self.min_tx_amount(),
+            });
+        }
+
+        let requested_amount_u64 = requested_amount.to_u64().ok_or_else(|| {
+            MmError::new(WithdrawError::InternalError(format!(
+                "Couldn't convert {requested_amount} to u64."
+            )))
+        })?;
+
+        // User must have enough balance to cover both the send and fee amounts.
+        if requested_amount_u64 + fee_u64 > balance_u64 {
+            return MmError::err(WithdrawError::NotSufficientBalance {
+                coin: self.ticker.to_owned(),
+                available: lamports_to_big_decimal(balance_u64, SOLANA_DECIMALS),
+                required: lamports_to_big_decimal(requested_amount_u64 + fee_u64, SOLANA_DECIMALS),
+            });
+        };
+
+        Ok(requested_amount_u64)
     }
 }
 
@@ -325,12 +352,12 @@ impl MmCoin for SolanaCoin {
 
             let tx_data = TransactionData::new_signed(BytesJson(tx_bytes), tx_hash.clone());
 
-            let amount_dec = BigDecimal::from(lamports) / BigDecimal::from(10u64.pow(SOLANA_DECIMALS as u32));
+            let amount_dec = lamports_to_big_decimal(lamports, SOLANA_DECIMALS);
 
             let fee = rpc
                 .get_fee_for_message(tx.message())
                 .map_err(|e| WithdrawError::Transport(e.to_string()))?;
-            let fee = BigDecimal::from(fee) / BigDecimal::from(10u64.pow(SOLANA_DECIMALS as u32));
+            let fee = lamports_to_big_decimal(fee, SOLANA_DECIMALS);
 
             let received_by_me = if to == coin.address {
                 &amount_dec - &fee
@@ -507,8 +534,7 @@ impl MarketCoinOps for SolanaCoin {
                 .get_balance(&coin.address)
                 .map_err(|e| BalanceError::Transport(e.to_string()))?;
 
-            let scale = BigDecimal::from(10u64.pow(SOLANA_DECIMALS as u32));
-            let balance_decimal = BigDecimal::from(balance_u64) / scale;
+            let balance_decimal = lamports_to_big_decimal(balance_u64, SOLANA_DECIMALS);
 
             Ok(CoinBalance {
                 spendable: balance_decimal,
@@ -582,7 +608,7 @@ impl MarketCoinOps for SolanaCoin {
 
     #[inline]
     fn min_tx_amount(&self) -> BigDecimal {
-        BigDecimal::from(1) / BigDecimal::from(10u64.pow(SOLANA_DECIMALS as u32))
+        lamports_to_big_decimal(1, SOLANA_DECIMALS)
     }
 
     #[inline]
@@ -702,3 +728,7 @@ impl SwapOps for SolanaCoin {
 
 #[async_trait]
 impl WatcherOps for SolanaCoin {}
+
+pub(crate) fn lamports_to_big_decimal<T: Into<u32>>(lamports: u64, decimals: T) -> BigDecimal {
+    BigDecimal::from(lamports) / BigDecimal::from(10u64.pow(decimals.into()))
+}
