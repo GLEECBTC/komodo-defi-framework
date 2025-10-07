@@ -78,7 +78,7 @@ mm2_rpc = { path = "../mm2_rpc" }
 mm2_state_machine = { path = "../mm2_state_machine" }
 mocktopus = { workspace =  true, optional = true }
 num-traits.workspace = true
-parking_lot = { workspace = true, features = ["nightly"] }
+parking_lot = { workspace = true }
 primitives = { path = "../mm2_bitcoin/primitives" }
 prost.workspace = true
 protobuf.workspace = true
