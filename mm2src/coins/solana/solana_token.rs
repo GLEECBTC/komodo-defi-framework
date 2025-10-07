@@ -242,9 +242,9 @@ impl MmCoin for SolanaToken {
             let mut instructions = Vec::new();
 
             if let Err(e) = rpc.get_account(&to_token_account) {
-                // TODO: This might be a different kind of error. Check it more
-                // precisely (like how we do it in `solana_coin`) before sending
-                // the create instruction.
+                if !e.kind.to_string().contains("AccountNotFound") {
+                    return MmError::err(WithdrawError::Transport(e.to_string()));
+                }
 
                 instructions.push(create_associated_token_account(
                     &coin.address,
