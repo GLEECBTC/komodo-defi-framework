@@ -164,7 +164,6 @@ pub async fn remove_node_from_version_stat(ctx: MmArc, req: Json) -> NodeVersion
     Ok("success".into())
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), expect(dead_code))]
 #[derive(Debug, Deserialize, Serialize)]
 struct Mm2VersionRes {
     nodes: HashMap<String, String>,

@@ -222,7 +222,6 @@ fn get_offset_limit(max: bool, limit: usize, page_number: Option<NonZeroUsize>, 
 
 /// `NftDetailsJson` structure contains immutable parameters that are not needed for queries.
 /// This is what `details_json` string contains in db table.
-#[cfg_attr(target_arch = "wasm32", expect(dead_code))]
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub(crate) struct NftDetailsJson {
     pub(crate) owner_of: Address,
@@ -233,7 +232,6 @@ pub(crate) struct NftDetailsJson {
 
 /// `TransferDetailsJson` structure contains immutable parameters that are not needed for queries.
 /// This is what `details_json` string contains in db table.
-#[cfg_attr(target_arch = "wasm32", expect(dead_code))]
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub(crate) struct TransferDetailsJson {
     pub(crate) block_hash: Option<String>,
