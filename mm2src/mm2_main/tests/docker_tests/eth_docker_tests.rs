@@ -3043,32 +3043,55 @@ fn test_v2_eth_eth_kickstart_impl(base: &str, rel: &str, maker_price: f64, taker
                 BigDecimal::from_f64(maker_volume).unwrap()
             };
 
-            // add some tolerance for floating point calculations of resulting amounts (+/- 0.0001)
-            let (low_tol, high_tol) = if !is_token {
+            // Set low/high interval for swap total gas fees (if this is a platform coin):
+            let (gas_fee_low, gas_fee_high) = if !is_token {
                 (
-                    // tolerance for gas fee plus swap amount
                     BigDecimal::from_f64(0.0).unwrap(),
                     BigDecimal::from_f64(0.0005).unwrap(),
                 )
             } else {
-                (
-                    // no gas fee, only swap amount tolerance
-                    BigDecimal::from_f64(-0.0001).unwrap(),
-                    BigDecimal::from_f64(0.0001).unwrap(),
-                )
+                (BigDecimal::from_f64(0.0).unwrap(), BigDecimal::from_f64(0.0).unwrap())
             };
 
+            let vol_tol = BigDecimal::from_f64(0.00001).unwrap();
+
             if action == "sell" {
-                let low_diff = &volume + &low_tol;
-                let high_diff = &volume + &high_tol;
-                assert!(bal_0 - bal_1 >= low_diff, "{} >= {}", bal_0 - bal_1, low_diff);
-                assert!(bal_0 - bal_1 <= high_diff, "{} <= {}", bal_0 - bal_1, high_diff);
+                // Check low/high border for the swap result, for sell, as swap volume plus gas fee and plus/minus tolerance
+                let low_border = &volume + &gas_fee_low - &vol_tol;
+                let high_border = &volume + &gas_fee_high + &vol_tol;
+                assert!(
+                    bal_0 - bal_1 >= low_border,
+                    "{} >= {} {action} {}",
+                    bal_0 - bal_1,
+                    low_border,
+                    coin
+                );
+                assert!(
+                    bal_0 - bal_1 <= high_border,
+                    "{} <= {} {action} {}",
+                    bal_0 - bal_1,
+                    high_border,
+                    coin
+                );
             } else {
-                let low_diff = &volume - &high_tol;
-                let high_diff = &volume - &low_tol;
-                assert!(bal_1 - bal_0 >= low_diff, "{} >= {}", bal_1 - bal_0, low_diff);
-                assert!(bal_1 - bal_0 <= high_diff, "{} <= {}", bal_1 - bal_0, high_diff);
-            }
+                // Check low/high border for the swap result, for buy, as swap volume minus gas fee and plus/minus tolerance
+                let low_border = &volume - &gas_fee_high - &vol_tol;
+                let high_border = &volume - &gas_fee_low + &vol_tol;
+                assert!(
+                    bal_1 - bal_0 >= low_border,
+                    "{} >= {} {action} {}",
+                    bal_1 - bal_0,
+                    low_border,
+                    coin
+                );
+                assert!(
+                    bal_1 - bal_0 <= high_border,
+                    "{} <= {} {action} {}",
+                    bal_1 - bal_0,
+                    high_border,
+                    coin
+                );
+            };
         };
 
     check_balance(
