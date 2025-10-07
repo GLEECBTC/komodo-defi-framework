@@ -7,7 +7,9 @@
 pub struct OnDropCallback(Option<Box<dyn FnOnce() + Send>>);
 
 impl OnDropCallback {
-    pub fn new(f: impl FnOnce() + Send + 'static) -> Self { Self(Some(Box::new(f))) }
+    pub fn new(f: impl FnOnce() + Send + 'static) -> Self {
+        Self(Some(Box::new(f)))
+    }
 }
 
 impl Drop for OnDropCallback {

@@ -86,7 +86,9 @@ impl Builder {
     }
 
     /// Appends num push operation to the end of script
-    pub fn push_num(self, num: Num) -> Self { self.push_data(&num.to_bytes()) }
+    pub fn push_num(self, num: Num) -> Self {
+        self.push_data(&num.to_bytes())
+    }
 
     /// Appends data push operation to the end of script
     pub fn push_data(mut self, data: &[u8]) -> Self {
@@ -137,8 +139,12 @@ impl Builder {
     }
 
     /// Builds final script
-    pub fn into_script(self) -> Script { Script::new(self.data) }
+    pub fn into_script(self) -> Script {
+        Script::new(self.data)
+    }
 
     /// Builds final script bytes
-    pub fn into_bytes(self) -> Bytes { self.data }
+    pub fn into_bytes(self) -> Bytes {
+        self.data
+    }
 }

@@ -1,7 +1,8 @@
-use coins::{eth::u256_to_big_decimal, NumConversError};
+use coins::{CoinFindError, NumConversError};
 use common::{HttpStatusCode, StatusCode};
+use derive_more::Display;
 use enum_derives::EnumFromStringify;
-use mm2_number::BigDecimal;
+use ethereum_types::U256;
 use ser_error_derive::SerializeErrorType;
 use serde::Serialize;
 use trading_api::one_inch_api::errors::ApiClientError;
@@ -9,18 +10,21 @@ use trading_api::one_inch_api::errors::ApiClientError;
 #[derive(Debug, Display, Serialize, SerializeErrorType, EnumFromStringify)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum ApiIntegrationRpcError {
-    #[from_stringify("coins::CoinFindError")]
-    NoSuchCoin(String),
+    NoSuchCoin {
+        coin: String,
+    },
     #[display(fmt = "EVM token needed")]
     CoinTypeError,
     #[display(fmt = "NFT not supported")]
-    NftNotSupported,
+    NftProtocolNotSupported,
     #[display(fmt = "Chain not supported")]
     ChainNotSupported,
     #[display(fmt = "Must be same chain")]
     DifferentChains,
     #[from_stringify("coins::UnexpectedDerivationMethod")]
     MyAddressError(String),
+    #[from_stringify("ethereum_types::FromDecStrErr", "coins::NumConversError")]
+    NumberError(String),
     InvalidParam(String),
     #[display(fmt = "Parameter {param} out of bounds, value: {value}, min: {min} max: {max}")]
     OutOfBounds {
@@ -31,12 +35,15 @@ pub enum ApiIntegrationRpcError {
     },
     #[display(fmt = "allowance not enough for 1inch contract, available: {allowance}, needed: {amount}")]
     OneInchAllowanceNotEnough {
-        allowance: BigDecimal,
-        amount: BigDecimal,
+        allowance: U256,
+        amount: U256,
     },
-    #[display(fmt = "1inch API error: {}", _0)]
+    #[display(fmt = "1inch API error: {_0}")]
     OneInchError(ApiClientError),
     ApiDataError(String),
+    InternalError(String),
+    #[display(fmt = "liquidity routing swap not found")]
+    BestLrSwapNotFound,
 }
 
 impl HttpStatusCode for ApiIntegrationRpcError {
@@ -44,22 +51,25 @@ impl HttpStatusCode for ApiIntegrationRpcError {
         match self {
             ApiIntegrationRpcError::NoSuchCoin { .. } => StatusCode::NOT_FOUND,
             ApiIntegrationRpcError::CoinTypeError
-            | ApiIntegrationRpcError::NftNotSupported
+            | ApiIntegrationRpcError::NftProtocolNotSupported
             | ApiIntegrationRpcError::ChainNotSupported
             | ApiIntegrationRpcError::DifferentChains
             | ApiIntegrationRpcError::MyAddressError(_)
             | ApiIntegrationRpcError::InvalidParam(_)
             | ApiIntegrationRpcError::OutOfBounds { .. }
-            | ApiIntegrationRpcError::OneInchAllowanceNotEnough { .. } => StatusCode::BAD_REQUEST,
+            | ApiIntegrationRpcError::OneInchAllowanceNotEnough { .. }
+            | ApiIntegrationRpcError::NumberError(_)
+            | ApiIntegrationRpcError::BestLrSwapNotFound => StatusCode::BAD_REQUEST,
             ApiIntegrationRpcError::OneInchError(_) | ApiIntegrationRpcError::ApiDataError(_) => {
                 StatusCode::BAD_GATEWAY
             },
+            ApiIntegrationRpcError::InternalError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
 
-impl ApiIntegrationRpcError {
-    pub(crate) fn from_api_error(error: ApiClientError, decimals: Option<u8>) -> Self {
+impl From<ApiClientError> for ApiIntegrationRpcError {
+    fn from(error: ApiClientError) -> Self {
         match error {
             ApiClientError::InvalidParam(error) => ApiIntegrationRpcError::InvalidParam(error),
             ApiClientError::OutOfBounds { param, value, min, max } => {
@@ -69,11 +79,16 @@ impl ApiIntegrationRpcError {
             | ApiClientError::ParseBodyError { .. }
             | ApiClientError::GeneralApiError { .. } => ApiIntegrationRpcError::OneInchError(error),
             ApiClientError::AllowanceNotEnough { allowance, amount, .. } => {
-                ApiIntegrationRpcError::OneInchAllowanceNotEnough {
-                    allowance: u256_to_big_decimal(allowance, decimals.unwrap_or_default()).unwrap_or_default(),
-                    amount: u256_to_big_decimal(amount, decimals.unwrap_or_default()).unwrap_or_default(),
-                }
+                ApiIntegrationRpcError::OneInchAllowanceNotEnough { allowance, amount }
             },
+        }
+    }
+}
+
+impl From<CoinFindError> for ApiIntegrationRpcError {
+    fn from(err: CoinFindError) -> Self {
+        match err {
+            CoinFindError::NoSuchCoin { coin } => ApiIntegrationRpcError::NoSuchCoin { coin },
         }
     }
 }
@@ -82,18 +97,32 @@ impl ApiIntegrationRpcError {
 #[derive(Debug, Display, Serialize)]
 pub(crate) struct FromApiValueError(String);
 
+impl FromApiValueError {
+    pub(crate) fn new(msg: String) -> Self {
+        Self(msg)
+    }
+}
+
 impl From<NumConversError> for FromApiValueError {
-    fn from(err: NumConversError) -> Self { Self(err.to_string()) }
+    fn from(err: NumConversError) -> Self {
+        Self(err.to_string())
+    }
 }
 
 impl From<primitive_types::Error> for FromApiValueError {
-    fn from(err: primitive_types::Error) -> Self { Self(format!("{:?}", err)) }
+    fn from(err: primitive_types::Error) -> Self {
+        Self(format!("{err:?}"))
+    }
 }
 
 impl From<hex::FromHexError> for FromApiValueError {
-    fn from(err: hex::FromHexError) -> Self { Self(err.to_string()) }
+    fn from(err: hex::FromHexError) -> Self {
+        Self(err.to_string())
+    }
 }
 
 impl From<ethereum_types::FromDecStrErr> for FromApiValueError {
-    fn from(err: ethereum_types::FromDecStrErr) -> Self { Self(err.to_string()) }
+    fn from(err: ethereum_types::FromDecStrErr) -> Self {
+        Self(err.to_string())
+    }
 }

@@ -7,7 +7,6 @@ use mm2_err_handle::prelude::*;
 use mm2_io::fs::{read_json, write_json, FsJsonError};
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Transaction as RpcTransaction, H256 as H256Json};
-use std::collections::hash_map::RawEntryMut;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -37,15 +36,11 @@ struct TxCacheLock {
 impl TxCacheLock {
     /// Get the mutex corresponding to the specified `ticker`.
     pub fn mutex_by_ticker(&self, ticker: &str) -> Arc<AsyncMutex<()>> {
-        let mut locks = self.mutexes.lock();
-
-        match locks.raw_entry_mut().from_key(ticker) {
-            RawEntryMut::Occupied(mutex) => mutex.get().clone(),
-            RawEntryMut::Vacant(vacant_mutex) => {
-                let (_key, mutex) = vacant_mutex.insert(ticker.to_owned(), Arc::new(AsyncMutex::new(())));
-                mutex.clone()
-            },
-        }
+        self.mutexes
+            .lock()
+            .entry(ticker.to_owned())
+            .or_insert_with(|| Arc::new(AsyncMutex::new(())))
+            .clone()
     }
 }
 
@@ -79,7 +74,7 @@ impl UtxoVerboseCacheOps for FsVerboseCache {
         let mutex = TX_CACHE_LOCK.mutex_by_ticker(&self.ticker);
         let _lock = mutex.lock().await;
 
-        let it = txs.iter().map(|(_txid, tx)| self.cache_transaction(tx));
+        let it = txs.values().map(|tx| self.cache_transaction(tx));
         futures::future::join_all(it)
             .await
             .into_iter()
@@ -89,7 +84,9 @@ impl UtxoVerboseCacheOps for FsVerboseCache {
 
 impl FsVerboseCache {
     #[inline]
-    pub fn new(ticker: String, tx_cache_path: PathBuf) -> FsVerboseCache { FsVerboseCache { ticker, tx_cache_path } }
+    pub fn new(ticker: String, tx_cache_path: PathBuf) -> FsVerboseCache {
+        FsVerboseCache { ticker, tx_cache_path }
+    }
 
     /// Tries to load transaction from cache.
     /// Note: `tx.confirmations` can be out-of-date.
@@ -107,5 +104,7 @@ impl FsVerboseCache {
     }
 
     #[inline]
-    fn cached_transaction_path(&self, txid: &H256Json) -> PathBuf { self.tx_cache_path.join(format!("{:?}", txid)) }
+    fn cached_transaction_path(&self, txid: &H256Json) -> PathBuf {
+        self.tx_cache_path.join(format!("{txid:?}"))
+    }
 }

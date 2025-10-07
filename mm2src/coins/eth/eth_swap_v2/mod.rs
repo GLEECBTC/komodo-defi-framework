@@ -1,17 +1,19 @@
 use crate::eth::{decode_contract_call, signed_tx_from_web3_tx, EthCoin, EthCoinType, Transaction, TransactionErr};
+use crate::hd_wallet::DisplayAddress;
 use crate::{FindPaymentSpendError, MarketCoinOps};
 use common::executor::Timer;
 use common::log::{error, info};
 use common::now_sec;
+use derive_more::Display;
 use enum_derives::EnumFromStringify;
 use ethabi::{Contract, Token};
-use ethcore_transaction::SignedTransaction as SignedEthTx;
+use ethcore_transaction::{Action, SignedTransaction as SignedEthTx};
 use ethereum_types::{Address, H256, U256};
 use futures::compat::Future01CompatExt;
 use mm2_err_handle::prelude::{MmError, MmResult};
 use mm2_number::BigDecimal;
 use num_traits::Signed;
-use web3::types::{Transaction as Web3Tx, TransactionId};
+use web3::types::TransactionId;
 
 pub(crate) mod eth_maker_swap_v2;
 pub(crate) mod eth_taker_swap_v2;
@@ -51,11 +53,11 @@ pub(crate) enum ValidatePaymentV2Err {
 #[derive(Debug, Display, EnumFromStringify)]
 pub(crate) enum PrepareTxDataError {
     #[from_stringify("ethabi::Error")]
-    #[display(fmt = "ABI error: {}", _0)]
+    #[display(fmt = "ABI error: {_0}")]
     ABIError(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
-    #[display(fmt = "Invalid data error: {}", _0)]
+    #[display(fmt = "Invalid data error: {_0}")]
     InvalidData(String),
 }
 
@@ -174,23 +176,35 @@ impl EthCoin {
 }
 
 pub(crate) fn validate_from_to_addresses(
-    tx_from_rpc: &Web3Tx,
+    signed_tx: &SignedEthTx,
     expected_from: Address,
     expected_to: Address,
 ) -> Result<(), MmError<ValidatePaymentV2Err>> {
-    if tx_from_rpc.from != Some(expected_from) {
+    if signed_tx.sender() != expected_from {
         return MmError::err(ValidatePaymentV2Err::WrongPaymentTx(format!(
-            "Payment tx {:?} was sent from wrong address, expected {:?}",
-            tx_from_rpc, expected_from
+            "Payment tx {signed_tx:?} was sent from wrong address, expected {}",
+            expected_from.display_address()
         )));
     }
+
     // (in NFT case) as NFT owner calls "safeTransferFrom" directly, then in Transaction 'to' field we expect token_address
-    if tx_from_rpc.to != Some(expected_to) {
-        return MmError::err(ValidatePaymentV2Err::WrongPaymentTx(format!(
-            "Payment tx {:?} was sent to wrong address, expected {:?}",
-            tx_from_rpc, expected_to,
-        )));
+    match signed_tx.unsigned().action() {
+        Action::Call(to) => {
+            if *to != expected_to {
+                return MmError::err(ValidatePaymentV2Err::WrongPaymentTx(format!(
+                    "Payment tx was sent to wrong address, expected {}, got {}",
+                    expected_to.display_address(),
+                    to.display_address()
+                )));
+            }
+        },
+        Action::Create => {
+            return MmError::err(ValidatePaymentV2Err::WrongPaymentTx(
+                "Tx action must be Call, found Create instead".to_string(),
+            ));
+        },
     }
+
     Ok(())
 }
 
@@ -202,7 +216,7 @@ fn validate_amount(trading_amount: &BigDecimal) -> Result<(), String> {
     Ok(())
 }
 
-fn check_decoded_length(decoded: &Vec<Token>, expected_len: usize) -> Result<(), PrepareTxDataError> {
+fn check_decoded_length(decoded: &[Token], expected_len: usize) -> Result<(), PrepareTxDataError> {
     if decoded.len() != expected_len {
         return Err(PrepareTxDataError::Internal(format!(
             "Invalid number of tokens in decoded. Expected {}, found {}",
@@ -253,8 +267,7 @@ pub(crate) async fn extract_id_from_tx_data(
     match decoded.first() {
         Some(Token::FixedBytes(bytes)) => Ok(bytes.clone()),
         invalid_token => Err(FindPaymentSpendError::InvalidData(format!(
-            "Expected Token::FixedBytes, got {:?}",
-            invalid_token
+            "Expected Token::FixedBytes, got {invalid_token:?}"
         ))),
     }
 }

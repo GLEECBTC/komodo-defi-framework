@@ -8,16 +8,20 @@ use relay_rpc::domain::Topic;
 
 use crate::{error::WalletConnectError, session::Session};
 
-#[cfg(target_arch = "wasm32")] pub(crate) mod indexed_db;
-#[cfg(not(target_arch = "wasm32"))] pub(crate) mod sqlite;
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod indexed_db;
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) mod sqlite;
 
 #[async_trait]
 pub(crate) trait WalletConnectStorageOps {
-    type Error: std::fmt::Debug + NotMmError + NotEqual + Send;
+    type Error: std::fmt::Debug + NotMmError + Send;
 
     async fn init(&self) -> MmResult<(), Self::Error>;
+    #[expect(dead_code)]
     async fn is_initialized(&self) -> MmResult<bool, Self::Error>;
     async fn save_session(&self, session: &Session) -> MmResult<(), Self::Error>;
+    #[allow(dead_code)]
     async fn get_session(&self, topic: &Topic) -> MmResult<Option<Session>, Self::Error>;
     async fn get_all_sessions(&self) -> MmResult<Vec<Session>, Self::Error>;
     async fn delete_session(&self, topic: &Topic) -> MmResult<(), Self::Error>;
@@ -33,7 +37,9 @@ pub(crate) struct SessionStorageDb(DB);
 
 impl Deref for SessionStorageDb {
     type Target = DB;
-    fn deref(&self) -> &Self::Target { &self.0 }
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl SessionStorageDb {
@@ -54,9 +60,11 @@ pub(crate) mod session_storage_tests {
     use mm2_test_helpers::for_tests::mm_ctx_with_custom_async_db;
     use relay_rpc::{domain::SubscriptionId, rpc::params::Metadata};
 
-    use crate::{session::key::SessionKey,
-                session::{Session, SessionType},
-                WalletConnectCtx};
+    use crate::{
+        session::key::SessionKey,
+        session::{Session, SessionType},
+        WalletConnectCtx,
+    };
 
     use super::WalletConnectStorageOps;
 

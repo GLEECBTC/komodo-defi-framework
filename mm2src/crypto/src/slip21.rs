@@ -13,16 +13,18 @@ pub(crate) const AUTHENTICATION_PATH: &str = "SLIP-0021/Authentication key/";
 #[derive(Debug, Display, PartialEq)]
 #[allow(dead_code)]
 pub enum SLIP21Error {
-    #[display(fmt = "Error deriving key: {}", _0)]
+    #[display(fmt = "Error deriving key: {_0}")]
     KeyDerivationError(String),
-    #[display(fmt = "Error encrypting mnemonic: {}", _0)]
+    #[display(fmt = "Error encrypting mnemonic: {_0}")]
     EncryptionFailed(String),
-    #[display(fmt = "Error decrypting mnemonic: {}", _0)]
+    #[display(fmt = "Error decrypting mnemonic: {_0}")]
     DecryptionFailed(String),
 }
 
 impl From<KeyDerivationError> for SLIP21Error {
-    fn from(e: KeyDerivationError) -> Self { SLIP21Error::KeyDerivationError(e.to_string()) }
+    fn from(e: KeyDerivationError) -> Self {
+        SLIP21Error::KeyDerivationError(e.to_string())
+    }
 }
 
 /// Encrypts data using SLIP-0021 derived keys.
@@ -40,7 +42,7 @@ pub fn encrypt_with_slip21(
 
     // Derive encryption and authentication keys using SLIP-0021
     let (key_aes, key_hmac) =
-        derive_encryption_authentication_keys(master_secret, &encryption_path, &authentication_path)?;
+        derive_encryption_authentication_keys(master_secret, &encryption_path, &authentication_path).map_mm_err()?;
 
     let key_derivation_details = KeyDerivationDetails::SLIP0021 {
         encryption_path,
@@ -71,7 +73,7 @@ pub fn decrypt_with_slip21(encrypted_data: &EncryptedData, master_secret: &[u8; 
 
     // Derive encryption and authentication keys using SLIP-0021
     let (key_aes, key_hmac) =
-        derive_encryption_authentication_keys(master_secret, encryption_path, authentication_path)?;
+        derive_encryption_authentication_keys(master_secret, encryption_path, authentication_path).map_mm_err()?;
 
     decrypt_data(encrypted_data, &key_aes, &key_hmac).mm_err(|e| SLIP21Error::DecryptionFailed(e.to_string()))
 }

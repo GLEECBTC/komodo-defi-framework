@@ -36,7 +36,7 @@ pub struct SellBuyRequest {
     pub save_in_history: bool,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Debug, Deserialize)]
 pub struct SellBuyResponse {
     #[serde(flatten)]
     pub request: TakerRequestForRpc,

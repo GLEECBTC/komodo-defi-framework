@@ -1,8 +1,10 @@
 use crate::z_coin::z_coin_errors::ZcoinStorageError;
 
 use mm2_core::mm_ctx::MmArc;
-use mm2_db::indexed_db::{ConstructibleDb, DbIdentifier, DbInstance, DbLocked, DbUpgrader, IndexedDb, IndexedDbBuilder,
-                         InitDbResult, OnUpgradeResult, SharedDb, TableSignature};
+use mm2_db::indexed_db::{
+    ConstructibleDb, DbIdentifier, DbInstance, DbLocked, DbUpgrader, IndexedDb, IndexedDbBuilder, InitDbResult,
+    OnUpgradeResult, SharedDb, TableSignature,
+};
 use mm2_err_handle::prelude::*;
 
 const CHAIN: &str = "z_coin";
@@ -24,7 +26,7 @@ struct ZcashParamsWasmTable {
 }
 
 impl ZcashParamsWasmTable {
-    const SPEND_OUTPUT_INDEX: &str = "sapling_spend_sapling_output_index";
+    const SPEND_OUTPUT_INDEX: &'static str = "sapling_spend_sapling_output_index";
 }
 
 impl TableSignature for ZcashParamsWasmTable {
@@ -62,7 +64,9 @@ impl DbInstance for ZcashParamsWasmInner {
 }
 
 impl ZcashParamsWasmInner {
-    pub(crate) fn get_inner(&self) -> &IndexedDb { &self.0 }
+    pub(crate) fn get_inner(&self) -> &IndexedDb {
+        &self.0
+    }
 }
 
 #[derive(Clone)]
@@ -88,8 +92,8 @@ impl ZcashParamsWasmImpl {
         sapling_output: &[u8],
     ) -> MmResult<(), ZcoinStorageError> {
         let locked_db = self.lock_db().await?;
-        let db_transaction = locked_db.get_inner().transaction().await?;
-        let params_db = db_transaction.table::<ZcashParamsWasmTable>().await?;
+        let db_transaction = locked_db.get_inner().transaction().await.map_mm_err()?;
+        let params_db = db_transaction.table::<ZcashParamsWasmTable>().await.map_mm_err()?;
         let params = ZcashParamsWasmTable {
             sapling_spend_id,
             sapling_spend: sapling_spend.to_vec(),
@@ -97,20 +101,21 @@ impl ZcashParamsWasmImpl {
             ticker: CHAIN.to_string(),
         };
 
-        Ok(params_db
+        params_db
             .replace_item_by_unique_index("sapling_spend_id", sapling_spend_id as u32, &params)
             .await
-            .map(|_| ())?)
+            .map(|_| ())
+            .map_mm_err()
     }
 
     /// Check if z_params is previously stored.
     pub(crate) async fn check_params(&self) -> MmResult<bool, ZcoinStorageError> {
         let locked_db = self.lock_db().await?;
-        let db_transaction = locked_db.get_inner().transaction().await?;
-        let params_db = db_transaction.table::<ZcashParamsWasmTable>().await?;
-        let count = params_db.count_all().await?;
+        let db_transaction = locked_db.get_inner().transaction().await.map_mm_err()?;
+        let params_db = db_transaction.table::<ZcashParamsWasmTable>().await.map_mm_err()?;
+        let count = params_db.count_all().await.map_mm_err()?;
         if count != TARGET_SPEND_CHUNKS {
-            params_db.delete_items_by_index("ticker", CHAIN).await?;
+            params_db.delete_items_by_index("ticker", CHAIN).await.map_mm_err()?;
         }
 
         Ok(count == TARGET_SPEND_CHUNKS)
@@ -119,18 +124,20 @@ impl ZcashParamsWasmImpl {
     /// Get z_params from storage.
     pub(crate) async fn get_params(&self) -> MmResult<(Vec<u8>, Vec<u8>), ZcoinStorageError> {
         let locked_db = self.lock_db().await?;
-        let db_transaction = locked_db.get_inner().transaction().await?;
-        let params_db = db_transaction.table::<ZcashParamsWasmTable>().await?;
+        let db_transaction = locked_db.get_inner().transaction().await.map_mm_err()?;
+        let params_db = db_transaction.table::<ZcashParamsWasmTable>().await.map_mm_err()?;
         let mut maybe_params = params_db
             .cursor_builder()
-            .only("ticker", CHAIN)?
+            .only("ticker", CHAIN)
+            .map_mm_err()?
             .open_cursor("ticker")
-            .await?;
+            .await
+            .map_mm_err()?;
 
         let mut sapling_spend = vec![];
         let mut sapling_output = vec![];
 
-        while let Some((_, params)) = maybe_params.next().await? {
+        while let Some((_, params)) = maybe_params.next().await.map_mm_err()? {
             sapling_spend.extend_from_slice(&params.sapling_spend);
             if params.sapling_spend_id == 0 {
                 sapling_output = params.sapling_output

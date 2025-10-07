@@ -27,16 +27,24 @@ pub trait ExtendedPublicKeyOps: FromStr + Sized {
 }
 
 impl ExtendedPublicKeyOps for Secp256k1ExtendedPublicKey {
-    fn derive_child(&self, child_number: ChildNumber) -> Result<Self, Bip32Error> { self.derive_child(child_number) }
+    fn derive_child(&self, child_number: ChildNumber) -> Result<Self, Bip32Error> {
+        self.derive_child(child_number)
+    }
 
-    fn to_string(&self, prefix: Prefix) -> String { self.to_string(prefix) }
+    fn to_string(&self, prefix: Prefix) -> String {
+        self.to_string(prefix)
+    }
 }
 
 #[cfg(feature = "enable-sia")]
 impl ExtendedPublicKeyOps for Ed25519ExtendedPublicKey {
-    fn derive_child(&self, child_number: ChildNumber) -> Result<Self, Bip32Error> { self.derive_child(child_number) }
+    fn derive_child(&self, child_number: ChildNumber) -> Result<Self, Bip32Error> {
+        self.derive_child(child_number)
+    }
 
-    fn to_string(&self, prefix: Prefix) -> String { self.to_string(prefix) }
+    fn to_string(&self, prefix: Prefix) -> String {
+        self.to_string(prefix)
+    }
 }
 
 /// This trait should be implemented for coins
@@ -122,13 +130,13 @@ where
         statuses: HwConnectStatuses<Task::InProgressStatus, Task::AwaitingStatus>,
         coin_protocol: CoinProtocol,
     ) -> MmResult<RpcTaskXPubExtractor<Task>, HDExtractPubkeyError> {
-        let crypto_ctx = CryptoCtx::from_ctx(ctx)?;
+        let crypto_ctx = CryptoCtx::from_ctx(ctx).map_mm_err()?;
         let hw_ctx = crypto_ctx
             .hw_ctx()
             .or_mm_err(|| HDExtractPubkeyError::HwContextNotInitialized)?;
 
         let trezor_message_type = match coin_protocol {
-            CoinProtocol::UTXO => TrezorMessageType::Bitcoin,
+            CoinProtocol::UTXO { .. } => TrezorMessageType::Bitcoin,
             CoinProtocol::QTUM => TrezorMessageType::Bitcoin,
             CoinProtocol::ETH { .. } | CoinProtocol::ERC20 { .. } => TrezorMessageType::Ethereum,
             _ => return Err(MmError::new(HDExtractPubkeyError::CoinDoesntSupportTrezor)),
@@ -150,7 +158,7 @@ where
     ) -> MmResult<XPub, HDExtractPubkeyError> {
         let pubkey_processor = TrezorRpcTaskProcessor::new(task_handle, statuses.to_trezor_request_statuses());
         let pubkey_processor = Arc::new(pubkey_processor);
-        let mut trezor_session = hw_ctx.trezor(pubkey_processor.clone()).await?;
+        let mut trezor_session = hw_ctx.trezor(pubkey_processor.clone()).await.map_mm_err()?;
         let xpub = trezor_session
             .get_public_key(
                 derivation_path,
@@ -159,9 +167,11 @@ where
                 SHOW_PUBKEY_ON_DISPLAY,
                 IGNORE_XPUB_MAGIC,
             )
-            .await?
+            .await
+            .map_mm_err()?
             .process(pubkey_processor.clone())
-            .await?;
+            .await
+            .map_mm_err()?;
         // Despite we pass `IGNORE_XPUB_MAGIC` to the [`TrezorSession::get_public_key`] method,
         // Trezor sometimes returns pubkeys with magic prefixes like `dgub` prefix for DOGE coin.
         // So we need to replace the magic prefix manually.
@@ -176,35 +186,13 @@ where
     ) -> MmResult<XPub, HDExtractPubkeyError> {
         let pubkey_processor = TrezorRpcTaskProcessor::new(task_handle, statuses.to_trezor_request_statuses());
         let pubkey_processor = Arc::new(pubkey_processor);
-        let mut trezor_session = hw_ctx.trezor(pubkey_processor.clone()).await?;
+        let mut trezor_session = hw_ctx.trezor(pubkey_processor.clone()).await.map_mm_err()?;
         trezor_session
             .get_eth_public_key(&derivation_path, SHOW_PUBKEY_ON_DISPLAY)
-            .await?
+            .await
+            .map_mm_err()?
             .process(pubkey_processor)
             .await
             .mm_err(HDExtractPubkeyError::from)
-    }
-}
-
-/// This is a wrapper over `XPubExtractor`. The main goal of this structure is to allow construction of an Xpub extractor
-/// even if HD wallet is not supported. But if someone tries to extract an Xpub despite HD wallet is not supported,
-/// it fails with an inner `HDExtractPubkeyError` error.
-pub struct XPubExtractorUnchecked<XPubExtractor>(MmResult<XPubExtractor, HDExtractPubkeyError>);
-
-#[async_trait]
-impl<XPubExtractor> HDXPubExtractor for XPubExtractorUnchecked<XPubExtractor>
-where
-    XPubExtractor: HDXPubExtractor + Send + Sync,
-{
-    async fn extract_xpub(
-        &self,
-        trezor_coin: String,
-        derivation_path: DerivationPath,
-    ) -> MmResult<XPub, HDExtractPubkeyError> {
-        self.0
-            .as_ref()
-            .map_err(Clone::clone)?
-            .extract_xpub(trezor_coin, derivation_path)
-            .await
     }
 }

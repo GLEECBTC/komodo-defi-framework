@@ -1,5 +1,7 @@
-use crate::z_coin::storage::{scan_cached_block, validate_chain, BlockDbImpl, BlockProcessingMode, CompactBlockRow,
-                             LockedNotesStorage, ZcoinStorageRes};
+use crate::z_coin::storage::{
+    scan_cached_block, validate_chain, BlockDbImpl, BlockProcessingMode, CompactBlockRow, LockedNotesStorage,
+    ZcoinStorageRes,
+};
 use crate::z_coin::tx_history_events::ZCoinTxHistoryEventStreamer;
 use crate::z_coin::z_balance_streaming::ZCoinBalanceEventStreamer;
 use crate::z_coin::z_coin_errors::ZcoinStorageError;
@@ -11,6 +13,7 @@ use db_common::sqlite::{query_single_row, run_optimization_pragmas, rusqlite};
 use itertools::Itertools;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_event_stream::DeriveStreamerId;
 use protobuf::Message;
 use std::sync::{Arc, Mutex};
 use zcash_client_backend::data_api::error::Error as ChainError;
@@ -40,13 +43,15 @@ impl From<ZcashClientError> for ZcoinStorageError {
 }
 
 impl From<ChainError<NoteId>> for ZcoinStorageError {
-    fn from(value: ChainError<NoteId>) -> Self { Self::SqliteError(ZcashClientError::from(value)) }
+    fn from(value: ChainError<NoteId>) -> Self {
+        Self::SqliteError(ZcashClientError::from(value))
+    }
 }
 
 impl BlockDbImpl {
     #[cfg(not(test))]
     pub async fn new(ctx: &MmArc, ticker: String) -> ZcoinStorageRes<Self> {
-        let path = ctx.global_dir().join(format!("{}_cache.db", ticker));
+        let path = ctx.global_dir().join(format!("{ticker}_cache.db"));
         async_blocking(move || {
             mm2_io::fs::create_parents(&path).map_err(|err| ZcoinStorageError::IoError(err.to_string()))?;
             let conn = Connection::open(path).map_to_mm(|err| ZcoinStorageError::DbError(err.to_string()))?;
@@ -170,15 +175,12 @@ impl BlockDbImpl {
                 .map_to_mm(|err| ZcoinStorageError::AddToStorageErr(err.to_string()))?;
 
             let rows = stmt_blocks
-                .query_map(
-                    params![u32::from(from_height), limit.unwrap_or(u32::max_value()),],
-                    |row| {
-                        Ok(CompactBlockRow {
-                            height: BlockHeight::from_u32(row.get(0)?),
-                            data: row.get(1)?,
-                        })
-                    },
-                )
+                .query_map(params![u32::from(from_height), limit.unwrap_or(u32::MAX),], |row| {
+                    Ok(CompactBlockRow {
+                        height: BlockHeight::from_u32(row.get(0)?),
+                        data: row.get(1)?,
+                    })
+                })
                 .map_to_mm(|err| ZcoinStorageError::AddToStorageErr(err.to_string()))?;
 
             Ok(rows.collect_vec())

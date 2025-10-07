@@ -1,9 +1,13 @@
 use crate::rpc_command::init_withdraw::{WithdrawInProgressStatus, WithdrawTaskHandleShared};
 use crate::utxo::utxo_common::{big_decimal_from_sat, UtxoTxBuilder};
-use crate::utxo::{output_script, sat_from_big_decimal, ActualFeeRate, Address, FeePolicy, GetUtxoListOps,
-                  PrivKeyPolicy, UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails, UtxoTx, UTXO_LOCK};
-use crate::{CoinWithDerivationMethod, GetWithdrawSenderAddress, MarketCoinOps, TransactionData, TransactionDetails,
-            UnexpectedDerivationMethod, WithdrawError, WithdrawFee, WithdrawRequest, WithdrawResult};
+use crate::utxo::{
+    output_script, sat_from_big_decimal, ActualFeeRate, Address, FeePolicy, GetUtxoListOps, PrivKeyPolicy,
+    UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails, UtxoTx, UTXO_LOCK,
+};
+use crate::{
+    CoinWithDerivationMethod, GetWithdrawSenderAddress, MarketCoinOps, TransactionData, TransactionDetails,
+    UnexpectedDerivationMethod, WithdrawError, WithdrawFee, WithdrawRequest, WithdrawResult,
+};
 use async_trait::async_trait;
 use chain::TransactionOutput;
 use common::log::info;
@@ -56,7 +60,9 @@ impl From<TrezorProcessingError<RpcTaskError>> for WithdrawError {
 }
 
 impl From<HwError> for WithdrawError {
-    fn from(e: HwError) -> Self { from_hw_error(e) }
+    fn from(e: HwError) -> Self {
+        from_hw_error(e)
+    }
 }
 
 impl From<TrezorError> for WithdrawError {
@@ -69,7 +75,9 @@ impl From<TrezorError> for WithdrawError {
 }
 
 impl From<CryptoCtxError> for WithdrawError {
-    fn from(e: CryptoCtxError) -> Self { WithdrawError::InternalError(e.to_string()) }
+    fn from(e: CryptoCtxError) -> Self {
+        WithdrawError::InternalError(e.to_string())
+    }
 }
 
 impl From<RpcTaskError> for WithdrawError {
@@ -88,7 +96,9 @@ impl From<RpcTaskError> for WithdrawError {
 }
 
 impl From<keys::Error> for WithdrawError {
-    fn from(e: keys::Error) -> Self { WithdrawError::InternalError(e.to_string()) }
+    fn from(e: keys::Error) -> Self {
+        WithdrawError::InternalError(e.to_string())
+    }
 }
 
 fn derive_hd_key_pair<Coin>(
@@ -101,7 +111,8 @@ where
     let secret = coin
         .as_ref()
         .priv_key_policy
-        .hd_wallet_derived_priv_key_or_err(derivation_path)?;
+        .hd_wallet_derived_priv_key_or_err(derivation_path)
+        .map_mm_err()?;
 
     let private = Private {
         prefix: coin.as_ref().conf.wif_prefix,
@@ -150,7 +161,7 @@ where
         let decimals = coin.as_ref().decimals;
         let req = self.request();
 
-        let to = coin.address_from_str(&req.to)?;
+        let to = coin.address_from_str(&req.to).map_mm_err()?;
 
         // Generate unsigned transaction.
         self.on_generating_transaction()?;
@@ -158,14 +169,17 @@ where
         let script_pubkey = output_script(&to).map(|script| script.to_bytes())?;
 
         let _utxo_lock = UTXO_LOCK.lock().await;
-        let (unspents, _) = coin.get_unspent_ordered_list(&self.sender_address()).await?;
+        let (unspents, _) = coin
+            .get_unspent_ordered_list(&self.sender_address())
+            .await
+            .map_mm_err()?;
         let (value, fee_policy) = if req.max {
             (
                 unspents.iter().fold(0, |sum, unspent| sum + unspent.value),
                 FeePolicy::DeductFromOutput(0),
             )
         } else {
-            let value = sat_from_big_decimal(&req.amount, decimals)?;
+            let value = sat_from_big_decimal(&req.amount, decimals).map_mm_err()?;
             (value, FeePolicy::SendExact)
         };
         let outputs = vec![TransactionOutput { value, script_pubkey }];
@@ -179,18 +193,15 @@ where
 
         match req.fee {
             Some(WithdrawFee::UtxoFixed { ref amount }) => {
-                let fixed = sat_from_big_decimal(amount, decimals)?;
+                let fixed = sat_from_big_decimal(amount, decimals).map_mm_err()?;
                 tx_builder = tx_builder.with_fee(ActualFeeRate::FixedPerKb(fixed));
             },
             Some(WithdrawFee::UtxoPerKbyte { ref amount }) => {
-                let dynamic_fee_rate = sat_from_big_decimal(amount, decimals)?;
+                let dynamic_fee_rate = sat_from_big_decimal(amount, decimals).map_mm_err()?;
                 tx_builder = tx_builder.with_fee(ActualFeeRate::Dynamic(dynamic_fee_rate));
             },
             Some(ref fee_policy) => {
-                let error = format!(
-                    "Expected 'UtxoFixed' or 'UtxoPerKbyte' fee types, found {:?}",
-                    fee_policy
-                );
+                let error = format!("Expected 'UtxoFixed' or 'UtxoPerKbyte' fee types, found {fee_policy:?}");
                 return MmError::err(WithdrawError::InvalidFeePolicy(error));
             },
             None => (),
@@ -253,13 +264,21 @@ impl<Coin> UtxoWithdraw<Coin> for InitUtxoWithdraw<Coin>
 where
     Coin: UtxoCommonOps + GetUtxoListOps + UtxoSignerOps,
 {
-    fn coin(&self) -> &Coin { &self.coin }
+    fn coin(&self) -> &Coin {
+        &self.coin
+    }
 
-    fn sender_address(&self) -> Address { self.from_address.clone() }
+    fn sender_address(&self) -> Address {
+        self.from_address.clone()
+    }
 
-    fn sender_address_string(&self) -> String { self.from_address_string.clone() }
+    fn sender_address_string(&self) -> String {
+        self.from_address_string.clone()
+    }
 
-    fn request(&self) -> &WithdrawRequest { &self.req }
+    fn request(&self) -> &WithdrawRequest {
+        &self.req
+    }
 
     fn on_generating_transaction(&self) -> Result<(), MmError<WithdrawError>> {
         let amount_display = if self.req.max {
@@ -274,20 +293,21 @@ where
             amount_display, self.req.coin, self.from_address_string, self.req.to,
         );
 
-        Ok(self
-            .task_handle
-            .update_in_progress_status(WithdrawInProgressStatus::GeneratingTransaction)?)
+        self.task_handle
+            .update_in_progress_status(WithdrawInProgressStatus::GeneratingTransaction)
+            .map_mm_err()
     }
 
     fn on_finishing(&self) -> Result<(), MmError<WithdrawError>> {
-        Ok(self
-            .task_handle
-            .update_in_progress_status(WithdrawInProgressStatus::Finishing)?)
+        self.task_handle
+            .update_in_progress_status(WithdrawInProgressStatus::Finishing)
+            .map_mm_err()
     }
 
     async fn sign_tx(&self, unsigned_tx: TransactionInputSigner) -> Result<UtxoTx, MmError<WithdrawError>> {
         self.task_handle
-            .update_in_progress_status(WithdrawInProgressStatus::SigningTransaction)?;
+            .update_in_progress_status(WithdrawInProgressStatus::SigningTransaction)
+            .map_mm_err()?;
 
         let mut sign_params = UtxoSignTxParamsBuilder::new();
 
@@ -323,7 +343,7 @@ where
                 }));
             },
             unexpected => {
-                let error = format!("Unexpected number of outputs: {}", unexpected);
+                let error = format!("Unexpected number of outputs: {unexpected}");
                 return MmError::err(WithdrawError::InternalError(error));
             },
         }
@@ -331,19 +351,20 @@ where
         sign_params
             .with_signature_version(self.signature_version())
             .with_unsigned_tx(unsigned_tx);
-        let sign_params = sign_params.build()?;
+        let sign_params = sign_params.build().map_mm_err()?;
 
         let signed = match self.coin.as_ref().priv_key_policy {
-            PrivKeyPolicy::Iguana(ref key_pair) => {
-                self.coin
-                    .sign_tx(sign_params, SignPolicy::WithKeyPair(key_pair))
-                    .await?
-            },
+            PrivKeyPolicy::Iguana(ref key_pair) => self
+                .coin
+                .sign_tx(sign_params, SignPolicy::WithKeyPair(key_pair))
+                .await
+                .map_mm_err()?,
             PrivKeyPolicy::HDWallet { .. } => {
-                let from_key_pair = derive_hd_key_pair(self.coin(), &self.from_derivation_path)?;
+                let from_key_pair = derive_hd_key_pair(self.coin(), &self.from_derivation_path).map_mm_err()?;
                 self.coin()
                     .sign_tx(sign_params, SignPolicy::WithKeyPair(&from_key_pair))
-                    .await?
+                    .await
+                    .map_mm_err()?
             },
             PrivKeyPolicy::Trezor => {
                 let trezor_statuses = TrezorRequestStatuses {
@@ -354,16 +375,18 @@ where
                 };
                 let sign_processor = TrezorRpcTaskProcessor::new(self.task_handle.clone(), trezor_statuses);
                 let sign_processor = Arc::new(sign_processor);
-                let crypto_ctx = CryptoCtx::from_ctx(&self.ctx)?;
+                let crypto_ctx = CryptoCtx::from_ctx(&self.ctx).map_mm_err()?;
                 let hw_ctx = crypto_ctx
                     .hw_ctx()
                     .or_mm_err(|| WithdrawError::HwError(HwRpcError::NoTrezorDeviceAvailable))?;
-                let trezor_session = hw_ctx.trezor(sign_processor).await?;
+                let trezor_session = hw_ctx.trezor(sign_processor).await.map_mm_err()?;
                 self.task_handle
-                    .update_in_progress_status(WithdrawInProgressStatus::WaitingForUserToConfirmSigning)?;
+                    .update_in_progress_status(WithdrawInProgressStatus::WaitingForUserToConfirmSigning)
+                    .map_mm_err()?;
                 self.coin
                     .sign_tx(sign_params, SignPolicy::WithTrezor(trezor_session))
-                    .await?
+                    .await
+                    .map_mm_err()?
             },
             #[cfg(target_arch = "wasm32")]
             PrivKeyPolicy::Metamask(_) => {
@@ -432,17 +455,29 @@ impl<Coin> UtxoWithdraw<Coin> for StandardUtxoWithdraw<Coin>
 where
     Coin: UtxoCommonOps + GetUtxoListOps,
 {
-    fn coin(&self) -> &Coin { &self.coin }
+    fn coin(&self) -> &Coin {
+        &self.coin
+    }
 
-    fn sender_address(&self) -> Address { self.from_address.clone() }
+    fn sender_address(&self) -> Address {
+        self.from_address.clone()
+    }
 
-    fn sender_address_string(&self) -> String { self.from_address_string.clone() }
+    fn sender_address_string(&self) -> String {
+        self.from_address_string.clone()
+    }
 
-    fn request(&self) -> &WithdrawRequest { &self.req }
+    fn request(&self) -> &WithdrawRequest {
+        &self.req
+    }
 
-    fn on_generating_transaction(&self) -> Result<(), MmError<WithdrawError>> { Ok(()) }
+    fn on_generating_transaction(&self) -> Result<(), MmError<WithdrawError>> {
+        Ok(())
+    }
 
-    fn on_finishing(&self) -> Result<(), MmError<WithdrawError>> { Ok(()) }
+    fn on_finishing(&self) -> Result<(), MmError<WithdrawError>> {
+        Ok(())
+    }
 
     async fn sign_tx(&self, unsigned_tx: TransactionInputSigner) -> Result<UtxoTx, MmError<WithdrawError>> {
         Ok(with_key_pair::sign_tx(
@@ -450,7 +485,8 @@ where
             &self.key_pair,
             self.signature_version(),
             self.coin.as_ref().conf.fork_id,
-        )?)
+        )
+        .map_mm_err()?)
     }
 }
 
@@ -467,13 +503,13 @@ where
         let from_address_string = from.address.display_address().map_to_mm(WithdrawError::InternalError)?;
 
         let key_pair = match from.derivation_path {
-            Some(der_path) => derive_hd_key_pair(&coin, &der_path)?,
+            Some(der_path) => derive_hd_key_pair(&coin, &der_path).map_mm_err()?,
             // [`WithdrawSenderAddress::derivation_path`] is not set, but the coin is initialized with an HD wallet derivation method.
             None if coin.has_hd_wallet_derivation_method() => {
                 let error = "Cannot determine 'from' address derivation path".to_owned();
                 return MmError::err(WithdrawError::UnexpectedFromAddress(error));
             },
-            None => *coin.as_ref().priv_key_policy.activated_key_or_err()?,
+            None => *coin.as_ref().priv_key_policy.activated_key_or_err().map_mm_err()?,
         };
 
         Ok(StandardUtxoWithdraw {

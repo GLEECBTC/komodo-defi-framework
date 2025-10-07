@@ -14,7 +14,9 @@ const CONFIGURATION_ID: u8 = 1;
 const DEBUG_ENDPOINT_ID: u8 = 2;
 
 impl From<TrezorDevice> for DeviceFilter {
-    fn from(d: TrezorDevice) -> Self { DeviceFilter::with_product_id(d.vendor_id, d.product_id) }
+    fn from(d: TrezorDevice) -> Self {
+        DeviceFilter::with_product_id(d.vendor_id, d.product_id)
+    }
 }
 
 pub struct WebUsbTransport {
@@ -23,15 +25,25 @@ pub struct WebUsbTransport {
 
 #[async_trait]
 impl Transport for WebUsbTransport {
-    async fn session_begin(&mut self) -> TrezorResult<()> { self.protocol.session_begin().await }
+    async fn session_begin(&mut self) -> TrezorResult<()> {
+        self.protocol.session_begin().await
+    }
 
-    async fn session_end(&mut self) -> TrezorResult<()> { self.protocol.session_end().await }
+    async fn session_end(&mut self) -> TrezorResult<()> {
+        self.protocol.session_end().await
+    }
 
-    async fn write_message(&mut self, message: ProtoMessage) -> TrezorResult<()> { self.protocol.write(message).await }
+    async fn write_message(&mut self, message: ProtoMessage) -> TrezorResult<()> {
+        self.protocol.write(message).await
+    }
 
-    async fn read_message(&mut self) -> TrezorResult<ProtoMessage> { self.protocol.read().await }
+    async fn read_message(&mut self) -> TrezorResult<ProtoMessage> {
+        self.protocol.read().await
+    }
 
-    async fn is_connected(&mut self) -> TrezorResult<bool> { self.protocol.link().is_connected().await }
+    async fn is_connected(&mut self) -> TrezorResult<bool> {
+        self.protocol.link().is_connected().await
+    }
 }
 
 struct WebUsbLink {
@@ -44,37 +56,46 @@ struct WebUsbLink {
 #[async_trait]
 impl Link for WebUsbLink {
     async fn write_chunk(&mut self, chunk: Vec<u8>) -> TrezorResult<()> {
-        if !self.device.is_open().await? {
+        if !self.device.is_open().await.map_mm_err()? {
             return MmError::err(TrezorError::DeviceDisconnected);
         }
-        Ok(self.device.write_chunk(self.endpoint_number, chunk).await?)
+
+        self.device.write_chunk(self.endpoint_number, chunk).await.map_mm_err()
     }
 
     async fn read_chunk(&mut self, chunk_len: u32) -> TrezorResult<Vec<u8>> {
-        if !self.device.is_open().await? {
+        if !self.device.is_open().await.map_mm_err()? {
             return MmError::err(TrezorError::DeviceDisconnected);
         }
-        Ok(self.device.read_chunk(self.endpoint_number, chunk_len).await?)
+
+        self.device
+            .read_chunk(self.endpoint_number, chunk_len)
+            .await
+            .map_mm_err()
     }
 }
 
 impl WebUsbLink {
     #[allow(dead_code)]
-    pub fn is_debug(&self) -> bool { self.debug }
+    pub fn is_debug(&self) -> bool {
+        self.debug
+    }
 
-    pub async fn is_connected(&self) -> TrezorResult<bool> { self.device.is_open().await.mm_err(TrezorError::from) }
+    pub async fn is_connected(&self) -> TrezorResult<bool> {
+        self.device.is_open().await.mm_err(TrezorError::from)
+    }
 
     /// Configure the WebUSB device.
     async fn establish_connection(&self, first: bool) -> TrezorResult<()> {
-        self.device.open().await?;
+        self.device.open().await.map_mm_err()?;
         if first {
-            self.device.select_configuration(CONFIGURATION_ID).await?;
+            self.device.select_configuration(CONFIGURATION_ID).await.map_mm_err()?;
             if let Err(e) = self.device.reset_device().await {
                 // Reset fails on ChromeOS and Windows.
                 warn!("{}", e);
             }
         }
-        self.device.claim_interface(self.interface_number).await?;
+        self.device.claim_interface(self.interface_number).await.map_mm_err()?;
         Ok(())
     }
 }
@@ -115,11 +136,12 @@ pub struct FoundDevices {
 ///
 /// This function **must** be called via a user gesture like a touch or mouse click.
 pub async fn find_devices() -> TrezorResult<FoundDevices> {
-    let wrapper = WebUsbWrapper::new()?;
+    let wrapper = WebUsbWrapper::new().map_mm_err()?;
     wrapper
         .request_device(TREZOR_DEVICES.iter().copied().map(DeviceFilter::from).collect())
-        .await?;
-    let devices_iter = wrapper.get_devices().await?.into_iter().filter(is_trezor);
+        .await
+        .map_mm_err()?;
+    let devices_iter = wrapper.get_devices().await.map_mm_err()?.into_iter().filter(is_trezor);
     let mut available = Vec::new();
     let mut not_supported = Vec::new();
     for device in devices_iter {
@@ -148,4 +170,6 @@ fn is_trezor(device: &WebUsbDevice) -> bool {
         .any(|expected| vendor_id == expected.vendor_id && product_id == expected.product_id)
 }
 
-fn is_hid(device: &WebUsbDevice) -> bool { device.device_info.vendor_id == T1HID_VENDOR }
+fn is_hid(device: &WebUsbDevice) -> bool {
+    device.device_info.vendor_id == T1HID_VENDOR
+}

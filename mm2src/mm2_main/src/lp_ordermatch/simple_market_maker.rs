@@ -1,19 +1,24 @@
 use crate::lp_dispatcher::{dispatch_lp_event, DispatcherContext};
-use crate::lp_ordermatch::lp_bot::{RunningState, StoppedState, StoppingState, TradingBotStarted, TradingBotStopped,
-                                   TradingBotStopping, VolumeSettings};
+use crate::lp_ordermatch::lp_bot::{
+    RunningState, StoppedState, StoppingState, TradingBotStarted, TradingBotStopped, TradingBotStopping, VolumeSettings,
+};
 use crate::lp_ordermatch::{cancel_all_orders, CancelBy, TradingBotEvent};
 use crate::lp_swap::SavedSwap;
-use crate::{lp_ordermatch::{cancel_order, create_maker_order,
-                            lp_bot::{SimpleCoinMarketMakerCfg, SimpleMakerBotRegistry, TradingBotContext,
-                                     TradingBotState},
-                            update_maker_order, CancelOrderReq, MakerOrder, MakerOrderUpdateReq, OrdermatchContext,
-                            SetPriceReq},
-            lp_swap::{latest_swaps_for_pair, LatestSwapsErr}};
+use crate::{
+    lp_ordermatch::{
+        cancel_order, create_maker_order,
+        lp_bot::{SimpleCoinMarketMakerCfg, SimpleMakerBotRegistry, TradingBotContext, TradingBotState},
+        update_maker_order, CancelOrderReq, MakerOrder, MakerOrderUpdateReq, OrdermatchContext, SetPriceReq,
+    },
+    lp_swap::{latest_swaps_for_pair, LatestSwapsErr},
+};
 use coins::lp_price::{fetch_price_tickers, Provider, RateInfos, PRICE_ENDPOINTS};
 use coins::{lp_coinfind, GetNonZeroBalance};
-use common::{executor::{SpawnFuture, Timer},
-             log::{debug, error, info, warn},
-             Future01CompatExt, HttpStatusCode, StatusCode};
+use common::{
+    executor::{SpawnFuture, Timer},
+    log::{debug, error, info, warn},
+    Future01CompatExt, HttpStatusCode, StatusCode,
+};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -37,35 +42,27 @@ pub type OrderPreparationResult = Result<(Option<MmNumber>, MmNumber, MmNumber, 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum OrderProcessingError {
-    #[display(fmt = "Rates from provider are Unknown - skipping for {}", key_trade_pair)]
+    #[display(fmt = "Rates from provider are Unknown - skipping for {key_trade_pair}")]
     ProviderUnknown { key_trade_pair: String },
-    #[display(fmt = "Price from provider is zero - skipping for {}", key_trade_pair)]
+    #[display(fmt = "Price from provider is zero - skipping for {key_trade_pair}")]
     PriceIsZero { key_trade_pair: String },
-    #[display(fmt = "Last updated price timestamp is invalid - skipping for {}", key_trade_pair)]
+    #[display(fmt = "Last updated price timestamp is invalid - skipping for {key_trade_pair}")]
     LastUpdatedTimestampInvalid { key_trade_pair: String },
     #[display(
-        fmt = "Last updated price timestamp elapsed {} is more than the elapsed validity {} - skipping for {}",
-        elapsed,
-        elapsed_validity,
-        key_trade_pair
+        fmt = "Last updated price timestamp elapsed {elapsed} is more than the elapsed validity {elapsed_validity} - skipping for {key_trade_pair}"
     )]
     PriceElapsedValidityExpired {
         elapsed: f64,
         elapsed_validity: f64,
         key_trade_pair: String,
     },
-    #[display(fmt = "Unable to parse/treat elapsed time {} - skipping", _0)]
+    #[display(fmt = "Unable to parse/treat elapsed time {_0} - skipping")]
     PriceElapsedValidityUntreatable(String),
-    #[display(fmt = "Price of base coin {} is below min_base_price {}", base_price, min_base_price)]
+    #[display(fmt = "Price of base coin {base_price} is below min_base_price {min_base_price}")]
     PriceBelowMinBasePrice { base_price: String, min_base_price: String },
-    #[display(fmt = "Price of rel coin {} is below min_rel_price {}", rel_price, min_rel_price)]
+    #[display(fmt = "Price of rel coin {rel_price} is below min_rel_price {min_rel_price}")]
     PriceBelowMinRelPrice { rel_price: String, min_rel_price: String },
-    #[display(
-        fmt = "Price of pair {} ({}) is below min_pair_price {}",
-        pair,
-        pair_price,
-        min_pair_price
-    )]
+    #[display(fmt = "Price of pair {pair} ({pair_price}) is below min_pair_price {min_pair_price}")]
     PriceBelowPairPrice {
         pair: String,
         pair_price: String,
@@ -80,11 +77,11 @@ pub enum OrderProcessingError {
     BalanceInternalError,
     #[display(fmt = "Balance is zero - skipping")]
     BalanceIsZero,
-    #[display(fmt = "{}", _0)]
+    #[display(fmt = "{_0}")]
     OrderCreationError(String),
-    #[display(fmt = "{}", _0)]
+    #[display(fmt = "{_0}")]
     OrderUpdateError(String),
-    #[display(fmt = "Error when querying swap history: {}", _0)]
+    #[display(fmt = "Error when querying swap history: {_0}")]
     MyRecentSwapsError(String),
     #[display(fmt = "Base balance is less than the min_vol_usd - skipping")]
     MinVolUsdAboveBalanceUsd,
@@ -93,7 +90,9 @@ pub enum OrderProcessingError {
 }
 
 impl From<LatestSwapsErr> for OrderProcessingError {
-    fn from(e: LatestSwapsErr) -> Self { OrderProcessingError::MyRecentSwapsError(format!("{}", e)) }
+    fn from(e: LatestSwapsErr) -> Self {
+        OrderProcessingError::MyRecentSwapsError(format!("{e}"))
+    }
 }
 
 impl From<GetNonZeroBalance> for OrderProcessingError {
@@ -106,7 +105,9 @@ impl From<GetNonZeroBalance> for OrderProcessingError {
 }
 
 impl From<std::string::String> for OrderProcessingError {
-    fn from(error: std::string::String) -> Self { OrderProcessingError::LegacyError(error) }
+    fn from(error: std::string::String) -> Self {
+        OrderProcessingError::LegacyError(error)
+    }
 }
 
 #[derive(Deserialize)]
@@ -118,7 +119,9 @@ enum PriceSources {
 }
 
 impl Default for PriceSources {
-    fn default() -> Self { PriceSources::Multiple(PRICE_ENDPOINTS.iter().map(ToString::to_string).collect()) }
+    fn default() -> Self {
+        PriceSources::Multiple(PRICE_ENDPOINTS.iter().map(ToString::to_string).collect())
+    }
 }
 
 impl PriceSources {
@@ -151,7 +154,9 @@ pub struct StopSimpleMakerBotRes {
 
 impl StopSimpleMakerBotRes {
     #[allow(dead_code)]
-    pub fn get_result(&self) -> String { self.result.clone() }
+    pub fn get_result(&self) -> String {
+        self.result.clone()
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -161,7 +166,9 @@ pub struct StartSimpleMakerBotRes {
 
 impl StartSimpleMakerBotRes {
     #[allow(dead_code)]
-    pub fn get_result(&self) -> String { self.result.clone() }
+    pub fn get_result(&self) -> String {
+        self.result.clone()
+    }
 }
 
 enum VwapSide {
@@ -176,9 +183,9 @@ pub enum StopSimpleMakerBotError {
     AlreadyStopped,
     #[display(fmt = "The bot is already stopping")]
     AlreadyStopping,
-    #[display(fmt = "Transport error: {}", _0)]
+    #[display(fmt = "Transport error: {_0}")]
     Transport(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     InternalError(String),
 }
 
@@ -189,25 +196,12 @@ pub enum StartSimpleMakerBotError {
     AlreadyStarted,
     #[display(fmt = "Invalid bot configuration")]
     InvalidBotConfiguration,
-    #[display(fmt = "Transport error: {}", _0)]
+    #[display(fmt = "Transport error: {_0}")]
     Transport(String),
     #[display(fmt = "Cannot start the bot if it's currently stopping")]
     CannotStartFromStopping,
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     InternalError(String),
-}
-
-#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
-#[serde(tag = "error_type", content = "error_data")]
-pub enum SwapUpdateNotificationError {
-    #[display(fmt = "{}", _0)]
-    MyRecentSwapsError(LatestSwapsErr),
-    #[display(fmt = "Swap info not available")]
-    SwapInfoNotAvailable,
-}
-
-impl From<LatestSwapsErr> for SwapUpdateNotificationError {
-    fn from(e: LatestSwapsErr) -> Self { SwapUpdateNotificationError::MyRecentSwapsError(e) }
 }
 
 impl HttpStatusCode for StartSimpleMakerBotError {
@@ -244,9 +238,13 @@ struct TradingPair {
 }
 
 impl TradingPair {
-    pub fn new(base: String, rel: String) -> TradingPair { TradingPair { base, rel } }
+    pub fn new(base: String, rel: String) -> TradingPair {
+        TradingPair { base, rel }
+    }
 
-    pub fn as_combination(&self) -> String { self.base.clone() + "/" + self.rel.clone().as_str() }
+    pub fn as_combination(&self) -> String {
+        self.base.clone() + "/" + self.rel.clone().as_str()
+    }
 }
 
 pub async fn tear_down_bot(ctx: MmArc) {
@@ -356,18 +354,25 @@ async fn vwap_calculator(
     ctx: &MmArc,
     cfg: &SimpleCoinMarketMakerCfg,
 ) -> VwapProcessingResult {
-    let base_swaps = latest_swaps_for_pair(ctx.clone(), cfg.base.clone(), cfg.rel.clone(), LATEST_SWAPS_LIMIT).await?;
-    let rel_swaps = latest_swaps_for_pair(ctx.clone(), cfg.rel.clone(), cfg.base.clone(), LATEST_SWAPS_LIMIT).await?;
+    let base_swaps = latest_swaps_for_pair(ctx.clone(), cfg.base.clone(), cfg.rel.clone(), LATEST_SWAPS_LIMIT)
+        .await
+        .map_mm_err()?;
+    let rel_swaps = latest_swaps_for_pair(ctx.clone(), cfg.rel.clone(), cfg.base.clone(), LATEST_SWAPS_LIMIT)
+        .await
+        .map_mm_err()?;
     Ok(vwap(base_swaps, rel_swaps, calculated_price, cfg).await)
 }
 
 async fn cancel_pending_orders(ctx: &MmArc, cfg_registry: &HashMap<String, SimpleCoinMarketMakerCfg>) -> usize {
     let mut nb_orders = 0;
     for (trading_pair, cfg) in cfg_registry.iter() {
-        match cancel_all_orders(ctx.clone(), CancelBy::Pair {
-            base: cfg.base.clone(),
-            rel: cfg.rel.clone(),
-        })
+        match cancel_all_orders(
+            ctx.clone(),
+            CancelBy::Pair {
+                base: cfg.base.clone(),
+                rel: cfg.rel.clone(),
+            },
+        )
         .await
         {
             Ok(resp) => {
@@ -466,7 +471,7 @@ async fn prepare_order(
     let base_coin = lp_coinfind(ctx, cfg.base.as_str())
         .await?
         .ok_or_else(|| MmError::new(OrderProcessingError::AssetNotEnabled))?;
-    let base_balance = base_coin.get_non_zero_balance().compat().await?;
+    let base_balance = base_coin.get_non_zero_balance().compat().await.map_mm_err()?;
     lp_coinfind(ctx, cfg.rel.as_str())
         .await?
         .ok_or_else(|| MmError::new(OrderProcessingError::AssetNotEnabled))?;
@@ -601,6 +606,7 @@ async fn create_single_order(
         rel_confs: cfg.rel_confs,
         rel_nota: cfg.rel_nota,
         save_in_history: true,
+        timeout_in_minutes: None,
     };
 
     let resp = create_maker_order(&ctx, req)
@@ -689,7 +695,7 @@ async fn process_bot_logic(ctx: &MmArc) {
     let mut futures_order_creation = Vec::with_capacity(cfg.len());
     // Now iterate over the registry and for every pairs that are not hit let's create an order
     for (trading_pair, cur_cfg) in cfg {
-        if memoization_pair_registry.get(&trading_pair).is_some() || !cur_cfg.enable {
+        if memoization_pair_registry.contains(&trading_pair) || !cur_cfg.enable {
             continue;
         }
         let rates_infos = rates_registry

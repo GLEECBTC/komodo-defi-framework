@@ -43,5 +43,7 @@ pub struct EnableStreamingResponse {
 }
 
 impl EnableStreamingResponse {
-    fn new(streamer_id: StreamerId) -> Self { Self { streamer_id } }
+    fn new(streamer_id: StreamerId) -> Self {
+        Self { streamer_id }
+    }
 }

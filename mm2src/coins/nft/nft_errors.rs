@@ -3,8 +3,10 @@ use crate::eth::GetEthAddressError;
 #[cfg(target_arch = "wasm32")]
 use crate::nft::storage::wasm::WasmNftCacheError;
 use crate::nft::storage::NftStorageError;
-use crate::{CoinFindError, GetMyAddressError, MyAddressError, NumConversError, PrivKeyPolicyNotAllowed,
-            UnexpectedDerivationMethod, WithdrawError};
+use crate::{
+    CoinFindError, GetMyAddressError, MyAddressError, NumConversError, PrivKeyPolicyNotAllowed,
+    UnexpectedDerivationMethod, WithdrawError,
+};
 use common::{HttpStatusCode, ParseRfc3339Err};
 #[cfg(not(target_arch = "wasm32"))]
 use db_common::sqlite::rusqlite::Error as SqlError;
@@ -19,27 +21,23 @@ use web3::Error;
 #[derive(Clone, Debug, Deserialize, Display, EnumFromStringify, PartialEq, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum GetNftInfoError {
-    #[display(fmt = "Invalid request: {}", _0)]
+    #[display(fmt = "Invalid request: {_0}")]
     InvalidRequest(String),
-    #[display(fmt = "Transport: {}", _0)]
+    #[display(fmt = "Transport: {_0}")]
     Transport(String),
     #[from_stringify("serde_json::Error")]
-    #[display(fmt = "Invalid response: {}", _0)]
+    #[display(fmt = "Invalid response: {_0}")]
     InvalidResponse(String),
-    #[display(fmt = "Internal: {}", _0)]
+    #[display(fmt = "Internal: {_0}")]
     Internal(String),
     GetEthAddressError(GetEthAddressError),
-    #[display(
-        fmt = "Token: token_address {}, token_id {} was not found in wallet",
-        token_address,
-        token_id
-    )]
+    #[display(fmt = "Token: token_address {token_address}, token_id {token_id} was not found in wallet")]
     TokenNotFoundInWallet {
         token_address: String,
         token_id: String,
     },
     #[from_stringify("LockDBError")]
-    #[display(fmt = "DB error {}", _0)]
+    #[display(fmt = "DB error {_0}")]
     DbError(String),
     ParseRfc3339Err(ParseRfc3339Err),
     #[display(fmt = "The contract type is required and should not be null.")]
@@ -51,11 +49,15 @@ pub enum GetNftInfoError {
 }
 
 impl From<GetNftInfoError> for WithdrawError {
-    fn from(e: GetNftInfoError) -> Self { WithdrawError::GetNftInfoError(e) }
+    fn from(e: GetNftInfoError) -> Self {
+        WithdrawError::GetNftInfoError(e)
+    }
 }
 
 impl From<UnexpectedDerivationMethod> for GetNftInfoError {
-    fn from(e: UnexpectedDerivationMethod) -> Self { GetNftInfoError::Internal(e.to_string()) }
+    fn from(e: UnexpectedDerivationMethod) -> Self {
+        GetNftInfoError::Internal(e.to_string())
+    }
 }
 
 impl From<SlurpError> for GetNftInfoError {
@@ -84,11 +86,15 @@ impl From<web3::Error> for GetNftInfoError {
 }
 
 impl From<GetEthAddressError> for GetNftInfoError {
-    fn from(e: GetEthAddressError) -> Self { GetNftInfoError::GetEthAddressError(e) }
+    fn from(e: GetEthAddressError) -> Self {
+        GetNftInfoError::GetEthAddressError(e)
+    }
 }
 
 impl<T: NftStorageError> From<T> for GetNftInfoError {
-    fn from(err: T) -> Self { GetNftInfoError::DbError(format!("{:?}", err)) }
+    fn from(err: T) -> Self {
+        GetNftInfoError::DbError(format!("{err:?}"))
+    }
 }
 
 impl From<GetInfoFromUriError> for GetNftInfoError {
@@ -103,15 +109,21 @@ impl From<GetInfoFromUriError> for GetNftInfoError {
 }
 
 impl From<ParseRfc3339Err> for GetNftInfoError {
-    fn from(e: ParseRfc3339Err) -> Self { GetNftInfoError::ParseRfc3339Err(e) }
+    fn from(e: ParseRfc3339Err) -> Self {
+        GetNftInfoError::ParseRfc3339Err(e)
+    }
 }
 
 impl From<ProtectFromSpamError> for GetNftInfoError {
-    fn from(e: ProtectFromSpamError) -> Self { GetNftInfoError::ProtectFromSpamError(e) }
+    fn from(e: ProtectFromSpamError) -> Self {
+        GetNftInfoError::ProtectFromSpamError(e)
+    }
 }
 
 impl From<TransferConfirmationsError> for GetNftInfoError {
-    fn from(e: TransferConfirmationsError) -> Self { GetNftInfoError::TransferConfirmationsError(e) }
+    fn from(e: TransferConfirmationsError) -> Self {
+        GetNftInfoError::TransferConfirmationsError(e)
+    }
 }
 
 impl From<ethabi::Error> for GetNftInfoError {
@@ -155,93 +167,94 @@ impl HttpStatusCode for GetNftInfoError {
 #[serde(tag = "error_type", content = "error_data")]
 pub enum UpdateNftError {
     #[from_stringify("LockDBError")]
-    #[display(fmt = "DB error {}", _0)]
+    #[display(fmt = "DB error {_0}")]
     DbError(String),
     #[from_stringify("regex::Error", "MyAddressError")]
-    #[display(fmt = "Internal: {}", _0)]
+    #[display(fmt = "Internal: {_0}")]
     Internal(String),
     GetNftInfoError(GetNftInfoError),
     GetMyAddressError(GetMyAddressError),
-    #[display(
-        fmt = "Token: token_address {}, token_id {} was not found in wallet",
-        token_address,
-        token_id
-    )]
+    #[display(fmt = "Token: token_address {token_address}, token_id {token_id} was not found in wallet")]
     TokenNotFoundInWallet {
         token_address: String,
         token_id: String,
     },
     #[display(
-        fmt = "Insufficient amount NFT token in the cache: amount in list table before transfer {}, transferred {}",
-        amount_list,
-        amount_history
+        fmt = "Insufficient amount NFT token in the cache: amount in list table before transfer {amount_list}, transferred {amount_history}"
     )]
     InsufficientAmountInCache {
         amount_list: String,
         amount_history: String,
     },
     #[display(
-        fmt = "Last scanned nft block {} should be >= last block number {} in nft table",
-        last_scanned_block,
-        last_nft_block
+        fmt = "Last scanned nft block {last_scanned_block} should be >= last block number {last_nft_block} in nft table"
     )]
     InvalidBlockOrder {
         last_scanned_block: String,
         last_nft_block: String,
     },
-    #[display(
-        fmt = "Last scanned block not found, while the last NFT block exists: {}",
-        last_nft_block
-    )]
+    #[display(fmt = "Last scanned block not found, while the last NFT block exists: {last_nft_block}")]
     LastScannedBlockNotFound {
         last_nft_block: String,
     },
-    #[display(fmt = "Attempt to receive duplicate ERC721 token in transaction hash: {}", tx_hash)]
+    #[display(fmt = "Attempt to receive duplicate ERC721 token in transaction hash: {tx_hash}")]
     AttemptToReceiveAlreadyOwnedErc721 {
         tx_hash: String,
     },
-    #[display(fmt = "Invalid hex string: {}", _0)]
+    #[display(fmt = "Invalid hex string: {_0}")]
     InvalidHexString(String),
     UpdateSpamPhishingError(UpdateSpamPhishingError),
     GetInfoFromUriError(GetInfoFromUriError),
     #[from_stringify("serde_json::Error")]
     SerdeError(String),
     ProtectFromSpamError(ProtectFromSpamError),
-    #[display(fmt = "No such coin {}", coin)]
+    #[display(fmt = "No such coin {coin}")]
     NoSuchCoin {
         coin: String,
     },
-    #[display(fmt = "{} coin doesn't support NFT", coin)]
+    #[display(fmt = "{coin} coin doesn't support NFT")]
     CoinDoesntSupportNft {
         coin: String,
     },
-    #[display(fmt = "Private key policy is not allowed: {}", _0)]
+    #[display(fmt = "Private key policy is not allowed: {_0}")]
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
 }
 
 impl From<GetNftInfoError> for UpdateNftError {
-    fn from(e: GetNftInfoError) -> Self { UpdateNftError::GetNftInfoError(e) }
+    fn from(e: GetNftInfoError) -> Self {
+        UpdateNftError::GetNftInfoError(e)
+    }
 }
 
 impl From<GetMyAddressError> for UpdateNftError {
-    fn from(e: GetMyAddressError) -> Self { UpdateNftError::GetMyAddressError(e) }
+    fn from(e: GetMyAddressError) -> Self {
+        UpdateNftError::GetMyAddressError(e)
+    }
 }
 
 impl<T: NftStorageError> From<T> for UpdateNftError {
-    fn from(err: T) -> Self { UpdateNftError::DbError(format!("{:?}", err)) }
+    fn from(err: T) -> Self {
+        UpdateNftError::DbError(format!("{err:?}"))
+    }
 }
 
 impl From<UpdateSpamPhishingError> for UpdateNftError {
-    fn from(e: UpdateSpamPhishingError) -> Self { UpdateNftError::UpdateSpamPhishingError(e) }
+    fn from(e: UpdateSpamPhishingError) -> Self {
+        UpdateNftError::UpdateSpamPhishingError(e)
+    }
 }
 
 impl From<GetInfoFromUriError> for UpdateNftError {
-    fn from(e: GetInfoFromUriError) -> Self { UpdateNftError::GetInfoFromUriError(e) }
+    fn from(e: GetInfoFromUriError) -> Self {
+        UpdateNftError::GetInfoFromUriError(e)
+    }
 }
 
 impl From<ProtectFromSpamError> for UpdateNftError {
-    fn from(e: ProtectFromSpamError) -> Self { UpdateNftError::ProtectFromSpamError(e) }
+    fn from(e: ProtectFromSpamError) -> Self {
+        UpdateNftError::ProtectFromSpamError(e)
+    }
 }
 
 impl From<CoinFindError> for UpdateNftError {
@@ -253,7 +266,9 @@ impl From<CoinFindError> for UpdateNftError {
 }
 
 impl From<PrivKeyPolicyNotAllowed> for UpdateNftError {
-    fn from(e: PrivKeyPolicyNotAllowed) -> Self { Self::PrivKeyPolicyNotAllowed(e) }
+    fn from(e: PrivKeyPolicyNotAllowed) -> Self {
+        Self::PrivKeyPolicyNotAllowed(e)
+    }
 }
 
 impl From<GenerateSignedMessageError> for UpdateNftError {
@@ -266,7 +281,9 @@ impl From<GenerateSignedMessageError> for UpdateNftError {
 }
 
 impl From<UnexpectedDerivationMethod> for UpdateNftError {
-    fn from(e: UnexpectedDerivationMethod) -> Self { Self::UnexpectedDerivationMethod(e) }
+    fn from(e: UnexpectedDerivationMethod) -> Self {
+        Self::UnexpectedDerivationMethod(e)
+    }
 }
 
 impl HttpStatusCode for UpdateNftError {
@@ -313,22 +330,24 @@ pub enum ProtectFromSpamError {
 /// possible issues during the spam/phishing update operations.
 #[derive(Clone, Debug, Deserialize, Display, EnumFromStringify, PartialEq, Serialize)]
 pub enum UpdateSpamPhishingError {
-    #[display(fmt = "Invalid request: {}", _0)]
+    #[display(fmt = "Invalid request: {_0}")]
     InvalidRequest(String),
-    #[display(fmt = "Transport: {}", _0)]
+    #[display(fmt = "Transport: {_0}")]
     Transport(String),
     #[from_stringify("serde_json::Error")]
-    #[display(fmt = "Invalid response: {}", _0)]
+    #[display(fmt = "Invalid response: {_0}")]
     InvalidResponse(String),
-    #[display(fmt = "Internal: {}", _0)]
+    #[display(fmt = "Internal: {_0}")]
     Internal(String),
-    #[display(fmt = "DB error {}", _0)]
+    #[display(fmt = "DB error {_0}")]
     DbError(String),
     GetMyAddressError(GetMyAddressError),
 }
 
 impl From<GetMyAddressError> for UpdateSpamPhishingError {
-    fn from(e: GetMyAddressError) -> Self { UpdateSpamPhishingError::GetMyAddressError(e) }
+    fn from(e: GetMyAddressError) -> Self {
+        UpdateSpamPhishingError::GetMyAddressError(e)
+    }
 }
 
 impl From<GetInfoFromUriError> for UpdateSpamPhishingError {
@@ -343,7 +362,9 @@ impl From<GetInfoFromUriError> for UpdateSpamPhishingError {
 }
 
 impl<T: NftStorageError> From<T> for UpdateSpamPhishingError {
-    fn from(err: T) -> Self { UpdateSpamPhishingError::DbError(format!("{:?}", err)) }
+    fn from(err: T) -> Self {
+        UpdateSpamPhishingError::DbError(format!("{err:?}"))
+    }
 }
 
 /// Errors encountered when parsing a `Chain` from a string.
@@ -356,13 +377,15 @@ pub enum ParseChainTypeError {
 #[derive(Debug, Display, EnumFromStringify)]
 pub(crate) enum MetaFromUrlError {
     #[from_stringify("serde_json::Error")]
-    #[display(fmt = "Invalid response: {}", _0)]
+    #[display(fmt = "Invalid response: {_0}")]
     InvalidResponse(String),
     GetInfoFromUriError(GetInfoFromUriError),
 }
 
 impl From<GetInfoFromUriError> for MetaFromUrlError {
-    fn from(e: GetInfoFromUriError) -> Self { MetaFromUrlError::GetInfoFromUriError(e) }
+    fn from(e: GetInfoFromUriError) -> Self {
+        MetaFromUrlError::GetInfoFromUriError(e)
+    }
 }
 
 /// Represents errors that can occur while locking the NFT database.
@@ -378,25 +401,29 @@ pub enum LockDBError {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<SqlError> for LockDBError {
-    fn from(e: SqlError) -> Self { LockDBError::SqlError(e) }
+    fn from(e: SqlError) -> Self {
+        LockDBError::SqlError(e)
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
 impl From<WasmNftCacheError> for LockDBError {
-    fn from(e: WasmNftCacheError) -> Self { LockDBError::WasmNftCacheError(e) }
+    fn from(e: WasmNftCacheError) -> Self {
+        LockDBError::WasmNftCacheError(e)
+    }
 }
 
 /// Errors related to calculating transfer confirmations for NFTs.
 #[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
 pub enum TransferConfirmationsError {
     /// Occurs when the specified coin does not exist.
-    #[display(fmt = "No such coin {}", coin)]
+    #[display(fmt = "No such coin {coin}")]
     NoSuchCoin { coin: String },
     /// Triggered when the specified coin does not support NFT operations.
-    #[display(fmt = "{} coin doesn't support NFT", coin)]
+    #[display(fmt = "{coin} coin doesn't support NFT")]
     CoinDoesntSupportNft { coin: String },
     /// Represents errors encountered while retrieving the current block number.
-    #[display(fmt = "Get current block error: {}", _0)]
+    #[display(fmt = "Get current block error: {_0}")]
     GetCurrentBlockErr(String),
 }
 
@@ -414,18 +441,20 @@ impl From<CoinFindError> for TransferConfirmationsError {
 pub enum ClearNftDbError {
     /// Represents errors related to database operations.
     #[from_stringify("LockDBError")]
-    #[display(fmt = "DB error {}", _0)]
+    #[display(fmt = "DB error {_0}")]
     DbError(String),
     /// Indicates internal errors not directly associated with database operations.
-    #[display(fmt = "Internal: {}", _0)]
+    #[display(fmt = "Internal: {_0}")]
     Internal(String),
     /// Used for various types of invalid requests, such as missing or contradictory parameters.
-    #[display(fmt = "Invalid request: {}", _0)]
+    #[display(fmt = "Invalid request: {_0}")]
     InvalidRequest(String),
 }
 
 impl<T: NftStorageError> From<T> for ClearNftDbError {
-    fn from(err: T) -> Self { ClearNftDbError::DbError(format!("{:?}", err)) }
+    fn from(err: T) -> Self {
+        ClearNftDbError::DbError(format!("{err:?}"))
+    }
 }
 
 impl HttpStatusCode for ClearNftDbError {

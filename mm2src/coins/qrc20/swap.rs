@@ -22,6 +22,7 @@ pub struct Erc20PaymentDetails {
 }
 
 /// `receiverSpend` call details consist of values obtained from [`TransactionOutput::script_pubkey`].
+#[expect(dead_code)]
 #[derive(Debug)]
 pub struct ReceiverSpendDetails {
     pub swap_id: Vec<u8>,
@@ -48,7 +49,7 @@ impl Qrc20Coin {
         };
 
         let balance = try_tx_s!(self.my_spendable_balance().compat().await);
-        let balance = try_tx_s!(wei_from_big_decimal(&balance, self.utxo.decimals));
+        let balance = try_tx_s!(u256_from_big_decimal(&balance, self.utxo.decimals));
 
         // Check the balance to avoid unnecessary burning of gas
         if balance < value {
@@ -126,17 +127,17 @@ impl Qrc20Coin {
         let expected_swap_id = qrc20_swap_id(time_lock, &secret_hash);
         let status = self
             .payment_status(&expected_swap_contract_address, expected_swap_id.clone())
-            .await?;
+            .await
+            .map_mm_err()?;
         if status != U256::from(PaymentState::Sent as u8) {
             return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
-                "Payment state is not PAYMENT_STATE_SENT, got {}",
-                status
+                "Payment state is not PAYMENT_STATE_SENT, got {status}"
             )));
         }
 
         let expected_call_bytes = {
-            let expected_value = wei_from_big_decimal(&amount, self.utxo.decimals)?;
-            let my_address = self.utxo.derivation_method.single_addr_or_err().await?;
+            let expected_value = u256_from_big_decimal(&amount, self.utxo.decimals).map_mm_err()?;
+            let my_address = self.utxo.derivation_method.single_addr_or_err().await.map_mm_err()?;
             let expected_receiver = qtum::contract_addr_from_utxo_addr(my_address)
                 .mm_err(|err| ValidatePaymentError::InternalError(err.to_string()))?;
             self.erc20_payment_call_bytes(
@@ -145,7 +146,8 @@ impl Qrc20Coin {
                 time_lock,
                 &secret_hash,
                 expected_receiver,
-            )?
+            )
+            .map_mm_err()?
         };
         let erc20_payment = self
             .erc20_payment_details_from_tx(&payment_tx)
@@ -454,21 +456,24 @@ impl Qrc20Coin {
         if allowance < value {
             if allowance > U256::zero() {
                 // first reset the allowance to the 0
-                outputs.push(self.approve_output(swap_contract_address, 0.into())?);
+                outputs.push(self.approve_output(swap_contract_address, 0.into()).map_mm_err()?);
             }
             // set the allowance from 0 to `my_balance` after the previous output is executed
-            outputs.push(self.approve_output(swap_contract_address, my_balance)?);
+            outputs.push(self.approve_output(swap_contract_address, my_balance).map_mm_err()?);
         }
 
         // when this output is executed, the allowance will be sufficient already
-        outputs.push(self.erc20_payment_output(
-            id,
-            value,
-            time_lock,
-            &secret_hash,
-            receiver_addr,
-            &swap_contract_address,
-        )?);
+        outputs.push(
+            self.erc20_payment_output(
+                id,
+                value,
+                time_lock,
+                &secret_hash,
+                receiver_addr,
+                &swap_contract_address,
+            )
+            .map_mm_err()?,
+        );
         Ok(outputs)
     }
 
@@ -482,20 +487,24 @@ impl Qrc20Coin {
         let tokens = self
             .utxo
             .rpc_client
-            .rpc_contract_call(ViewContractCallType::Allowance, &self.contract_address, &[
-                Token::Address(
-                    qtum::contract_addr_from_utxo_addr(my_address.clone())
-                        .mm_err(|e| UtxoRpcError::Internal(e.to_string()))?,
-                ),
-                Token::Address(spender),
-            ])
+            .rpc_contract_call(
+                ViewContractCallType::Allowance,
+                &self.contract_address,
+                &[
+                    Token::Address(
+                        qtum::contract_addr_from_utxo_addr(my_address.clone())
+                            .mm_err(|e| UtxoRpcError::Internal(e.to_string()))?,
+                    ),
+                    Token::Address(spender),
+                ],
+            )
             .compat()
             .await?;
 
         match tokens.first() {
             Some(Token::Uint(number)) => Ok(*number),
             Some(_) => {
-                let error = format!(r#"Expected U256 as "allowance" result but got {:?}"#, tokens);
+                let error = format!(r#"Expected U256 as "allowance" result but got {tokens:?}"#);
                 MmError::err(UtxoRpcError::InvalidResponse(error))
             },
             None => {
@@ -511,9 +520,11 @@ impl Qrc20Coin {
         let decoded = self
             .utxo
             .rpc_client
-            .rpc_contract_call(ViewContractCallType::Payments, swap_contract_address, &[
-                Token::FixedBytes(swap_id),
-            ])
+            .rpc_contract_call(
+                ViewContractCallType::Payments,
+                swap_contract_address,
+                &[Token::FixedBytes(swap_id)],
+            )
             .compat()
             .await?;
         if decoded.len() < 3 {
@@ -1071,7 +1082,7 @@ fn check_if_contract_call_completed(receipt: &TxReceipt) -> Result<(), String> {
     match receipt.excepted {
         Some(ref ex) if ex != "None" && ex != "none" => {
             let msg = match receipt.excepted_message {
-                Some(ref m) if !m.is_empty() => format!(": {}", m),
+                Some(ref m) if !m.is_empty() => format!(": {m}"),
                 _ => String::default(),
             };
             ERR!("Contract call failed with an error: {}{}", ex, msg)

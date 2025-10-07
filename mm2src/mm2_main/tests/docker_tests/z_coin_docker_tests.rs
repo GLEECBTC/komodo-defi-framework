@@ -1,9 +1,12 @@
 use bitcrypto::dhash160;
-use coins::z_coin::{z_coin_from_conf_and_params_with_docker, z_send_dex_fee, ZCoin, ZcoinActivationParams,
-                    ZcoinRpcMode};
+use coins::z_coin::{
+    z_coin_from_conf_and_params_with_docker, z_send_dex_fee, ZCoin, ZcoinActivationParams, ZcoinRpcMode,
+};
 use coins::DexFeeBurnDestination;
-use coins::{coin_errors::ValidatePaymentError, CoinProtocol, DexFee, PrivKeyBuildPolicy, RefundPaymentArgs,
-            SendPaymentArgs, SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash, ValidateFeeArgs};
+use coins::{
+    coin_errors::ValidatePaymentError, CoinProtocol, DexFee, PrivKeyBuildPolicy, RefundPaymentArgs, SendPaymentArgs,
+    SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash, ValidateFeeArgs,
+};
 use common::now_sec;
 use lazy_static::lazy_static;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
@@ -23,7 +26,7 @@ lazy_static! {
 }
 
 /// Build asset `ZCoin` from ticker and spending_key.
-pub async fn z_coin_from_spending_key<'a>(spending_key: &str, path: &'a str) -> (MmArc, ZCoin) {
+pub async fn z_coin_from_spending_key(spending_key: &str, path: &str) -> (MmArc, ZCoin) {
     let tmp = TEMP_DIR.lock().await;
     let db_path = tmp.path().join(format!("ZOMBIE_DB_{path}"));
     std::fs::create_dir_all(&db_path).unwrap();

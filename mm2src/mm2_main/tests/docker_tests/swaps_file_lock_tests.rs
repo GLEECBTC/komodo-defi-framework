@@ -134,15 +134,13 @@ fn test_swaps_should_kick_start_if_process_was_killed() {
     let uuid = buy["result"]["uuid"].as_str().unwrap().to_owned();
     block_on(mm_bob.wait_for_log(22., |log| {
         log.contains(&format!(
-            "Entering the maker_swap_loop MYCOIN/MYCOIN1 with uuid: {}",
-            uuid
+            "Entering the maker_swap_loop MYCOIN/MYCOIN1 with uuid: {uuid}"
         ))
     }))
     .unwrap();
     block_on(mm_alice.wait_for_log(22., |log| {
         log.contains(&format!(
-            "Entering the taker_swap_loop MYCOIN/MYCOIN1 with uuid: {}",
-            uuid
+            "Entering the taker_swap_loop MYCOIN/MYCOIN1 with uuid: {uuid}"
         ))
     }))
     .unwrap();
@@ -158,7 +156,7 @@ fn test_swaps_should_kick_start_if_process_was_killed() {
     log!("{:?}", block_on(enable_native(&mm_bob_dup, "MYCOIN", &[], None)));
     log!("{:?}", block_on(enable_native(&mm_bob_dup, "MYCOIN1", &[], None)));
 
-    block_on(mm_bob_dup.wait_for_log(50., |log| log.contains(&format!("Swap {} kick started.", uuid)))).unwrap();
+    block_on(mm_bob_dup.wait_for_log(50., |log| log.contains(&format!("Swap {uuid} kick started.")))).unwrap();
 
     // mm_alice using same DB dir that should kick start the swap
     alice_conf["dbdir"] = mm_alice.folder.join("DB").to_str().unwrap().into();
@@ -172,7 +170,7 @@ fn test_swaps_should_kick_start_if_process_was_killed() {
     log!("{:?}", block_on(enable_native(&mm_alice_dup, "MYCOIN", &[], None)));
     log!("{:?}", block_on(enable_native(&mm_alice_dup, "MYCOIN1", &[], None)));
 
-    block_on(mm_alice_dup.wait_for_log(50., |log| log.contains(&format!("Swap {} kick started.", uuid)))).unwrap();
+    block_on(mm_alice_dup.wait_for_log(50., |log| log.contains(&format!("Swap {uuid} kick started.")))).unwrap();
 }
 
 fn addr_hash_for_privkey(priv_key: Secp256k1Secret) -> String {

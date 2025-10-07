@@ -3,6 +3,7 @@
 //! All event streamers are deactivated using the streamer ID only.
 
 use common::HttpStatusCode;
+use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::{map_to_mm::MapToMmResult, mm_error::MmResult};
 use mm2_event_stream::StreamerId;
@@ -23,7 +24,9 @@ pub struct DisableStreamingResponse {
 }
 
 impl DisableStreamingResponse {
-    fn new() -> Self { Self { result: "Success" } }
+    fn new() -> Self {
+        Self { result: "Success" }
+    }
 }
 
 #[derive(Display, Serialize, SerializeErrorType)]
@@ -34,7 +37,9 @@ pub enum DisableStreamingRequestError {
 }
 
 impl HttpStatusCode for DisableStreamingRequestError {
-    fn status_code(&self) -> StatusCode { StatusCode::BAD_REQUEST }
+    fn status_code(&self) -> StatusCode {
+        StatusCode::BAD_REQUEST
+    }
 }
 
 /// Disables a streamer.

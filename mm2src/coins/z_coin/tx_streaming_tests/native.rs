@@ -7,6 +7,7 @@ use crate::{CoinProtocol, DexFee, MarketCoinOps, MmCoin, PrivKeyBuildPolicy};
 use common::custom_futures::timeout::FutureTimerExt;
 use common::{block_on, Future01CompatExt};
 use mm2_core::mm_ctx::MmCtxBuilder;
+use mm2_event_stream::DeriveStreamerId;
 use mm2_test_helpers::for_tests::{pirate_conf, ARRR};
 use std::time::Duration;
 

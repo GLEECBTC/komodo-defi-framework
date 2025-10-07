@@ -16,7 +16,7 @@ use ethereum_types::{Address, Public, H160, H520, U256};
 use ethkey::{public_to_address, Message, Signature};
 use kdf_walletconnect::chain::{WcChainId, WcRequestMethods};
 use kdf_walletconnect::error::WalletConnectError;
-use kdf_walletconnect::{WalletConnectCtx, WalletConnectOps};
+use kdf_walletconnect::{WalletConnectCtx, WalletConnectOps, WcTopic};
 use mm2_err_handle::prelude::*;
 use secp256k1::recovery::{RecoverableSignature, RecoveryId};
 use secp256k1::{PublicKey, Secp256k1};
@@ -42,7 +42,9 @@ pub enum EthWalletConnectError {
 }
 
 impl From<WalletConnectError> for EthWalletConnectError {
-    fn from(value: WalletConnectError) -> Self { Self::WalletConnectError(value) }
+    fn from(value: WalletConnectError) -> Self {
+        Self::WalletConnectError(value)
+    }
 }
 
 /// Eth Params required for constructing WalletConnect transaction.
@@ -113,7 +115,9 @@ impl WalletConnectOps for EthCoin {
             },
         };
         let chain_id = WcChainId::new_eip155(chain_id.to_string());
-        wc.validate_update_active_chain_id(session_topic, &chain_id).await?;
+        wc.validate_update_active_chain_id(session_topic, &chain_id)
+            .await
+            .map_mm_err()?;
 
         Ok(chain_id)
     }
@@ -129,7 +133,8 @@ impl WalletConnectOps for EthCoin {
             let session_topic = self.session_topic()?;
             let tx_hex: String = wc
                 .send_session_request_and_wait(session_topic, &chain_id, WcRequestMethods::EthSignTransaction, tx_json)
-                .await?;
+                .await
+                .map_mm_err()?;
             // if tx_hex.len() < 4 {
             //     return MmError::err(EthWalletConnectError::TxDecodingFailed(
             //         "invalid transaction hex returned from wallet".to_string(),
@@ -157,7 +162,8 @@ impl WalletConnectOps for EthCoin {
             let tx_json = params.prepare_wc_tx_format()?;
             let session_topic = self.session_topic()?;
             wc.send_session_request_and_wait(session_topic, &chain_id, WcRequestMethods::EthSendTransaction, tx_json)
-                .await?
+                .await
+                .map_mm_err()?
         };
 
         let tx_hash = tx_hash.strip_prefix("0x").unwrap_or(&tx_hash);
@@ -174,7 +180,7 @@ impl WalletConnectOps for EthCoin {
         Ok((signed_tx, tx_hex))
     }
 
-    fn session_topic(&self) -> Result<&str, Self::Error> {
+    fn session_topic(&self) -> Result<&WcTopic, Self::Error> {
         if let EthPrivKeyPolicy::WalletConnect { ref session_topic, .. } = &self.priv_key_policy {
             return Ok(session_topic);
         }
@@ -188,24 +194,30 @@ impl WalletConnectOps for EthCoin {
 
 pub async fn eth_request_wc_personal_sign(
     wc: &WalletConnectCtx,
-    session_topic: &str,
+    session_topic: &WcTopic,
     chain_id: u64,
 ) -> MmResult<(H520, Address), EthWalletConnectError> {
     let chain_id = WcChainId::new_eip155(chain_id.to_string());
-    wc.validate_update_active_chain_id(session_topic, &chain_id).await?;
+    wc.validate_update_active_chain_id(session_topic, &chain_id)
+        .await
+        .map_mm_err()?;
 
-    let (account_str, _) = wc.get_account_and_properties_for_chain_id(session_topic, &chain_id)?;
+    let (account_str, _) = wc
+        .get_account_and_properties_for_chain_id(session_topic, &chain_id)
+        .map_mm_err()?;
     let message = "Authenticate with KDF";
     let params = {
         let message_hex = format!("0x{}", hex::encode(message));
         json!(&[&message_hex, &account_str])
     };
     let data = wc
-        .send_session_request_and_wait::<String>(session_topic, &chain_id, WcRequestMethods::PersonalSign, params)
-        .await?;
+        .send_session_request_and_wait::<String>(session_topic, &chain_id, WcRequestMethods::EthPersonalSign, params)
+        .await
+        .map_mm_err()?;
 
-    Ok(extract_pubkey_from_signature(&data, message, &account_str)
-        .mm_err(|err| WalletConnectError::SessionError(err.to_string()))?)
+    extract_pubkey_from_signature(&data, message, &account_str)
+        .mm_err(|err| WalletConnectError::SessionError(err.to_string()))
+        .map_mm_err()
 }
 
 fn extract_pubkey_from_signature(
@@ -242,9 +254,7 @@ fn extract_pubkey_from_signature(
 
 pub(crate) fn recover(signature: &Signature, message: &Message) -> Result<PublicKey, ethkey::Error> {
     let recovery_id = {
-        let recovery_id = signature[64]
-            .checked_sub(27)
-            .ok_or_else(|| ethkey::Error::InvalidSignature)?;
+        let recovery_id = signature[64].checked_sub(27).ok_or(ethkey::Error::InvalidSignature)?;
         RecoveryId::from_i32(recovery_id as i32)?
     };
     let sig = RecoverableSignature::from_compact(&signature[0..64], recovery_id)?;
@@ -270,10 +280,8 @@ pub(crate) async fn send_transaction_with_walletconnect(
         .chain_spec
         .chain_id()
         .ok_or(TransactionErr::Plain("Tron is not supported for this action!".into()))?;
-    let pay_for_gas_option = try_tx_s!(
-        coin.get_swap_pay_for_gas_option(coin.get_swap_transaction_fee_policy())
-            .await
-    );
+    let pay_for_gas_policy = try_tx_s!(coin.get_swap_gas_fee_policy().await);
+    let pay_for_gas_option = try_tx_s!(coin.get_swap_pay_for_gas_option(pay_for_gas_policy).await);
     let (max_fee_per_gas, max_priority_fee_per_gas) = pay_for_gas_option.get_fee_per_gas();
     let (nonce, _) = try_tx_s!(coin.clone().get_addr_nonce(my_address).compat().await);
 

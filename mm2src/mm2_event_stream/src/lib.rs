@@ -8,5 +8,5 @@ pub mod streamer_ids;
 pub use configuration::EventStreamingConfiguration;
 pub use event::Event;
 pub use manager::{StreamingManager, StreamingManagerError};
-pub use streamer::{Broadcaster, EventStreamer, NoDataIn, StreamHandlerInput};
+pub use streamer::{Broadcaster, DeriveStreamerId, EventStreamer, NoDataIn, StreamHandlerInput};
 pub use streamer_ids::StreamerId;

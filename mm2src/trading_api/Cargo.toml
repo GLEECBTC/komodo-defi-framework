@@ -14,6 +14,7 @@ mm2_number = { path = "../mm2_number" }
 mocktopus = { workspace =  true, optional = true }
 derive_more.workspace = true
 ethereum-types.workspace = true
+futures = { workspace = true, features = ["async-await"], optional = true }
 lazy_static.workspace = true
 serde.workspace = true
 serde_derive.workspace = true
@@ -21,7 +22,10 @@ serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 url.workspace = true
 
 [features]
-test-ext-api = [] # use test config to connect to an external api 
+# use this to connect to external trading api in tests
+test-ext-api = [ 
+    "futures"
+]
 for-tests = ["dep:mocktopus"]
 
 [dev-dependencies]

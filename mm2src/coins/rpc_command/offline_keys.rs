@@ -16,8 +16,9 @@ use mm2_err_handle::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::str::FromStr;
-use zcash_client_backend::encoding::{encode_extended_full_viewing_key, encode_extended_spending_key,
-                                     encode_payment_address};
+use zcash_client_backend::encoding::{
+    encode_extended_full_viewing_key, encode_extended_spending_key, encode_payment_address,
+};
 use zcash_primitives::consensus::Parameters;
 use zcash_primitives::zip32::{ChildIndex, ExtendedSpendingKey};
 
@@ -81,23 +82,21 @@ pub enum GetPrivateKeysResponse {
 #[derive(Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum OfflineKeysError {
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
-    #[display(fmt = "Coin configuration not found for {}", _0)]
+    #[display(fmt = "Coin configuration not found for {_0}")]
     CoinConfigNotFound(String),
-    #[display(fmt = "Failed to parse protocol for coin {}: {}", ticker, error)]
+    #[display(fmt = "Failed to parse protocol for coin {ticker}: {error}")]
     ProtocolParseError { ticker: String, error: String },
-    #[display(fmt = "Failed to derive keys for {}: {}", ticker, error)]
+    #[display(fmt = "Failed to derive keys for {ticker}: {error}")]
     KeyDerivationFailed { ticker: String, error: String },
     #[display(
-        fmt = "HD index range is invalid: start_index {} must be less than or equal to end_index {}",
-        start_index,
-        end_index
+        fmt = "HD index range is invalid: start_index {start_index} must be less than or equal to end_index {end_index}"
     )]
     InvalidHdRange { start_index: u32, end_index: u32 },
     #[display(fmt = "HD index range is too large: maximum range is 100 addresses")]
     HdRangeTooLarge,
-    #[display(fmt = "Missing prefix value for {}: {}", ticker, prefix_type)]
+    #[display(fmt = "Missing prefix value for {ticker}: {prefix_type}")]
     MissingPrefixValue { ticker: String, prefix_type: String },
     #[display(fmt = "Invalid parameters: start_index and end_index are only valid for HD mode")]
     InvalidParametersForMode,
@@ -142,7 +141,7 @@ fn extract_prefix_values(
 
     match protocol {
         CoinProtocol::ETH { .. } | CoinProtocol::ERC20 { .. } | CoinProtocol::NFT { .. } => Ok(None),
-        CoinProtocol::UTXO | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
+        CoinProtocol::UTXO { .. } | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
             let wif_type = coin_conf["wiftype"]
                 .as_u64()
                 .ok_or_else(|| OfflineKeysError::MissingPrefixValue {
@@ -185,7 +184,7 @@ fn extract_prefix_values(
                 serde_json::from_value(platform_conf["protocol"].clone()).map_err(|e| {
                     OfflineKeysError::ProtocolParseError {
                         ticker: ticker.to_string(),
-                        error: format!("Failed to parse platform protocol: {}", e),
+                        error: format!("Failed to parse platform protocol: {e}"),
                     }
                 })?;
             match platform_protocol {
@@ -193,8 +192,7 @@ fn extract_prefix_values(
                     account_prefix: platform_info.account_prefix,
                 })),
                 _ => Err(OfflineKeysError::Internal(format!(
-                    "Platform protocol for {} is not TENDERMINT: {:?}",
-                    ticker, platform_protocol
+                    "Platform protocol for {ticker} is not TENDERMINT: {platform_protocol:?}"
                 ))),
             }
         },
@@ -202,8 +200,7 @@ fn extract_prefix_values(
             _protocol_info: protocol_info,
         })),
         _ => Err(OfflineKeysError::Internal(format!(
-            "Unsupported protocol for {}: {:?}",
-            ticker, protocol
+            "Unsupported protocol for {ticker}: {protocol:?}"
         ))),
     }
 }
@@ -213,7 +210,7 @@ fn coin_conf_with_protocol(ctx: &MmArc, ticker: &str, conf_override: Option<Json
         Some(override_conf) => override_conf,
         None => match crate::coin_conf(ctx, ticker) {
             Json::Null => {
-                return Err(format!("Coin '{}' not found in configuration", ticker));
+                return Err(format!("Coin '{ticker}' not found in configuration"));
             },
             conf => conf,
         },
@@ -231,7 +228,7 @@ fn get_pubkey_for_protocol(key_pair: &KeyPair, protocol: &CoinProtocol) -> Resul
             let secp_pubkey = key_pair
                 .public()
                 .to_secp256k1_pubkey()
-                .map_err(|e| format!("Failed to convert to secp256k1 pubkey: {}", e))?;
+                .map_err(|e| format!("Failed to convert to secp256k1 pubkey: {e}"))?;
             let uncompressed = secp_pubkey.serialize_uncompressed();
             // Keep full uncompressed format for internal compatibility
             Ok(hex::encode(uncompressed))
@@ -250,9 +247,9 @@ fn format_pubkey_for_display(pubkey: &str, protocol: &CoinProtocol) -> String {
         CoinProtocol::ETH { .. } | CoinProtocol::ERC20 { .. } | CoinProtocol::NFT { .. } => {
             // For ETH, strip the 04 prefix and add 0x prefix
             if let Some(stripped_pubkey) = pubkey.strip_prefix("04") {
-                format!("0x{}", stripped_pubkey)
+                format!("0x{stripped_pubkey}")
             } else {
-                format!("0x{}", pubkey)
+                format!("0x{pubkey}")
             }
         },
         // A standard public key is not applicable for shielded Z-addresses.
@@ -303,7 +300,7 @@ async fn offline_hd_keys_export_internal(
             let mut addresses = Vec::with_capacity((end_index - start_index + 1) as usize);
 
             let crypto_ctx = CryptoCtx::from_ctx(&ctx)
-                .map_err(|e| OfflineKeysError::Internal(format!("Failed to get crypto context: {}", e)))?;
+                .map_err(|e| OfflineKeysError::Internal(format!("Failed to get crypto context: {e}")))?;
 
             let global_hd_ctx = match crypto_ctx.key_pair_policy() {
                 KeyPairPolicy::GlobalHDAccount(hd_ctx) => hd_ctx.clone(),
@@ -326,7 +323,7 @@ async fn offline_hd_keys_export_internal(
 
                 let z_derivation_path: HDPathToCoin = z_derivation_path_str
                     .parse()
-                    .map_err(|e| OfflineKeysError::Internal(format!("Failed to parse z_derivation_path: {:?}", e)))?;
+                    .map_err(|e| OfflineKeysError::Internal(format!("Failed to parse z_derivation_path: {e:?}")))?;
 
                 let path_to_account = z_derivation_path
                     .to_derivation_path()
@@ -342,7 +339,7 @@ async fn offline_hd_keys_export_internal(
 
                 let consensus_params: ZcoinConsensusParams =
                     serde_json::from_value(coin_conf["protocol"]["protocol_data"]["consensus_params"].clone())
-                        .map_err(|e| OfflineKeysError::Internal(format!("Failed to parse consensus params: {}", e)))?;
+                        .map_err(|e| OfflineKeysError::Internal(format!("Failed to parse consensus params: {e}")))?;
 
                 let address = encode_payment_address(consensus_params.hrp_sapling_payment_address(), &payment_address);
 
@@ -356,8 +353,8 @@ async fn offline_hd_keys_export_internal(
                 );
 
                 // The derivation path for a Z-coin account correctly stops at the account index.
-                let derivation_path = format!("{}/{}'", base_derivation_path, account_index);
-                let z_derivation_path = format!("{}/{}", z_derivation_path_str, account_index);
+                let derivation_path = format!("{base_derivation_path}/{account_index}'");
+                let z_derivation_path = format!("{z_derivation_path_str}/{account_index}");
 
                 addresses.push(HdAddressInfo {
                     derivation_path,
@@ -370,11 +367,11 @@ async fn offline_hd_keys_export_internal(
             } else {
                 // Standard logic for UTXO, ETH, and other coins that use address indexes.
                 for index in start_index..=end_index {
-                    let derivation_path = format!("{}/{}'/0/{}", base_derivation_path, account_index, index);
+                    let derivation_path = format!("{base_derivation_path}/{account_index}'/0/{index}");
                     let hd_path =
                         StandardHDPath::from_str(&derivation_path).map_err(|e| OfflineKeysError::KeyDerivationFailed {
                             ticker: ticker.clone(),
-                            error: format!("Invalid derivation path {}: {:?}", derivation_path, e),
+                            error: format!("Invalid derivation path {derivation_path}: {e:?}"),
                         })?;
 
                     let key_pair = {
@@ -382,12 +379,12 @@ async fn offline_hd_keys_export_internal(
                             .derive_secp256k1_secret(&hd_path.to_derivation_path())
                             .map_err(|e| OfflineKeysError::KeyDerivationFailed {
                                 ticker: ticker.clone(),
-                                error: format!("Failed to derive key at path {}: {}", derivation_path, e),
+                                error: format!("Failed to derive key at path {derivation_path}: {e}"),
                             })?;
 
                         key_pair_from_secret(&secret.take()).map_err(|e| OfflineKeysError::KeyDerivationFailed {
                             ticker: ticker.clone(),
-                            error: format!("Failed to create key pair: {}", e),
+                            error: format!("Failed to create key pair: {e}"),
                         })?
                     };
 
@@ -401,7 +398,7 @@ async fn offline_hd_keys_export_internal(
                     let pubkey = get_pubkey_for_protocol(&key_pair, &protocol).map_err(|e| {
                         OfflineKeysError::KeyDerivationFailed {
                             ticker: ticker.clone(),
-                            error: format!("Failed to get pubkey: {}", e),
+                            error: format!("Failed to get pubkey: {e}"),
                         }
                     })?;
 
@@ -450,8 +447,7 @@ async fn offline_hd_keys_export_internal(
                                 },
                                 _ => {
                                     return MmError::err(OfflineKeysError::Internal(format!(
-                                        "Unsupported non-UTXO protocol: {:?}",
-                                        protocol
+                                        "Unsupported non-UTXO protocol: {protocol:?}"
                                     )))
                                 },
                             };
@@ -535,7 +531,7 @@ async fn offline_iguana_keys_export_internal(
             let pubkey =
                 get_pubkey_for_protocol(&key_pair, &protocol).map_err(|e| OfflineKeysError::KeyDerivationFailed {
                     ticker: ticker.clone(),
-                    error: format!("Failed to get pubkey: {}", e),
+                    error: format!("Failed to get pubkey: {e}"),
                 })?;
 
             let (address, priv_key) = match prefix_values {
@@ -572,8 +568,7 @@ async fn offline_iguana_keys_export_internal(
                         },
                         _ => {
                             return MmError::err(OfflineKeysError::Internal(format!(
-                                "Unsupported non-UTXO protocol: {:?}",
-                                protocol
+                                "Unsupported non-UTXO protocol: {protocol:?}"
                             )));
                         },
                     };
@@ -593,7 +588,7 @@ async fn offline_iguana_keys_export_internal(
                 },
                 Some(PrefixValues::Zhtlc { .. }) => {
                     let crypto_ctx = CryptoCtx::from_ctx(&ctx)
-                        .map_err(|e| OfflineKeysError::Internal(format!("Failed to get crypto context: {}", e)))?;
+                        .map_err(|e| OfflineKeysError::Internal(format!("Failed to get crypto context: {e}")))?;
 
                     let iguana_key = match crypto_ctx.key_pair_policy() {
                         KeyPairPolicy::Iguana => crypto_ctx.mm2_internal_privkey_slice().to_vec(),
@@ -612,7 +607,7 @@ async fn offline_iguana_keys_export_internal(
                     let consensus_params: ZcoinConsensusParams =
                         serde_json::from_value(coin_conf["protocol"]["protocol_data"]["consensus_params"].clone())
                             .map_err(|e| {
-                                OfflineKeysError::Internal(format!("Failed to parse consensus params: {}", e))
+                                OfflineKeysError::Internal(format!("Failed to parse consensus params: {e}"))
                             })?;
 
                     let address =
@@ -759,7 +754,7 @@ mod tests {
                     assert_eq!(addr_info.address, expected_addresses[i]);
                     assert_eq!(addr_info.pubkey, _expected_pubkeys[i]);
                     assert_eq!(addr_info.priv_key, expected_privkeys[i]);
-                    assert_eq!(addr_info.derivation_path, format!("m/44'/0'/0'/0/{}", i));
+                    assert_eq!(addr_info.derivation_path, format!("m/44'/0'/0'/0/{i}"));
                 }
             },
             Err(e) => panic!("BTC HD key derivation test failed: {:?}", e),
@@ -818,7 +813,7 @@ mod tests {
                     assert_eq!(addr_info.address, expected_addresses[i]);
                     assert_eq!(addr_info.pubkey, _expected_pubkeys[i]);
                     assert_eq!(addr_info.priv_key, expected_privkeys[i]);
-                    assert_eq!(addr_info.derivation_path, format!("m/84'/0'/0'/0/{}", i));
+                    assert_eq!(addr_info.derivation_path, format!("m/84'/0'/0'/0/{i}"));
                 }
             },
             Err(e) => panic!("BTC-Segwit HD key derivation test failed: {:?}", e),
@@ -878,22 +873,20 @@ mod tests {
                     // Verify addresses are returned in EIP-55 checksum format
                     assert_eq!(
                         addr_info.address, expected_addresses[i],
-                        "Address {} should be in EIP-55 checksum format",
-                        i
+                        "Address {i} should be in EIP-55 checksum format"
                     );
 
                     // Verify that the address is valid checksum format
                     assert_eq!(
                         addr_info.address,
                         checksum_address(&addr_info.address.to_lowercase()),
-                        "Address {} should match EIP-55 checksum of its lowercase version",
-                        i
+                        "Address {i} should match EIP-55 checksum of its lowercase version"
                     );
 
                     // Original assertions
                     assert_eq!(addr_info.pubkey, expected_pubkeys[i]);
                     assert_eq!(addr_info.priv_key, expected_privkeys[i]);
-                    assert_eq!(addr_info.derivation_path, format!("m/44'/60'/0'/0/{}", i));
+                    assert_eq!(addr_info.derivation_path, format!("m/44'/60'/0'/0/{i}"));
                 }
             },
             Err(e) => panic!("ETH HD key derivation test failed: {:?}", e),
@@ -956,7 +949,7 @@ mod tests {
 
                 for (i, addr_info) in atom_result.addresses.iter().enumerate() {
                     assert_eq!(addr_info.address, expected_addresses[i]);
-                    assert_eq!(addr_info.derivation_path, format!("m/44'/118'/0'/0/{}", i));
+                    assert_eq!(addr_info.derivation_path, format!("m/44'/118'/0'/0/{i}"));
                 }
             },
             Err(e) => panic!("ATOM HD key derivation test failed: {:?}", e),

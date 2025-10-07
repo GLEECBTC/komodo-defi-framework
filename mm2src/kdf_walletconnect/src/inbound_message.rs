@@ -1,13 +1,17 @@
-use crate::{error::WalletConnectError,
-            pairing::{reply_pairing_delete_response, reply_pairing_extend_response, reply_pairing_ping_response},
-            session::rpc::{delete::reply_session_delete_request,
-                           event::handle_session_event,
-                           extend::reply_session_extend_request,
-                           ping::reply_session_ping_request,
-                           propose::{process_session_propose_response, reply_session_proposal_request},
-                           settle::reply_session_settle_request,
-                           update::reply_session_update_request},
-            WalletConnectCtxImpl};
+use crate::{
+    error::WalletConnectError,
+    pairing::{reply_pairing_delete_response, reply_pairing_extend_response, reply_pairing_ping_response},
+    session::rpc::{
+        delete::reply_session_delete_request,
+        event::handle_session_event,
+        extend::reply_session_extend_request,
+        ping::reply_session_ping_request,
+        propose::{process_session_propose_response, reply_session_proposal_request},
+        settle::reply_session_settle_request,
+        update::reply_session_update_request,
+    },
+    WalletConnectCtxImpl,
+};
 
 use common::log::{info, LogOnError};
 use mm2_err_handle::prelude::*;

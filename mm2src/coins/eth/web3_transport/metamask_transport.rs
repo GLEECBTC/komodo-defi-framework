@@ -61,7 +61,9 @@ impl Transport for MetamaskTransport {
 }
 
 impl fmt::Debug for MetamaskTransport {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "MetamaskTransport") }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "MetamaskTransport")
+    }
 }
 
 impl MetamaskTransport {

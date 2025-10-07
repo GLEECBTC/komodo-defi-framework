@@ -12,17 +12,16 @@ use mm2_rpc::data::legacy::{CoinInitResponse, MmVersionResponse, OrderbookRespon
 use mm2_test_helpers::electrums::*;
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "zhtlc-native-tests")))]
 use mm2_test_helpers::for_tests::wait_check_stats_swap_status;
-use mm2_test_helpers::for_tests::{account_balance, btc_segwit_conf, btc_with_spv_conf, btc_with_sync_starting_header,
-                                  check_recent_swaps, delete_wallet, enable_qrc20, enable_utxo_v2_electrum,
-                                  eth_dev_conf, find_metrics_in_json, from_env_file, get_new_address,
-                                  get_shared_db_id, get_wallet_names, mm_spat, morty_conf, my_balance, rick_conf,
-                                  sign_message, start_swaps, tbtc_conf, tbtc_segwit_conf, tbtc_with_spv_conf,
-                                  test_qrc20_history_impl, tqrc20_conf, verify_message,
-                                  wait_for_swaps_finish_and_check_status, wait_till_history_has_records,
-                                  MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, RaiiDump,
-                                  DOC_ELECTRUM_ADDRS, ETH_MAINNET_NODES, ETH_MAINNET_SWAP_CONTRACT, ETH_SEPOLIA_NODES,
-                                  ETH_SEPOLIA_SWAP_CONTRACT, MARTY_ELECTRUM_ADDRS, MORTY, QRC20_ELECTRUMS, RICK,
-                                  RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS, T_BCH_ELECTRUMS};
+use mm2_test_helpers::for_tests::{
+    account_balance, btc_segwit_conf, btc_with_spv_conf, btc_with_sync_starting_header, check_recent_swaps,
+    delete_wallet, enable_qrc20, enable_utxo_v2_electrum, eth_dev_conf, find_metrics_in_json, from_env_file,
+    get_new_address, get_shared_db_id, get_wallet_names, mm_spat, morty_conf, my_balance, rick_conf, sign_message,
+    start_swaps, tbtc_conf, tbtc_segwit_conf, tbtc_with_spv_conf, test_qrc20_history_impl, tqrc20_conf, verify_message,
+    wait_for_swaps_finish_and_check_status, wait_till_history_has_records, MarketMakerIt, Mm2InitPrivKeyPolicy,
+    Mm2TestConf, Mm2TestConfForSwap, RaiiDump, DOC_ELECTRUM_ADDRS, ETH_MAINNET_NODES, ETH_MAINNET_SWAP_CONTRACT,
+    ETH_SEPOLIA_NODES, ETH_SEPOLIA_SWAP_CONTRACT, MARTY_ELECTRUM_ADDRS, MORTY, QRC20_ELECTRUMS, RICK,
+    RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS, T_BCH_ELECTRUMS,
+};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::*;
 use serde_json::{self as json, json, Value as Json};
@@ -191,10 +190,14 @@ fn orders_of_banned_pubkeys_should_not_be_displayed() {
 }
 
 #[test]
-fn log_test_status() { common::log::tests::test_status() }
+fn log_test_status() {
+    common::log::tests::test_status()
+}
 
 #[test]
-fn log_test_printed_dashboard() { common::log::tests::test_printed_dashboard() }
+fn log_test_printed_dashboard() {
+    common::log::tests::test_printed_dashboard()
+}
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
@@ -366,9 +369,10 @@ fn test_check_balance_on_order_post() {
     // Enable coins. Print the replies in case we need the "address".
     log!(
         "enable_coins (bob): {:?}",
-        block_on(enable_coins_eth_electrum(&mm, &[
-            "https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"
-        ])),
+        block_on(enable_coins_eth_electrum(
+            &mm,
+            &["https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"]
+        )),
     );
     // issue sell request by setting base/rel price
 
@@ -772,7 +776,7 @@ async fn trade_base_rel_electrum(
     #[cfg(not(target_arch = "wasm32"))]
     for uuid in uuids.iter() {
         // ensure the swaps are indexed to the SQLite database
-        let expected_log = format!("Inserting new swap {} to the SQLite database", uuid);
+        let expected_log = format!("Inserting new swap {uuid} to the SQLite database");
         mm_alice
             .wait_for_log(5., |log| log.contains(&expected_log))
             .await
@@ -817,8 +821,8 @@ async fn trade_base_rel_electrum(
         let bob_orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
         log!("{}/{} orderbook {:?}", base, rel, bob_orderbook);
 
-        assert_eq!(0, bob_orderbook.bids.len(), "{} {} bids must be empty", base, rel);
-        assert_eq!(0, bob_orderbook.asks.len(), "{} {} asks must be empty", base, rel);
+        assert_eq!(0, bob_orderbook.bids.len(), "{base} {rel} bids must be empty");
+        assert_eq!(0, bob_orderbook.asks.len(), "{base} {rel} asks must be empty");
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -964,7 +968,7 @@ fn test_withdraw_and_send() {
         None,
         "RJTYiYeJ8eVvJ53n2YbrVmxWNNMVZjDGLh",
         &enable_res,
-        "-0.00101",
+        "-0.00100245",
         0.001,
     );
 
@@ -1746,21 +1750,31 @@ fn test_electrum_enable_conn_errors() {
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
     // Using working servers and few else with random ports to trigger "connection refused"
-    block_on(enable_electrum(&mm_bob, "RICK", false, &[
-        "electrum3.cipig.net:10020",
-        "electrum2.cipig.net:10020",
-        "electrum1.cipig.net:10020",
-        "electrum1.cipig.net:60020",
-        "electrum1.cipig.net:60021",
-    ]));
+    block_on(enable_electrum(
+        &mm_bob,
+        "RICK",
+        false,
+        &[
+            "electrum3.cipig.net:10020",
+            "electrum2.cipig.net:10020",
+            "electrum1.cipig.net:10020",
+            "electrum1.cipig.net:60020",
+            "electrum1.cipig.net:60021",
+        ],
+    ));
     // use random domain name to trigger name is not resolved
-    block_on(enable_electrum(&mm_bob, "MORTY", false, &[
-        "electrum3.cipig.net:10021",
-        "electrum2.cipig.net:10021",
-        "electrum1.cipig.net:10021",
-        "random-electrum-domain-name1.net:60020",
-        "random-electrum-domain-name2.net:60020",
-    ]));
+    block_on(enable_electrum(
+        &mm_bob,
+        "MORTY",
+        false,
+        &[
+            "electrum3.cipig.net:10021",
+            "electrum2.cipig.net:10021",
+            "electrum1.cipig.net:10021",
+            "random-electrum-domain-name1.net:60020",
+            "random-electrum-domain-name2.net:60020",
+        ],
+    ));
 }
 
 #[test]
@@ -2300,7 +2314,7 @@ fn test_batch_requests() {
 #[cfg(not(target_arch = "wasm32"))]
 fn request_metrics(mm: &MarketMakerIt) -> MetricsJson {
     let (status, metrics, _headers) = block_on(mm.rpc(&json!({ "method": "metrics"}))).unwrap();
-    assert_eq!(status, StatusCode::OK, "RPC «metrics» failed with status «{}»", status);
+    assert_eq!(status, StatusCode::OK, "RPC «metrics» failed with status «{status}»");
     json::from_str(&metrics).unwrap()
 }
 
@@ -2347,10 +2361,11 @@ fn test_metrics_method() {
 fn test_electrum_tx_history() {
     fn get_tx_history_request_count(mm: &MarketMakerIt) -> u64 {
         let metrics = request_metrics(mm);
-        match find_metrics_in_json(metrics, "tx.history.request.count", &[
-            ("coin", "RICK"),
-            ("method", "blockchain.scripthash.get_history"),
-        ])
+        match find_metrics_in_json(
+            metrics,
+            "tx.history.request.count",
+            &[("coin", "RICK"), ("method", "blockchain.scripthash.get_history")],
+        )
         .unwrap()
         {
             MetricType::Counter { value, .. } => value,
@@ -2414,7 +2429,7 @@ fn test_electrum_tx_history() {
         None,
         &receiving_address,
         &enable_res_bob,
-        "-0.00101",
+        "-0.00100245",
         0.001,
     );
 
@@ -2449,7 +2464,7 @@ fn spin_n_nodes(seednodes: &[&str], coins: &Json, n: usize) -> Vec<(MarketMakerI
         let (alice_dump_log, alice_dump_dashboard) = mm.mm_dump();
         log!("Alice {} log path: {}", i, mm.log_path.display());
         for seednode in seednodes.iter() {
-            block_on(mm.wait_for_log(22., |log| log.contains(&format!("Dialed {}", seednode)))).unwrap();
+            block_on(mm.wait_for_log(22., |log| log.contains(&format!("Dialed {seednode}")))).unwrap();
         }
         mm_nodes.push((mm, alice_dump_log, alice_dump_dashboard));
     }
@@ -2800,11 +2815,16 @@ fn test_add_delegation_qtum() {
     )
         .unwrap();
 
-    let json = block_on(enable_electrum(&mm, "tQTUM", false, &[
-        "electrum1.cipig.net:10071",
-        "electrum2.cipig.net:10071",
-        "electrum3.cipig.net:10071",
-    ]));
+    let json = block_on(enable_electrum(
+        &mm,
+        "tQTUM",
+        false,
+        &[
+            "electrum1.cipig.net:10071",
+            "electrum2.cipig.net:10071",
+            "electrum3.cipig.net:10071",
+        ],
+    ));
     log!("{}", json.balance);
 
     let rpc_endpoint = "experimental::staking::delegate";
@@ -2945,11 +2965,16 @@ fn test_query_delegations_info_qtum() {
     )
         .unwrap();
 
-    let json = block_on(enable_electrum(&mm, "tQTUM", false, &[
-        "electrum1.cipig.net:10071",
-        "electrum2.cipig.net:10071",
-        "electrum3.cipig.net:10071",
-    ]));
+    let json = block_on(enable_electrum(
+        &mm,
+        "tQTUM",
+        false,
+        &[
+            "electrum1.cipig.net:10071",
+            "electrum2.cipig.net:10071",
+            "electrum3.cipig.net:10071",
+        ],
+    ));
     log!("{}", json.balance);
 
     let rpc_endpoint = "experimental::staking::query::delegations";
@@ -3753,7 +3778,9 @@ fn test_get_raw_transaction() {
 #[test]
 #[ignore]
 #[cfg(not(target_arch = "wasm32"))]
-fn test_qrc20_tx_history() { block_on(test_qrc20_history_impl(None)); }
+fn test_qrc20_tx_history() {
+    block_on(test_qrc20_history_impl(None));
+}
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
@@ -4279,7 +4306,7 @@ fn test_update_maker_order_fail() {
     let rc = block_on(mm_bob.rpc(&batch_json)).unwrap();
     assert!(rc.0.is_success(), "!batch: {}", rc.1);
     log!("{}", rc.1);
-    let err_msg = format!("Order with UUID: {} has been deleted", uuid);
+    let err_msg = format!("Order with UUID: {uuid} has been deleted");
     let responses = json::from_str::<Vec<Json>>(&rc.1).unwrap();
     if responses[0].get("error").is_some() {
         assert!(responses[0]["error"].as_str().unwrap().contains(&err_msg));
@@ -4560,11 +4587,16 @@ fn test_get_current_mtp() {
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
 
-    let electrum = block_on(enable_electrum(&mm, "KMD", false, &[
-        "electrum1.cipig.net:10001",
-        "electrum2.cipig.net:10001",
-        "electrum3.cipig.net:10001",
-    ]));
+    let electrum = block_on(enable_electrum(
+        &mm,
+        "KMD",
+        false,
+        &[
+            "electrum1.cipig.net:10001",
+            "electrum2.cipig.net:10001",
+            "electrum3.cipig.net:10001",
+        ],
+    ));
     log!("{:?}", electrum);
 
     let rc = block_on(mm.rpc(&json!({
@@ -4935,7 +4967,7 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
 
     block_on(
         mm_alice.wait_for_log((MIN_ORDER_KEEP_ALIVE_INTERVAL * 2) as f64, |log| {
-            log.contains(&format!("Inserting order OrderbookItem {{ pubkey: \"{}\"", bob_pubkey))
+            log.contains(&format!("Inserting order OrderbookItem {{ pubkey: \"{bob_pubkey}\""))
         }),
     )
     .unwrap();
@@ -5067,8 +5099,8 @@ fn test_sign_verify_message_utxo_with_derivation_path() {
         EnableCoinBalanceMap::HD(hd) => hd,
         _ => panic!("Expected EnableCoinBalance::HD"),
     };
-    let address0 = &balance.accounts.get(0).expect("Expected account at index 0").addresses[0].address;
-    let address1 = &balance.accounts.get(0).expect("Expected account at index 1").addresses[1].address;
+    let address0 = &balance.accounts.first().expect("Expected account at index 0").addresses[0].address;
+    let address1 = &balance.accounts.first().expect("Expected account at index 1").addresses[1].address;
 
     // Test address0
     let expected_signature = "ICnkSvQkAurwLvK6RYtCItrWMOS4ESjCf4GKp1DvBM8Xc2+dxM4si6NcSb0JJaJajYhPkwg5yWHmgR/9AmGB0KE=";
@@ -5239,7 +5271,7 @@ fn test_sign_verify_message_segwit_with_bip84_derivation_path() {
         _ => panic!("Expected EnableCoinBalance::HD"),
     };
 
-    let account0 = balance.accounts.get(0).expect("Expected account at index 0");
+    let account0 = balance.accounts.first().expect("Expected account at index 0");
     let address0 = &account0.addresses[0].address;
     let address1 = &account0.addresses[1].address;
 
@@ -6133,7 +6165,7 @@ fn test_enable_utxo_with_enable_hd() {
         EnableCoinBalanceMap::HD(hd) => hd,
         _ => panic!("Expected EnableCoinBalance::HD"),
     };
-    let account = balance.accounts.get(0).expect("Expected account at index 0");
+    let account = balance.accounts.first().expect("Expected account at index 0");
     assert_eq!(account.addresses[0].address, "RXNtAyDSsY3DS3VxTpJegzoHU9bUX54j56");
     assert_eq!(account.addresses[1].address, "RVyndZp3ZrhGKSwHryyM3Kcz9aq2EJrW1z");
     let new_account = block_on(create_new_account(&mm_hd_0, "RICK", Some(77), 60));
@@ -6151,7 +6183,7 @@ fn test_enable_utxo_with_enable_hd() {
         EnableCoinBalanceMap::HD(hd) => hd,
         _ => panic!("Expected EnableCoinBalance::HD"),
     };
-    let account = balance.accounts.get(0).expect("Expected account at index 0");
+    let account = balance.accounts.first().expect("Expected account at index 0");
     // This is the enabled address, so it should be derived and added to the account
     assert_eq!(
         account.addresses[0].address,
@@ -6405,10 +6437,10 @@ fn test_delete_wallet_rpc() {
     let mm_wallet_2 = MarketMakerIt::start(wallet_2_conf.conf, wallet_2_conf.rpc_password, None).unwrap();
 
     let get_wallet_names_2 = block_on(get_wallet_names(&mm_wallet_2));
-    assert_eq!(get_wallet_names_2.wallet_names, vec![
-        "active_wallet",
-        "wallet_to_be_deleted"
-    ]);
+    assert_eq!(
+        get_wallet_names_2.wallet_names,
+        vec!["active_wallet", "wallet_to_be_deleted"]
+    );
     assert_eq!(get_wallet_names_2.activated_wallet.as_deref(), Some(wallet_2_name));
 
     // Try to delete the active wallet - should fail
@@ -6428,7 +6460,7 @@ fn test_delete_wallet_rpc() {
 
     // Delete the inactive wallet with the correct password - should succeed
     let (status, body, _) = block_on(delete_wallet(&mm_wallet_2, wallet_1_name, wallet_1_pass));
-    assert_eq!(status, StatusCode::OK, "Body: {}", body);
+    assert_eq!(status, StatusCode::OK, "Body: {body}");
 
     // Verify the wallet is deleted
     let get_wallet_names_3 = block_on(get_wallet_names(&mm_wallet_2));
@@ -6475,7 +6507,7 @@ fn test_delete_wallet_in_no_login_mode() {
         wallet_to_delete_name,
         wallet_to_delete_pass,
     ));
-    assert_eq!(status, StatusCode::OK, "Delete failed with body: {}", body);
+    assert_eq!(status, StatusCode::OK, "Delete failed with body: {body}");
 
     block_on(mm_no_login.stop()).unwrap();
 
@@ -6667,12 +6699,12 @@ mod trezor_tests {
     use mm2_main::init_hw::init_trezor_user_action;
     use mm2_main::init_hw::{init_trezor, init_trezor_status, InitHwRequest, InitHwResponse};
     use mm2_test_helpers::electrums::tbtc_electrums;
-    use mm2_test_helpers::for_tests::{enable_utxo_v2_electrum, eth_sepolia_trezor_firmware_compat_conf,
-                                      eth_testnet_conf_trezor, init_trezor_rpc, init_trezor_status_rpc,
-                                      init_trezor_user_action_rpc, init_withdraw, jst_sepolia_trezor_conf,
-                                      mm_ctx_with_custom_db_with_conf, tbtc_legacy_conf, tbtc_segwit_conf,
-                                      withdraw_status, MarketMakerIt, Mm2TestConf, ETH_SEPOLIA_CHAIN_ID,
-                                      ETH_SEPOLIA_NODES, ETH_SEPOLIA_SWAP_CONTRACT};
+    use mm2_test_helpers::for_tests::{
+        enable_utxo_v2_electrum, eth_sepolia_trezor_firmware_compat_conf, eth_testnet_conf_trezor, init_trezor_rpc,
+        init_trezor_status_rpc, init_trezor_user_action_rpc, init_withdraw, jst_sepolia_trezor_conf,
+        mm_ctx_with_custom_db_with_conf, tbtc_legacy_conf, tbtc_segwit_conf, withdraw_status, MarketMakerIt,
+        Mm2TestConf, ETH_SEPOLIA_CHAIN_ID, ETH_SEPOLIA_NODES, ETH_SEPOLIA_SWAP_CONTRACT,
+    };
     use mm2_test_helpers::structs::{InitTaskResult, RpcV2Response, TransactionDetails, WithdrawStatus};
     use rpc_task::{rpc_common::RpcTaskStatusRequest, RpcInitReq, RpcTaskStatus};
     use serde_json::{self as json, json, Value as Json};
@@ -6683,6 +6715,7 @@ mod trezor_tests {
     pub enum InitTrezorStatus {
         Ok(InitHwResponse),
         Error(Json),
+        #[expect(dead_code)]
         InProgress(Json),
         UserActionRequired(Json),
     }
@@ -6692,7 +6725,7 @@ mod trezor_tests {
 
         CryptoCtx::init_with_iguana_passphrase(ctx.clone(), "123456").unwrap(); // for now we need passphrase seed for init
         let req: RpcInitReq<InitHwRequest> = serde_json::from_value(json!({ "device_pubkey": null })).unwrap();
-        let res = match init_trezor(ctx.clone(), req).await {
+        let res = match init_trezor(ctx.clone(), Some(req)).await {
             Ok(res) => res,
             _ => {
                 panic!("cannot start init trezor task");
@@ -6735,8 +6768,16 @@ mod trezor_tests {
                                     .unwrap();
                                     let _ = init_trezor_user_action(ctx.clone(), pin_req).await;
                                 },
-                                _ => {
-                                    panic!("Trezor passphrase is not supported in tests");
+                                HwRpcTaskAwaitingStatus::EnterTrezorPassphrase => {
+                                    let empty_passphrase = serde_json::from_value(json!({
+                                        "task_id": task_id,
+                                        "user_action": {
+                                            "action_type": "TrezorPassphrase",
+                                            "passphrase": ""
+                                        }
+                                    }))
+                                    .unwrap();
+                                    let _ = init_trezor_user_action(ctx.clone(), empty_passphrase).await;
                                 },
                             }
                         },
@@ -6790,7 +6831,7 @@ mod trezor_tests {
             paging_options: Default::default(),
         }))
         .unwrap();
-        println!("account_balance={:?}", account_balance);
+        println!("account_balance={account_balance:?}");
     }
 
     /// Tool to run withdraw directly with trezor device or emulator (no rpc version, added for easier debugging)
@@ -6808,7 +6849,7 @@ mod trezor_tests {
             "method": "electrum",
             "coin": ticker,
             "servers": tbtc_electrums(),
-            "priv_key_policy": { "type": "Trezor" },
+            "priv_key_policy": "Trezor",
         });
         let activation_params = UtxoActivationParams::from_legacy_req(&enable_req).unwrap();
         let request: InitStandaloneCoinReq<UtxoActivationParams> = json::from_value(json!({
@@ -6866,8 +6907,12 @@ mod trezor_tests {
                             });
                             let _ = init_trezor_user_action_rpc(mm, init.result.task_id, pin_action).await;
                         },
-                        _ => {
-                            panic!("Trezor passphrase is not supported in tests");
+                        HwRpcTaskAwaitingStatus::EnterTrezorPassphrase => {
+                            let empty_passphrase = json!({
+                                "action_type": "TrezorPassphrase",
+                                "passphrase": ""
+                            });
+                            let _ = init_trezor_user_action_rpc(mm, init.result.task_id, empty_passphrase).await;
                         },
                     }
                 },
@@ -7137,6 +7182,6 @@ mod trezor_tests {
         .unwrap();
 
         let create_acc_res = block_on(test_create_new_account_init_loop(ctx, ticker_coin, Some(1)));
-        println!("create_acc_res= {:?}", create_acc_res);
+        println!("create_acc_res= {create_acc_res:?}");
     }
 }

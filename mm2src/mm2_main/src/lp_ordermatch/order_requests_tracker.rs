@@ -1,8 +1,6 @@
 #![allow(dead_code)]
 use compatible_time::Instant;
-use std::{collections::hash_map::{HashMap, RawEntryMut},
-          num::NonZeroUsize,
-          time::Duration};
+use std::{collections::hash_map::HashMap, num::NonZeroUsize, time::Duration};
 
 const ONE_SECOND: Duration = Duration::from_secs(1);
 
@@ -13,7 +11,9 @@ pub struct OrderRequestsTracker {
 }
 
 impl Default for OrderRequestsTracker {
-    fn default() -> OrderRequestsTracker { OrderRequestsTracker::new(NonZeroUsize::new(5).unwrap()) }
+    fn default() -> OrderRequestsTracker {
+        OrderRequestsTracker::new(NonZeroUsize::new(5).unwrap())
+    }
 }
 
 impl OrderRequestsTracker {
@@ -27,16 +27,16 @@ impl OrderRequestsTracker {
 
     pub fn peer_requested(&mut self, peer: &str) {
         let now = Instant::now();
-        let peer_requested_at = match self.requested_at.raw_entry_mut().from_key(peer) {
-            RawEntryMut::Occupied(e) => e.into_mut(),
-            RawEntryMut::Vacant(e) => {
-                let tuple = e.insert(peer.to_string(), Vec::with_capacity(self.limit_per_sec.get()));
-                tuple.1
-            },
-        };
-        if peer_requested_at.len() >= self.limit_per_sec.get() {
+        let limit_per_sec = self.limit_per_sec.get();
+        let peer_requested_at = self
+            .requested_at
+            .entry(peer.to_owned())
+            .or_insert_with(|| Vec::with_capacity(limit_per_sec));
+
+        if peer_requested_at.len() >= limit_per_sec {
             peer_requested_at.pop();
         }
+
         peer_requested_at.insert(0, now);
     }
 

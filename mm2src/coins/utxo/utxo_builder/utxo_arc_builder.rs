@@ -1,22 +1,28 @@
-use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientImpl, UtxoJsonRpcClientInfo, UtxoRpcClientEnum};
+use crate::hd_wallet::HDWalletOps;
+use crate::utxo::rpc_clients::{
+    ElectrumClient, ElectrumClientImpl, UnspentInfo, UtxoJsonRpcClientInfo, UtxoRpcClientEnum,
+};
 
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
-use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
-                                UtxoFieldsWithGlobalHDBuilder, UtxoFieldsWithHardwareWalletBuilder,
-                                UtxoFieldsWithIguanaSecretBuilder};
-use crate::utxo::{generate_and_send_tx, FeePolicy, GetUtxoListOps, UtxoArc, UtxoCommonOps, UtxoSyncStatusLoopHandle,
-                  UtxoWeak};
+use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps};
+use crate::utxo::{
+    generate_and_send_tx, generate_tx, output_script, FeePolicy, GetUtxoListOps, UtxoArc, UtxoCommonOps,
+    UtxoSyncStatusLoopHandle, UtxoWeak,
+};
 use crate::{DerivationMethod, PrivKeyBuildPolicy, UtxoActivationParams};
 use async_trait::async_trait;
-use chain::{BlockHeader, TransactionOutput};
+use chain::{BlockHeader, Transaction, TransactionOutput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
-use common::log::{debug, error, info, warn};
+use common::log::{debug, error, info};
+use derive_more::Display;
 use futures::compat::Future01CompatExt;
+use keys::Address;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-#[cfg(test)] use mocktopus::macros::*;
+#[cfg(test)]
+use mocktopus::macros::*;
 use rand::Rng;
-use script::Builder;
+use script::Script;
 use serde_json::Value as Json;
 use serialization::Reader;
 use spv_validation::conf::SPVConf;
@@ -65,36 +71,29 @@ where
 }
 
 #[async_trait]
-impl<'a, F, T> UtxoCoinBuilderCommonOps for UtxoArcBuilder<'a, F, T>
+impl<F, T> UtxoCoinBuilderCommonOps for UtxoArcBuilder<'_, F, T>
 where
     F: Fn(UtxoArc) -> T + Send + Sync + 'static,
 {
-    fn ctx(&self) -> &MmArc { self.ctx }
+    fn ctx(&self) -> &MmArc {
+        self.ctx
+    }
 
-    fn conf(&self) -> &Json { self.conf }
+    fn conf(&self) -> &Json {
+        self.conf
+    }
 
-    fn activation_params(&self) -> &UtxoActivationParams { self.activation_params }
+    fn activation_params(&self) -> &UtxoActivationParams {
+        self.activation_params
+    }
 
-    fn ticker(&self) -> &str { self.ticker }
-}
-
-impl<'a, F, T> UtxoFieldsWithIguanaSecretBuilder for UtxoArcBuilder<'a, F, T> where
-    F: Fn(UtxoArc) -> T + Send + Sync + 'static
-{
-}
-
-impl<'a, F, T> UtxoFieldsWithGlobalHDBuilder for UtxoArcBuilder<'a, F, T> where
-    F: Fn(UtxoArc) -> T + Send + Sync + 'static
-{
-}
-
-impl<'a, F, T> UtxoFieldsWithHardwareWalletBuilder for UtxoArcBuilder<'a, F, T> where
-    F: Fn(UtxoArc) -> T + Send + Sync + 'static
-{
+    fn ticker(&self) -> &str {
+        self.ticker
+    }
 }
 
 #[async_trait]
-impl<'a, F, T> UtxoCoinBuilder for UtxoArcBuilder<'a, F, T>
+impl<F, T> UtxoCoinBuilder for UtxoArcBuilder<'_, F, T>
 where
     F: Fn(UtxoArc) -> T + Clone + Send + Sync + 'static,
     T: UtxoCommonOps + GetUtxoListOps,
@@ -102,7 +101,9 @@ where
     type ResultCoin = T;
     type Error = UtxoCoinBuildError;
 
-    fn priv_key_policy(&self) -> PrivKeyBuildPolicy { self.priv_key_policy.clone() }
+    fn priv_key_policy(&self) -> PrivKeyBuildPolicy {
+        self.priv_key_policy.clone()
+    }
 
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
         let utxo = self.build_utxo_fields().await?;
@@ -123,11 +124,99 @@ where
     }
 }
 
-impl<'a, F, T> MergeUtxoArcOps<T> for UtxoArcBuilder<'a, F, T>
+impl<F, T> MergeUtxoArcOps<T> for UtxoArcBuilder<'_, F, T>
 where
     F: Fn(UtxoArc) -> T + Send + Sync + 'static,
     T: UtxoCommonOps + GetUtxoListOps,
 {
+}
+
+#[derive(Deserialize)]
+#[serde(default)]
+pub struct MergeConditions {
+    /// The minimum number of UTXOs to merge. If the number of UTXOs is less than this, the merge will not be performed.
+    pub merge_at: usize,
+    /// The maximum number of UTXOs to merge at once in a single transaction.
+    pub max_merge_at_once: usize,
+}
+
+impl Default for MergeConditions {
+    fn default() -> Self {
+        MergeConditions {
+            merge_at: 50,
+            max_merge_at_once: 50,
+        }
+    }
+}
+
+pub enum UtxoMergeError {
+    BadMergeConditions(String),
+    InternalError(String),
+}
+
+/// Merges unspent UTXOs from `from_address` address to `to_script_pubkey` script.
+pub async fn merge_utxos<Coin>(
+    coin: &Coin,
+    from_address: &Address,
+    to_script_pubkey: &Script,
+    merge_conditions: &MergeConditions,
+    broadcast: bool,
+) -> MmResult<(Transaction, Vec<UnspentInfo>), UtxoMergeError>
+where
+    Coin: UtxoCommonOps + GetUtxoListOps,
+{
+    let ticker = &coin.as_ref().conf.ticker;
+    let (unspents, recently_spent) = coin.get_unspent_ordered_list(from_address).await.mm_err(|e| {
+        UtxoMergeError::InternalError(format!("Error in get_unspent_ordered_list for coin={ticker}: {e}"))
+    })?;
+
+    if unspents.len() < merge_conditions.merge_at {
+        return Err(UtxoMergeError::BadMergeConditions(format!(
+            "Not enough unspent UTXOs to merge for coin={ticker}, found={}, required={}",
+            unspents.len(),
+            merge_conditions.merge_at
+        ))
+        .into());
+    }
+    let unspents: Vec<_> = unspents.into_iter().take(merge_conditions.max_merge_at_once).collect();
+    if unspents.len() < 2 {
+        return Err(UtxoMergeError::BadMergeConditions(format!(
+            "No point of merging only a single UTXO (coin={ticker})"
+        ))
+        .into());
+    }
+
+    let value = unspents.iter().fold(0, |sum, unspent| sum + unspent.value);
+    let output = TransactionOutput {
+        value,
+        script_pubkey: to_script_pubkey.to_bytes(),
+    };
+
+    let tx = if broadcast {
+        generate_and_send_tx(
+            coin,
+            unspents.clone(),
+            None,
+            FeePolicy::DeductFromOutput(0),
+            recently_spent,
+            vec![output],
+        )
+        .await
+        .map_to_mm(|e| UtxoMergeError::InternalError(format!("Error in generate_and_send_tx for coin={ticker}: {e}")))?
+    } else {
+        let (tx, _) = generate_tx(
+            coin,
+            unspents.clone(),
+            None,
+            FeePolicy::DeductFromOutput(0),
+            vec![output],
+        )
+        .await
+        .map_to_mm(|e| UtxoMergeError::InternalError(format!("Error in generate_tx for coin={ticker}: {e}")))?;
+        tx
+    };
+
+    Ok((tx, unspents))
 }
 
 async fn merge_utxo_loop<T>(
@@ -139,6 +228,42 @@ async fn merge_utxo_loop<T>(
 ) where
     T: UtxoCommonOps + GetUtxoListOps,
 {
+    let (my_address, script_pubkey) = match weak.upgrade() {
+        Some(arc) => {
+            let coin = constructor(arc);
+            let my_address = match &coin.as_ref().derivation_method {
+                DerivationMethod::SingleAddress(my_address) => my_address.clone(),
+                DerivationMethod::HDWallet(hd_wallet) => match hd_wallet.get_enabled_address().await {
+                    Some(hd_address) => hd_address.address,
+                    None => {
+                        // When this happens, this might be due to using HW wallet that its addresses hasn't been polled yet.
+                        // Anyway we don't really need a consolidation loop for HW wallets since they can't swap and
+                        // such a loop will keep asking for consolidation signatures every now and then.
+                        covered_error!(
+                            "No enabled address found in HD wallet for coin {}",
+                            coin.as_ref().conf.ticker
+                        );
+                        return;
+                    },
+                },
+            };
+            let script_pubkey = match output_script(&my_address) {
+                Ok(script) => script,
+                Err(e) => {
+                    covered_error!("Error {} on output_script for coin {}", e, coin.as_ref().conf.ticker);
+                    return;
+                },
+            };
+            (my_address, script_pubkey)
+        },
+        None => return,
+    };
+
+    let merge_conditions = MergeConditions {
+        merge_at,
+        max_merge_at_once,
+    };
+
     loop {
         Timer::sleep(check_every).await;
 
@@ -147,44 +272,17 @@ async fn merge_utxo_loop<T>(
             None => break,
         };
 
-        let my_address = match coin.as_ref().derivation_method {
-            DerivationMethod::SingleAddress(ref my_address) => my_address,
-            DerivationMethod::HDWallet(_) => {
-                warn!("'merge_utxo_loop' is currently not used for HD wallets");
-                return;
-            },
-        };
-
         let ticker = &coin.as_ref().conf.ticker;
-        let (unspents, recently_spent) = match coin.get_unspent_ordered_list(my_address).await {
-            Ok((unspents, recently_spent)) => (unspents, recently_spent),
-            Err(e) => {
-                error!("Error {} on get_unspent_ordered_list of coin {}", e, ticker);
-                continue;
+        match merge_utxos(&coin, &my_address, &script_pubkey, &merge_conditions, true).await {
+            Ok((tx, spents)) => info!(
+                "UTXO merge of {} outputs successful for coin={ticker}, tx_hash={}",
+                spents.len(),
+                tx.hash().reversed()
+            ),
+            Err(e) => match e.into_inner() {
+                UtxoMergeError::BadMergeConditions(_) => (), // We don't gotta log any errors here since we provided a bad merge conditions.ƒ
+                UtxoMergeError::InternalError(e) => error!("Error on UTXO merge attempt for coin={ticker}: {e}"),
             },
-        };
-        if unspents.len() >= merge_at {
-            let unspents: Vec<_> = unspents.into_iter().take(max_merge_at_once).collect();
-            info!("Trying to merge {} UTXOs of coin {}", unspents.len(), ticker);
-            let value = unspents.iter().fold(0, |sum, unspent| sum + unspent.value);
-            let script_pubkey = Builder::build_p2pkh(my_address.hash()).to_bytes();
-            let output = TransactionOutput { value, script_pubkey };
-            let merge_tx_fut = generate_and_send_tx(
-                &coin,
-                unspents,
-                None,
-                FeePolicy::DeductFromOutput(0),
-                recently_spent,
-                vec![output],
-            );
-            match merge_tx_fut.await {
-                Ok(tx) => info!(
-                    "UTXO merge successful for coin {}, tx_hash {:?}",
-                    ticker,
-                    tx.hash().reversed()
-                ),
-                Err(e) => error!("Error {:?} on UTXO merge attempt for coin {}", e, ticker),
-            }
         }
     }
 }
@@ -309,10 +407,7 @@ pub(crate) async fn block_header_utxo_loop(
             (electrum_addresses, block_count) = match client.get_servers_with_latest_block_count().compat().await {
                 Ok((electrum_addresses, block_count)) => (electrum_addresses, block_count),
                 Err(e) => {
-                    let msg = format!(
-                        "Error {} on getting the height of the latest {} block from rpc!",
-                        e, ticker
-                    );
+                    let msg = format!("Error {e} on getting the height of the latest {ticker} block from rpc!");
                     error!("{}", msg);
                     sync_status_loop_handle.notify_on_temp_error(msg);
                     Timer::sleep(args.error_sleep).await;
@@ -441,17 +536,9 @@ pub(crate) async fn block_header_utxo_loop(
 
 #[derive(Debug, Display)]
 enum TryToRetrieveHeadersUntilSuccessError {
-    #[display(
-        fmt = "Network error: {}, on retrieving headers from server {}",
-        error,
-        server_address
-    )]
+    #[display(fmt = "Network error: {error}, on retrieving headers from server {server_address}")]
     NetworkError { error: String, server_address: String },
-    #[display(
-        fmt = "Permanent Error: {}, on retrieving headers from server {}",
-        error,
-        server_address
-    )]
+    #[display(fmt = "Permanent Error: {error}, on retrieving headers from server {server_address}")]
     PermanentError { error: String, server_address: String },
 }
 
@@ -477,8 +564,7 @@ async fn try_to_retrieve_headers_until_success(
                     if attempts == 0 {
                         break Err(MmError::new(TryToRetrieveHeadersUntilSuccessError::NetworkError {
                             error: format!(
-                                "Max attempts of {} reached, will try to retrieve headers from a random server again!",
-                                TRY_TO_RETRIEVE_HEADERS_ATTEMPTS
+                                "Max attempts of {TRY_TO_RETRIEVE_HEADERS_ATTEMPTS} reached, will try to retrieve headers from a random server again!"
                             ),
                             server_address: server_address.to_string(),
                         }));
@@ -512,9 +598,9 @@ async fn try_to_retrieve_headers_until_success(
 enum PossibleChainReorgError {
     #[display(fmt = "Preconfigured starting_block_header is bad or invalid. Please reconfigure.")]
     BadStartingHeaderChain,
-    #[display(fmt = "Validation Error: {}", _0)]
+    #[display(fmt = "Validation Error: {_0}")]
     ValidationError(String),
-    #[display(fmt = "Error retrieving headers: {}", _0)]
+    #[display(fmt = "Error retrieving headers: {_0}")]
     HeadersRetrievalError(TryToRetrieveHeadersUntilSuccessError),
 }
 
@@ -528,6 +614,7 @@ impl PossibleChainReorgError {
 }
 
 /// Retrieves block headers from the specified client within the given height range and revalidate against [`SPVError::ParentHashMismatch`] .
+#[allow(clippy::unit_arg)]
 async fn resolve_possible_chain_reorg(
     client: &ElectrumClient,
     server_address: &str,
@@ -599,14 +686,14 @@ async fn resolve_possible_chain_reorg(
 
 #[derive(Display)]
 enum StartingHeaderValidationError {
-    #[display(fmt = "Can't decode/deserialize from storage for {} - reason: {}", coin, reason)]
+    #[display(fmt = "Can't decode/deserialize from storage for {coin} - reason: {reason}")]
     DecodeErr {
         coin: String,
         reason: String,
     },
     RpcError(String),
     StorageError(String),
-    #[display(fmt = "Error validating starting header for {} - reason: {}", coin, reason)]
+    #[display(fmt = "Error validating starting header for {coin} - reason: {reason}")]
     ValidationError {
         coin: String,
         reason: String,

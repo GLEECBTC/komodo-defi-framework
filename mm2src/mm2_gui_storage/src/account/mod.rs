@@ -31,7 +31,7 @@ impl TryFrom<i64> for AccountType {
             1 => Ok(AccountType::HD),
             2 => Ok(AccountType::HW),
             other => {
-                let error = format!("Unknown 'account_type' value: {}", other);
+                let error = format!("Unknown 'account_type' value: {other}");
                 MmError::err(AccountStorageError::ErrorDeserializing(error))
             },
         }

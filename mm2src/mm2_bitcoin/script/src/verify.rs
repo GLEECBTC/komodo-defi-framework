@@ -1,5 +1,7 @@
-use chain::constants::{LOCKTIME_THRESHOLD, SEQUENCE_FINAL, SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_MASK,
-                       SEQUENCE_LOCKTIME_TYPE_FLAG};
+use chain::constants::{
+    LOCKTIME_THRESHOLD, SEQUENCE_FINAL, SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_MASK,
+    SEQUENCE_LOCKTIME_TYPE_FLAG,
+};
 use keys::{Public, Signature};
 use sign::SignatureVersion;
 use {Num, Script, TransactionInputSigner};
@@ -23,11 +25,17 @@ pub trait SignatureChecker {
 pub struct NoopSignatureChecker;
 
 impl SignatureChecker for NoopSignatureChecker {
-    fn check_signature(&self, _: &Signature, _: &Public, _: &Script, _: u32, _: SignatureVersion) -> bool { false }
+    fn check_signature(&self, _: &Signature, _: &Public, _: &Script, _: u32, _: SignatureVersion) -> bool {
+        false
+    }
 
-    fn check_lock_time(&self, _: Num) -> bool { false }
+    fn check_lock_time(&self, _: Num) -> bool {
+        false
+    }
 
-    fn check_sequence(&self, _: Num) -> bool { false }
+    fn check_sequence(&self, _: Num) -> bool {
+        false
+    }
 }
 
 #[derive(Debug)]

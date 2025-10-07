@@ -17,7 +17,9 @@ macro_rules! impl_hash {
         pub struct $name(pub [u8; $size]);
 
         impl $name {
-            pub const fn const_default() -> $name { $name([0; $size]) }
+            pub const fn const_default() -> $name {
+                $name([0; $size])
+            }
 
             pub fn serialize_to_byte_seq<S>(value: &Self, serializer: S) -> Result<S::Ok, S::Error>
             where
@@ -75,22 +77,30 @@ macro_rules! impl_hash {
         }
 
         impl Default for $name {
-            fn default() -> Self { $name::const_default() }
+            fn default() -> Self {
+                $name::const_default()
+            }
         }
 
         impl fmt::Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> { write!(f, "{:02x}", self) }
+            fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+                write!(f, "{:02x}", self)
+            }
         }
 
         impl fmt::Debug for $name {
-            fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> { write!(f, "{:02x}", self) }
+            fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+                write!(f, "{:02x}", self)
+            }
         }
 
         impl<T> From<T> for $name
         where
             $other: From<T>,
         {
-            fn from(o: T) -> Self { $name($other::from(o).take()) }
+            fn from(o: T) -> Self {
+                $name($other::from(o).take())
+            }
         }
 
         impl FromStr for $name {
@@ -104,12 +114,16 @@ macro_rules! impl_hash {
 
         #[allow(clippy::from_over_into)]
         impl Into<$other> for $name {
-            fn into(self) -> $other { $other::from(self.0) }
+            fn into(self) -> $other {
+                $other::from(self.0)
+            }
         }
 
         #[allow(clippy::from_over_into)]
         impl Into<Vec<u8>> for $name {
-            fn into(self) -> Vec<u8> { self.0.to_vec() }
+            fn into(self) -> Vec<u8> {
+                self.0.to_vec()
+            }
         }
 
         impl Eq for $name {}
@@ -132,9 +146,7 @@ macro_rules! impl_hash {
 
         impl PartialOrd for $name {
             fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-                let self_ref: &[u8] = &self.0;
-                let other_ref: &[u8] = &other.0;
-                self_ref.partial_cmp(other_ref)
+                Some(self.cmp(other))
             }
         }
 
@@ -236,7 +248,7 @@ mod tests {
     fn hash_debug() {
         let str_reversed = "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048";
         let reversed_hash = H256::from(str_reversed);
-        let debug_result = format!("{:?}", reversed_hash);
+        let debug_result = format!("{reversed_hash:?}");
         assert_eq!(debug_result, str_reversed);
     }
 
@@ -244,7 +256,7 @@ mod tests {
     fn hash_from_str() {
         let str_reversed = "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048";
         match H256::from_str(str_reversed) {
-            Ok(reversed_hash) => assert_eq!(format!("{:?}", reversed_hash), str_reversed),
+            Ok(reversed_hash) => assert_eq!(format!("{reversed_hash:?}"), str_reversed),
             _ => panic!("unexpected"),
         }
 

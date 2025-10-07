@@ -1,11 +1,14 @@
 use crate::account::storage::{AccountStorage, AccountStorageError, AccountStorageResult};
-use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId,
-                     EnabledAccountType, HwPubkey};
+use crate::account::{
+    AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId,
+    EnabledAccountType, HwPubkey,
+};
 use async_trait::async_trait;
 use mm2_core::mm_ctx::MmArc;
-use mm2_db::indexed_db::{ConstructibleDb, DbIdentifier, DbInstance, DbLocked, DbTransaction, DbTransactionError,
-                         DbUpgrader, IndexedDb, IndexedDbBuilder, InitDbError, InitDbResult, MultiIndex,
-                         OnUpgradeResult, SharedDb, TableSignature};
+use mm2_db::indexed_db::{
+    ConstructibleDb, DbIdentifier, DbInstance, DbLocked, DbTransaction, DbTransactionError, DbUpgrader, IndexedDb,
+    IndexedDbBuilder, InitDbError, InitDbResult, MultiIndex, OnUpgradeResult, SharedDb, TableSignature,
+};
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
@@ -41,7 +44,9 @@ impl From<DbTransactionError> for AccountStorageError {
 }
 
 impl From<InitDbError> for AccountStorageError {
-    fn from(e: InitDbError) -> Self { AccountStorageError::Internal(e.to_string()) }
+    fn from(e: InitDbError) -> Self {
+        AccountStorageError::Internal(e.to_string())
+    }
 }
 
 impl AccountId {
@@ -79,10 +84,11 @@ impl WasmAccountStorage {
     async fn load_accounts(
         db_transaction: &DbTransaction<'_>,
     ) -> AccountStorageResult<BTreeMap<AccountId, AccountInfo>> {
-        let table = db_transaction.table::<AccountTable>().await?;
+        let table = db_transaction.table::<AccountTable>().await.map_mm_err()?;
         table
             .get_all_items()
-            .await?
+            .await
+            .map_mm_err()?
             .into_iter()
             .map(|(_item_id, account)| {
                 let account_info = AccountInfo::try_from(account)?;
@@ -96,8 +102,8 @@ impl WasmAccountStorage {
     async fn load_enabled_account_id(
         db_transaction: &DbTransaction<'_>,
     ) -> AccountStorageResult<Option<EnabledAccountId>> {
-        let enabled_table = db_transaction.table::<EnabledAccountTable>().await?;
-        let enabled_accounts = enabled_table.get_all_items().await?;
+        let enabled_table = db_transaction.table::<EnabledAccountTable>().await.map_mm_err()?;
+        let enabled_accounts = enabled_table.get_all_items().await.map_mm_err()?;
         if enabled_accounts.len() > 1 {
             let error = format!("Expected only one enabled account, found {}", enabled_accounts.len());
             return MmError::err(AccountStorageError::Internal(error));
@@ -125,12 +131,13 @@ impl WasmAccountStorage {
         db_transaction: &DbTransaction<'_>,
         account_id: &AccountId,
     ) -> AccountStorageResult<Option<AccountWithCoins>> {
-        let table = db_transaction.table::<AccountTable>().await?;
+        let table = db_transaction.table::<AccountTable>().await.map_mm_err()?;
 
         let index_keys = AccountTable::account_id_to_index(account_id)?;
         table
             .get_item_by_unique_multi_index(index_keys)
-            .await?
+            .await
+            .map_mm_err()?
             .map(|(_item_id, account)| AccountWithCoins::try_from(account))
             .transpose()
     }
@@ -138,10 +145,10 @@ impl WasmAccountStorage {
     /// Checks whether an account with the given `account_id` exists.
     /// This method takes `db_transaction` to ensure data coherence.
     async fn account_exists(db_transaction: &DbTransaction<'_>, account_id: &AccountId) -> AccountStorageResult<bool> {
-        let table = db_transaction.table::<AccountTable>().await?;
+        let table = db_transaction.table::<AccountTable>().await.map_mm_err()?;
 
         let index_keys = AccountTable::account_id_to_index(account_id)?;
-        let count = table.count_by_multi_index(index_keys).await?;
+        let count = table.count_by_multi_index(index_keys).await.map_mm_err()?;
         Ok(count > 0)
     }
 
@@ -157,9 +164,9 @@ impl WasmAccountStorage {
             _ => return Ok(()),
         }
 
-        let table = db_transaction.table::<EnabledAccountTable>().await?;
+        let table = db_transaction.table::<EnabledAccountTable>().await.map_mm_err()?;
         // Remove the account by clearing the table.
-        table.clear().await?;
+        table.clear().await.map_mm_err()?;
         Ok(())
     }
 
@@ -170,16 +177,17 @@ impl WasmAccountStorage {
         F: FnOnce(&mut AccountTable),
     {
         let locked_db = self.lock_db_mutex().await?;
-        let transaction = locked_db.inner.transaction().await?;
-        let table = transaction.table::<AccountTable>().await?;
+        let transaction = locked_db.inner.transaction().await.map_mm_err()?;
+        let table = transaction.table::<AccountTable>().await.map_mm_err()?;
 
         let index_keys = AccountTable::account_id_to_index(&account_id)?;
         let (item_id, mut account) = table
             .get_item_by_unique_multi_index(index_keys)
-            .await?
+            .await
+            .map_mm_err()?
             .or_mm_err(|| AccountStorageError::NoSuchAccount(account_id))?;
         f(&mut account);
-        table.replace_item(item_id, &account).await?;
+        table.replace_item(item_id, &account).await.map_mm_err()?;
         Ok(())
     }
 }
@@ -187,11 +195,13 @@ impl WasmAccountStorage {
 #[async_trait]
 impl AccountStorage for WasmAccountStorage {
     /// [`WasmAccountStorage::lock_db_mutex`] initializes the database on the first call.
-    async fn init(&self) -> AccountStorageResult<()> { self.lock_db_mutex().await.map(|_locked_db| ()) }
+    async fn init(&self) -> AccountStorageResult<()> {
+        self.lock_db_mutex().await.map(|_locked_db| ())
+    }
 
     async fn load_account_coins(&self, account_id: AccountId) -> AccountStorageResult<BTreeSet<String>> {
         let locked_db = self.lock_db_mutex().await?;
-        let transaction = locked_db.inner.transaction().await?;
+        let transaction = locked_db.inner.transaction().await.map_mm_err()?;
 
         let account = Self::load_account_with_coins(&transaction, &account_id)
             .await?
@@ -201,7 +211,7 @@ impl AccountStorage for WasmAccountStorage {
 
     async fn load_accounts(&self) -> AccountStorageResult<BTreeMap<AccountId, AccountInfo>> {
         let locked_db = self.lock_db_mutex().await?;
-        let transaction = locked_db.inner.transaction().await?;
+        let transaction = locked_db.inner.transaction().await.map_mm_err()?;
 
         Self::load_accounts(&transaction).await
     }
@@ -210,7 +220,7 @@ impl AccountStorage for WasmAccountStorage {
         &self,
     ) -> AccountStorageResult<BTreeMap<AccountId, AccountWithEnabledFlag>> {
         let locked_db = self.lock_db_mutex().await?;
-        let transaction = locked_db.inner.transaction().await?;
+        let transaction = locked_db.inner.transaction().await.map_mm_err()?;
 
         let enabled_account_id = AccountId::from(Self::load_enabled_account_id_or_err(&transaction).await?);
 
@@ -237,13 +247,13 @@ impl AccountStorage for WasmAccountStorage {
 
     async fn load_enabled_account_id(&self) -> AccountStorageResult<EnabledAccountId> {
         let locked_db = self.lock_db_mutex().await?;
-        let transaction = locked_db.inner.transaction().await?;
+        let transaction = locked_db.inner.transaction().await.map_mm_err()?;
         Self::load_enabled_account_id_or_err(&transaction).await
     }
 
     async fn load_enabled_account_with_coins(&self) -> AccountStorageResult<AccountWithCoins> {
         let locked_db = self.lock_db_mutex().await?;
-        let transaction = locked_db.inner.transaction().await?;
+        let transaction = locked_db.inner.transaction().await.map_mm_err()?;
 
         let account_id = AccountId::from(Self::load_enabled_account_id_or_err(&transaction).await?);
 
@@ -254,7 +264,7 @@ impl AccountStorage for WasmAccountStorage {
 
     async fn enable_account(&self, enabled_account_id: EnabledAccountId) -> AccountStorageResult<()> {
         let locked_db = self.lock_db_mutex().await?;
-        let transaction = locked_db.inner.transaction().await?;
+        let transaction = locked_db.inner.transaction().await.map_mm_err()?;
 
         let account_id = AccountId::from(enabled_account_id);
 
@@ -263,31 +273,34 @@ impl AccountStorage for WasmAccountStorage {
             return MmError::err(AccountStorageError::NoSuchAccount(account_id));
         }
 
-        let table = transaction.table::<EnabledAccountTable>().await?;
+        let table = transaction.table::<EnabledAccountTable>().await.map_mm_err()?;
         // Remove the previous enabled account by clearing the table.
-        table.clear().await?;
+        table.clear().await.map_mm_err()?;
 
-        table.add_item(&EnabledAccountTable::from(enabled_account_id)).await?;
+        table
+            .add_item(&EnabledAccountTable::from(enabled_account_id))
+            .await
+            .map_mm_err()?;
         Ok(())
     }
 
     async fn upload_account(&self, account_info: AccountInfo) -> AccountStorageResult<()> {
         let locked_db = self.lock_db_mutex().await?;
-        let transaction = locked_db.inner.transaction().await?;
+        let transaction = locked_db.inner.transaction().await.map_mm_err()?;
 
         // First, check if the account doesn't exist.
         if Self::account_exists(&transaction, &account_info.account_id).await? {
             return MmError::err(AccountStorageError::AccountExistsAlready(account_info.account_id));
         }
 
-        let table = transaction.table::<AccountTable>().await?;
-        table.add_item(&AccountTable::from(account_info)).await?;
+        let table = transaction.table::<AccountTable>().await.map_mm_err()?;
+        table.add_item(&AccountTable::from(account_info)).await.map_mm_err()?;
         Ok(())
     }
 
     async fn delete_account(&self, account_id: AccountId) -> AccountStorageResult<()> {
         let locked_db = self.lock_db_mutex().await?;
-        let transaction = locked_db.inner.transaction().await?;
+        let transaction = locked_db.inner.transaction().await.map_mm_err()?;
 
         // First, check if the account exists already.
         if !Self::account_exists(&transaction, &account_id).await? {
@@ -300,9 +313,9 @@ impl AccountStorage for WasmAccountStorage {
         }
 
         // Remove the account info.
-        let table = transaction.table::<AccountTable>().await?;
+        let table = transaction.table::<AccountTable>().await.map_mm_err()?;
         let index_keys = AccountTable::account_id_to_index(&account_id)?;
-        table.delete_item_by_unique_multi_index(index_keys).await?;
+        table.delete_item_by_unique_multi_index(index_keys).await.map_mm_err()?;
         Ok(())
     }
 
@@ -378,9 +391,12 @@ impl AccountTable {
         let (account_type, account_idx, device_pubkey) = account_id.to_tuple();
 
         let multi_index = MultiIndex::new(AccountTable::ACCOUNT_ID_INDEX)
-            .with_value(account_type)?
-            .with_value(account_idx)?
-            .with_value(device_pubkey)?;
+            .with_value(account_type)
+            .map_mm_err()?
+            .with_value(account_idx)
+            .map_mm_err()?
+            .with_value(device_pubkey)
+            .map_mm_err()?;
         Ok(multi_index)
     }
 }

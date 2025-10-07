@@ -6,10 +6,12 @@ use coins::utxo::qtum::{qtum_coin_with_priv_key, QtumCoin};
 use coins::utxo::rpc_clients::UtxoRpcClientEnum;
 use coins::utxo::utxo_common::big_decimal_from_sat;
 use coins::utxo::{UtxoActivationParams, UtxoCommonOps};
-use coins::{CheckIfMyPaymentSentArgs, ConfirmPaymentInput, DexFee, DexFeeBurnDestination, FeeApproxStage,
-            FoundSwapTxSpend, MarketCoinOps, MmCoin, RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs,
-            SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash, TradePreimageValue, TransactionEnum, ValidateFeeArgs,
-            ValidatePaymentInput, WaitForHTLCTxSpendArgs};
+use coins::{
+    CheckIfMyPaymentSentArgs, ConfirmPaymentInput, DexFee, DexFeeBurnDestination, FeeApproxStage, FoundSwapTxSpend,
+    MarketCoinOps, MmCoin, RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapOps,
+    SwapTxTypeWithSecretHash, TradePreimageValue, TransactionEnum, ValidateFeeArgs, ValidatePaymentInput,
+    WaitForHTLCTxSpendArgs,
+};
 use common::{block_on_f01, temp_dir, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::Secp256k1Secret;
 use ethereum_types::H160;
@@ -24,6 +26,7 @@ use serde_json::{self as json, Value as Json};
 use std::convert::TryFrom;
 use std::process::Command;
 use std::str::FromStr;
+use std::sync::Mutex;
 use std::time::Duration;
 use testcontainers::clients::Cli;
 use testcontainers::core::WaitFor;
@@ -43,14 +46,16 @@ pub struct QtumDockerOps {
 }
 
 impl CoinDockerOps for QtumDockerOps {
-    fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
+    fn rpc_client(&self) -> &UtxoRpcClientEnum {
+        &self.coin.as_ref().rpc_client
+    }
 }
 
 impl QtumDockerOps {
     pub fn new() -> QtumDockerOps {
         let ctx = MmCtxBuilder::new().into_mm_arc();
         let confpath = unsafe { QTUM_CONF_PATH.as_ref().expect("Qtum config is not set yet") };
-        let conf = json!({"decimals":8,"network":"regtest","confpath":confpath});
+        let conf = json!({"coin":"QTUM","decimals":8,"network":"regtest","confpath":confpath});
         let req = json!({
             "method": "enable",
         });
@@ -85,7 +90,7 @@ impl QtumDockerOps {
     }
 }
 
-pub fn qtum_docker_node(docker: &Cli, port: u16) -> DockerNode {
+pub fn qtum_docker_node(docker: &Cli, port: u16) -> DockerNode<'_> {
     let image = GenericImage::new(QTUM_REGTEST_DOCKER_IMAGE, "latest")
         .with_env_var("CLIENTS", "2")
         .with_env_var("COIN_RPC_PORT", port.to_string())
@@ -98,7 +103,7 @@ pub fn qtum_docker_node(docker: &Cli, port: u16) -> DockerNode {
     let name = "qtum";
     let mut conf_path = temp_dir().join("qtum-regtest");
     std::fs::create_dir_all(&conf_path).unwrap();
-    conf_path.push(format!("{}.conf", name));
+    conf_path.push(format!("{name}.conf"));
     Command::new("docker")
         .arg("cp")
         .arg(format!("{}:/data/node_0/{}.conf", container.id(), name))
@@ -808,8 +813,8 @@ fn test_wait_for_tx_spend() {
     log!("error: {:?}", err);
     assert!(err.contains("Waited too long"));
 
-    // also spends the maker payment and try to check if the wait_for_htlc_tx_spend() returns the correct tx
-    static mut SPEND_TX: Option<TransactionEnum> = None;
+    /// Also spends the maker payment and try to check if the wait_for_htlc_tx_spend() returns the correct tx
+    static SPEND_TX: Mutex<Option<TransactionEnum>> = Mutex::new(None);
 
     let maker_pub_c = maker_pub.to_vec();
     let payment_hex = payment_tx_hex.clone();
@@ -826,7 +831,7 @@ fn test_wait_for_tx_spend() {
             watcher_reward: false,
         };
         let spend = block_on(taker_coin.send_taker_spends_maker_payment(taker_spends_payment_args)).unwrap();
-        unsafe { SPEND_TX = Some(spend) }
+        *SPEND_TX.lock().unwrap() = Some(spend);
     });
 
     let wait_until = wait_until_sec(120);
@@ -841,7 +846,7 @@ fn test_wait_for_tx_spend() {
     }))
     .unwrap();
 
-    unsafe { assert_eq!(Some(found), SPEND_TX) }
+    assert_eq!(Some(found), *SPEND_TX.lock().unwrap());
 }
 
 #[test]
@@ -1009,8 +1014,7 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
     // So we should deduct trade fee from the output.
     let max_trade_fee = block_on(coin.get_sender_trade_fee(
         TradePreimageValue::UpperBound(qtum_balance.clone()),
-        FeeApproxStage::TradePreimage,
-        true,
+        FeeApproxStage::TradePreimageMax,
     ))
     .expect("!get_sender_trade_fee");
     let max_trade_fee = max_trade_fee.amount.to_decimal();
@@ -1025,7 +1029,7 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
     // - `max_fee_to_send_taker_fee = fee_to_send_taker_fee(max_dex_fee)`
     // `taker_fee` is sent using general withdraw, and the fee get be obtained from withdraw result
     let max_fee_to_send_taker_fee =
-        block_on(coin.get_fee_to_send_taker_fee(max_dex_fee, FeeApproxStage::TradePreimage))
+        block_on(coin.get_fee_to_send_taker_fee(max_dex_fee, FeeApproxStage::TradePreimageMax))
             .expect("!get_fee_to_send_taker_fee");
     let max_fee_to_send_taker_fee = max_fee_to_send_taker_fee.amount.to_decimal();
     log!("max_fee_to_send_taker_fee: {}", max_fee_to_send_taker_fee);
@@ -1108,7 +1112,7 @@ fn test_max_taker_vol_dynamic_trade_fee() {
     for _ in 0..4 {
         let amount = rng.gen_range(100000, 10000000);
         let amount = big_decimal_from_sat(amount, 8);
-        qtum_balance_steps = format!("{} + {}", qtum_balance_steps, amount);
+        qtum_balance_steps = format!("{qtum_balance_steps} + {amount}");
         qtum_balance = &qtum_balance + &amount;
         fill_address(&coin, &my_address, amount, 30);
     }
@@ -1687,21 +1691,31 @@ fn segwit_address_in_the_orderbook() {
 }
 
 #[test]
-fn test_trade_qrc20() { trade_base_rel(("QICK", "QORTY")); }
+fn test_trade_qrc20() {
+    trade_base_rel(("QICK", "QORTY"));
+}
 
 #[test]
-fn trade_test_with_maker_segwit() { trade_base_rel(("QTUM", "MYCOIN")); }
+fn trade_test_with_maker_segwit() {
+    trade_base_rel(("QTUM", "MYCOIN"));
+}
 
 #[test]
-fn trade_test_with_taker_segwit() { trade_base_rel(("MYCOIN", "QTUM")); }
+fn trade_test_with_taker_segwit() {
+    trade_base_rel(("MYCOIN", "QTUM"));
+}
 
 #[test]
 #[ignore]
-fn test_trade_qrc20_utxo() { trade_base_rel(("QICK", "MYCOIN")); }
+fn test_trade_qrc20_utxo() {
+    trade_base_rel(("QICK", "MYCOIN"));
+}
 
 #[test]
 #[ignore]
-fn test_trade_utxo_qrc20() { trade_base_rel(("MYCOIN", "QICK")); }
+fn test_trade_utxo_qrc20() {
+    trade_base_rel(("MYCOIN", "QICK"));
+}
 
 #[test]
 fn test_send_standard_taker_fee_qtum() {

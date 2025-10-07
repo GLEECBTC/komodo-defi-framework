@@ -3,8 +3,9 @@ use crate::sign_params::{OutputDestination, SendingOutputInfo, SpendingInputInfo
 use crate::{TxProvider, UtxoSignTxError, UtxoSignTxResult};
 use chain::{Transaction as UtxoTx, TransactionOutput};
 use common::log::debug;
-use crypto::trezor::utxo::{PrevTx, PrevTxInput, PrevTxOutput, TrezorInputScriptType, TxOutput, TxSignResult,
-                           UnsignedTxInput, UnsignedUtxoTx};
+use crypto::trezor::utxo::{
+    PrevTx, PrevTxInput, PrevTxOutput, TrezorInputScriptType, TxOutput, TxSignResult, UnsignedTxInput, UnsignedUtxoTx,
+};
 use crypto::trezor::TrezorSession;
 use keys::bytes::Bytes;
 use mm2_err_handle::prelude::*;
@@ -21,14 +22,14 @@ pub struct TrezorTxSigner<'a, TxP> {
     pub branch_id: u32,
 }
 
-impl<'a, TxP: TxProvider + Send + Sync> TrezorTxSigner<'a, TxP> {
+impl<TxP: TxProvider + Send + Sync> TrezorTxSigner<'_, TxP> {
     pub async fn sign_tx(mut self) -> UtxoSignTxResult<UtxoTx> {
-        let trezor_unsigned_tx = self.get_trezor_unsigned_tx().await?;
+        let trezor_unsigned_tx = self.get_trezor_unsigned_tx().await.map_mm_err()?;
 
         let TxSignResult {
             signatures,
             serialized_tx,
-        } = self.trezor.sign_utxo_tx(trezor_unsigned_tx).await?;
+        } = self.trezor.sign_utxo_tx(trezor_unsigned_tx).await.map_mm_err()?;
         debug!("Transaction signed by Trezor: {}", hex::encode(serialized_tx));
         if signatures.len() != self.params.inputs_count() {
             return MmError::err(UtxoSignTxError::InvalidSignaturesNumber {
@@ -56,7 +57,10 @@ impl<'a, TxP: TxProvider + Send + Sync> TrezorTxSigner<'a, TxP> {
     async fn get_trezor_unsigned_tx(&self) -> UtxoSignTxResult<UnsignedUtxoTx> {
         let mut inputs = Vec::with_capacity(self.params.unsigned_tx.inputs.len());
         for (unsigned_input, input_info) in self.params.inputs() {
-            let unsigned_input = self.get_trezor_unsigned_input(unsigned_input, input_info).await?;
+            let unsigned_input = self
+                .get_trezor_unsigned_input(unsigned_input, input_info)
+                .await
+                .map_mm_err()?;
             inputs.push(unsigned_input);
         }
 
@@ -99,7 +103,7 @@ impl<'a, TxP: TxProvider + Send + Sync> TrezorTxSigner<'a, TxP> {
         input_info: &SpendingInputInfo,
     ) -> UtxoSignTxResult<UnsignedTxInput> {
         let prev_tx_hash_json = H256Json::from(unsigned_input.previous_output.hash.reversed());
-        let prev_tx = self.get_trezor_prev_tx(&prev_tx_hash_json).await?;
+        let prev_tx = self.get_trezor_prev_tx(&prev_tx_hash_json).await.map_mm_err()?;
 
         let (address_derivation_path, input_script_type) = match input_info {
             SpendingInputInfo::P2PKH {
@@ -130,9 +134,10 @@ impl<'a, TxP: TxProvider + Send + Sync> TrezorTxSigner<'a, TxP> {
     }
 
     async fn get_trezor_prev_tx(&self, prev_tx_hash: &H256Json) -> UtxoSignTxResult<PrevTx> {
-        let prev_verbose = self.tx_provider.get_rpc_transaction(prev_tx_hash).await?;
-        let prev_utxo: UtxoTx =
-            deserialize(prev_verbose.hex.as_slice()).map_to_mm(|e| UtxoSignTxError::Transport(e.to_string()))?;
+        let prev_verbose = self.tx_provider.get_rpc_transaction(prev_tx_hash).await.map_mm_err()?;
+        let prev_utxo: UtxoTx = deserialize(prev_verbose.hex.as_slice())
+            .map_to_mm(|e| UtxoSignTxError::Transport(e.to_string()))
+            .map_mm_err()?;
 
         let prev_tx_inputs = prev_utxo
             .inputs
@@ -203,8 +208,12 @@ impl<'a, TxP: TxProvider + Send + Sync> TrezorTxSigner<'a, TxP> {
     }
 
     /// https://github.com/trezor/trezor-utxo-lib/blob/trezor/src/transaction.js#L405
-    fn is_overwinter_compatible(&self) -> bool { self.is_zcash_type() && self.params.unsigned_tx.version > 3 }
+    fn is_overwinter_compatible(&self) -> bool {
+        self.is_zcash_type() && self.params.unsigned_tx.version > 3
+    }
 
     /// https://github.com/trezor/trezor-utxo-lib/blob/trezor/src/coins.js#L55
-    fn is_zcash_type(&self) -> bool { matches!(self.trezor_coin.as_str(), "Komodo" | "Zcash" | "Zcash Testnet") }
+    fn is_zcash_type(&self) -> bool {
+        matches!(self.trezor_coin.as_str(), "Komodo" | "Zcash" | "Zcash Testnet")
+    }
 }

@@ -1,6 +1,6 @@
-FROM docker.io/debian:buster-slim
+FROM docker.io/debian:bullseye-slim
 
-MAINTAINER Onur Özkan <onur@komodoplatform.com>
+LABEL maintainer="Onur Özkan <onur@komodoplatform.com>"
 
 RUN apt-get update -y
 

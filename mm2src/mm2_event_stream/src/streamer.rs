@@ -39,6 +39,25 @@ where
     );
 }
 
+/// Trait for types that can produce a unique [`StreamerId`] for event streaming.
+///
+/// Used to standardize initialization and ID derivation for various streamers.
+///
+/// - `'a`: Lifetime for borrowed derive parameters.
+pub trait DeriveStreamerId<'a> {
+    /// Type used to create the instance.
+    type InitParam;
+
+    /// Borrowed type used to derive the [`StreamerId`].
+    type DeriveParam: 'a;
+
+    /// Creates a new instance using the specified initialization parameter.
+    fn new(param: Self::InitParam) -> Self;
+
+    /// Derives a unique [`StreamerId`] based on the provided parameter.
+    fn derive_streamer_id(param: Self::DeriveParam) -> StreamerId;
+}
+
 /// Spawns the [`EventStreamer::handle`] in a separate task using [`WeakSpawner`].
 ///
 /// Returns a [`oneshot::Sender`] to shutdown the handler and an optional [`mpsc::UnboundedSender`]
@@ -109,9 +128,13 @@ where
 pub struct Broadcaster(StreamingManager);
 
 impl Broadcaster {
-    pub fn new(inner: StreamingManager) -> Self { Self(inner) }
+    pub fn new(inner: StreamingManager) -> Self {
+        Self(inner)
+    }
 
-    pub fn broadcast(&self, event: Event) { self.0.broadcast(event); }
+    pub fn broadcast(&self, event: Event) {
+        self.0.broadcast(event);
+    }
 }
 
 #[cfg(any(test, target_arch = "wasm32"))]

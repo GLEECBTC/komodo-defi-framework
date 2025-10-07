@@ -12,25 +12,29 @@ const DEFAULT_WORD_COUNT: u64 = 12;
 
 #[derive(Debug, Display, PartialEq)]
 pub enum MnemonicError {
-    #[display(fmt = "BIP39 mnemonic error: {}", _0)]
+    #[display(fmt = "BIP39 mnemonic error: {_0}")]
     BIP39Error(String),
-    #[display(fmt = "Error deriving key: {}", _0)]
+    #[display(fmt = "Error deriving key: {_0}")]
     KeyDerivationError(String),
-    #[display(fmt = "Error decoding string: {}", _0)]
+    #[display(fmt = "Error decoding string: {_0}")]
     DecodeError(String),
-    #[display(fmt = "Error encrypting mnemonic: {}", _0)]
+    #[display(fmt = "Error encrypting mnemonic: {_0}")]
     EncryptionError(String),
-    #[display(fmt = "Error decrypting mnemonic: {}", _0)]
+    #[display(fmt = "Error decrypting mnemonic: {_0}")]
     DecryptionError(String),
     Internal(String),
 }
 
 impl From<bip39::Error> for MnemonicError {
-    fn from(e: bip39::Error) -> Self { MnemonicError::BIP39Error(e.to_string()) }
+    fn from(e: bip39::Error) -> Self {
+        MnemonicError::BIP39Error(e.to_string())
+    }
 }
 
 impl From<KeyDerivationError> for MnemonicError {
-    fn from(e: KeyDerivationError) -> Self { MnemonicError::KeyDerivationError(e.to_string()) }
+    fn from(e: KeyDerivationError) -> Self {
+        MnemonicError::KeyDerivationError(e.to_string())
+    }
 }
 
 /// Generates a new mnemonic passphrase.
@@ -80,7 +84,7 @@ pub fn encrypt_mnemonic(mnemonic: &str, password: &str) -> MmResult<EncryptedDat
     };
 
     // Derive AES and HMAC keys
-    let (key_aes, key_hmac) = derive_keys_for_mnemonic(password, &key_derivation_details)?;
+    let (key_aes, key_hmac) = derive_keys_for_mnemonic(password, &key_derivation_details).map_mm_err()?;
 
     encrypt_data(mnemonic.as_bytes(), key_derivation_details, &key_aes, &key_hmac)
         .mm_err(|e| MnemonicError::EncryptionError(e.to_string()))
@@ -102,14 +106,17 @@ pub fn encrypt_mnemonic(mnemonic: &str, password: &str) -> MmResult<EncryptedDat
 /// This function can return various errors related to decoding, key derivation, encryption, and HMAC verification.
 pub fn decrypt_mnemonic(encrypted_data: &EncryptedData, password: &str) -> MmResult<String, MnemonicError> {
     // Re-create the keys from the password and salts
-    let (key_aes, key_hmac) = derive_keys_for_mnemonic(password, &encrypted_data.key_derivation_details)?;
+    let (key_aes, key_hmac) =
+        derive_keys_for_mnemonic(password, &encrypted_data.key_derivation_details).map_mm_err()?;
 
     // Decrypt the ciphertext
     let decrypted_data =
         decrypt_data(encrypted_data, &key_aes, &key_hmac).mm_err(|e| MnemonicError::DecryptionError(e.to_string()))?;
 
     // Convert decrypted data back to a string
-    let mnemonic_str = String::from_utf8(decrypted_data).map_to_mm(|e| MnemonicError::DecodeError(e.to_string()))?;
+    let mnemonic_str = String::from_utf8(decrypted_data)
+        .map_to_mm(|e| MnemonicError::DecodeError(e.to_string()))
+        .map_mm_err()?;
     Ok(mnemonic_str)
 }
 

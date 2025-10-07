@@ -64,11 +64,13 @@ macro_rules! construct_detailed {
 pub struct MmNumber(pub(crate) BigRational);
 
 /// Handwritten deserialization method allows the MmNumber to be deserialized from:
-/// 1. big rational representation,
-/// 2. decimal string e.g. "0.1"
-/// 3. fraction object e.g. { "numer":"2", "denom":"3" }
+///  1. big rational representation,
+///  2. decimal string e.g. "0.1"
+///  3. fraction object e.g. { "numer":"2", "denom":"3" }
+///
 /// IMPORTANT: the deserialization implementation works properly from JSON only!
 /// Consider using BigRational type directly for other serde implementations
+///
 impl<'de> Deserialize<'de> for MmNumber {
     fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error>
     where
@@ -96,45 +98,65 @@ impl<'de> Deserialize<'de> for MmNumber {
 }
 
 impl std::fmt::Display for MmNumber {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "{}", from_ratio_to_dec(&self.0)) }
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", from_ratio_to_dec(&self.0))
+    }
 }
 
 impl From<BigDecimal> for MmNumber {
-    fn from(n: BigDecimal) -> MmNumber { from_dec_to_ratio(&n).into() }
+    fn from(n: BigDecimal) -> MmNumber {
+        from_dec_to_ratio(&n).into()
+    }
 }
 
 impl From<&BigDecimal> for MmNumber {
-    fn from(n: &BigDecimal) -> MmNumber { from_dec_to_ratio(n).into() }
+    fn from(n: &BigDecimal) -> MmNumber {
+        from_dec_to_ratio(n).into()
+    }
 }
 
 impl From<BigRational> for MmNumber {
-    fn from(r: BigRational) -> MmNumber { MmNumber(r) }
+    fn from(r: BigRational) -> MmNumber {
+        MmNumber(r)
+    }
 }
 
 impl From<Fraction> for MmNumber {
-    fn from(f: Fraction) -> MmNumber { MmNumber(f.into()) }
+    fn from(f: Fraction) -> MmNumber {
+        MmNumber(f.into())
+    }
 }
 
 impl From<MmNumber> for BigDecimal {
-    fn from(n: MmNumber) -> BigDecimal { from_ratio_to_dec(&n.0) }
+    fn from(n: MmNumber) -> BigDecimal {
+        from_ratio_to_dec(&n.0)
+    }
 }
 
 impl From<MmNumber> for BigRational {
-    fn from(n: MmNumber) -> BigRational { n.0 }
+    fn from(n: MmNumber) -> BigRational {
+        n.0
+    }
 }
 
 impl From<u64> for MmNumber {
-    fn from(n: u64) -> MmNumber { BigRational::from_integer(n.into()).into() }
+    fn from(n: u64) -> MmNumber {
+        BigRational::from_integer(n.into()).into()
+    }
 }
 
 impl From<(u64, u64)> for MmNumber {
-    fn from(tuple: (u64, u64)) -> MmNumber { BigRational::new(tuple.0.into(), tuple.1.into()).into() }
+    fn from(tuple: (u64, u64)) -> MmNumber {
+        BigRational::new(tuple.0.into(), tuple.1.into()).into()
+    }
 }
 
 impl Mul for MmNumber {
     type Output = MmNumber;
 
-    fn mul(self, rhs: Self) -> Self::Output { (self.0 * rhs.0).into() }
+    fn mul(self, rhs: Self) -> Self::Output {
+        (self.0 * rhs.0).into()
+    }
 }
 
 impl Mul for &MmNumber {
@@ -150,15 +172,21 @@ impl Mul for &MmNumber {
 impl Add for MmNumber {
     type Output = MmNumber;
 
-    fn add(self, rhs: Self) -> Self::Output { (self.0 + rhs.0).into() }
+    fn add(self, rhs: Self) -> Self::Output {
+        (self.0 + rhs.0).into()
+    }
 }
 
 impl AddAssign for MmNumber {
-    fn add_assign(&mut self, rhs: Self) { self.0 += rhs.0; }
+    fn add_assign(&mut self, rhs: Self) {
+        self.0 += rhs.0;
+    }
 }
 
 impl AddAssign<&MmNumber> for MmNumber {
-    fn add_assign(&mut self, rhs: &Self) { self.0 += &rhs.0; }
+    fn add_assign(&mut self, rhs: &Self) {
+        self.0 += &rhs.0;
+    }
 }
 
 impl Add for &MmNumber {
@@ -174,19 +202,25 @@ impl Add for &MmNumber {
 impl Sub for MmNumber {
     type Output = MmNumber;
 
-    fn sub(self, rhs: Self) -> Self::Output { (self.0 - rhs.0).into() }
+    fn sub(self, rhs: Self) -> Self::Output {
+        (self.0 - rhs.0).into()
+    }
 }
 
 impl Sub for &MmNumber {
     type Output = MmNumber;
 
-    fn sub(self, rhs: Self) -> Self::Output { (&self.0 - &rhs.0).into() }
+    fn sub(self, rhs: Self) -> Self::Output {
+        (&self.0 - &rhs.0).into()
+    }
 }
 
 impl Div for MmNumber {
     type Output = MmNumber;
 
-    fn div(self, rhs: MmNumber) -> MmNumber { (self.0 / rhs.0).into() }
+    fn div(self, rhs: MmNumber) -> MmNumber {
+        (self.0 / rhs.0).into()
+    }
 }
 
 impl Div for &MmNumber {
@@ -200,7 +234,9 @@ impl Div for &MmNumber {
 }
 
 impl CheckedDiv for MmNumber {
-    fn checked_div(&self, rhs: &MmNumber) -> Option<MmNumber> { self.0.checked_div(&rhs.0).map(MmNumber) }
+    fn checked_div(&self, rhs: &MmNumber) -> Option<MmNumber> {
+        self.0.checked_div(&rhs.0).map(MmNumber)
+    }
 }
 
 impl PartialOrd<BigDecimal> for MmNumber {
@@ -210,11 +246,15 @@ impl PartialOrd<BigDecimal> for MmNumber {
 }
 
 impl PartialEq<BigDecimal> for MmNumber {
-    fn eq(&self, rhs: &BigDecimal) -> bool { self.0 == from_dec_to_ratio(rhs) }
+    fn eq(&self, rhs: &BigDecimal) -> bool {
+        self.0 == from_dec_to_ratio(rhs)
+    }
 }
 
 impl Default for MmNumber {
-    fn default() -> MmNumber { BigRational::from_integer(0.into()).into() }
+    fn default() -> MmNumber {
+        BigRational::from_integer(0.into()).into()
+    }
 }
 
 impl MmNumber {
@@ -227,34 +267,50 @@ impl MmNumber {
     }
 
     /// Clones the internal BigRational
-    pub fn to_ratio(&self) -> BigRational { self.0.clone() }
+    pub fn to_ratio(&self) -> BigRational {
+        self.0.clone()
+    }
 
     /// Get BigDecimal representation
-    pub fn to_decimal(&self) -> BigDecimal { from_ratio_to_dec(&self.0) }
+    pub fn to_decimal(&self) -> BigDecimal {
+        from_ratio_to_dec(&self.0)
+    }
 
     /// Returns the numerator of the internal BigRational
-    pub fn numer(&self) -> &BigInt { self.0.numer() }
+    pub fn numer(&self) -> &BigInt {
+        self.0.numer()
+    }
 
     /// Returns the denominator of the internal BigRational
-    pub fn denom(&self) -> &BigInt { self.0.denom() }
+    pub fn denom(&self) -> &BigInt {
+        self.0.denom()
+    }
 
     /// Returns whether the number is zero
-    pub fn is_zero(&self) -> bool { self.0.is_zero() }
+    pub fn is_zero(&self) -> bool {
+        self.0.is_zero()
+    }
 
     /// Returns the stringified representation of a number in a format like "1/3".
-    pub fn to_fraction_string(&self) -> String { self.0.to_string() }
+    pub fn to_fraction_string(&self) -> String {
+        self.0.to_string()
+    }
 
     /// Attempts to parse a number from string, expects input to have fraction format like "1/3".
-    pub fn from_fraction_string(input: &str) -> Result<Self, ParseRatioError> { Ok(MmNumber(input.parse()?)) }
+    pub fn from_fraction_string(input: &str) -> Result<Self, ParseRatioError> {
+        Ok(MmNumber(input.parse()?))
+    }
 }
 
 impl From<i32> for MmNumber {
-    fn from(num: i32) -> MmNumber { MmNumber(BigRational::from_integer(num.into())) }
+    fn from(num: i32) -> MmNumber {
+        MmNumber(BigRational::from_integer(num.into()))
+    }
 }
 
 /// Useful for tests
-impl From<&'static str> for MmNumber {
-    fn from(str: &'static str) -> MmNumber {
+impl From<&str> for MmNumber {
+    fn from(str: &str) -> MmNumber {
         let num: BigDecimal = str.parse().expect("Input should be string representing decimal num");
         num.into()
     }

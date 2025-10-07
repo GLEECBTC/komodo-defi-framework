@@ -42,5 +42,7 @@ impl NftCacheIDB {
     /// Get a reference to the underlying `IndexedDb` instance.
     ///
     /// This method allows for direct interaction with the raw database, bypassing any abstractions.
-    pub(crate) fn get_inner(&self) -> &IndexedDb { &self.inner }
+    pub(crate) fn get_inner(&self) -> &IndexedDb {
+        &self.inner
+    }
 }

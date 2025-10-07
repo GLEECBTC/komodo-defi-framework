@@ -63,7 +63,9 @@ where
     }
 
     #[cfg(test)]
-    pub fn nb_listeners(&self) -> usize { self.listeners.len() }
+    pub fn nb_listeners(&self) -> usize {
+        self.listeners.len()
+    }
 }
 
 #[cfg(test)]
@@ -84,7 +86,9 @@ mod event_dispatcher_tests {
     }
 
     impl EventSwapStatusChanged {
-        fn event_id() -> TypeId { TypeId::of::<EventSwapStatusChanged>() }
+        fn event_id() -> TypeId {
+            TypeId::of::<EventSwapStatusChanged>()
+        }
     }
 
     #[derive(Clone)]
@@ -108,7 +112,9 @@ mod event_dispatcher_tests {
 
     impl Deref for ListenerSwapStatusChangedArc {
         type Target = ListenerSwapStatusChanged;
-        fn deref(&self) -> &ListenerSwapStatusChanged { &self.0 }
+        fn deref(&self) -> &ListenerSwapStatusChanged {
+            &self.0
+        }
     }
 
     #[async_trait]
@@ -124,9 +130,13 @@ mod event_dispatcher_tests {
             }
         }
 
-        fn get_desired_events(&self) -> Vec<TypeId> { vec![EventSwapStatusChanged::event_id()] }
+        fn get_desired_events(&self) -> Vec<TypeId> {
+            vec![EventSwapStatusChanged::event_id()]
+        }
 
-        fn listener_id(&self) -> &'static str { "listener_swap_status_changed" }
+        fn listener_id(&self) -> &'static str {
+            "listener_swap_status_changed"
+        }
     }
 
     #[test]

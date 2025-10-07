@@ -88,7 +88,7 @@ pub fn insert_taker_order(ctx: &MmArc, uuid: Uuid, order: &TakerOrder) -> SqlRes
 
 pub fn update_maker_order(ctx: &MmArc, uuid: Uuid, order: &MakerOrder) -> SqlResult<()> {
     debug!("Updating order {} in the SQLite database", uuid);
-    let params = vec![
+    let params = [
         uuid.to_string(),
         order.price.to_decimal().to_string(),
         order.max_base_vol.to_decimal().to_string(),
@@ -102,7 +102,7 @@ pub fn update_maker_order(ctx: &MmArc, uuid: Uuid, order: &MakerOrder) -> SqlRes
 
 pub fn update_was_taker(ctx: &MmArc, uuid: Uuid) -> SqlResult<()> {
     debug!("Updating order {} in the SQLite database", uuid);
-    let params = vec![
+    let params = [
         uuid.to_string(),
         "Maker".to_string(),
         now_ms().to_string(),
@@ -115,7 +115,7 @@ pub fn update_was_taker(ctx: &MmArc, uuid: Uuid) -> SqlResult<()> {
 
 pub fn update_order_status(ctx: &MmArc, uuid: Uuid, status: String) -> SqlResult<()> {
     debug!("Updating order {} in the SQLite database", uuid);
-    let params = vec![uuid.to_string(), now_ms().to_string(), status];
+    let params = [uuid.to_string(), now_ms().to_string(), status];
     let conn = ctx.sqlite_connection();
     conn.execute(UPDATE_ORDER_STATUS, params_from_iter(params.iter()))
         .map(|_| ())
@@ -191,15 +191,21 @@ pub enum SelectRecentOrdersUuidsErr {
 }
 
 impl std::fmt::Display for SelectRecentOrdersUuidsErr {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "{:?}", self) }
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
 }
 
 impl From<SqlError> for SelectRecentOrdersUuidsErr {
-    fn from(err: SqlError) -> Self { SelectRecentOrdersUuidsErr::Sql(err) }
+    fn from(err: SqlError) -> Self {
+        SelectRecentOrdersUuidsErr::Sql(err)
+    }
 }
 
 impl From<ParseError> for SelectRecentOrdersUuidsErr {
-    fn from(err: ParseError) -> Self { SelectRecentOrdersUuidsErr::Parse(err) }
+    fn from(err: ParseError) -> Self {
+        SelectRecentOrdersUuidsErr::Parse(err)
+    }
 }
 
 pub fn select_orders_by_filter(
@@ -283,7 +289,7 @@ pub fn select_orders_by_filter(
 }
 
 pub fn select_status_by_uuid(conn: &Connection, uuid: &Uuid) -> Result<String, SqlError> {
-    let params = vec![uuid.to_string()];
+    let params = [uuid.to_string()];
     conn.query_row(SELECT_STATUS_BY_UUID, params_from_iter(params.iter()), |row| {
         row.get::<_, String>(0)
     })

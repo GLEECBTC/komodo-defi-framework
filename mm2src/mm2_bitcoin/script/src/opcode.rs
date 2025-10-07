@@ -223,7 +223,9 @@ pub enum Opcode {
 }
 
 impl fmt::Display for Opcode {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { fmt::Debug::fmt(self, f) }
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(self, f)
+    }
 }
 
 impl Opcode {
@@ -463,13 +465,21 @@ impl Opcode {
     }
 
     /// Returns true if opcode is countable
-    pub fn is_countable(&self) -> bool { *self > Opcode::OP_16 }
+    pub fn is_countable(&self) -> bool {
+        *self > Opcode::OP_16
+    }
 
-    pub fn is_simple_push(&self) -> bool { *self < Opcode::OP_PUSHDATA1 }
+    pub fn is_simple_push(&self) -> bool {
+        *self < Opcode::OP_PUSHDATA1
+    }
 
-    pub fn is_push_value(&self) -> bool { *self >= Opcode::OP_1NEGATE && *self <= Opcode::OP_16 }
+    pub fn is_push_value(&self) -> bool {
+        *self >= Opcode::OP_1NEGATE && *self <= Opcode::OP_16
+    }
 
-    pub fn is_within_op_n(&self) -> bool { *self >= Opcode::OP_1 && *self <= Opcode::OP_16 }
+    pub fn is_within_op_n(&self) -> bool {
+        *self >= Opcode::OP_1 && *self <= Opcode::OP_16
+    }
 
     pub fn decode_op_n(&self) -> u8 {
         assert!(self.is_within_op_n());

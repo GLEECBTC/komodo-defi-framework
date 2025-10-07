@@ -14,7 +14,7 @@ pub fn impl_deserializable(ast: &syn::DeriveInput) -> quote::Tokens {
 
     let name = &ast.ident;
 
-    let dummy_const = syn::Ident::new(format!("_IMPL_DESERIALIZABLE_FOR_{}", name));
+    let dummy_const = syn::Ident::new(format!("_IMPL_DESERIALIZABLE_FOR_{name}"));
     let impl_block = quote! {
         impl serialization::Deserializable for #name {
             fn deserialize<T>(reader: &mut serialization::Reader<T>) -> Result<Self, serialization::Error> where T: io::Read {
@@ -28,7 +28,7 @@ pub fn impl_deserializable(ast: &syn::DeriveInput) -> quote::Tokens {
     };
 
     quote! {
-        #[allow(non_upper_case_globals, unused_attributes, unused_qualifications)]
+        #[allow(non_upper_case_globals, unused_attributes, unused_qualifications, non_local_definitions)]
         const #dummy_const: () = {
             extern crate serialization;
             use std::io;
@@ -37,7 +37,9 @@ pub fn impl_deserializable(ast: &syn::DeriveInput) -> quote::Tokens {
     }
 }
 
-fn deserialize_field_map(tuple: (usize, &syn::Field)) -> quote::Tokens { deserialize_field(tuple.0, tuple.1) }
+fn deserialize_field_map(tuple: (usize, &syn::Field)) -> quote::Tokens {
+    deserialize_field(tuple.0, tuple.1)
+}
 
 fn deserialize_field(index: usize, field: &syn::Field) -> quote::Tokens {
     let ident = match field.ident {

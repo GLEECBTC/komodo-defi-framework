@@ -1,5 +1,6 @@
-use super::{index_key_as_array, CursorAction, CursorBoundValue, CursorDriverImpl, CursorError, CursorItemAction,
-            CursorResult};
+use super::{
+    index_key_as_array, CursorAction, CursorBoundValue, CursorDriverImpl, CursorError, CursorItemAction, CursorResult,
+};
 use common::{deserialize_from_js, serialize_to_js, stringify_js_error};
 use js_sys::Array;
 use mm2_err_handle::prelude::*;
@@ -28,8 +29,8 @@ impl IdbMultiKeyBoundCursor {
     }
 
     fn check_bounds(
-        only_values: &Vec<(String, Json)>,
-        bound_values: &Vec<(String, CursorBoundValue, CursorBoundValue)>,
+        only_values: &[(String, Json)],
+        bound_values: &[(String, CursorBoundValue, CursorBoundValue)],
     ) -> CursorResult<()> {
         if bound_values.is_empty() || (only_values.len() + bound_values.len() < 2) {
             let description = format!(
@@ -42,15 +43,13 @@ impl IdbMultiKeyBoundCursor {
         for (_index, lower_bound, upper_bound) in bound_values {
             if !lower_bound.same_inner_type(upper_bound) {
                 let description = format!(
-                    "Expected same inner type of lower and upper bounds, found: {:?}, {:?}",
-                    lower_bound, upper_bound
+                    "Expected same inner type of lower and upper bounds, found: {lower_bound:?}, {upper_bound:?}"
                 );
                 return MmError::err(CursorError::InvalidKeyRange { description });
             }
             if lower_bound > upper_bound {
                 let description = format!(
-                    "lower_bound '{:?}' is expected to be less or equal to upper_bound '{:?}'",
-                    lower_bound, upper_bound
+                    "lower_bound '{lower_bound:?}' is expected to be less or equal to upper_bound '{upper_bound:?}'"
                 );
                 return MmError::err(CursorError::InvalidKeyRange { description });
             }
@@ -84,7 +83,7 @@ impl CursorDriverImpl for IdbMultiKeyBoundCursor {
         for (field, value) in self.only_values.iter() {
             let js_value = serialize_to_js(value).map_to_mm(|e| CursorError::ErrorSerializingIndexFieldValue {
                 field: field.to_owned(),
-                value: format!("{:?}", value),
+                value: format!("{value:?}"),
                 description: e.to_string(),
             })?;
             lower.push(&js_value);
@@ -213,8 +212,7 @@ mod tests {
             assert_eq!(
                 result,
                 Ok((CursorItemAction::Include, CursorAction::Continue)),
-                "'{}' index is expected to be in a bound",
-                input_index
+                "'{input_index}' index is expected to be in a bound",
             );
         }
     }
@@ -227,13 +225,13 @@ mod tests {
             let input_index_js_value = serialize_to_js(&input_index).unwrap();
             let (item_action, cursor_action) = cursor
                 .on_iteration(input_index_js_value)
-                .unwrap_or_else(|_| panic!("Error due to the index '{:?}'", input_index));
+                .unwrap_or_else(|_| panic!("Error due to the index '{input_index:?}'"));
 
             let actual_next: Json = match cursor_action {
                 CursorAction::ContinueWithValue(next_index_js_value) => {
                     deserialize_from_js(next_index_js_value).expect("Error deserializing next index}")
                 },
-                action => panic!("Expected 'CursorAction::ContinueWithValue', found '{:?}'", action),
+                action => panic!("Expected 'CursorAction::ContinueWithValue', found '{action:?}'"),
             };
             assert_eq!(item_action, CursorItemAction::Skip);
             assert_eq!(actual_next, expected_next);
@@ -248,8 +246,7 @@ mod tests {
             assert_eq!(
                 result,
                 Ok((CursorItemAction::Skip, CursorAction::Stop)),
-                "'{}' index is expected to be out of bound",
-                input_index
+                "'{input_index}' index is expected to be out of bound",
             );
         }
     }
@@ -496,10 +493,10 @@ mod tests {
             let input_index_js_value = serialize_to_js(&input_index).unwrap();
             let error = cursor
                 .on_iteration(input_index_js_value)
-                .expect_err(&format!("'{:?}' must lead to 'CursorError::TypeMismatch'", input_index));
+                .expect_err(&format!("'{input_index:?}' must lead to 'CursorError::TypeMismatch'"));
             match error.into_inner() {
                 CursorError::TypeMismatch { expected, .. } => assert_eq!(expected, expected_type),
-                e => panic!("Expected 'CursorError::TypeMismatch', found '{:?}'", e),
+                e => panic!("Expected 'CursorError::TypeMismatch', found '{e:?}'"),
             }
         }
 
@@ -514,10 +511,10 @@ mod tests {
             let input_index_js_value = serialize_to_js(&input_index).unwrap();
             let error = cursor
                 .on_iteration(input_index_js_value)
-                .expect_err(&format!("'{:?}' must lead to 'CursorError::TypeMismatch'", input_index));
+                .expect_err(&format!("'{input_index:?}' must lead to 'CursorError::TypeMismatch'"));
             match error.into_inner() {
                 CursorError::IncorrectNumberOfKeysPerIndex { .. } => (),
-                e => panic!("Expected 'CursorError::IncorrectNumberOfKeysPerIndex', found '{:?}'", e),
+                e => panic!("Expected 'CursorError::IncorrectNumberOfKeysPerIndex', found '{e:?}'"),
             }
         }
     }

@@ -15,17 +15,17 @@ pub type SavedSwapResult<T> = Result<T, MmError<SavedSwapError>>;
 
 #[derive(Debug, Display, Deserialize, Serialize)]
 pub enum SavedSwapError {
-    #[display(fmt = "Error saving the a swap: {}", _0)]
+    #[display(fmt = "Error saving the a swap: {_0}")]
     ErrorSaving(String),
-    #[display(fmt = "Error loading a swap: {}", _0)]
+    #[display(fmt = "Error loading a swap: {_0}")]
     ErrorLoading(String),
-    #[display(fmt = "Error deserializing a swap: {}", _0)]
+    #[display(fmt = "Error deserializing a swap: {_0}")]
     ErrorDeserializing(String),
-    #[display(fmt = "Error serializing a swap: {}", _0)]
+    #[display(fmt = "Error serializing a swap: {_0}")]
     ErrorSerializing(String),
     CursorError(String),
     #[allow(dead_code)]
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     InternalError(String),
 }
 
@@ -37,11 +37,15 @@ pub enum SavedSwap {
 }
 
 impl From<MakerSavedSwap> for SavedSwap {
-    fn from(maker: MakerSavedSwap) -> Self { SavedSwap::Maker(maker) }
+    fn from(maker: MakerSavedSwap) -> Self {
+        SavedSwap::Maker(maker)
+    }
 }
 
 impl From<TakerSavedSwap> for SavedSwap {
-    fn from(taker: TakerSavedSwap) -> Self { SavedSwap::Taker(taker) }
+    fn from(taker: TakerSavedSwap) -> Self {
+        SavedSwap::Taker(taker)
+    }
 }
 
 impl SavedSwap {
@@ -52,7 +56,9 @@ impl SavedSwap {
         }
     }
 
-    pub fn is_finished_and_success(&self) -> bool { self.is_success().unwrap_or(false) }
+    pub fn is_finished_and_success(&self) -> bool {
+        self.is_success().unwrap_or(false)
+    }
 
     pub fn is_finished(&self) -> bool {
         match self {
@@ -231,7 +237,7 @@ mod native_impl {
             #[cfg(not(feature = "new-db-arch"))]
             let address_dir = address_dir.unwrap_or("no address directory for old DB architecture (has no effect)");
             let path = my_swap_file_path(ctx, address_dir, &uuid);
-            Ok(read_json(&path).await?)
+            Ok(read_json(&path).await.map_mm_err()?)
         }
 
         #[cfg_attr(feature = "new-db-arch", allow(unreachable_code, unused_variables))]
@@ -244,27 +250,27 @@ mod native_impl {
                 todo!("Fix the dummy address directory in `my_swaps_dir` below or remove this method all together");
             }
             let path = my_swaps_dir(ctx, "has no effect in not(feature = 'new-db-arch')");
-            Ok(read_dir_json(&path).await?)
+            Ok(read_dir_json(&path).await.map_mm_err()?)
         }
 
         async fn load_from_maker_stats_db(ctx: &MmArc, uuid: Uuid) -> SavedSwapResult<Option<MakerSavedSwap>> {
             let path = stats_maker_swap_file_path(ctx, &uuid);
-            Ok(read_json(&path).await?)
+            Ok(read_json(&path).await.map_mm_err()?)
         }
 
         async fn load_all_from_maker_stats_db(ctx: &MmArc) -> SavedSwapResult<Vec<MakerSavedSwap>> {
             let path = stats_maker_swap_dir(ctx);
-            Ok(read_dir_json(&path).await?)
+            Ok(read_dir_json(&path).await.map_mm_err()?)
         }
 
         async fn load_from_taker_stats_db(ctx: &MmArc, uuid: Uuid) -> SavedSwapResult<Option<TakerSavedSwap>> {
             let path = stats_taker_swap_file_path(ctx, &uuid);
-            Ok(read_json(&path).await?)
+            Ok(read_json(&path).await.map_mm_err()?)
         }
 
         async fn load_all_from_taker_stats_db(ctx: &MmArc) -> SavedSwapResult<Vec<TakerSavedSwap>> {
             let path = stats_taker_swap_dir(ctx);
-            Ok(read_dir_json(&path).await?)
+            Ok(read_dir_json(&path).await.map_mm_err()?)
         }
 
         async fn save_to_db(&self, ctx: &MmArc) -> SavedSwapResult<()> {
@@ -273,7 +279,7 @@ mod native_impl {
             #[cfg(not(feature = "new-db-arch"))]
             let address_dir = "no address directory for old DB architecture (has no effect)";
             let path = my_swap_file_path(ctx, address_dir, self.uuid());
-            write_json(self, &path, USE_TMP_FILE).await?;
+            write_json(self, &path, USE_TMP_FILE).await.map_mm_err()?;
             Ok(())
         }
 
@@ -282,11 +288,11 @@ mod native_impl {
             match self {
                 SavedSwap::Maker(maker) => {
                     let path = stats_maker_swap_file_path(ctx, &maker.uuid);
-                    write_json(self, &path, USE_TMP_FILE).await?;
+                    write_json(self, &path, USE_TMP_FILE).await.map_mm_err()?;
                 },
                 SavedSwap::Taker(taker) => {
                     let path = stats_taker_swap_file_path(ctx, &taker.uuid);
-                    write_json(self, &path, USE_TMP_FILE).await?;
+                    write_json(self, &path, USE_TMP_FILE).await.map_mm_err()?;
                 },
             }
             Ok(())
@@ -297,8 +303,9 @@ mod native_impl {
 #[cfg(target_arch = "wasm32")]
 mod wasm_impl {
     use super::*;
-    use crate::lp_swap::swap_wasm_db::{DbTransactionError, InitDbError, MySwapsFiltersTable, SavedSwapTable,
-                                       SwapsMigrationTable};
+    use crate::lp_swap::swap_wasm_db::{
+        DbTransactionError, InitDbError, MySwapsFiltersTable, SavedSwapTable, SwapsMigrationTable,
+    };
     use crate::lp_swap::{SwapsContext, LEGACY_SWAP_TYPE};
     use bytes::Buf;
     use common::log::{info, warn};
@@ -315,27 +322,29 @@ mod wasm_impl {
             .reverse()
             .where_first()
             .open_cursor("migration")
-            .await?
+            .await
+            .map_mm_err()?
             .next()
-            .await?;
+            .await
+            .map_mm_err()?;
 
         Ok(migrations.map(|(_, m)| m.migration).unwrap_or_default())
     }
 
     pub async fn migrate_swaps_data(ctx: &MmArc) -> MmResult<(), SavedSwapError> {
         let swaps_ctx = SwapsContext::from_ctx(ctx).map_to_mm(SavedSwapError::InternalError)?;
-        let db = swaps_ctx.swap_db().await?;
-        let transaction = db.transaction().await?;
-        let migration_table = transaction.table::<SwapsMigrationTable>().await?;
+        let db = swaps_ctx.swap_db().await.map_mm_err()?;
+        let transaction = db.transaction().await.map_mm_err()?;
+        let migration_table = transaction.table::<SwapsMigrationTable>().await.map_mm_err()?;
 
         let mut migration = get_current_migration(&migration_table).await?;
         info!("Current swaps data migration {}", migration);
         loop {
             match migration {
                 0 => {
-                    let filters_table = transaction.table::<MySwapsFiltersTable>().await?;
-                    let swaps_table = transaction.table::<SavedSwapTable>().await?;
-                    let swaps = swaps_table.get_all_items().await?;
+                    let filters_table = transaction.table::<MySwapsFiltersTable>().await.map_mm_err()?;
+                    let swaps_table = transaction.table::<SavedSwapTable>().await.map_mm_err()?;
+                    let swaps = swaps_table.get_all_items().await.map_mm_err()?;
                     let swaps = swaps
                         .into_iter()
                         .map(|(_item_id, SavedSwapTable { saved_swap, .. })| saved_swap)
@@ -345,29 +354,37 @@ mod wasm_impl {
                         })
                         .collect::<Result<Vec<SavedSwap>, _>>()?;
                     for swap in swaps {
-                        let (filter_id, mut filter_record) =
-                            match filters_table.get_item_by_unique_index("uuid", swap.uuid()).await? {
-                                Some(f) => f,
-                                None => {
-                                    warn!("No MySwapsFiltersTable for {}", swap.uuid());
-                                    continue;
-                                },
-                            };
+                        let (filter_id, mut filter_record) = match filters_table
+                            .get_item_by_unique_index("uuid", swap.uuid())
+                            .await
+                            .map_mm_err()?
+                        {
+                            Some(f) => f,
+                            None => {
+                                warn!("No MySwapsFiltersTable for {}", swap.uuid());
+                                continue;
+                            },
+                        };
                         filter_record.swap_type = LEGACY_SWAP_TYPE;
                         filter_record.is_finished = swap.is_finished().into();
-                        filters_table.replace_item(filter_id, &filter_record).await?;
+                        filters_table
+                            .replace_item(filter_id, &filter_record)
+                            .await
+                            .map_mm_err()?;
                     }
                 },
                 1 => break,
                 unsupported => {
                     return MmError::err(SavedSwapError::InternalError(format!(
-                        "Unsupported migration {}",
-                        unsupported
+                        "Unsupported migration {unsupported}"
                     )))
                 },
             }
             migration += 1;
-            migration_table.add_item(&SwapsMigrationTable { migration }).await?;
+            migration_table
+                .add_item(&SwapsMigrationTable { migration })
+                .await
+                .map_mm_err()?;
         }
 
         info!("Swaps data migration is completed, new version {}", migration);
@@ -375,7 +392,9 @@ mod wasm_impl {
     }
 
     impl From<CursorError> for SavedSwapError {
-        fn from(e: CursorError) -> Self { SavedSwapError::CursorError(e.to_string()) }
+        fn from(e: CursorError) -> Self {
+            SavedSwapError::CursorError(e.to_string())
+        }
     }
 
     impl From<DbTransactionError> for SavedSwapError {
@@ -404,7 +423,9 @@ mod wasm_impl {
     }
 
     impl From<InitDbError> for SavedSwapError {
-        fn from(e: InitDbError) -> Self { SavedSwapError::InternalError(e.to_string()) }
+        fn from(e: InitDbError) -> Self {
+            SavedSwapError::InternalError(e.to_string())
+        }
     }
 
     #[async_trait]
@@ -415,11 +436,11 @@ mod wasm_impl {
             uuid: Uuid,
         ) -> SavedSwapResult<Option<SavedSwap>> {
             let swaps_ctx = SwapsContext::from_ctx(ctx).map_to_mm(SavedSwapError::InternalError)?;
-            let db = swaps_ctx.swap_db().await?;
-            let transaction = db.transaction().await?;
-            let table = transaction.table::<SavedSwapTable>().await?;
+            let db = swaps_ctx.swap_db().await.map_mm_err()?;
+            let transaction = db.transaction().await.map_mm_err()?;
+            let table = transaction.table::<SavedSwapTable>().await.map_mm_err()?;
 
-            let saved_swap_json = match table.get_item_by_unique_index("uuid", uuid).await? {
+            let saved_swap_json = match table.get_item_by_unique_index("uuid", uuid).await.map_mm_err()? {
                 Some((_item_id, SavedSwapTable { saved_swap, .. })) => saved_swap,
                 None => return Ok(None),
             };
@@ -429,11 +450,11 @@ mod wasm_impl {
 
         async fn load_all_my_swaps_from_db(ctx: &MmArc) -> SavedSwapResult<Vec<SavedSwap>> {
             let swaps_ctx = SwapsContext::from_ctx(ctx).map_to_mm(SavedSwapError::InternalError)?;
-            let db = swaps_ctx.swap_db().await?;
-            let transaction = db.transaction().await?;
-            let table = transaction.table::<SavedSwapTable>().await?;
+            let db = swaps_ctx.swap_db().await.map_mm_err()?;
+            let transaction = db.transaction().await.map_mm_err()?;
+            let table = transaction.table::<SavedSwapTable>().await.map_mm_err()?;
 
-            let swaps = table.get_all_items().await?;
+            let swaps = table.get_all_items().await.map_mm_err()?;
             swaps
                 .into_iter()
                 .map(|(_item_id, SavedSwapTable { saved_swap, .. })| saved_swap)
@@ -450,13 +471,14 @@ mod wasm_impl {
             };
 
             let swaps_ctx = SwapsContext::from_ctx(ctx).map_to_mm(SavedSwapError::InternalError)?;
-            let db = swaps_ctx.swap_db().await?;
-            let transaction = db.transaction().await?;
-            let table = transaction.table::<SavedSwapTable>().await?;
+            let db = swaps_ctx.swap_db().await.map_mm_err()?;
+            let transaction = db.transaction().await.map_mm_err()?;
+            let table = transaction.table::<SavedSwapTable>().await.map_mm_err()?;
 
             table
                 .replace_item_by_unique_index("uuid", *self.uuid(), &saved_swap_item)
-                .await?;
+                .await
+                .map_mm_err()?;
             Ok(())
         }
     }

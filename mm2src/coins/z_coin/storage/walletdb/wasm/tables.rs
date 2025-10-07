@@ -13,12 +13,12 @@ impl WalletDbAccountsTable {
     /// A **unique** index that consists of the following properties:
     /// * ticker
     /// * account
-    pub const TICKER_ACCOUNT_INDEX: &str = "ticker_account_index";
+    pub const TICKER_ACCOUNT_INDEX: &'static str = "ticker_account_index";
     /// A **unique** index that consists of the following properties:
     /// * ticker
     /// * account
     /// * extfvk
-    pub const TICKER_ACCOUNT_EXTFVK_INDEX: &str = "ticker_account_extfvk_index";
+    pub const TICKER_ACCOUNT_EXTFVK_INDEX: &'static str = "ticker_account_extfvk_index";
 }
 
 impl TableSignature for WalletDbAccountsTable {

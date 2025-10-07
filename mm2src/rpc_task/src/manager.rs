@@ -1,6 +1,8 @@
 use crate::task::RpcTaskTypes;
-use crate::{AtomicTaskId, RpcTask, RpcTaskError, RpcTaskHandle, RpcTaskResult, RpcTaskStatus, RpcTaskStatusAlias,
-            TaskAbortHandle, TaskAbortHandler, TaskId, TaskStatus, TaskStatusError, UserActionSender};
+use crate::{
+    AtomicTaskId, RpcTask, RpcTaskError, RpcTaskHandle, RpcTaskResult, RpcTaskStatus, RpcTaskStatusAlias,
+    TaskAbortHandle, TaskAbortHandler, TaskId, TaskStatus, TaskStatusError, UserActionSender,
+};
 use common::executor::SpawnFuture;
 use common::log::{debug, info, trace, warn};
 use futures::channel::oneshot;
@@ -27,7 +29,9 @@ pub(crate) type RpcTaskManagerWeak<Task> = Weak<Mutex<RpcTaskManager<Task>>>;
 
 static NEXT_RPC_TASK_ID: AtomicTaskId = AtomicTaskId::new(0);
 
-fn next_rpc_task_id() -> TaskId { NEXT_RPC_TASK_ID.fetch_add(1, Ordering::Relaxed) }
+fn next_rpc_task_id() -> TaskId {
+    NEXT_RPC_TASK_ID.fetch_add(1, Ordering::Relaxed)
+}
 
 pub struct RpcTaskManager<Task: RpcTask> {
     /// A map of task IDs to their statuses and abort handlers.
@@ -51,7 +55,7 @@ impl<Task: RpcTask> RpcTaskManager<Task> {
         let (task_id, task_abort_handler) = {
             let mut task_manager = this
                 .lock()
-                .map_to_mm(|e| RpcTaskError::Internal(format!("RpcTaskManager is not available: {}", e)))?;
+                .map_to_mm(|e| RpcTaskError::Internal(format!("RpcTaskManager is not available: {e}")))?;
             task_manager.register_task(&task, client_id)?
         };
         let task_handle = Arc::new(RpcTaskHandle {
@@ -118,7 +122,9 @@ impl<Task: RpcTask> RpcTaskManager<Task> {
         Arc::new(Mutex::new(Self::new(streaming_manager)))
     }
 
-    pub fn contains(&self, task_id: TaskId) -> bool { self.tasks.contains_key(&task_id) }
+    pub fn contains(&self, task_id: TaskId) -> bool {
+        self.tasks.contains_key(&task_id)
+    }
 
     fn get_client_id(&self, task_id: TaskId) -> Option<u64> {
         self.tasks.get(&task_id).and_then(|task| match task {
@@ -249,11 +255,14 @@ impl<Task: RpcTask> RpcTaskManager<Task> {
                 ..
             }) => {
                 // Insert new in-progress status to the tasks container.
-                self.tasks.insert(task_id, TaskStatusExt::InProgress {
-                    status,
-                    abort_handle,
-                    client_id,
-                });
+                self.tasks.insert(
+                    task_id,
+                    TaskStatusExt::InProgress {
+                        status,
+                        abort_handle,
+                        client_id,
+                    },
+                );
                 Ok(())
             },
             Some(cancelling @ TaskStatusExt::Cancelling { .. }) => {
@@ -283,13 +292,16 @@ impl<Task: RpcTask> RpcTaskManager<Task> {
                 client_id,
             }) => {
                 // Insert new awaiting status to the tasks container.
-                self.tasks.insert(task_id, TaskStatusExt::Awaiting {
-                    status,
-                    action_sender,
-                    next_in_progress_status,
-                    abort_handle,
-                    client_id,
-                });
+                self.tasks.insert(
+                    task_id,
+                    TaskStatusExt::Awaiting {
+                        status,
+                        action_sender,
+                        next_in_progress_status,
+                        abort_handle,
+                        client_id,
+                    },
+                );
                 Ok(())
             },
             Some(unexpected) => {
@@ -324,11 +336,14 @@ impl<Task: RpcTask> RpcTaskManager<Task> {
                     // The task seems to be canceled/aborted for some reason.
                     .map_to_mm(|_user_action| RpcTaskError::Cancelled);
                 // Insert new in-progress status to the tasks container.
-                self.tasks.insert(task_id, TaskStatusExt::InProgress {
-                    status,
-                    abort_handle,
-                    client_id,
-                });
+                self.tasks.insert(
+                    task_id,
+                    TaskStatusExt::InProgress {
+                        status,
+                        abort_handle,
+                        client_id,
+                    },
+                );
                 result
             },
             Some(unexpected) => {

@@ -18,28 +18,36 @@ pub enum SqlValue {
 impl fmt::Display for SqlValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SqlValue::String(string) => write!(f, "{}", string),
-            SqlValue::StringQuoted(string) => write!(f, "'{}'", string),
-            SqlValue::Integer(decimal) => write!(f, "{}", decimal),
-            SqlValue::Real(real) => write!(f, "{}", real),
+            SqlValue::String(string) => write!(f, "{string}"),
+            SqlValue::StringQuoted(string) => write!(f, "'{string}'"),
+            SqlValue::Integer(decimal) => write!(f, "{decimal}"),
+            SqlValue::Real(real) => write!(f, "{real}"),
         }
     }
 }
 
 impl From<&'static str> for SqlValue {
-    fn from(string: &'static str) -> Self { SqlValue::String(string) }
+    fn from(string: &'static str) -> Self {
+        SqlValue::String(string)
+    }
 }
 
 impl FromQuoted<&'static str> for SqlValue {
-    fn from_quoted(string: &'static str) -> Self { SqlValue::StringQuoted(string) }
+    fn from_quoted(string: &'static str) -> Self {
+        SqlValue::StringQuoted(string)
+    }
 }
 
 impl From<i64> for SqlValue {
-    fn from(decimal: i64) -> Self { SqlValue::Integer(decimal) }
+    fn from(decimal: i64) -> Self {
+        SqlValue::Integer(decimal)
+    }
 }
 
 impl From<f64> for SqlValue {
-    fn from(real: f64) -> Self { SqlValue::Real(real) }
+    fn from(real: f64) -> Self {
+        SqlValue::Real(real)
+    }
 }
 
 /// A valid SQL optional value that can be passed as an argument to the `SqlQuery`, `SqlCreate`, `SqlInsert` safely.
@@ -54,7 +62,7 @@ pub enum SqlValueOptional {
 impl fmt::Display for SqlValueOptional {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SqlValueOptional::Some(value) => write!(f, "{}", value),
+            SqlValueOptional::Some(value) => write!(f, "{value}"),
             SqlValueOptional::Null => write!(f, "NULL"),
         }
     }
@@ -64,7 +72,9 @@ impl<T> From<T> for SqlValueOptional
 where
     SqlValue: From<T>,
 {
-    fn from(value: T) -> Self { SqlValueOptional::Some(SqlValue::from(value)) }
+    fn from(value: T) -> Self {
+        SqlValueOptional::Some(SqlValue::from(value))
+    }
 }
 
 impl<T> From<Option<T>> for SqlValueOptional
@@ -83,7 +93,9 @@ impl<T> FromQuoted<T> for SqlValueOptional
 where
     SqlValue: FromQuoted<T>,
 {
-    fn from_quoted(value: T) -> Self { SqlValueOptional::Some(SqlValue::from_quoted(value)) }
+    fn from_quoted(value: T) -> Self {
+        SqlValueOptional::Some(SqlValue::from_quoted(value))
+    }
 }
 
 impl<T> FromQuoted<Option<T>> for SqlValueOptional

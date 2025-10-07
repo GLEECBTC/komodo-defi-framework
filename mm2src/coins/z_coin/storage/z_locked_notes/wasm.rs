@@ -69,13 +69,13 @@ impl LockedNoteDbInner {
 }
 
 impl LockedNotesStorage {
-    async fn lockdb(&self) -> MmResult<LockedNotesDbInnerLocked, LockedNotesStorageError> {
-        Ok(self.db.get_or_initialize().await?)
+    async fn lockdb(&self) -> MmResult<LockedNotesDbInnerLocked<'_>, LockedNotesStorageError> {
+        self.db.get_or_initialize().await.map_mm_err()
     }
 }
 
 impl LockedNotesStorage {
-    pub(crate) async fn new(ctx: &MmArc, address: String) -> Result<Self, LockedNotesStorageError> {
+    pub(crate) async fn new(ctx: &MmArc, address: String) -> MmResult<Self, LockedNotesStorageError> {
         let db = ConstructibleDb::new(ctx).into_shared();
         Ok(Self { address, db })
     }
@@ -87,8 +87,8 @@ impl LockedNotesStorage {
     ) -> MmResult<(), LockedNotesStorageError> {
         let db = self.lockdb().await?;
         let address = self.address.clone();
-        let transaction = db.get_inner().transaction().await?;
-        let change_note_table = transaction.table::<LockedNoteTable>().await?;
+        let transaction = db.get_inner().transaction().await.map_mm_err()?;
+        let change_note_table = transaction.table::<LockedNoteTable>().await.map_mm_err()?;
 
         let change_note = LockedNoteTable {
             address,
@@ -97,10 +97,10 @@ impl LockedNotesStorage {
             rseed: Some(rseed),
             value: None,
         };
-        Ok(change_note_table
+        change_note_table
             .add_item(&change_note)
             .await
-            .map(|_| ())?)
+            .map(|_| ()).map_mm_err()
     }
 
     pub(crate) async fn insert_change_note(
@@ -110,8 +110,8 @@ impl LockedNotesStorage {
     ) -> MmResult<(), LockedNotesStorageError> {
         let db = self.lockdb().await?;
         let address = self.address.clone();
-        let transaction = db.get_inner().transaction().await?;
-        let change_note_table = transaction.table::<LockedNoteTable>().await?;
+        let transaction = db.get_inner().transaction().await.map_mm_err()?;
+        let change_note_table = transaction.table::<LockedNoteTable>().await.map_mm_err()?;
 
         let change_note = LockedNoteTable {
             address,
@@ -120,26 +120,26 @@ impl LockedNotesStorage {
             rseed: None,
             value: Some(value),
         };
-        Ok(change_note_table
+        change_note_table
             .add_item(&change_note)
             .await
-            .map(|_| ())?)
+            .map(|_| ()).map_mm_err()
     }
 
         pub(crate) async fn remove_notes_for_txid(&self, txid: String) -> MmResult<(), LockedNotesStorageError> {
             let db = self.lockdb().await?;
-            let transaction = db.get_inner().transaction().await?;
-            let change_note_table = transaction.table::<LockedNoteTable>().await?;
-            change_note_table.delete_items_by_index("txid", &txid).await?;
+            let transaction = db.get_inner().transaction().await.map_mm_err()?;
+            let change_note_table = transaction.table::<LockedNoteTable>().await.map_mm_err()?;
+            change_note_table.delete_items_by_index("txid", &txid).await.map_mm_err()?;
 
             Ok(())
         }
 
     pub(crate) async fn load_all_notes(&self) -> MmResult<Vec<LockedNote>, LockedNotesStorageError> {
         let db = self.lockdb().await?;
-        let transaction = db.get_inner().transaction().await?;
-        let change_note_table = transaction.table::<LockedNoteTable>().await?;
-        let records = change_note_table.get_items("address", &self.address).await?;
+        let transaction = db.get_inner().transaction().await.map_mm_err()?;
+        let change_note_table = transaction.table::<LockedNoteTable>().await.map_mm_err()?;
+        let records = change_note_table.get_items("address", &self.address).await.map_mm_err()?;
         Ok(records
             .into_iter()
             .filter_map(|(_, n)| {

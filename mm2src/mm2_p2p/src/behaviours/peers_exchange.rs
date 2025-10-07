@@ -1,18 +1,25 @@
 use futures::StreamExt;
 use futures_ticker::Ticker;
-use libp2p::{core::Endpoint,
-             multiaddr::Protocol,
-             request_response::{Behaviour as RequestResponse, Config as RequestResponseConfig, Event, HandlerEvent,
-                                InboundFailure, OutboundFailure, ProtocolSupport, ResponseChannel},
-             swarm::{ConnectionDenied, ConnectionId, NetworkBehaviour, ToSwarm},
-             Multiaddr, PeerId};
+use libp2p::{
+    core::Endpoint,
+    multiaddr::Protocol,
+    request_response::{
+        Behaviour as RequestResponse, Config as RequestResponseConfig, Event, HandlerEvent, InboundFailure,
+        OutboundFailure, ProtocolSupport, ResponseChannel,
+    },
+    swarm::{ConnectionDenied, ConnectionId, NetworkBehaviour, ToSwarm},
+    Multiaddr, PeerId,
+};
 use log::{info, warn};
+use mm2_net::ip_addr::is_global_ipv4;
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::{collections::{HashMap, HashSet, VecDeque},
-          iter,
-          task::Poll,
-          time::Duration};
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    iter,
+    task::Poll,
+    time::Duration,
+};
 
 use super::request_response::Codec;
 use crate::NetworkInfo;
@@ -30,7 +37,9 @@ const MAX_PEERS: usize = 100;
 pub struct PeerIdSerde(pub(crate) PeerId);
 
 impl From<PeerId> for PeerIdSerde {
-    fn from(peer_id: PeerId) -> PeerIdSerde { PeerIdSerde(peer_id) }
+    fn from(peer_id: PeerId) -> PeerIdSerde {
+        PeerIdSerde(peer_id)
+    }
 }
 
 impl Serialize for PeerIdSerde {
@@ -351,9 +360,13 @@ impl PeersExchange {
         result
     }
 
-    pub fn is_known_peer(&self, peer: &PeerId) -> bool { self.known_peers.contains(peer) }
+    pub fn is_known_peer(&self, peer: &PeerId) -> bool {
+        self.known_peers.contains(peer)
+    }
 
-    pub fn is_reserved_peer(&self, peer: &PeerId) -> bool { self.reserved_peers.contains(peer) }
+    pub fn is_reserved_peer(&self, peer: &PeerId) -> bool {
+        self.reserved_peers.contains(peer)
+    }
 
     pub fn add_known_peer(&mut self, peer: PeerId) {
         if !self.is_known_peer(&peer) {
@@ -370,7 +383,7 @@ impl PeersExchange {
         let mut components = address.iter();
         match components.next() {
             Some(Protocol::Ip4(addr)) => {
-                if !addr.is_global() {
+                if !is_global_ipv4(&addr) {
                     return false;
                 }
             },

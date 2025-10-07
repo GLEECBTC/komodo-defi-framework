@@ -28,15 +28,25 @@ impl fmt::Display for KeyPair {
 }
 
 impl KeyPair {
-    pub fn private(&self) -> &Private { &self.private }
+    pub fn private(&self) -> &Private {
+        &self.private
+    }
 
-    pub fn private_bytes(&self) -> [u8; 32] { self.private.secret.take() }
+    pub fn private_bytes(&self) -> [u8; 32] {
+        self.private.secret.take()
+    }
 
-    pub fn private_ref(&self) -> &[u8; 32] { &self.private.secret }
+    pub fn private_ref(&self) -> &[u8; 32] {
+        &self.private.secret
+    }
 
-    pub fn public(&self) -> &Public { &self.public }
+    pub fn public(&self) -> &Public {
+        &self.public
+    }
 
-    pub fn public_slice(&self) -> &[u8] { &self.public }
+    pub fn public_slice(&self) -> &[u8] {
+        &self.public
+    }
 
     pub fn from_private(private: Private) -> Result<KeyPair, Error> {
         let s: SecretKey = SecretKey::from_slice(&*private.secret)?;

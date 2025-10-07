@@ -16,17 +16,17 @@ pub enum MetamaskError {
     ExpectedOneEthAccount,
     #[display(fmt = "Unexpected account selected")]
     UnexpectedAccountSelected,
-    #[display(fmt = "Error serializing RPC arguments: {}", _0)]
+    #[display(fmt = "Error serializing RPC arguments: {_0}")]
     ErrorSerializingArguments(String),
-    #[display(fmt = "Error deserializing RPC result: {}", _0)]
+    #[display(fmt = "Error deserializing RPC result: {_0}")]
     ErrorDeserializingMethodResult(String),
     #[display(fmt = "User cancelled request")]
     UserCancelled,
-    #[display(fmt = "RPC error: {:?}", _0)]
+    #[display(fmt = "RPC error: {_0:?}")]
     Rpc(RPCError),
-    #[display(fmt = "Transport error: {:?}", _0)]
+    #[display(fmt = "Transport error: {_0:?}")]
     Transport(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 

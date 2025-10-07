@@ -24,7 +24,7 @@ mm2_core = { path = "../mm2_core" }
 mm2_event_stream = { path = "../mm2_event_stream" }
 mm2_net = { path = "../mm2_net" }
 mm2_number = { path = "../mm2_number", optional = true }
-parking_lot = { workspace = true, features = ["nightly"] }
+parking_lot = { workspace = true }
 rand = { workspace = true, features = ["wasm-bindgen"] }
 regex.workspace = true
 rmp-serde.workspace = true
@@ -34,7 +34,7 @@ serde_bytes.workspace = true
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 sha2.workspace = true
 smallvec.workspace = true
-void.workspace = true 
+void.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 futures-rustls.workspace = true

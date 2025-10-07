@@ -6,17 +6,17 @@ use std::collections::HashMap;
 
 #[derive(Clone, Debug, Display, Eq, PartialEq)]
 pub enum BlockHeaderStorageError {
-    #[display(fmt = "Can't add to the storage for {} - reason: {}", coin, reason)]
+    #[display(fmt = "Can't add to the storage for {coin} - reason: {reason}")]
     AddToStorageError {
         coin: String,
         reason: String,
     },
-    #[display(fmt = "Can't get from the storage for {} - reason: {}", coin, reason)]
+    #[display(fmt = "Can't get from the storage for {coin} - reason: {reason}")]
     GetFromStorageError {
         coin: String,
         reason: String,
     },
-    #[display(fmt = "Can't retrieve the table from the storage for {} - reason: {}", coin, reason)]
+    #[display(fmt = "Can't retrieve the table from the storage for {coin} - reason: {reason}")]
     CantRetrieveTableError {
         coin: String,
         reason: String,
@@ -30,17 +30,17 @@ pub enum BlockHeaderStorageError {
         coin: String,
         reason: String,
     },
-    #[display(fmt = "Can't query from the storage - query: {} - reason: {}", query, reason)]
+    #[display(fmt = "Can't query from the storage - query: {query} - reason: {reason}")]
     QueryError {
         query: String,
         reason: String,
     },
-    #[display(fmt = "Can't init from the storage - coin: {} - reason: {}", coin, reason)]
+    #[display(fmt = "Can't init from the storage - coin: {coin} - reason: {reason}")]
     InitializationError {
         coin: String,
         reason: String,
     },
-    #[display(fmt = "Can't decode/deserialize from storage for {} - reason: {}", coin, reason)]
+    #[display(fmt = "Can't decode/deserialize from storage for {coin} - reason: {reason}")]
     DecodeError {
         coin: String,
         reason: String,

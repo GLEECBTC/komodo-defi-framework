@@ -31,39 +31,30 @@ type CursorCondition = Box<dyn Fn(Json) -> CursorResult<bool> + Send + 'static>;
 
 #[derive(Debug, Display, EnumFromTrait, PartialEq)]
 pub enum CursorError {
-    #[display(
-        fmt = "Error serializing the '{}' value of the index field '{}' : {:?}",
-        value,
-        field,
-        description
-    )]
+    #[display(fmt = "Error serializing the '{value}' value of the index field '{field}' : {description:?}")]
     ErrorSerializingIndexFieldValue {
         field: String,
         value: String,
         description: String,
     },
-    #[display(fmt = "Error deserializing the an index key: {:?}", description)]
+    #[display(fmt = "Error deserializing the an index key: {description:?}")]
     ErrorDeserializingIndexValue { description: String },
-    #[display(fmt = "Error deserializing an item: {:?}", _0)]
+    #[display(fmt = "Error deserializing an item: {_0:?}")]
     ErrorDeserializingItem(String),
-    #[display(fmt = "Error opening cursor: {:?}", description)]
+    #[display(fmt = "Error opening cursor: {description:?}")]
     ErrorOpeningCursor { description: String },
-    #[display(fmt = "Cursor advance error: {:?}", description)]
+    #[display(fmt = "Cursor advance error: {description:?}")]
     AdvanceError { description: String },
-    #[display(fmt = "Invalid key range: {:?}", description)]
+    #[display(fmt = "Invalid key range: {description:?}")]
     InvalidKeyRange { description: String },
-    #[display(fmt = "Type mismatch: expected '{}', found '{}'", expected, found)]
+    #[display(fmt = "Type mismatch: expected '{expected}', found '{found}'")]
     TypeMismatch { expected: String, found: String },
-    #[display(
-        fmt = "Incorrect number of keys per a DB index: expected '{}', found '{}'",
-        expected,
-        found
-    )]
+    #[display(fmt = "Incorrect number of keys per a DB index: expected '{expected}', found '{found}'")]
     IncorrectNumberOfKeysPerIndex { expected: usize, found: usize },
-    #[display(fmt = "Error occurred due to an unexpected state: {:?}", _0)]
+    #[display(fmt = "Error occurred due to an unexpected state: {_0:?}")]
     #[from_trait(WithInternal::internal)]
     UnexpectedState(String),
-    #[display(fmt = "Incorrect usage of the cursor: {:?}", description)]
+    #[display(fmt = "Incorrect usage of the cursor: {description:?}")]
     IncorrectUsage { description: String },
 }
 
@@ -71,7 +62,7 @@ impl CursorError {
     fn type_mismatch(expected: &str, found: &Json) -> CursorError {
         CursorError::TypeMismatch {
             expected: expected.to_owned(),
-            found: format!("{:?}", found),
+            found: format!("{found:?}"),
         }
     }
 }
@@ -107,27 +98,39 @@ pub struct CursorFiltersExt {
 }
 
 impl From<u32> for CursorBoundValue {
-    fn from(uint: u32) -> Self { CursorBoundValue::Uint(uint) }
+    fn from(uint: u32) -> Self {
+        CursorBoundValue::Uint(uint)
+    }
 }
 
 impl From<i32> for CursorBoundValue {
-    fn from(int: i32) -> Self { CursorBoundValue::Int(int) }
+    fn from(int: i32) -> Self {
+        CursorBoundValue::Int(int)
+    }
 }
 
 impl From<u64> for CursorBoundValue {
-    fn from(uint: u64) -> Self { CursorBoundValue::BigUint(BeBigUint::from(uint)) }
+    fn from(uint: u64) -> Self {
+        CursorBoundValue::BigUint(BeBigUint::from(uint))
+    }
 }
 
 impl From<usize> for CursorBoundValue {
-    fn from(uint: usize) -> Self { CursorBoundValue::BigUint(BeBigUint::from(uint)) }
+    fn from(uint: usize) -> Self {
+        CursorBoundValue::BigUint(BeBigUint::from(uint))
+    }
 }
 
 impl From<u128> for CursorBoundValue {
-    fn from(uint: u128) -> Self { CursorBoundValue::BigUint(BeBigUint::from(uint)) }
+    fn from(uint: u128) -> Self {
+        CursorBoundValue::BigUint(BeBigUint::from(uint))
+    }
 }
 
 impl From<BeBigUint> for CursorBoundValue {
-    fn from(uint: BeBigUint) -> Self { CursorBoundValue::BigUint(uint) }
+    fn from(uint: BeBigUint) -> Self {
+        CursorBoundValue::BigUint(uint)
+    }
 }
 
 impl CursorBoundValue {
@@ -488,7 +491,7 @@ fn index_key_as_array(index_key: JsValue) -> CursorResult<Array> {
     index_key.dyn_into::<Array>().map_err(|index_key| {
         MmError::new(CursorError::TypeMismatch {
             expected: "js_sys::Array".to_owned(),
-            found: format!("{:?}", index_key),
+            found: format!("{index_key:?}"),
         })
     })
 }
@@ -505,6 +508,6 @@ fn cursor_from_request(request: &IdbRequest) -> CursorResult<Option<IdbCursorWit
         .map(Some)
         .map_to_mm(|db_result| CursorError::TypeMismatch {
             expected: "IdbCursorWithValue".to_owned(),
-            found: format!("{:?}", db_result),
+            found: format!("{db_result:?}"),
         })
 }

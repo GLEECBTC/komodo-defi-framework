@@ -22,19 +22,24 @@
 //! 1. AFee: OP_DUP OP_HASH160 FEE_RMD160 OP_EQUALVERIFY OP_CHECKSIG
 //!
 //! 2. BPayment:
+//!
+//! ```
 //! OP_IF
-//! <now + LOCKTIME*2> OP_CLTV OP_DROP <bob_pub> OP_CHECKSIG
+//!   <now + LOCKTIME*2> OP_CLTV OP_DROP <bob_pub> OP_CHECKSIG
 //! OP_ELSE
-//! OP_SIZE 32 OP_EQUALVERIFY OP_HASH160 <hash(bob_privN)> OP_EQUALVERIFY <alice_pub> OP_CHECKSIG
+//!   OP_SIZE 32 OP_EQUALVERIFY OP_HASH160 <hash(bob_privN)> OP_EQUALVERIFY <alice_pub> OP_CHECKSIG
 //! OP_ENDIF
+//! ```
 //!
 //! 3. APayment:
-//! OP_IF
-//! <now + LOCKTIME> OP_CLTV OP_DROP <alice_pub> OP_CHECKSIG
-//! OP_ELSE
-//! OP_SIZE 32 OP_EQUALVERIFY OP_HASH160 <hash(bob_privN)> OP_EQUALVERIFY <bob_pub> OP_CHECKSIG
-//! OP_ENDIF
 //!
+//! ```
+//! OP_IF
+//!   <now + LOCKTIME> OP_CLTV OP_DROP <alice_pub> OP_CHECKSIG
+//! OP_ELSE
+//!   OP_SIZE 32 OP_EQUALVERIFY OP_HASH160 <hash(bob_privN)> OP_EQUALVERIFY <bob_pub> OP_CHECKSIG
+//! OP_ENDIF
+//! ```
 
 /******************************************************************************
  * Copyright © 2023 Pampex LTD and TillyHK LTD                                *
@@ -65,10 +70,12 @@ use bitcrypto::sha256;
 use coins::{lp_coinfind, lp_coinfind_or_err, CoinFindError, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
 use common::now_sec;
-use common::{bits256, calc_total_pages,
-             executor::{spawn_abortable, AbortOnDropHandle, SpawnFuture, Timer},
-             log::{error, info},
-             HttpStatusCode, PagingOptions, StatusCode};
+use common::{
+    bits256, calc_total_pages,
+    executor::{spawn_abortable, AbortOnDropHandle, SpawnFuture, Timer},
+    log::{error, info},
+    HttpStatusCode, PagingOptions, StatusCode,
+};
 use derive_more::Display;
 use http::Response;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
@@ -114,34 +121,41 @@ pub(crate) mod taker_swap;
 pub mod taker_swap_v2;
 mod trade_preimage;
 
-#[cfg(target_arch = "wasm32")] mod swap_wasm_db;
+#[cfg(target_arch = "wasm32")]
+mod swap_wasm_db;
 
 pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError, CheckBalanceResult};
 use crypto::secret_hash_algo::SecretHashAlgo;
 use crypto::CryptoCtx;
 use keys::{KeyPair, SECP_SIGN, SECP_VERIFY};
 use maker_swap::MakerSwapEvent;
-pub use maker_swap::{calc_max_maker_vol, check_balance_for_maker_swap, get_max_maker_vol, maker_swap_trade_preimage,
-                     run_maker_swap, CoinVolumeInfo, MakerSavedEvent, MakerSavedSwap, MakerSwap,
-                     MakerSwapStatusChanged, MakerTradePreimage, RunMakerSwapInput, MAKER_PAYMENT_SENT_LOG};
+pub use maker_swap::{
+    calc_max_maker_vol, check_balance_for_maker_swap, get_max_maker_vol, maker_swap_trade_preimage, run_maker_swap,
+    CoinVolumeInfo, MakerSavedEvent, MakerSavedSwap, MakerSwap, MakerSwapStatusChanged, MakerTradePreimage,
+    RunMakerSwapInput, MAKER_PAYMENT_SENT_LOG,
+};
 pub use max_maker_vol_rpc::max_maker_vol;
 use my_swaps_storage::{MySwapsOps, MySwapsStorage};
 use pubkey_banning::BanReason;
 pub use pubkey_banning::{ban_pubkey_rpc, is_pubkey_banned, list_banned_pubkeys_rpc, unban_pubkeys_rpc};
 pub use recreate_swap_data::recreate_swap_data;
 pub use saved_swap::{SavedSwap, SavedSwapError, SavedSwapIo, SavedSwapResult};
-use swap_v2_common::{get_unfinished_swaps_uuids, swap_kickstart_handler_for_maker, swap_kickstart_handler_for_taker,
-                     ActiveSwapV2Info};
+use swap_v2_common::{
+    get_unfinished_swaps_uuids, swap_kickstart_handler_for_maker, swap_kickstart_handler_for_taker, ActiveSwapV2Info,
+};
 use swap_v2_pb::*;
 use swap_v2_rpcs::{get_maker_swap_data_for_rpc, get_swap_type, get_taker_swap_data_for_rpc};
-pub use swap_watcher::{process_watcher_msg, watcher_topic, TakerSwapWatcherData, MAKER_PAYMENT_SPEND_FOUND_LOG,
-                       MAKER_PAYMENT_SPEND_SENT_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, TAKER_SWAP_ENTRY_TIMEOUT_SEC,
-                       WATCHER_PREFIX};
+pub use swap_watcher::{
+    process_watcher_msg, watcher_topic, TakerSwapWatcherData, MAKER_PAYMENT_SPEND_FOUND_LOG,
+    MAKER_PAYMENT_SPEND_SENT_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, TAKER_SWAP_ENTRY_TIMEOUT_SEC, WATCHER_PREFIX,
+};
 use taker_swap::TakerSwapEvent;
-pub use taker_swap::{calc_max_taker_vol, check_balance_for_taker_swap, max_taker_vol, max_taker_vol_from_available,
-                     run_taker_swap, taker_swap_trade_preimage, RunTakerSwapInput, TakerSavedSwap, TakerSwap,
-                     TakerSwapData, TakerSwapPreparedParams, TakerTradePreimage, MAKER_PAYMENT_SPENT_BY_WATCHER_LOG,
-                     REFUND_TEST_FAILURE_LOG, WATCHER_MESSAGE_SENT_LOG};
+pub use taker_swap::{
+    calc_max_taker_vol, check_balance_for_taker_swap, create_taker_swap_default_params, max_taker_vol,
+    max_taker_vol_from_available, run_taker_swap, taker_swap_trade_preimage, RunTakerSwapInput, TakerSavedSwap,
+    TakerSwap, TakerSwapData, TakerSwapPreparedParams, TakerTradePreimage, MAKER_PAYMENT_SPENT_BY_WATCHER_LOG,
+    REFUND_TEST_FAILURE_LOG, WATCHER_MESSAGE_SENT_LOG,
+};
 pub use trade_preimage::trade_preimage_rpc;
 
 pub const SWAP_PREFIX: TopicPrefix = "swap";
@@ -160,12 +174,6 @@ const NEGOTIATE_SEND_INTERVAL: f64 = 30.;
 
 /// If a certain P2P message is not received, swap will be aborted after this time expires.
 const NEGOTIATION_TIMEOUT_SEC: u64 = 90;
-
-/// Add refund fee to calculate maximum available balance for a swap (including possible refund)
-pub(crate) const INCLUDE_REFUND_FEE: bool = true;
-
-/// Do not add refund fee to calculate fee needed only to make a successful swap
-pub(crate) const NO_REFUND_FEE: bool = false;
 
 const MAX_STARTED_AT_DIFF: u64 = MAX_TIME_GAP_FOR_CONNECTED_PEER * 3;
 
@@ -364,8 +372,7 @@ pub async fn process_swap_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PRequest
                 },
                 Err(swap_status_err) => {
                     let error = format!(
-                        "Couldn't deserialize swap msg to either 'SwapMsg': {} or to 'SwapStatus': {}",
-                        swap_msg_err, swap_status_err
+                        "Couldn't deserialize swap msg to either 'SwapMsg': {swap_msg_err} or to 'SwapStatus': {swap_status_err}"
                     );
                     MmError::err(P2PRequestError::DecodeError(error))
                 },
@@ -373,27 +380,28 @@ pub async fn process_swap_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PRequest
 
             #[cfg(target_arch = "wasm32")]
             return MmError::err(P2PRequestError::DecodeError(format!(
-                "Couldn't deserialize 'SwapMsg': {}",
-                swap_msg_err
+                "Couldn't deserialize 'SwapMsg': {swap_msg_err}"
             )));
         },
     };
 
-    debug!("Processing swap msg {:?} for uuid {}", msg, uuid);
+    debug!("Processing swap msg {msg:?} for uuid {uuid}");
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
     let mut msgs = swap_ctx.swap_msgs.lock().unwrap();
     if let Some(msg_store) = msgs.get_mut(&uuid) {
         if msg_store.accept_only_from.bytes == msg.2.unprefixed() {
             msg.0.swap_msg_to_store(msg_store);
         } else {
-            warn!("Received message from unexpected sender for swap {}", uuid);
+            warn!("Received message from unexpected sender for swap {uuid}");
         }
     };
 
     Ok(())
 }
 
-pub fn swap_topic(uuid: &Uuid) -> String { pub_sub_topic(SWAP_PREFIX, &uuid.to_string()) }
+pub fn swap_topic(uuid: &Uuid) -> String {
+    pub_sub_topic(SWAP_PREFIX, &uuid.to_string())
+}
 
 /// Formats and returns a topic format for `txhlp`.
 ///
@@ -403,7 +411,9 @@ pub fn swap_topic(uuid: &Uuid) -> String { pub_sub_topic(SWAP_PREFIX, &uuid.to_s
 /// // Returns topic format `txhlp/BTC` as String type.
 /// ```
 #[inline(always)]
-pub fn tx_helper_topic(coin: &str) -> String { pub_sub_topic(TX_HELPER_PREFIX, coin) }
+pub fn tx_helper_topic(coin: &str) -> String {
+    pub_sub_topic(TX_HELPER_PREFIX, coin)
+}
 
 async fn recv_swap_msg<T>(
     ctx: MmArc,
@@ -456,7 +466,9 @@ pub fn get_payment_locktime() -> u64 {
 }
 
 #[inline]
-pub fn taker_payment_spend_duration(locktime: u64) -> u64 { (locktime * 4) / 5 }
+pub fn taker_payment_spend_duration(locktime: u64) -> u64 {
+    (locktime * 4) / 5
+}
 
 #[inline]
 pub fn taker_payment_spend_deadline(swap_started_at: u64, locktime: u64) -> u64 {
@@ -464,7 +476,9 @@ pub fn taker_payment_spend_deadline(swap_started_at: u64, locktime: u64) -> u64 
 }
 
 #[inline]
-pub fn wait_for_maker_payment_conf_duration(locktime: u64) -> u64 { (locktime * 2) / 5 }
+pub fn wait_for_maker_payment_conf_duration(locktime: u64) -> u64 {
+    (locktime * 2) / 5
+}
 
 #[inline]
 pub fn wait_for_maker_payment_conf_until(swap_started_at: u64, locktime: u64) -> u64 {
@@ -517,11 +531,15 @@ pub enum SwapEvent {
 }
 
 impl From<MakerSwapEvent> for SwapEvent {
-    fn from(maker_event: MakerSwapEvent) -> Self { SwapEvent::Maker(maker_event) }
+    fn from(maker_event: MakerSwapEvent) -> Self {
+        SwapEvent::Maker(maker_event)
+    }
 }
 
 impl From<TakerSwapEvent> for SwapEvent {
-    fn from(taker_event: TakerSwapEvent) -> Self { SwapEvent::Taker(taker_event) }
+    fn from(taker_event: TakerSwapEvent) -> Self {
+        SwapEvent::Taker(taker_event)
+    }
 }
 
 struct LockedAmountInfo {
@@ -571,10 +589,14 @@ impl SwapsContext {
     }
 
     /// Removes storage for the swap with specific uuid.
-    pub fn remove_msg_v2_store(&self, uuid: &Uuid) { self.swap_v2_msgs.lock().unwrap().remove(uuid); }
+    pub fn remove_msg_v2_store(&self, uuid: &Uuid) {
+        self.swap_v2_msgs.lock().unwrap().remove(uuid);
+    }
 
     #[cfg(target_arch = "wasm32")]
-    pub async fn swap_db(&self) -> InitDbResult<SwapDbLocked<'_>> { self.swap_db.get_or_initialize().await }
+    pub async fn swap_db(&self) -> InitDbResult<SwapDbLocked<'_>> {
+        self.swap_db.get_or_initialize().await
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -591,7 +613,7 @@ pub struct GetLockedAmountResp {
 #[derive(Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum GetLockedAmountRpcError {
-    #[display(fmt = "No such coin: {}", coin)]
+    #[display(fmt = "No such coin: {coin}")]
     NoSuchCoin { coin: String },
 }
 
@@ -615,7 +637,7 @@ pub async fn get_locked_amount_rpc(
     ctx: MmArc,
     req: GetLockedAmountReq,
 ) -> Result<GetLockedAmountResp, MmError<GetLockedAmountRpcError>> {
-    lp_coinfind_or_err(&ctx, &req.coin).await?;
+    lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     let locked_amount = get_locked_amount(&ctx, &req.coin);
 
     Ok(GetLockedAmountResp {
@@ -738,10 +760,14 @@ pub struct SwapConfirmationsSettings {
 }
 
 impl SwapConfirmationsSettings {
-    pub fn requires_notarization(&self) -> bool { self.maker_coin_nota || self.taker_coin_nota }
+    pub fn requires_notarization(&self) -> bool {
+        self.maker_coin_nota || self.taker_coin_nota
+    }
 }
 
-fn coin_with_4x_locktime(ticker: &str) -> bool { matches!(ticker, "BCH" | "BTG" | "SBTC") }
+fn coin_with_4x_locktime(ticker: &str) -> bool {
+    matches!(ticker, "BCH" | "BTG" | "SBTC")
+}
 
 #[derive(Debug)]
 pub enum AtomicLocktimeVersion {
@@ -962,11 +988,13 @@ pub struct TransactionIdentifier {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn my_swaps_dir(ctx: &MmArc, address: &str) -> PathBuf { ctx.address_dir(address).join("SWAPS").join("MY") }
+pub fn my_swaps_dir(ctx: &MmArc, address: &str) -> PathBuf {
+    ctx.address_dir(address).join("SWAPS").join("MY")
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn my_swap_file_path(ctx: &MmArc, address: &str, uuid: &Uuid) -> PathBuf {
-    my_swaps_dir(ctx, address).join(format!("{}.json", uuid))
+    my_swaps_dir(ctx, address).join(format!("{uuid}.json"))
 }
 
 pub async fn insert_new_swap_to_db(
@@ -1043,11 +1071,15 @@ pub struct SwapError {
 }
 
 impl From<String> for SwapError {
-    fn from(error: String) -> Self { SwapError { error } }
+    fn from(error: String) -> Self {
+        SwapError { error }
+    }
 }
 
 impl From<&str> for SwapError {
-    fn from(e: &str) -> Self { SwapError { error: e.to_owned() } }
+    fn from(e: &str) -> Self {
+        SwapError { error: e.to_owned() }
+    }
 }
 
 #[derive(Serialize)]
@@ -1216,7 +1248,7 @@ pub struct MyRecentSwapsUuids {
 #[derive(Debug, Display, Deserialize, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum LatestSwapsErr {
-    #[display(fmt = "No such swap with the uuid '{}'", _0)]
+    #[display(fmt = "No such swap with the uuid '{_0}'")]
     UUIDNotPresentInDb(Uuid),
     UnableToLoadSavedSwaps(SavedSwapError),
     #[display(fmt = "Unable to query swaps storage")]
@@ -1630,7 +1662,9 @@ pub struct SwapPubkeys {
 }
 
 /// P2P topic used to broadcast messages during execution of the upgraded swap protocol.
-pub fn swap_v2_topic(uuid: &Uuid) -> String { pub_sub_topic(SWAP_V2_PREFIX, &uuid.to_string()) }
+pub fn swap_v2_topic(uuid: &Uuid) -> String {
+    pub_sub_topic(SWAP_V2_PREFIX, &uuid.to_string())
+}
 
 /// Broadcast the swap v2 message once
 pub fn broadcast_swap_v2_message<T: prost::Message>(
@@ -1709,8 +1743,7 @@ pub fn process_swap_v2_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PProcessRes
 
         if uuid_from_message != uuid {
             return MmError::err(P2PProcessError::ValidationFailed(format!(
-                "uuid from message {} doesn't match uuid from topic {}",
-                uuid_from_message, uuid,
+                "uuid from message {uuid_from_message} doesn't match uuid from topic {uuid}",
             )));
         }
 

@@ -18,7 +18,7 @@ use mm2_metrics::{MetricType, MetricsJson};
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::{BalanceResponse, ElectrumProtocol};
 use rand::Rng;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{self as json, json, Value as Json};
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -41,6 +41,7 @@ cfg_native! {
     use futures::task::SpawnExt;
     use http::Request;
     use regex::Regex;
+    use serde::Deserialize;
     use std::fs;
     use std::io::Write;
     use std::net::Ipv4Addr;
@@ -1571,8 +1572,7 @@ impl MarketMakerIt {
         .with_timeout_secs(timeout_sec)
         .await
         .map_err(|e| ERRL!("{:?}", e))
-        // Convert `Result<Result<(), String>, String>` to `Result<(), String>`
-        .flatten()
+        .and_then(|inner_result| inner_result)
     }
 
     /// Busy-wait on the instance in-memory log until the `pred` returns `true` or `timeout_sec` expires.
@@ -1845,6 +1845,7 @@ where
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Serialize, Deserialize, Debug)]
 struct ToWaitForLogRe {
     ctx: u32,
@@ -3642,6 +3643,7 @@ pub async fn set_price(
     price: &str,
     vol: &str,
     max: bool,
+    timeout_in_minutes: Option<u16>,
 ) -> SetPriceResponse {
     let request = mm
         .rpc(&json!({
@@ -3652,6 +3654,7 @@ pub async fn set_price(
             "price": price,
             "volume": vol,
             "max": max,
+            "timeout_in_minutes": timeout_in_minutes,
         }))
         .await
         .unwrap();

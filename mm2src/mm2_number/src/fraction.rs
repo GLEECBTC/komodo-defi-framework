@@ -18,10 +18,14 @@ pub struct Fraction {
 
 impl Fraction {
     /// Numerator
-    pub fn numer(&self) -> &BigInt { self.numer.inner() }
+    pub fn numer(&self) -> &BigInt {
+        self.numer.inner()
+    }
 
     /// Denominator
-    pub fn denom(&self) -> &BigInt { self.denom.inner() }
+    pub fn denom(&self) -> &BigInt {
+        self.denom.inner()
+    }
 }
 
 impl From<BigRational> for Fraction {
@@ -35,11 +39,15 @@ impl From<BigRational> for Fraction {
 }
 
 impl From<Fraction> for BigRational {
-    fn from(fraction: Fraction) -> Self { BigRational::new(fraction.numer.into(), fraction.denom.into()) }
+    fn from(fraction: Fraction) -> Self {
+        BigRational::new(fraction.numer.into(), fraction.denom.into())
+    }
 }
 
 impl From<BigDecimal> for Fraction {
-    fn from(dec: BigDecimal) -> Fraction { from_dec_to_ratio(&dec).into() }
+    fn from(dec: BigDecimal) -> Fraction {
+        from_dec_to_ratio(&dec).into()
+    }
 }
 
 impl<'de> Deserialize<'de> for Fraction {

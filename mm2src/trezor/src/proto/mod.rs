@@ -23,7 +23,9 @@ use messages_management::*;
 macro_rules! trezor_message_impl {
     ($struct:ident, $mtype:expr) => {
         impl TrezorMessage for $struct {
-            fn message_type() -> MessageType { $mtype }
+            fn message_type() -> MessageType {
+                $mtype
+            }
         }
     };
 }
@@ -37,13 +39,21 @@ pub struct ProtoMessage {
 }
 
 impl ProtoMessage {
-    pub fn new(message_type: MessageType, payload: Vec<u8>) -> ProtoMessage { ProtoMessage { message_type, payload } }
+    pub fn new(message_type: MessageType, payload: Vec<u8>) -> ProtoMessage {
+        ProtoMessage { message_type, payload }
+    }
 
-    pub fn message_type(&self) -> MessageType { self.message_type }
+    pub fn message_type(&self) -> MessageType {
+        self.message_type
+    }
 
-    pub fn payload(&self) -> &[u8] { &self.payload }
+    pub fn payload(&self) -> &[u8] {
+        &self.payload
+    }
 
-    pub fn into_payload(self) -> Vec<u8> { self.payload }
+    pub fn into_payload(self) -> Vec<u8> {
+        self.payload
+    }
 
     /// Take the payload from the ProtoMessage and parse it to a protobuf message.
     pub fn into_message<M: prost::Message + Default>(self) -> Result<M, prost::DecodeError> {

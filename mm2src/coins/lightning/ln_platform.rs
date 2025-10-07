@@ -1,8 +1,10 @@
 use super::*;
 use crate::lightning::ln_errors::{SaveChannelClosingError, SaveChannelClosingResult};
 use crate::lightning::ln_utils::RpcBestBlock;
-use crate::utxo::rpc_clients::{BlockHashOrHeight, ConfirmedTransactionInfo, ElectrumBlockHeader, ElectrumClient,
-                               ElectrumNonce, EstimateFeeMethod, UtxoRpcClientEnum, UtxoRpcResult};
+use crate::utxo::rpc_clients::{
+    BlockHashOrHeight, ConfirmedTransactionInfo, ElectrumBlockHeader, ElectrumClient, ElectrumNonce, EstimateFeeMethod,
+    UtxoRpcClientEnum, UtxoRpcResult,
+};
 use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::utxo_standard::UtxoStandardCoin;
 use crate::utxo::GetConfirmedTxError;
@@ -19,8 +21,10 @@ use common::{block_on_f01, wait_until_sec};
 use futures::compat::Future01CompatExt;
 use futures::future::join_all;
 use keys::hash::H256;
-use lightning::chain::{chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator},
-                       Confirm, Filter, WatchedOutput};
+use lightning::chain::{
+    chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator},
+    Confirm, Filter, WatchedOutput,
+};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use spv_validation::spv_proof::TRY_SPV_PROOF_INTERVAL;
 use std::convert::TryInto;
@@ -32,10 +36,14 @@ const TRY_LOOP_INTERVAL: f64 = 60.;
 const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 10.;
 
 #[inline]
-pub fn h256_json_from_txid(txid: Txid) -> H256Json { H256Json::from(txid.as_hash().into_inner()).reversed() }
+pub fn h256_json_from_txid(txid: Txid) -> H256Json {
+    H256Json::from(txid.as_hash().into_inner()).reversed()
+}
 
 #[inline]
-pub fn h256_from_txid(txid: Txid) -> H256 { H256::from(txid.as_hash().into_inner()) }
+pub fn h256_from_txid(txid: Txid) -> H256 {
+    H256::from(txid.as_hash().into_inner())
+}
 
 pub async fn get_best_header(best_header_listener: &ElectrumClient) -> EnableLightningResult<ElectrumBlockHeader> {
     best_header_listener
@@ -77,7 +85,7 @@ pub async fn update_best_block(
                 let block_header = match deserialize(&h.hex.0) {
                     Ok(header) => header,
                     Err(e) => {
-                        error!("Block header deserialization error: {}", e.to_string());
+                        error!("Block header deserialization error: {}", e);
                         return;
                     },
                 };
@@ -144,13 +152,19 @@ pub struct LatestFees {
 
 impl LatestFees {
     #[inline]
-    fn set_background_fees(&self, fee: u64) { self.background.store(fee, Ordering::Release); }
+    fn set_background_fees(&self, fee: u64) {
+        self.background.store(fee, Ordering::Release);
+    }
 
     #[inline]
-    fn set_normal_fees(&self, fee: u64) { self.normal.store(fee, Ordering::Release); }
+    fn set_normal_fees(&self, fee: u64) {
+        self.normal.store(fee, Ordering::Release);
+    }
 
     #[inline]
-    fn set_high_priority_fees(&self, fee: u64) { self.high_priority.store(fee, Ordering::Release); }
+    fn set_high_priority_fees(&self, fee: u64) {
+        self.high_priority.store(fee, Ordering::Release);
+    }
 }
 
 pub struct Platform {
@@ -214,9 +228,13 @@ impl Platform {
     }
 
     #[inline]
-    fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
+    fn rpc_client(&self) -> &UtxoRpcClientEnum {
+        &self.coin.as_ref().rpc_client
+    }
 
-    pub fn spawner(&self) -> WeakSpawner { self.abortable_system.weak_spawner() }
+    pub fn spawner(&self) -> WeakSpawner {
+        self.abortable_system.weak_spawner()
+    }
 
     pub async fn set_latest_fees(&self) -> UtxoRpcResult<()> {
         let platform_coin = &self.coin;
@@ -270,7 +288,9 @@ impl Platform {
     }
 
     #[inline]
-    pub fn best_block_height(&self) -> u64 { self.best_block_height.load(AtomicOrdering::Acquire) }
+    pub fn best_block_height(&self) -> u64 {
+        self.best_block_height.load(AtomicOrdering::Acquire)
+    }
 
     pub fn add_tx(&self, txid: Txid) {
         let mut registered_txs = self.registered_txs.lock();
@@ -642,8 +662,12 @@ impl BroadcasterInterface for Platform {
 impl Filter for Platform {
     // Watches for this transaction on-chain
     #[inline]
-    fn register_tx(&self, txid: &Txid, _script_pubkey: &Script) { self.add_tx(*txid); }
+    fn register_tx(&self, txid: &Txid, _script_pubkey: &Script) {
+        self.add_tx(*txid);
+    }
 
     // Watches for any transactions that spend this output on-chain
-    fn register_output(&self, output: WatchedOutput) { self.add_output(output); }
+    fn register_output(&self, output: WatchedOutput) {
+        self.add_output(output);
+    }
 }

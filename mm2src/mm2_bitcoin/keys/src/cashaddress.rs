@@ -36,7 +36,7 @@ impl fmt::Display for NetworkPrefix {
             NetworkPrefix::SlpTest => "slptest",
             NetworkPrefix::Other(network) => network,
         };
-        write!(f, "{}", as_str)
+        write!(f, "{as_str}")
     }
 }
 
@@ -58,7 +58,9 @@ impl FromStr for NetworkPrefix {
 }
 
 impl From<&'static str> for NetworkPrefix {
-    fn from(s: &str) -> Self { s.parse().unwrap() }
+    fn from(s: &str) -> Self {
+        s.parse().unwrap()
+    }
 }
 
 impl NetworkPrefix {
@@ -203,11 +205,15 @@ impl CashAddress {
 impl FromStr for CashAddress {
     type Err = String;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> { CashAddress::decode(s) }
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        CashAddress::decode(s)
+    }
 }
 
 impl From<&'static str> for CashAddress {
-    fn from(s: &'static str) -> Self { s.parse().unwrap() }
+    fn from(s: &'static str) -> Self {
+        s.parse().unwrap()
+    }
 }
 
 fn split_address(addr: &str) -> Result<(NetworkPrefix, &str), String> {
@@ -415,7 +421,7 @@ mod tests {
     #[test]
     fn test_base32() {
         // the raw arrays are 5-bit packed - the condition is required by base32 encode and decode functions
-        let raw = vec![
+        let raw = [
             vec![
                 24, 14, 9, 25, 19, 30, 22, 1, 28, 0, 30, 28, 22, 7, 1, 11, 18, 7, 1, 7, 19, 23, 21, 30, 24, 25, 20, 27,
                 3, 27, 29, 10,
@@ -429,7 +435,7 @@ mod tests {
                 15, 22, 11, 27,
             ],
         ];
-        let encoded = vec![
+        let encoded = [
             "cwfen7kpuq7uk8ptj8p8nh47ce5mrma2",
             "gg0guaszp3e93yzg3405tcasx5tzkjk9",
             "vz4cqq9w8xkekl5fjv2xtu8wnf0a0ktm",
@@ -447,14 +453,14 @@ mod tests {
 
     #[test]
     fn test_encode_decode() {
-        let encoded = vec![
+        let encoded = [
             "bitcoincash:pq4ql3ph6738xuv2cycduvkpu4rdwqge5q2uxdfg6f",
             "qrplwyx7kueqkrh6dmd3fclta6u32hafp5tnpkchx2",
             "BitCoinCash:QRPLWYX7KUEQKRH6DMD3FCLTA6U32HAFP5TNPKCHX2",
             "bchtest:qqjr7yu573z4faxw8ltgvjwpntwys08fysk07zmvce",
             "bchtest:pnq8zwpj8cq05n7pytfmskuk9r4gzzel8qtsvwz79zdskftrzxtar994cgutavfklvmgm6ynej",
         ];
-        let expected_addresses = vec![
+        let expected_addresses = [
             CashAddress {
                 prefix: "bitcoincash".into(),
                 hash: vec![

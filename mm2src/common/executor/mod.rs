@@ -1,7 +1,8 @@
 use futures::future::abortable;
 use futures::{Future as Future03, FutureExt};
 
-#[cfg(not(target_arch = "wasm32"))] mod native_executor;
+#[cfg(not(target_arch = "wasm32"))]
+mod native_executor;
 #[cfg(not(target_arch = "wasm32"))]
 pub use native_executor::{spawn, Timer};
 
@@ -14,7 +15,8 @@ pub use spawner::{BoxFutureSpawner, SpawnAbortable, SpawnFuture};
 mod abort_on_drop;
 pub use abort_on_drop::AbortOnDropHandle;
 
-#[cfg(target_arch = "wasm32")] mod wasm_executor;
+#[cfg(target_arch = "wasm32")]
+mod wasm_executor;
 #[cfg(target_arch = "wasm32")]
 pub use wasm_executor::{spawn, spawn_local, spawn_local_abortable, Timer};
 

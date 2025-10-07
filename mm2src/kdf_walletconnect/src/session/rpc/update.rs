@@ -24,7 +24,7 @@ pub(crate) async fn reply_session_update_request(
             .caip2_validate()
             .map_to_mm(|err| WalletConnectError::InternalError(err.to_string()))?;
         session.namespaces = update.namespaces.0;
-        let session = session;
+
         info!("Updated extended, info: {:?}", session.topic);
     }
 

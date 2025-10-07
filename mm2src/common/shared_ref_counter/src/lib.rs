@@ -22,9 +22,12 @@
 //! Some operations over `SharedRc` may lead to a panic if the `enable` features is activated.
 //! This behavior is considered acceptable since the `enable` feature is expected to be used for **debug** purposes only.
 
-#[cfg(not(feature = "enable"))] mod disable;
-#[cfg(feature = "enable")] mod enable;
+#[cfg(not(feature = "enable"))]
+mod disable;
+#[cfg(feature = "enable")]
+mod enable;
 
 #[cfg(not(feature = "enable"))]
 pub use disable::{SharedRc, WeakRc};
-#[cfg(feature = "enable")] pub use enable::{SharedRc, WeakRc};
+#[cfg(feature = "enable")]
+pub use enable::{SharedRc, WeakRc};

@@ -1,13 +1,14 @@
 use common::log::{debug, error, info};
 use common::StatusCode;
-use mm2_err_handle::prelude::{MmError, OrMmError};
+use mm2_err_handle::prelude::*;
 use mm2_net::transport::SlurpError;
 #[cfg(not(feature = "run-docker-tests"))]
 use mm2_number::bigdecimal_custom::CheckedDivision;
 use mm2_number::{BigDecimal, MmNumber};
 use num_traits::CheckedDiv;
 use std::collections::HashMap;
-#[cfg(feature = "run-docker-tests")] use std::str::FromStr;
+#[cfg(feature = "run-docker-tests")]
+use std::str::FromStr;
 use std::str::Utf8Error;
 
 pub const PRICE_ENDPOINTS: [&str; 3] = [
@@ -24,15 +25,21 @@ pub enum PriceServiceRequestError {
 }
 
 impl From<serde_json::Error> for PriceServiceRequestError {
-    fn from(error: serde_json::Error) -> Self { PriceServiceRequestError::ParsingAnswerError(error.to_string()) }
+    fn from(error: serde_json::Error) -> Self {
+        PriceServiceRequestError::ParsingAnswerError(error.to_string())
+    }
 }
 
 impl From<std::string::String> for PriceServiceRequestError {
-    fn from(error: String) -> Self { PriceServiceRequestError::HttpProcessError(error) }
+    fn from(error: String) -> Self {
+        PriceServiceRequestError::HttpProcessError(error)
+    }
 }
 
 impl From<std::str::Utf8Error> for PriceServiceRequestError {
-    fn from(error: Utf8Error) -> Self { PriceServiceRequestError::HttpProcessError(error.to_string()) }
+    fn from(error: Utf8Error) -> Self {
+        PriceServiceRequestError::HttpProcessError(error.to_string())
+    }
 }
 
 impl From<SlurpError> for PriceServiceRequestError {
@@ -188,7 +195,7 @@ impl TickerInfosRegistry {
 #[cfg(not(target_arch = "wasm32"))]
 async fn process_price_request(price_url: &str) -> Result<TickerInfosRegistry, MmError<PriceServiceRequestError>> {
     debug!("Fetching price from: {}", price_url);
-    let (status, headers, body) = mm2_net::native_http::slurp_url(price_url).await?;
+    let (status, headers, body) = mm2_net::native_http::slurp_url(price_url).await.map_mm_err()?;
     let (status_code, body, _) = (status, std::str::from_utf8(&body)?.trim().into(), headers);
     if status_code != StatusCode::OK {
         return MmError::err(PriceServiceRequestError::HttpProcessError(body));
@@ -200,7 +207,7 @@ async fn process_price_request(price_url: &str) -> Result<TickerInfosRegistry, M
 #[cfg(target_arch = "wasm32")]
 async fn process_price_request(price_url: &str) -> Result<TickerInfosRegistry, MmError<PriceServiceRequestError>> {
     debug!("Fetching price from: {}", price_url);
-    let (status, headers, body) = mm2_net::wasm::http::slurp_url(price_url).await?;
+    let (status, headers, body) = mm2_net::wasm::http::slurp_url(price_url).await.map_mm_err()?;
     let (status_code, body, _) = (status, std::str::from_utf8(&body)?.trim().into(), headers);
     if status_code != StatusCode::OK {
         return MmError::err(PriceServiceRequestError::HttpProcessError(body));
@@ -321,56 +328,65 @@ mod tests {
         assert_eq!(rates.base_provider, Provider::Unknown);
         assert_eq!(rates.rel_provider, Provider::Unknown);
 
-        registry.0.insert("KMD".to_string(), TickerInfos {
-            ticker: "KMD".to_string(),
-            last_price: MmNumber::from("10"),
-            last_updated: "".to_string(),
-            last_updated_timestamp: SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            volume24_h: MmNumber::from("25000"),
-            price_provider: Provider::Binance,
-            volume_provider: Provider::Coinpaprika,
-            sparkline_7_d: None,
-            sparkline_provider: Default::default(),
-            change_24_h: MmNumber::default(),
-            change_24_h_provider: Default::default(),
-        });
+        registry.0.insert(
+            "KMD".to_string(),
+            TickerInfos {
+                ticker: "KMD".to_string(),
+                last_price: MmNumber::from("10"),
+                last_updated: "".to_string(),
+                last_updated_timestamp: SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
+                volume24_h: MmNumber::from("25000"),
+                price_provider: Provider::Binance,
+                volume_provider: Provider::Coinpaprika,
+                sparkline_7_d: None,
+                sparkline_provider: Default::default(),
+                change_24_h: MmNumber::default(),
+                change_24_h_provider: Default::default(),
+            },
+        );
 
-        registry.0.insert("LTC".to_string(), TickerInfos {
-            ticker: "LTC".to_string(),
-            last_price: MmNumber::from("500.0"),
-            last_updated: "".to_string(),
-            last_updated_timestamp: SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            volume24_h: MmNumber::from("25000"),
-            price_provider: Provider::Coingecko,
-            volume_provider: Provider::Binance,
-            sparkline_7_d: None,
-            sparkline_provider: Default::default(),
-            change_24_h: MmNumber::default(),
-            change_24_h_provider: Default::default(),
-        });
+        registry.0.insert(
+            "LTC".to_string(),
+            TickerInfos {
+                ticker: "LTC".to_string(),
+                last_price: MmNumber::from("500.0"),
+                last_updated: "".to_string(),
+                last_updated_timestamp: SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
+                volume24_h: MmNumber::from("25000"),
+                price_provider: Provider::Coingecko,
+                volume_provider: Provider::Binance,
+                sparkline_7_d: None,
+                sparkline_provider: Default::default(),
+                change_24_h: MmNumber::default(),
+                change_24_h_provider: Default::default(),
+            },
+        );
 
-        registry.0.insert("USDT".to_string(), TickerInfos {
-            ticker: "USDT".to_string(),
-            last_price: MmNumber::from("1"),
-            last_updated: "".to_string(),
-            last_updated_timestamp: SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            volume24_h: MmNumber::from("25000"),
-            price_provider: Provider::Coingecko,
-            volume_provider: Provider::Binance,
-            sparkline_7_d: None,
-            sparkline_provider: Default::default(),
-            change_24_h: MmNumber::default(),
-            change_24_h_provider: Default::default(),
-        });
+        registry.0.insert(
+            "USDT".to_string(),
+            TickerInfos {
+                ticker: "USDT".to_string(),
+                last_price: MmNumber::from("1"),
+                last_updated: "".to_string(),
+                last_updated_timestamp: SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
+                volume24_h: MmNumber::from("25000"),
+                price_provider: Provider::Coingecko,
+                volume_provider: Provider::Binance,
+                sparkline_7_d: None,
+                sparkline_provider: Default::default(),
+                change_24_h: MmNumber::default(),
+                change_24_h_provider: Default::default(),
+            },
+        );
 
         let rates = registry.get_cex_rates("KMD", "LTC").unwrap_or_default();
         assert_eq!(rates.base_provider, Provider::Binance);

@@ -11,21 +11,21 @@ pub type MySwapsResult<T> = Result<T, MmError<MySwapsError>>;
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 #[derive(Debug, Display, PartialEq)]
 pub enum MySwapsError {
-    #[display(fmt = "Error serializing swap: {}", _0)]
+    #[display(fmt = "Error serializing swap: {_0}")]
     ErrorSerializingItem(String),
-    #[display(fmt = "Error deserializing swap: {}", _0)]
+    #[display(fmt = "Error deserializing swap: {_0}")]
     ErrorDeserializingItem(String),
     #[display(fmt = "Invalid timestamp range")]
     InvalidTimestampRange,
-    #[display(fmt = "Error saving swap: {}", _0)]
+    #[display(fmt = "Error saving swap: {_0}")]
     ErrorSavingSwap(String),
-    #[display(fmt = "'from_uuid' not found: {}", _0)]
+    #[display(fmt = "'from_uuid' not found: {_0}")]
     FromUuidNotFound(Uuid),
-    #[display(fmt = "Error parsing uuid: {}", _0)]
+    #[display(fmt = "Error parsing uuid: {_0}")]
     UuidParse(uuid::Error),
-    #[display(fmt = "Unknown SQL error: {}", _0)]
+    #[display(fmt = "Unknown SQL error: {_0}")]
     UnknownSqlError(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     InternalError(String),
 }
 
@@ -52,7 +52,9 @@ pub struct MySwapsStorage {
 }
 
 impl MySwapsStorage {
-    pub fn new(ctx: MmArc) -> MySwapsStorage { MySwapsStorage { ctx } }
+    pub fn new(ctx: MmArc) -> MySwapsStorage {
+        MySwapsStorage { ctx }
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -71,7 +73,9 @@ mod native_impl {
     }
 
     impl From<SqlError> for MySwapsError {
-        fn from(e: SqlError) -> Self { MySwapsError::UnknownSqlError(e.to_string()) }
+        fn from(e: SqlError) -> Self {
+            MySwapsError::UnknownSqlError(e.to_string())
+        }
     }
 
     #[async_trait]
@@ -163,7 +167,9 @@ mod wasm_impl {
     }
 
     impl From<InitDbError> for MySwapsError {
-        fn from(e: InitDbError) -> Self { MySwapsError::InternalError(e.to_string()) }
+        fn from(e: InitDbError) -> Self {
+            MySwapsError::InternalError(e.to_string())
+        }
     }
 
     #[async_trait]
@@ -177,9 +183,9 @@ mod wasm_impl {
             swap_type: u8,
         ) -> MySwapsResult<()> {
             let swap_ctx = SwapsContext::from_ctx(&self.ctx).map_to_mm(MySwapsError::InternalError)?;
-            let db = swap_ctx.swap_db().await?;
-            let transaction = db.transaction().await?;
-            let my_swaps_table = transaction.table::<MySwapsFiltersTable>().await?;
+            let db = swap_ctx.swap_db().await.map_mm_err()?;
+            let transaction = db.transaction().await.map_mm_err()?;
+            let my_swaps_table = transaction.table::<MySwapsFiltersTable>().await.map_mm_err()?;
 
             let item = MySwapsFiltersTable {
                 uuid,
@@ -189,7 +195,7 @@ mod wasm_impl {
                 is_finished: false.into(),
                 swap_type,
             };
-            my_swaps_table.add_item(&item).await?;
+            my_swaps_table.add_item(&item).await.map_mm_err()?;
             Ok(())
         }
 
@@ -199,9 +205,9 @@ mod wasm_impl {
             paging_options: Option<&PagingOptions>,
         ) -> MySwapsResult<MyRecentSwapsUuids> {
             let swap_ctx = SwapsContext::from_ctx(&self.ctx).map_to_mm(MySwapsError::InternalError)?;
-            let db = swap_ctx.swap_db().await?;
-            let transaction = db.transaction().await?;
-            let my_swaps_table = transaction.table::<MySwapsFiltersTable>().await?;
+            let db = swap_ctx.swap_db().await.map_mm_err()?;
+            let transaction = db.transaction().await.map_mm_err()?;
+            let my_swaps_table = transaction.table::<MySwapsFiltersTable>().await.map_mm_err()?;
 
             let from_timestamp = filter.from_timestamp.map(|t| t as u32).unwrap_or_default();
             let to_timestamp = filter.to_timestamp.map(|t| t as u32).unwrap_or(u32::MAX);
@@ -210,46 +216,50 @@ mod wasm_impl {
             }
 
             let items = match (&filter.my_coin, &filter.other_coin) {
-                (Some(my_coin), Some(other_coin)) => {
-                    my_swaps_table
-                        .cursor_builder()
-                        .only("my_coin", my_coin)?
-                        .only("other_coin", other_coin)?
-                        .bound("started_at", from_timestamp, to_timestamp)
-                        .open_cursor("with_my_other_coins")
-                        .await?
-                        .collect()
-                        .await?
-                },
-                (Some(my_coin), None) => {
-                    my_swaps_table
-                        .cursor_builder()
-                        .only("my_coin", my_coin)?
-                        .bound("started_at", from_timestamp, to_timestamp)
-                        .open_cursor("with_my_coin")
-                        .await?
-                        .collect()
-                        .await?
-                },
-                (None, Some(other_coin)) => {
-                    my_swaps_table
-                        .cursor_builder()
-                        .only("other_coin", other_coin)?
-                        .bound("started_at", from_timestamp, to_timestamp)
-                        .open_cursor("with_other_coin")
-                        .await?
-                        .collect()
-                        .await?
-                },
-                (None, None) => {
-                    my_swaps_table
-                        .cursor_builder()
-                        .bound("started_at", from_timestamp, to_timestamp)
-                        .open_cursor("started_at")
-                        .await?
-                        .collect()
-                        .await?
-                },
+                (Some(my_coin), Some(other_coin)) => my_swaps_table
+                    .cursor_builder()
+                    .only("my_coin", my_coin)
+                    .map_mm_err()?
+                    .only("other_coin", other_coin)
+                    .map_mm_err()?
+                    .bound("started_at", from_timestamp, to_timestamp)
+                    .open_cursor("with_my_other_coins")
+                    .await
+                    .map_mm_err()?
+                    .collect()
+                    .await
+                    .map_mm_err()?,
+                (Some(my_coin), None) => my_swaps_table
+                    .cursor_builder()
+                    .only("my_coin", my_coin)
+                    .map_mm_err()?
+                    .bound("started_at", from_timestamp, to_timestamp)
+                    .open_cursor("with_my_coin")
+                    .await
+                    .map_mm_err()?
+                    .collect()
+                    .await
+                    .map_mm_err()?,
+                (None, Some(other_coin)) => my_swaps_table
+                    .cursor_builder()
+                    .only("other_coin", other_coin)
+                    .map_mm_err()?
+                    .bound("started_at", from_timestamp, to_timestamp)
+                    .open_cursor("with_other_coin")
+                    .await
+                    .map_mm_err()?
+                    .collect()
+                    .await
+                    .map_mm_err()?,
+                (None, None) => my_swaps_table
+                    .cursor_builder()
+                    .bound("started_at", from_timestamp, to_timestamp)
+                    .open_cursor("started_at")
+                    .await
+                    .map_mm_err()?
+                    .collect()
+                    .await
+                    .map_mm_err()?,
             };
 
             let uuids: BTreeSet<OrderedUuid> = items

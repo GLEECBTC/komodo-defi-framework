@@ -5,34 +5,37 @@ use crate::eth::EthCoinType;
 use crate::hd_wallet::{HDAddressSelector, HDCoinAddress, HDCoinHDAccount, HDCoinWithdrawOps, TrezorCoinError};
 use crate::lp_price::get_base_price_in_rel;
 use crate::rpc_command::init_withdraw::WithdrawTaskHandleShared;
-use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentInfo, UnspentMap, UtxoRpcClientEnum,
-                               UtxoRpcClientOps, UtxoRpcResult};
+use crate::utxo::rpc_clients::{
+    electrum_script_hash, BlockHashOrHeight, UnspentInfo, UnspentMap, UtxoRpcClientEnum, UtxoRpcClientOps,
+    UtxoRpcResult,
+};
 use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_hd_wallet::UtxoHDAddress;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::watcher_common::validate_watcher_reward;
-use crate::{scan_for_new_addresses_impl, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput,
-            DexFee, DexFeeBurnDestination, GenPreimageResult, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
-            GetWithdrawSenderAddress, RawTransactionError, RawTransactionRequest, RawTransactionRes,
-            RawTransactionResult, RefundFundingSecretArgs, RefundMakerPaymentSecretArgs, RefundPaymentArgs,
-            RewardTarget, SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerPaymentSpendPreimageInput,
-            SendPaymentArgs, SendTakerFundingArgs, SignRawTransactionEnum, SignRawTransactionRequest,
-            SignUtxoTransactionParams, SignatureError, SignatureResult, SpendMakerPaymentArgs, SpendPaymentArgs,
-            SwapOps, SwapTxTypeWithSecretHash, TradePreimageValue, TransactionData, TransactionFut, TransactionResult,
-            TxFeeDetails, TxGenError, TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult,
-            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, ValidateSwapV2TxError,
-            ValidateSwapV2TxResult, ValidateTakerFundingArgs, ValidateTakerFundingSpendPreimageError,
-            ValidateTakerFundingSpendPreimageResult, ValidateTakerPaymentSpendPreimageError,
-            ValidateTakerPaymentSpendPreimageResult, ValidateWatcherSpendInput, VerificationError, VerificationResult,
-            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
-            WithdrawResult, WithdrawSenderAddress, EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
-            INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
+use crate::{
+    scan_for_new_addresses_impl, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput, DexFee,
+    DexFeeBurnDestination, GenPreimageResult, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
+    GetWithdrawSenderAddress, RawTransactionError, RawTransactionRequest, RawTransactionRes, RawTransactionResult,
+    RefundFundingSecretArgs, RefundMakerPaymentSecretArgs, RefundPaymentArgs, RewardTarget, SearchForSwapTxSpendInput,
+    SendMakerPaymentArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SendTakerFundingArgs,
+    SignRawTransactionEnum, SignRawTransactionRequest, SignUtxoTransactionParams, SignatureError, SignatureResult,
+    SpendMakerPaymentArgs, SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash, TradePreimageValue, TransactionData,
+    TransactionFut, TransactionResult, TxFeeDetails, TxGenError, TxMarshalingErr, TxPreimageWithSig,
+    ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, ValidateSwapV2TxError,
+    ValidateSwapV2TxResult, ValidateTakerFundingArgs, ValidateTakerFundingSpendPreimageError,
+    ValidateTakerFundingSpendPreimageResult, ValidateTakerPaymentSpendPreimageError,
+    ValidateTakerPaymentSpendPreimageResult, ValidateWatcherSpendInput, VerificationError, VerificationResult,
+    WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawResult,
+    WithdrawSenderAddress, EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG,
+    INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG,
+};
 use crate::{MmCoinEnum, WatcherReward, WatcherRewardError};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
-use bitcrypto::{dhash256, ripemd160};
+use bitcrypto::{ripemd160, sign_message_hash};
 use chain::constants::SEQUENCE_FINAL;
 use chain::{OutPoint, TransactionInput, TransactionOutput};
 use common::executor::Timer;
@@ -44,21 +47,24 @@ use futures::future::{FutureExt, TryFutureExt};
 use futures01::future::Either;
 use itertools::Itertools;
 use keys::bytes::Bytes;
-#[cfg(test)] use keys::prefixes::{KMD_PREFIXES, T_QTUM_PREFIXES};
-use keys::{Address, AddressBuilder, AddressBuilderOption, AddressFormat as UtxoAddressFormat, AddressFormat,
-           AddressHashEnum, AddressScriptType, CompactSignature, Public, SegwitAddress};
+#[cfg(test)]
+use keys::prefixes::{KMD_PREFIXES, T_QTUM_PREFIXES};
+use keys::{
+    Address, AddressBuilder, AddressBuilderOption, AddressFormat as UtxoAddressFormat, AddressFormat, AddressHashEnum,
+    AddressScriptType, CompactSignature, Public, SegwitAddress,
+};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::bigdecimal_custom::CheckedDivision;
 use mm2_number::{BigDecimal, MmNumber};
 use primitives::hash::H512;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash, TransactionInputEnum, H256 as H256Json};
-#[cfg(test)] use rpc_clients::NativeClientImpl;
+#[cfg(test)]
+use rpc_clients::NativeClientImpl;
 use script::{Builder, Opcode, Script, ScriptAddress, TransactionInputSigner, UnsignedTransactionInput};
 use secp256k1::{PublicKey, Signature as SecpSignature};
 use serde_json::{self as json};
-use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, CompactInteger, Serializable, Stream,
-                    SERIALIZE_TRANSACTION_WITNESS};
+use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, SERIALIZE_TRANSACTION_WITNESS};
 use std::cmp::Ordering;
 use std::collections::hash_map::{Entry, HashMap};
 use std::convert::TryFrom;
@@ -66,8 +72,9 @@ use std::str::FromStr;
 use std::sync::atomic::Ordering as AtomicOrdering;
 #[cfg(test)]
 use utxo_common_tests::{utxo_coin_fields_for_test, utxo_coin_from_fields};
-use utxo_signer::with_key_pair::{calc_and_sign_sighash, p2sh_spend, signature_hash_to_sign, SIGHASH_ALL,
-                                 SIGHASH_SINGLE};
+use utxo_signer::with_key_pair::{
+    calc_and_sign_sighash, p2sh_spend, signature_hash_to_sign, SIGHASH_ALL, SIGHASH_SINGLE,
+};
 use utxo_signer::UtxoSignerOps;
 
 pub mod utxo_tx_history_v2_common;
@@ -106,6 +113,7 @@ pub async fn get_fee_rate(coin: &UtxoCoinFields) -> UtxoRpcResult<ActualFeeRate>
             Ok(ActualFeeRate::Dynamic(fee_rate))
         },
         FeeRate::FixedPerKb(satoshis) => Ok(ActualFeeRate::FixedPerKb(*satoshis)),
+        FeeRate::FixedPerKbDingo(satoshis) => Ok(ActualFeeRate::FixedPerKbDingo(*satoshis)),
     }
 }
 
@@ -149,8 +157,7 @@ where
         Ok(script) => script.to_bytes(),
         Err(e) => {
             return MmError::err(format!(
-                "Error generating the output_script for the enabled_address={}: {}",
-                enabled_address, e
+                "Error generating the output_script for the enabled_address={enabled_address}: {e}"
             ));
         },
     };
@@ -163,7 +170,9 @@ pub async fn produce_hd_address_scanner<T>(coin: &T) -> BalanceResult<UtxoAddres
 where
     T: AsRef<UtxoCoinFields>,
 {
-    Ok(UtxoAddressScanner::init(coin.as_ref().rpc_client.clone()).await?)
+    UtxoAddressScanner::init(coin.as_ref().rpc_client.clone())
+        .await
+        .map_mm_err()
 }
 
 pub async fn scan_for_new_addresses<T>(
@@ -235,7 +244,7 @@ where
     T: UtxoCommonOps + GetUtxoListOps + MarketCoinOps,
 {
     if coin.as_ref().check_utxo_maturity {
-        let (unspents, _) = coin.get_mature_unspent_ordered_list(address).await?;
+        let (unspents, _) = coin.get_mature_unspent_ordered_list(address).await.map_mm_err()?;
         return Ok(unspents.to_coin_balance(coin.as_ref().decimals));
     }
 
@@ -259,12 +268,15 @@ where
     T: UtxoCommonOps + GetUtxoMapOps + MarketCoinOps,
 {
     if coin.as_ref().check_utxo_maturity {
-        let (unspents_map, _) = coin.get_mature_unspent_ordered_map(addresses.clone()).await?;
+        let (unspents_map, _) = coin
+            .get_mature_unspent_ordered_map(addresses.clone())
+            .await
+            .map_mm_err()?;
         addresses
             .into_iter()
             .map(|address| {
                 let unspents = unspents_map.get(&address).or_mm_err(|| {
-                    let error = format!("'get_mature_unspent_ordered_map' should have returned '{}'", address);
+                    let error = format!("'get_mature_unspent_ordered_map' should have returned '{address}'");
                     BalanceError::Internal(error)
                 })?;
                 let balance = unspents.to_coin_balance(coin.as_ref().decimals);
@@ -277,7 +289,8 @@ where
             .rpc_client
             .display_balances(addresses.clone(), coin.as_ref().decimals)
             .compat()
-            .await?
+            .await
+            .map_mm_err()?
             .into_iter()
             .map(|(address, spendable)| {
                 let unspendable = BigDecimal::from(0);
@@ -288,7 +301,9 @@ where
     }
 }
 
-pub fn derivation_method(coin: &UtxoCoinFields) -> &DerivationMethod<Address, UtxoHDWallet> { &coin.derivation_method }
+pub fn derivation_method(coin: &UtxoCoinFields) -> &DerivationMethod<Address, UtxoHDWallet> {
+    &coin.derivation_method
+}
 
 /// returns the tx fee required to be paid for HTLC spend transaction
 pub async fn get_htlc_spend_fee<T: UtxoCommonOps>(
@@ -302,9 +317,10 @@ pub async fn get_htlc_spend_fee<T: UtxoCommonOps>(
             // increase dynamic fee for a chance if it grows in the swap
             ActualFeeRate::Dynamic(increase_dynamic_fee_by_stage(coin, dynamic_fee_rate, stage))
         },
-        ActualFeeRate::FixedPerKb(_) => fee_rate,
+        ActualFeeRate::FixedPerKb(_) | ActualFeeRate::FixedPerKbDingo(_) => fee_rate,
     };
-    let min_relay_fee_rate = get_min_relay_rate(coin).await?;
+
+    let min_relay_fee_rate = get_min_relay_rate(coin).await.map_mm_err()?;
     Ok(get_tx_fee_with_relay_fee(&fee_rate, tx_size, min_relay_fee_rate))
 }
 
@@ -348,7 +364,7 @@ pub fn denominate_satoshis(coin: &UtxoCoinFields, satoshi: i64) -> f64 {
     satoshi as f64 / 10f64.powf(coin.decimals as f64)
 }
 
-pub fn base_coin_balance<T>(coin: &T) -> BalanceFut<BigDecimal>
+pub fn platform_coin_balance<T>(coin: &T) -> BalanceFut<BigDecimal>
 where
     T: MarketCoinOps,
 {
@@ -397,7 +413,7 @@ pub fn my_public_key(coin: &UtxoCoinFields) -> Result<&Public, MmError<Unexpecte
 
 pub fn checked_address_from_str<T: UtxoCommonOps>(coin: &T, address: &str) -> MmResult<Address, AddrFromStrError> {
     let addr = address_from_str_unchecked(coin.as_ref(), address)?;
-    check_withdraw_address_supported(coin, &addr)?;
+    check_withdraw_address_supported(coin, &addr).map_mm_err()?;
     Ok(addr)
 }
 
@@ -656,11 +672,14 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
                 let tx_fee = self.total_tx_fee_needed();
                 let min_output = tx_fee + self.dust();
                 let val = self.tx.outputs[i].value;
-                return_err_if!(val < min_output, GenerateTxError::DeductFeeFromOutputFailed {
-                    output_idx: i,
-                    output_value: val,
-                    required: min_output,
-                });
+                return_err_if!(
+                    val < min_output,
+                    GenerateTxError::DeductFeeFromOutputFailed {
+                        output_idx: i,
+                        output_value: val,
+                        required: min_output,
+                    }
+                );
                 self.tx.outputs[i].value -= tx_fee;
                 Ok(tx_fee)
             },
@@ -671,10 +690,13 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
         for output in self.outputs.iter() {
             let script: Script = output.script_pubkey.clone().into();
             if script.opcodes().next() != Some(Ok(Opcode::OP_RETURN)) {
-                return_err_if!(output.value < self.dust(), GenerateTxError::OutputValueLessThanDust {
-                    value: output.value,
-                    dust: self.dust()
-                });
+                return_err_if!(
+                    output.value < self.dust(),
+                    GenerateTxError::OutputValueLessThanDust {
+                        value: output.value,
+                        dust: self.dust()
+                    }
+                );
             }
         }
         Ok(())
@@ -697,7 +719,9 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
         }
     }
 
-    fn total_tx_fee_needed(&self) -> u64 { self.tx_fee_needed + self.gas_fee.unwrap_or(0u64) }
+    fn total_tx_fee_needed(&self) -> u64 {
+        self.tx_fee_needed + self.gas_fee.unwrap_or(0u64)
+    }
 
     fn tx_fee_fact(&self) -> MmResult<u64, GenerateTxError> {
         (self.sum_inputs + self.interest)
@@ -720,7 +744,7 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
 
         let actual_fee_rate = match self.fee {
             Some(fee) => fee,
-            None => coin.get_fee_rate().await?,
+            None => coin.get_fee_rate().await.map_mm_err()?,
         };
 
         return_err_if!(self.outputs.is_empty(), GenerateTxError::EmptyOutputs);
@@ -734,24 +758,27 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
             }
         );
 
-        self.min_relay_fee_rate = get_min_relay_rate(coin).await?;
+        self.min_relay_fee_rate = get_min_relay_rate(coin).await.map_mm_err()?;
 
         let mut one_time_fee_update = false;
         loop {
             let required_amount_0 = self.required_amount();
             self.sum_inputs = self.add_tx_inputs(required_amount_0);
             self.sum_outputs = self.add_tx_outputs();
-            self.interest = coin.calc_interest_if_required(&mut self.tx).await?;
+            self.interest = coin.calc_interest_if_required(&mut self.tx).await.map_mm_err()?;
 
             // try once tx_fee without the change output (if maybe txfee fits between total inputs and outputs)
             if !one_time_fee_update {
                 self.update_tx_fee(from.addr_format(), &actual_fee_rate);
                 one_time_fee_update = true;
             }
-            return_err_if!(self.sum_inputs < required_amount_0, GenerateTxError::NotEnoughUtxos {
-                sum_utxos: self.sum_inputs,
-                required: self.required_amount(), // send updated required amount, with txfee
-            });
+            return_err_if!(
+                self.sum_inputs < required_amount_0,
+                GenerateTxError::NotEnoughUtxos {
+                    sum_utxos: self.sum_inputs,
+                    required: self.required_amount(), // send updated required amount, with txfee
+                }
+            );
 
             self.sum_outputs = self
                 .sum_outputs
@@ -857,13 +884,15 @@ pub async fn calc_interest_if_required<T: UtxoCommonOps>(
     Ok(interest)
 }
 
-pub fn is_kmd<T: UtxoCommonOps>(coin: &T) -> bool { &coin.as_ref().conf.ticker == "KMD" }
+pub fn is_kmd<T: UtxoCommonOps>(coin: &T) -> bool {
+    &coin.as_ref().conf.ticker == "KMD"
+}
 
 /// Helper to get min relay fee rate and convert to sat
 async fn get_min_relay_rate<T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps>(coin: &T) -> UtxoRpcResult<Option<u64>> {
     if coin.as_ref().conf.force_min_relay_fee {
         let fee_dec = coin.as_ref().rpc_client.get_relay_fee().compat().await?;
-        let min_relay_fee_rate = sat_from_big_decimal(&fee_dec, coin.as_ref().decimals)?;
+        let min_relay_fee_rate = sat_from_big_decimal(&fee_dec, coin.as_ref().decimals).map_mm_err()?;
         Ok(Some(min_relay_fee_rate))
     } else {
         Ok(None)
@@ -1037,18 +1066,17 @@ async fn gen_taker_funding_spend_preimage<T: UtxoCommonOps>(
         .value;
 
     let fee = match fee {
-        FundingSpendFeeSetting::GetFromCoin => {
-            coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
-                .await?
-        },
+        FundingSpendFeeSetting::GetFromCoin => coin
+            .get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
+            .await
+            .map_mm_err()?,
         FundingSpendFeeSetting::UseExact(f) => f,
     };
 
     let fee_plus_dust = fee + coin.as_ref().dust_amount;
     if funding_amount < fee_plus_dust {
         return MmError::err(TxGenError::TxFeeTooHigh(format!(
-            "Fee + dust {} is larger than funding amount {}",
-            fee_plus_dust, funding_amount
+            "Fee + dust {fee_plus_dust} is larger than funding amount {funding_amount}"
         )));
     }
 
@@ -1096,7 +1124,8 @@ pub async fn gen_and_sign_taker_funding_spend_preimage<T: UtxoCommonOps>(
         coin.as_ref().conf.signature_version,
         SIGHASH_ALL,
         coin.as_ref().conf.fork_id,
-    )?;
+    )
+    .map_mm_err()?;
     Ok(TxPreimageWithSig {
         preimage: preimage.into(),
         signature: signature.take().into(),
@@ -1124,14 +1153,14 @@ pub async fn validate_taker_funding_spend_preimage<T: UtxoCommonOps + SwapOps>(
 
     if payment_amount > funding_amount {
         return MmError::err(ValidateTakerFundingSpendPreimageError::InvalidPreimage(format!(
-            "Preimage output {} larger than funding input {}",
-            payment_amount, funding_amount
+            "Preimage output {payment_amount} larger than funding input {funding_amount}"
         )));
     }
 
     let expected_fee = coin
         .get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
-        .await?;
+        .await
+        .map_mm_err()?;
 
     let actual_fee = funding_amount - payment_amount;
 
@@ -1139,8 +1168,7 @@ pub async fn validate_taker_funding_spend_preimage<T: UtxoCommonOps + SwapOps>(
 
     if !(0.9..=1.1).contains(&fee_div) {
         return MmError::err(ValidateTakerFundingSpendPreimageError::UnexpectedPreimageFee(format!(
-            "Too large difference between expected {} and actual {} fees",
-            expected_fee, actual_fee
+            "Too large difference between expected {expected_fee} and actual {actual_fee} fees"
         )));
     }
 
@@ -1150,7 +1178,8 @@ pub async fn validate_taker_funding_spend_preimage<T: UtxoCommonOps + SwapOps>(
         NTimeSetting::UseValue(preimage.preimage.n_time),
         FundingSpendFeeSetting::UseExact(actual_fee),
     )
-    .await?;
+    .await
+    .map_mm_err()?;
 
     let funding_time_lock = gen_args
         .funding_time_lock
@@ -1169,7 +1198,8 @@ pub async fn validate_taker_funding_spend_preimage<T: UtxoCommonOps + SwapOps>(
         coin.as_ref().conf.signature_version,
         SIGHASH_ALL,
         coin.as_ref().conf.fork_id,
-    )?;
+    )
+    .map_mm_err()?;
 
     if !gen_args
         .maker_pub
@@ -1284,7 +1314,8 @@ async fn gen_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
             })?;
             let tx_fee = coin
                 .get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
-                .await?;
+                .await
+                .map_mm_err()?;
             let dex_fee_value = if matches!(args.dex_fee, &DexFee::WithBurn { .. }) {
                 outputs[0].value + outputs[1].value
             } else {
@@ -1298,13 +1329,11 @@ async fn gen_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
             let maker_value = prev_value
                 .checked_sub(dex_fee_value)
                 .ok_or(TxGenError::PrevOutputTooLow(format!(
-                    "taker value too low: {}",
-                    prev_value
+                    "taker value too low: {prev_value}"
                 )))?
                 .checked_sub(tx_fee)
                 .ok_or(TxGenError::PrevOutputTooLow(format!(
-                    "taker value too low: {}",
-                    prev_value
+                    "taker value too low: {prev_value}"
                 )))?;
             // taker also adds maker output as we can't use SIGHASH_SINGLE with two outputs, dex fee and burn,
             // and both the maker and taker sign all outputs:
@@ -1380,7 +1409,8 @@ pub async fn gen_and_sign_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOp
         coin.as_ref().conf.signature_version,
         sig_hash_type,
         coin.as_ref().conf.fork_id,
-    )?;
+    )
+    .map_mm_err()?;
     Ok(TxPreimageWithSig {
         preimage: preimage.into(),
         signature: signature.take().into(),
@@ -1397,7 +1427,9 @@ pub async fn validate_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     // Here, we have to use the exact lock time from the preimage because maker
     // can get different values (e.g. if MTP advances during preimage exchange/fee rate changes)
     let expected_preimage =
-        gen_taker_payment_spend_preimage(coin, gen_args, NTimeSetting::UseValue(preimage.preimage.n_time)).await?;
+        gen_taker_payment_spend_preimage(coin, gen_args, NTimeSetting::UseValue(preimage.preimage.n_time))
+            .await
+            .map_mm_err()?;
 
     let time_lock = gen_args
         .time_lock
@@ -1422,7 +1454,8 @@ pub async fn validate_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
         coin.as_ref().conf.signature_version,
         sig_hash_type,
         coin.as_ref().conf.fork_id,
-    )?;
+    )
+    .map_mm_err()?;
 
     if !gen_args
         .taker_pub
@@ -1677,7 +1710,12 @@ pub async fn send_maker_spends_taker_payment<T: UtxoCommonOps + SwapOps>(
     coin: T,
     args: SpendPaymentArgs<'_>,
 ) -> TransactionResult {
-    let mut prev_transaction: UtxoTx = try_tx_s!(deserialize(args.other_payment_tx).map_err(|e| ERRL!("{:?}", e)));
+    let mut prev_transaction: UtxoTx = try_tx_s!(deserialize(args.other_payment_tx).map_err(|e| ERRL!(
+        "Failed to deserialize transaction (coin={}, hex={}) : {}",
+        coin.as_ref().conf.ticker,
+        hex::encode(args.other_payment_tx),
+        e
+    )));
     prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
     drop_mutability!(prev_transaction);
     let payment_value = try_tx_s!(prev_transaction.first_output()).value;
@@ -1735,7 +1773,12 @@ pub fn send_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     input: SendMakerPaymentSpendPreimageInput,
 ) -> TransactionFut {
-    let mut transaction: UtxoTx = try_tx_fus!(deserialize(input.preimage).map_err(|e| ERRL!("{:?}", e)));
+    let mut transaction: UtxoTx = try_tx_fus!(deserialize(input.preimage).map_err(|e| ERRL!(
+        "Failed to deserialize transaction (coin={}, hex={}) : {}",
+        coin.as_ref().conf.ticker,
+        hex::encode(input.preimage),
+        e
+    )));
     if transaction.inputs.is_empty() {
         return try_tx_fus!(TX_PLAIN_ERR!("Transaction doesn't have any input"));
     }
@@ -1782,7 +1825,12 @@ pub fn create_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     secret_hash: &[u8],
     swap_unique_data: &[u8],
 ) -> TransactionFut {
-    let mut prev_transaction: UtxoTx = try_tx_fus!(deserialize(maker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
+    let mut prev_transaction: UtxoTx = try_tx_fus!(deserialize(maker_payment_tx).map_err(|e| ERRL!(
+        "Failed to deserialize transaction (coin={}, hex={}) : {}",
+        coin.as_ref().conf.ticker,
+        hex::encode(maker_payment_tx),
+        e
+    )));
     prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
     drop_mutability!(prev_transaction);
     let payment_value = try_tx_fus!(prev_transaction.first_output()).value;
@@ -1844,7 +1892,12 @@ pub fn create_taker_payment_refund_preimage<T: UtxoCommonOps + SwapOps>(
 ) -> TransactionFut {
     let coin = coin.clone();
     let mut prev_transaction: UtxoTx =
-        try_tx_fus!(deserialize(taker_payment_tx).map_err(|e| TransactionErr::Plain(format!("{:?}", e))));
+        try_tx_fus!(deserialize(taker_payment_tx).map_err(|e| TransactionErr::Plain(format!(
+            "Failed to deserialize transaction (coin={}, hex={}) : {}",
+            coin.as_ref().conf.ticker,
+            hex::encode(taker_payment_tx),
+            e
+        ))));
     prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
     drop_mutability!(prev_transaction);
     let payment_value = try_tx_fus!(prev_transaction.first_output()).value;
@@ -1897,7 +1950,12 @@ pub async fn send_taker_spends_maker_payment<T: UtxoCommonOps + SwapOps>(
     coin: T,
     args: SpendPaymentArgs<'_>,
 ) -> TransactionResult {
-    let mut prev_transaction: UtxoTx = try_tx_s!(deserialize(args.other_payment_tx).map_err(|e| ERRL!("{:?}", e)));
+    let mut prev_transaction: UtxoTx = try_tx_s!(deserialize(args.other_payment_tx).map_err(|e| ERRL!(
+        "Failed to deserialize transaction (coin={}, hex={}) : {}",
+        coin.as_ref().conf.ticker,
+        hex::encode(args.other_payment_tx),
+        e
+    )));
     prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
     drop_mutability!(prev_transaction);
     let payment_value = try_tx_s!(prev_transaction.first_output()).value;
@@ -1959,7 +2017,12 @@ pub async fn refund_htlc_payment<T: UtxoCommonOps + SwapOps>(
 ) -> Result<UtxoTx, TransactionErr> {
     let my_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err().await).clone();
     let mut prev_transaction: UtxoTx =
-        try_tx_s!(deserialize(args.payment_tx).map_err(|e| TransactionErr::Plain(format!("{:?}", e))));
+        try_tx_s!(deserialize(args.payment_tx).map_err(|e| TransactionErr::Plain(format!(
+            "Failed to deserialize transaction (coin={}, hex={}) : {}",
+            coin.as_ref().conf.ticker,
+            hex::encode(args.payment_tx),
+            e
+        ))));
     prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
     drop_mutability!(prev_transaction);
     let payment_value = try_tx_s!(prev_transaction.first_output()).value;
@@ -2020,9 +2083,15 @@ pub fn send_taker_payment_refund_preimage<T: UtxoCommonOps + SwapOps>(
     watcher_refunds_payment_args: RefundPaymentArgs,
 ) -> TransactionFut {
     let coin = coin.clone();
-    let transaction: UtxoTx = try_tx_fus!(
-        deserialize(watcher_refunds_payment_args.payment_tx).map_err(|e| TransactionErr::Plain(format!("{:?}", e)))
-    );
+    let transaction: UtxoTx =
+        try_tx_fus!(
+            deserialize(watcher_refunds_payment_args.payment_tx).map_err(|e| TransactionErr::Plain(format!(
+                "Failed to deserialize transaction (coin={}, hex={}) : {}",
+                coin.as_ref().conf.ticker,
+                hex::encode(watcher_refunds_payment_args.payment_tx),
+                e
+            )))
+        );
 
     let fut = async move {
         let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
@@ -2051,12 +2120,10 @@ pub async fn set_index_amount_from_prev_tx(
     idx: usize,
 ) -> Result<(), String> {
     let inputs_len = signer.inputs.len();
-    let input = signer.inputs.get_mut(idx).ok_or_else(|| {
-        format!(
-            "Input index {} out of bounds for transaction with {} inputs",
-            idx, inputs_len
-        )
-    })?;
+    let input = signer
+        .inputs
+        .get_mut(idx)
+        .ok_or_else(|| format!("Input index {idx} out of bounds for transaction with {inputs_len} inputs"))?;
     let prev_output_tx_hash = input.previous_output.hash.reversed().into();
     let prev_output_index = input.previous_output.index as usize;
     let prev_tx_hex = rpc_client
@@ -2065,7 +2132,7 @@ pub async fn set_index_amount_from_prev_tx(
         .await
         .map_err(|e| format!("Failed to get prev tx hex: {e}"))?;
     let prev_tx: UtxoTx = deserialize(prev_tx_hex.0.as_slice())
-        .map_err(|e| format!("Failed to deserialize prev tx {}: {}", prev_output_tx_hash, e))?;
+        .map_err(|e| format!("Failed to deserialize prev tx {prev_output_tx_hash}: {e}"))?;
     let prev_output = prev_tx.outputs.get(prev_output_index).ok_or_else(|| {
         format!(
             "Prev tx output index {} out of bounds for tx {}",
@@ -2085,20 +2152,26 @@ fn verify_p2pk_input_pubkey(
     index: usize,
     signature_version: SignatureVersion,
     fork_id: u32,
-) -> Result<bool, String> {
+) -> Result<bool, ValidatePaymentError> {
     // Extract the signature from the scriptSig.
-    let signature = script.extract_signature()?;
+    let signature = script
+        .extract_signature()
+        .map_err(|e| ValidatePaymentError::CheckSignatureError(format!("Signature parsing error: {}", e)))?;
     // Validate the signature.
-    try_s!(SecpSignature::from_der(&signature[..signature.len() - 1]));
+    SecpSignature::from_der(&signature[..signature.len().saturating_sub(1)])
+        .map_err(|e| ValidatePaymentError::CheckSignatureError(format!("Signature parsing error: {}", e)))?;
     let signature = signature.into();
     // Make sure we have no more instructions. P2PK scriptSigs consist of a single instruction only containing the signature.
     if script.get_instruction(1).is_some() {
-        return ERR!("Unexpected instruction at position 2 of script {:?}", script);
+        return Err(ValidatePaymentError::TxDeserializationError(format!(
+            "Unexpected instruction at position 2 of script {:?}",
+            script
+        )));
     };
     // Get the scriptPub for this input. We need it to get the transaction sig_hash to sign (but actually "to verify" in this case).
     let pubkey = expected_pubkey
         .to_secp256k1_pubkey()
-        .map_err(|e| ERRL!("Error converting plain pubkey to secp256k1 pubkey: {}", e))?;
+        .map_err(|e| ValidatePaymentError::InvalidData(format!("Parsing expected pubkey error: {}", e)))?;
     // P2PK scriptPub has two valid possible formats depending on whether the public key is written in compressed or uncompressed form.
     let possible_pubkey_scripts = [
         Builder::build_p2pk(&Public::Compressed(pubkey.serialize().into())),
@@ -2115,14 +2188,24 @@ fn verify_p2pk_input_pubkey(
             fork_id,
         ) {
             Ok(hash) => hash,
-            Err(e) => return ERR!("Error calculating signature hash: {}", e),
+            Err(e) => {
+                return Err(ValidatePaymentError::CheckSignatureError(format!(
+                    "Error calculating signature hash: {}",
+                    e
+                )))
+            },
         };
         // Verify that the signature is valid for the transaction hash with respect to the expected public key.
         return match expected_pubkey.verify(&hash, &signature) {
             Ok(true) => Ok(true),
             // The signature is invalid for this pubkey, try the other possible pubkey script.
             Ok(false) => continue,
-            Err(e) => ERR!("Error verifying signature: {}", e),
+            Err(e) => {
+                return Err(ValidatePaymentError::CheckSignatureError(format!(
+                    "Error verifying signature: {}",
+                    e
+                )))
+            },
         };
     }
 
@@ -2135,15 +2218,12 @@ fn pubkey_from_script_sig(script: &Script) -> Result<H264, String> {
     // Extract the signature from the scriptSig.
     let signature = script.extract_signature()?;
     // Validate the signature.
-    try_s!(SecpSignature::from_der(&signature[..signature.len() - 1]));
+    try_s!(SecpSignature::from_der(&signature[..signature.len().saturating_sub(1)]));
 
     let pubkey = match script.get_instruction(1) {
-        Some(Ok(instruction)) => match instruction.opcode {
-            Opcode::OP_PUSHBYTES_33 => match instruction.data {
-                Some(bytes) => try_s!(PublicKey::from_slice(bytes)),
-                None => return ERR!("No data at instruction 1 of script {:?}", script),
-            },
-            _ => return ERR!("Unexpected opcode {:?}", instruction.opcode),
+        Some(Ok(instruction)) => match instruction.data {
+            Some(bytes) => try_s!(PublicKey::from_slice(bytes)),
+            None => return ERR!("No data at instruction 1 of script {:?}", script),
         },
         Some(Err(e)) => return ERR!("Error {} on getting instruction 1 of script {:?}", e, script),
         None => return ERR!("None instruction 1 of script {:?}", script),
@@ -2218,8 +2298,7 @@ pub async fn check_all_utxo_inputs_signed_by_pub<T: UtxoCommonOps>(
                     .await
                     .map_err(|e| {
                         ValidatePaymentError::TxDeserializationError(format!(
-                            "Failed to set index amount for input {}: {}",
-                            idx, e
+                            "Failed to set index amount for input {idx}: {e}"
                         ))
                     })?;
                 unsigned_tx.consensus_branch_id = coin.as_ref().conf.consensus_branch_id;
@@ -2232,8 +2311,7 @@ pub async fn check_all_utxo_inputs_signed_by_pub<T: UtxoCommonOps>(
                 idx,
                 coin.as_ref().conf.signature_version,
                 coin.as_ref().conf.fork_id,
-            )
-            .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
+            )?;
             if successful_verification {
                 // No pubkey extraction for P2PK inputs. Continue.
                 continue;
@@ -2270,8 +2348,7 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps + SwapOps>(
         let taker_fee_hash_len = input.taker_fee_hash.len();
         let taker_fee_hash_array: [u8; 32] = input.taker_fee_hash.try_into().map_to_mm(|_| {
             ValidatePaymentError::InternalError(format!(
-                "Invalid taker_fee_hash length: expected 32 bytes, got {} bytes",
-                taker_fee_hash_len
+                "Invalid taker_fee_hash length: expected 32 bytes, got {taker_fee_hash_len} bytes"
             ))
         })?;
         let taker_fee_hash = taker_fee_hash_array.into();
@@ -2296,13 +2373,19 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps + SwapOps>(
                 },
             };
 
-            let taker_fee_tx: UtxoTx = deserialize(tx_from_rpc.hex.0.as_slice())?;
+            let taker_fee_tx: UtxoTx = deserialize(tx_from_rpc.hex.0.as_slice()).map_to_mm(|e| {
+                ValidatePaymentError::TxDeserializationError(format!(
+                    "Failed to deserialize transaction (coin={}, hex={}) : {}",
+                    coin.as_ref().conf.ticker,
+                    hex::encode(tx_from_rpc.hex.0.as_slice()),
+                    e
+                ))
+            })?;
             let inputs_signed_by_pub =
                 check_all_utxo_inputs_signed_by_pub(&coin, &taker_fee_tx, &sender_pubkey).await?;
             if !inputs_signed_by_pub {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                    "{}: Taker fee does not belong to the verified public key",
-                    INVALID_SENDER_ERR_LOG
+                    "{INVALID_SENDER_ERR_LOG}: Taker fee does not belong to the verified public key"
                 )));
             }
 
@@ -2311,15 +2394,13 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps + SwapOps>(
                 .map_to_mm(ValidatePaymentError::InternalError)?;
             if tx_confirmed_before_block {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                    "{}: Fee tx {:?} confirmed before min_block {}",
-                    EARLY_CONFIRMATION_ERR_LOG, tx_from_rpc, min_block_number
+                    "{EARLY_CONFIRMATION_ERR_LOG}: Fee tx {tx_from_rpc:?} confirmed before min_block {min_block_number}"
                 )));
             }
 
             if now_sec_u32() - taker_fee_tx.lock_time > lock_duration as u32 {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                    "{}: Taker fee {:?} is too old",
-                    OLD_TRANSACTION_ERR_LOG, taker_fee_tx
+                    "{OLD_TRANSACTION_ERR_LOG}: Taker fee {taker_fee_tx:?} is too old"
                 )));
             }
 
@@ -2336,8 +2417,7 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps + SwapOps>(
                 },
                 None => {
                     return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                        "Provided dex fee tx {:?} does not have output {}",
-                        taker_fee_tx, output_index
+                        "Provided dex fee tx {taker_fee_tx:?} does not have output {output_index}"
                     )))
                 },
             }
@@ -2356,7 +2436,7 @@ fn validate_dex_output<T: UtxoCommonOps + SwapOps>(
     dex_address: &Address,
     fee_amount: &MmNumber,
 ) -> MmResult<(), ValidatePaymentError> {
-    let fee_amount_u64 = sat_from_big_decimal(&fee_amount.to_decimal(), coin.as_ref().decimals)?;
+    let fee_amount_u64 = sat_from_big_decimal(&fee_amount.to_decimal(), coin.as_ref().decimals).map_mm_err()?;
     match tx.outputs.get(output_index) {
         Some(out) => {
             let expected_script_pubkey = Builder::build_p2pkh(dex_address.hash()).to_bytes();
@@ -2375,8 +2455,7 @@ fn validate_dex_output<T: UtxoCommonOps + SwapOps>(
         },
         None => {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "Provided dex fee tx {:?} does not have output {}",
-                tx, output_index
+                "Provided dex fee tx {tx:?} does not have output {output_index}"
             )))
         },
     }
@@ -2391,7 +2470,7 @@ fn validate_burn_output<T: UtxoCommonOps + SwapOps>(
     burn_script_pubkey: &Script,
     burn_amount: &MmNumber,
 ) -> MmResult<(), ValidatePaymentError> {
-    let burn_amount_u64 = sat_from_big_decimal(&burn_amount.to_decimal(), coin.as_ref().decimals)?;
+    let burn_amount_u64 = sat_from_big_decimal(&burn_amount.to_decimal(), coin.as_ref().decimals).map_mm_err()?;
     match tx.outputs.get(output_index) {
         Some(out) => {
             if out.script_pubkey != burn_script_pubkey.to_bytes() {
@@ -2412,8 +2491,7 @@ fn validate_burn_output<T: UtxoCommonOps + SwapOps>(
         },
         None => {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "Provided burn tx {:?} does not have output {}",
-                tx, output_index
+                "Provided burn tx {tx:?} does not have output {output_index}"
             )))
         },
     }
@@ -2447,7 +2525,8 @@ pub fn validate_fee<T: UtxoCommonOps + SwapOps>(
             .rpc_client
             .get_verbose_transaction(&tx.hash().reversed().into())
             .compat()
-            .await?;
+            .await
+            .map_mm_err()?;
 
         let tx_confirmed_before_block = is_tx_confirmed_before_block(&coin, &tx_from_rpc, min_block_number)
             .await
@@ -2455,16 +2534,14 @@ pub fn validate_fee<T: UtxoCommonOps + SwapOps>(
 
         if tx_confirmed_before_block {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "{}: Fee tx {:?} confirmed before min_block {}",
-                EARLY_CONFIRMATION_ERR_LOG, tx_from_rpc, min_block_number
+                "{EARLY_CONFIRMATION_ERR_LOG}: Fee tx {tx_from_rpc:?} confirmed before min_block {min_block_number}"
             )));
         }
         if tx_from_rpc.hex.0 != serialize(&tx).take()
             && tx_from_rpc.hex.0 != serialize_with_flags(&tx, SERIALIZE_TRANSACTION_WITNESS).take()
         {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "Provided dex fee tx {:?} doesn't match tx data from rpc {:?}",
-                tx, tx_from_rpc
+                "Provided dex fee tx {tx:?} doesn't match tx data from rpc {tx_from_rpc:?}"
             )));
         }
 
@@ -2499,7 +2576,14 @@ pub async fn validate_maker_payment<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     input: ValidatePaymentInput,
 ) -> ValidatePaymentResult<()> {
-    let mut tx: UtxoTx = deserialize(input.payment_tx.as_slice())?;
+    let mut tx: UtxoTx = deserialize(input.payment_tx.as_slice()).map_to_mm(|e| {
+        ValidatePaymentError::TxDeserializationError(format!(
+            "Failed to deserialize transaction (coin={}, hex={}) : {}",
+            coin.as_ref().conf.ticker,
+            hex::encode(input.payment_tx.as_slice()),
+            e
+        ))
+    })?;
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
     let htlc_keypair = coin.derive_htlc_key_pair(&input.unique_swap_data);
@@ -2531,8 +2615,23 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     input: WatcherValidatePaymentInput,
 ) -> ValidatePaymentFut<()> {
-    let taker_payment_tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
-    let taker_payment_refund_preimage: UtxoTx = try_f!(deserialize(input.taker_payment_refund_preimage.as_slice()));
+    let taker_payment_tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()).map_to_mm(|e| {
+        ValidatePaymentError::TxDeserializationError(format!(
+            "Failed to deserialize transaction (coin={}, hex={}) : {}",
+            coin.as_ref().conf.ticker,
+            hex::encode(input.payment_tx.as_slice()),
+            e
+        ))
+    }));
+    let taker_payment_refund_preimage: UtxoTx = try_f!(deserialize(input.taker_payment_refund_preimage.as_slice())
+        .map_to_mm(|e| {
+            ValidatePaymentError::TxDeserializationError(format!(
+                "Failed to deserialize transaction (coin={}, hex={}) : {}",
+                coin.as_ref().conf.ticker,
+                hex::encode(input.taker_payment_refund_preimage.as_slice()),
+                e
+            ))
+        }));
     let taker_pub = &try_f!(
         Public::from_slice(&input.taker_pub).map_err(|err| ValidatePaymentError::InvalidParameter(err.to_string()))
     );
@@ -2609,7 +2708,14 @@ pub async fn validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     input: ValidatePaymentInput,
 ) -> ValidatePaymentResult<()> {
-    let mut tx: UtxoTx = deserialize(input.payment_tx.as_slice())?;
+    let mut tx: UtxoTx = deserialize(input.payment_tx.as_slice()).map_to_mm(|e| {
+        ValidatePaymentError::TxDeserializationError(format!(
+            "Failed to deserialize transaction (coin={}, hex={}) : {}",
+            coin.as_ref().conf.ticker,
+            hex::encode(input.payment_tx.as_slice()),
+            e
+        ))
+    })?;
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
     let htlc_keypair = coin.derive_htlc_key_pair(&input.unique_swap_data);
@@ -2641,12 +2747,24 @@ pub fn validate_payment_spend_or_refund<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     input: ValidateWatcherSpendInput,
 ) -> ValidatePaymentFut<()> {
-    let mut payment_spend_tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
+    let mut payment_spend_tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()).map_to_mm(|e| {
+        ValidatePaymentError::TxDeserializationError(format!(
+            "Failed to deserialize transaction (coin={}, hex={}) : {}",
+            coin.as_ref().conf.ticker,
+            hex::encode(input.payment_tx.as_slice()),
+            e
+        ))
+    }));
     payment_spend_tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
     let coin = coin.clone();
     let fut = async move {
-        let my_address = coin.as_ref().derivation_method.single_addr_or_err().await?;
+        let my_address = coin
+            .as_ref()
+            .derivation_method
+            .single_addr_or_err()
+            .await
+            .map_mm_err()?;
         let expected_script_pubkey = output_script(&my_address).map(|script| script.to_bytes())?;
         let output = payment_spend_tx
             .outputs
@@ -2690,7 +2808,13 @@ pub fn check_if_my_payment_sent<T: UtxoCommonOps + SwapOps>(
                 match history.first() {
                     Some(item) => {
                         let tx_bytes = try_s!(client.get_transaction_bytes(&item.tx_hash).compat().await);
-                        let mut tx: UtxoTx = try_s!(deserialize(tx_bytes.0.as_slice()).map_err(|e| ERRL!("{:?}", e)));
+                        let mut tx: UtxoTx = try_s!(deserialize(tx_bytes.0.as_slice()).map_err(|e| ERRL!(
+                            "Failed to deserialize transaction (coin={}, hex={}) : {}",
+                            coin.as_ref().conf.ticker,
+                            hex::encode(tx_bytes.0.as_slice()),
+                            e
+                        )));
+
                         tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
                         Ok(Some(tx.into()))
                     },
@@ -2715,7 +2839,12 @@ pub fn check_if_my_payment_sent<T: UtxoCommonOps + SwapOps>(
                 for item in received_by_addr {
                     if item.address == target_addr && !item.txids.is_empty() {
                         let tx_bytes = try_s!(client.get_transaction_bytes(&item.txids[0]).compat().await);
-                        let mut tx: UtxoTx = try_s!(deserialize(tx_bytes.0.as_slice()).map_err(|e| ERRL!("{:?}", e)));
+                        let mut tx: UtxoTx = try_s!(deserialize(tx_bytes.0.as_slice()).map_err(|e| ERRL!(
+                            "Failed to deserialize transaction (coin={}, hex={}) : {}",
+                            coin.as_ref().conf.ticker,
+                            hex::encode(tx_bytes.0.as_slice()),
+                            e
+                        )));
                         tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
                         return Ok(Some(tx.into()));
                     }
@@ -2835,7 +2964,11 @@ pub async fn get_taker_watcher_reward<T: UtxoCommonOps + SwapOps + MarketCoinOps
 /// Extract a secret from the `spend_tx`.
 /// Note spender could generate the spend with several inputs where the only one input is the p2sh script.
 pub fn extract_secret(secret_hash: &[u8], spend_tx: &[u8]) -> Result<[u8; 32], String> {
-    let spend_tx: UtxoTx = try_s!(deserialize(spend_tx).map_err(|e| ERRL!("{:?}", e)));
+    let spend_tx: UtxoTx = try_s!(deserialize(spend_tx).map_err(|e| ERRL!(
+        "Failed to deserialize transaction (coin=?, hex={}) : {}",
+        hex::encode(spend_tx),
+        e
+    )));
     extract_secret_v2(secret_hash, &spend_tx)
 }
 
@@ -2895,35 +3028,28 @@ pub fn burn_address<T: UtxoCommonOps + SwapOps>(coin: &T) -> Result<Address, Str
     )
 }
 
-/// Hash message for signature using Bitcoin's message signing format.
-/// sha256(sha256(PREFIX_LENGTH + PREFIX + MESSAGE_LENGTH + MESSAGE))
-pub fn sign_message_hash(coin: &UtxoCoinFields, message: &str) -> Option<[u8; 32]> {
-    let message_prefix = coin.conf.sign_message_prefix.clone()?;
-    let mut stream = Stream::new();
-    let prefix_len = CompactInteger::from(message_prefix.len());
-    prefix_len.serialize(&mut stream);
-    stream.append_slice(message_prefix.as_bytes());
-    let msg_len = CompactInteger::from(message.len());
-    msg_len.serialize(&mut stream);
-    stream.append_slice(message.as_bytes());
-    Some(dhash256(&stream.out()).take())
-}
-
 pub fn sign_message(
     coin: &UtxoCoinFields,
     message: &str,
     account: Option<HDAddressSelector>,
 ) -> SignatureResult<String> {
-    let message_hash = sign_message_hash(coin, message).ok_or(SignatureError::PrefixNotFound)?;
+    let sign_message_prefix = coin
+        .conf
+        .sign_message_prefix
+        .as_ref()
+        .ok_or(SignatureError::PrefixNotFound)?;
+    let message_hash = sign_message_hash(sign_message_prefix, message);
 
     let private = if let Some(account) = account {
-        let path_to_coin = coin.priv_key_policy.path_to_coin_or_err()?;
+        let path_to_coin = coin.priv_key_policy.path_to_coin_or_err().map_mm_err()?;
         let derivation_path = account
             .valid_derivation_path(path_to_coin)
-            .mm_err(|err| SignatureError::InvalidRequest(err.to_string()))?;
+            .mm_err(|err| SignatureError::InvalidRequest(err.to_string()))
+            .map_mm_err()?;
         let privkey = coin
             .priv_key_policy
-            .hd_wallet_derived_priv_key_or_err(&derivation_path)?;
+            .hd_wallet_derived_priv_key_or_err(&derivation_path)
+            .map_mm_err()?;
         Private {
             prefix: coin.conf.wif_prefix,
             secret: privkey,
@@ -2931,10 +3057,11 @@ pub fn sign_message(
             checksum_type: coin.conf.checksum_type,
         }
     } else {
-        *coin.priv_key_policy.activated_key_or_err()?.private()
+        *coin.priv_key_policy.activated_key_or_err().map_mm_err()?.private()
     };
 
     let signature = private.sign_compact(&H256::from(message_hash))?;
+
     Ok(STANDARD.encode(&*signature))
 }
 
@@ -2944,11 +3071,17 @@ pub fn verify_message<T: UtxoCommonOps>(
     message: &str,
     address: &str,
 ) -> VerificationResult<bool> {
-    let message_hash = sign_message_hash(coin.as_ref(), message).ok_or(VerificationError::PrefixNotFound)?;
+    let sign_message_prefix = coin
+        .as_ref()
+        .conf
+        .sign_message_prefix
+        .as_ref()
+        .ok_or(VerificationError::PrefixNotFound)?;
+    let message_hash = sign_message_hash(sign_message_prefix, message);
     let signature = CompactSignature::try_from(STANDARD.decode(signature_base64)?)
         .map_to_mm(|err| VerificationError::SignatureDecodingError(err.to_string()))?;
     let recovered_pubkey = Public::recover_compact(&H256::from(message_hash), &signature)?;
-    let received_address = checked_address_from_str(coin, address)?;
+    let received_address = checked_address_from_str(coin, address).map_mm_err()?;
     Ok(AddressHashEnum::from(recovered_pubkey.address_hash()) == *received_address.hash())
 }
 
@@ -2975,7 +3108,7 @@ pub fn send_raw_tx(coin: &UtxoCoinFields, tx: &str) -> Box<dyn Future<Item = Str
         coin.rpc_client
             .send_raw_transaction(bytes.into())
             .map_err(|e| ERRL!("{}", e))
-            .map(|hash| format!("{:?}", hash)),
+            .map(|hash| format!("{hash:?}")),
     )
 }
 
@@ -2988,7 +3121,7 @@ pub fn send_raw_tx_bytes(
         coin.rpc_client
             .send_raw_transaction(tx_bytes.into())
             .map_err(|e| ERRL!("{}", e))
-            .map(|hash| format!("{:?}", hash)),
+            .map(|hash| format!("{hash:?}")),
     )
 }
 
@@ -3078,7 +3211,14 @@ async fn sign_raw_utxo_tx<T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps>(
 ) -> RawTransactionResult {
     let tx_bytes =
         hex::decode(args.tx_hex.as_bytes()).map_to_mm(|e| RawTransactionError::DecodeError(e.to_string()))?;
-    let tx: UtxoTx = deserialize(tx_bytes.as_slice()).map_to_mm(|e| RawTransactionError::DecodeError(e.to_string()))?;
+    let tx: UtxoTx = deserialize(tx_bytes.as_slice()).map_to_mm(|e| {
+        RawTransactionError::DecodeError(format!(
+            "Failed to deserialize transaction (coin={}, hex={}) : {}",
+            coin.as_ref().conf.ticker,
+            hex::encode(&tx_bytes),
+            e
+        ))
+    })?;
 
     let mut unspents = vec![];
 
@@ -3094,8 +3234,7 @@ async fn sign_raw_utxo_tx<T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps>(
                 let prev_hash_len = prev_hash.len();
                 let arr: [u8; 32] = prev_hash.try_into().map_to_mm(|_| {
                     RawTransactionError::DecodeError(format!(
-                        "Invalid prev_out_hash length: expected 32 bytes, got {}",
-                        prev_hash_len
+                        "Invalid prev_out_hash length: expected 32 bytes, got {prev_hash_len}"
                     ))
                 })?;
                 arr.into()
@@ -3157,7 +3296,12 @@ pub fn wait_for_confirmations(
     coin: &UtxoCoinFields,
     input: ConfirmPaymentInput,
 ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-    let mut tx: UtxoTx = try_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!("{:?}", e)));
+    let mut tx: UtxoTx = try_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!(
+        "Failed to deserialize transaction (coin={}, hex={}) : {}",
+        coin.conf.ticker,
+        hex::encode(input.payment_tx.as_slice()),
+        e
+    )));
     tx.tx_hash_algo = coin.tx_hash_algo;
     coin.rpc_client.wait_for_confirmations(
         tx.hash().reversed().into(),
@@ -3224,17 +3368,29 @@ pub async fn wait_for_output_spend<T: AsRef<UtxoCoinFields> + Send + Sync + 'sta
     wait_until: u64,
     check_every: f64,
 ) -> TransactionResult {
-    let mut tx: UtxoTx = try_tx_s!(deserialize(tx_bytes).map_err(|e| ERRL!("{:?}", e)));
+    let mut tx: UtxoTx = try_tx_s!(deserialize(tx_bytes).map_err(|e| ERRL!(
+        "Failed to deserialize transaction (coin={}, hex={}) : {}",
+        coin.as_ref().conf.ticker,
+        hex::encode(tx_bytes),
+        e
+    )));
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
     wait_for_output_spend_impl(coin.as_ref(), &tx, output_index, from_block, wait_until, check_every)
         .await
         .map(|tx| tx.into())
-        .map_err(|e| TransactionErr::Plain(format!("{:?}", e)))
+        .map_err(|e| TransactionErr::Plain(format!("{e:?}")))
 }
 
 pub fn tx_enum_from_bytes(coin: &UtxoCoinFields, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
-    let mut transaction: UtxoTx = deserialize(bytes).map_to_mm(|e| TxMarshalingErr::InvalidInput(e.to_string()))?;
+    let mut transaction: UtxoTx = deserialize(bytes).map_to_mm(|e| {
+        TxMarshalingErr::InvalidInput(format!(
+            "Failed to deserialize transaction (coin={}, hex={}) : {}",
+            coin.conf.ticker,
+            hex::encode(bytes),
+            e
+        ))
+    })?;
 
     let serialized_length = transaction.tx_hex().len();
     if bytes.len() != serialized_length {
@@ -3272,13 +3428,33 @@ pub fn min_tx_amount(coin: &UtxoCoinFields) -> BigDecimal {
 }
 
 pub fn min_trading_vol(coin: &UtxoCoinFields) -> MmNumber {
-    let dust_multiplier = MmNumber::from(10);
-    dust_multiplier * min_tx_amount(coin).into()
+    let min_from_dust = coin.dust_amount * 10;
+
+    let fixed_fee_rate = match coin.tx_fee {
+        FeeRate::FixedPerKb(sats) => Some(ActualFeeRate::FixedPerKb(sats)),
+        FeeRate::FixedPerKbDingo(sats) => Some(ActualFeeRate::FixedPerKbDingo(sats)),
+        // The output of this function must be deterministic for the lifetime of
+        // an order / swap, we will use the dust-based calculation.
+        FeeRate::Dynamic(_) => None,
+    };
+
+    let min_from_fee = fixed_fee_rate.map_or(min_from_dust, |fee_rate| {
+        fee_rate.get_tx_fee(DEFAULT_SWAP_TX_SPEND_SIZE) * 10
+    });
+
+    // The final minimum volume must be large enough to satisfy both the dust and the fee constraints.
+    let min_vol_sats = std::cmp::max(min_from_dust, min_from_fee);
+
+    big_decimal_from_sat_unsigned(min_vol_sats, coin.decimals).into()
 }
 
-pub fn is_asset_chain(coin: &UtxoCoinFields) -> bool { coin.conf.asset_chain }
+pub fn is_asset_chain(coin: &UtxoCoinFields) -> bool {
+    coin.conf.asset_chain
+}
 
-pub const fn should_burn_dex_fee() -> bool { false } // TODO: fix back to true when negotiation version added
+pub const fn should_burn_dex_fee() -> bool {
+    false
+} // TODO: fix back to true when negotiation version added
 
 pub async fn get_raw_transaction(coin: &UtxoCoinFields, req: RawTransactionRequest) -> RawTransactionResult {
     let hash = H256Json::from_str(&req.tx_hash).map_to_mm(|e| RawTransactionError::InvalidHashError(e.to_string()))?;
@@ -3293,9 +3469,9 @@ pub async fn get_raw_transaction(coin: &UtxoCoinFields, req: RawTransactionReque
 
 pub async fn get_tx_hex_by_hash(coin: &UtxoCoinFields, tx_hash: Vec<u8>) -> RawTransactionResult {
     let len = tx_hash.len();
-    let hash: [u8; 32] = tx_hash.try_into().map_to_mm(|_| {
-        RawTransactionError::InvalidHashError(format!("Invalid hash length: expected 32, got {}", len))
-    })?;
+    let hash: [u8; 32] = tx_hash
+        .try_into()
+        .map_to_mm(|_| RawTransactionError::InvalidHashError(format!("Invalid hash length: expected 32, got {len}")))?;
 
     let hex = coin
         .rpc_client
@@ -3371,7 +3547,9 @@ pub fn get_withdraw_iguana_sender<T: UtxoCommonOps>(
     })
 }
 
-pub fn decimals(coin: &UtxoCoinFields) -> u8 { coin.decimals }
+pub fn decimals(coin: &UtxoCoinFields) -> u8 {
+    coin.decimals
+}
 
 pub fn convert_to_address<T: UtxoCommonOps>(coin: &T, from: &str, to_address_format: Json) -> Result<String, String> {
     let to_address_format: UtxoAddressFormat =
@@ -3852,14 +4030,22 @@ pub async fn tx_details_by_hash<T: UtxoCommonOps>(
 ) -> Result<TransactionDetails, String> {
     let ticker = &coin.as_ref().conf.ticker;
     let verbose_tx = try_s!(coin.as_ref().rpc_client.get_verbose_transaction(hash).compat().await);
-    let mut tx: UtxoTx = try_s!(deserialize(verbose_tx.hex.as_slice()).map_err(|e| ERRL!("{:?}", e)));
+    let mut tx: UtxoTx = try_s!(deserialize(verbose_tx.hex.as_slice()).map_err(|e| ERRL!(
+        "Failed to deserialize transaction (coin={}, hex={}) : {}",
+        ticker,
+        hex::encode(verbose_tx.hex.as_slice()),
+        e
+    )));
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
     let my_address = try_s!(coin.as_ref().derivation_method.single_addr_or_err().await);
 
-    input_transactions.insert(*hash, HistoryUtxoTx {
-        tx: tx.clone(),
-        height: verbose_tx.height,
-    });
+    input_transactions.insert(
+        *hash,
+        HistoryUtxoTx {
+            tx: tx.clone(),
+            height: verbose_tx.height,
+        },
+    );
 
     let mut input_amount = 0;
     let mut output_amount = 0;
@@ -3989,8 +4175,8 @@ pub async fn tx_details_by_hash<T: UtxoCommonOps>(
     })
 }
 
-pub async fn get_mut_verbose_transaction_from_map_or_rpc<'a, 'b, T>(
-    coin: &'a T,
+pub async fn get_mut_verbose_transaction_from_map_or_rpc<'b, T>(
+    coin: &T,
     tx_hash: H256Json,
     utxo_tx_map: &'b mut HistoryUtxoTxMap,
 ) -> UtxoRpcResult<&'b mut HistoryUtxoTx>
@@ -4006,8 +4192,14 @@ where
                 .compat()
                 .await?;
             let tx = HistoryUtxoTx {
-                tx: deserialize(verbose.hex.as_slice())
-                    .map_to_mm(|e| UtxoRpcError::InvalidResponse(format!("{:?}, tx: {:?}", e, tx_hash)))?,
+                tx: deserialize(verbose.hex.as_slice()).map_to_mm(|e| {
+                    UtxoRpcError::InvalidResponse(format!(
+                        "Failed to deserialize transaction (coin={}, hex={}) : {}",
+                        coin.as_ref().conf.ticker,
+                        hex::encode(verbose.hex.as_slice()),
+                        e
+                    ))
+                })?,
                 height: verbose.height,
             };
             e.insert(tx)
@@ -4024,6 +4216,8 @@ where
 /// `actual_fee = input_amount - actual_output_amount` or `actual_fee = input_amount - output_amount + kmd_rewards`.
 /// Substitute [`TransactionDetails::fee`] to the last equation:
 /// `actual_fee = TransactionDetails::fee + kmd_rewards`
+///
+/// Note: This assumes that the KMD rewards is always claimed by us and thus sets the `claimed_by_me` field to true.
 pub async fn update_kmd_rewards<T>(
     coin: &T,
     tx_details: &mut TransactionDetails,
@@ -4043,8 +4237,11 @@ where
 
     let tx: UtxoTx = deserialize(tx_hex.as_slice()).map_to_mm(|e| {
         UtxoRpcError::Internal(format!(
-            "Error deserializing the {:?} transaction hex: {:?}",
-            tx_hash, e
+            "Failed to deserialize transaction (coin={}, hex={}, hash={}) : {}",
+            coin.as_ref().conf.ticker,
+            hex::encode(tx_hex.as_slice()),
+            tx_hash,
+            e
         ))
     })?;
     let kmd_rewards = coin.calc_interest_of_tx(&tx, input_transactions).await?;
@@ -4058,14 +4255,7 @@ where
         }));
     }
 
-    // Todo: https://github.com/KomodoPlatform/komodo-defi-framework/issues/1625
-    let my_address = &coin.my_address()?;
-    let claimed_by_me = tx_details.from.iter().all(|from| from == my_address) && tx_details.to.contains(my_address);
-
-    tx_details.kmd_rewards = Some(KmdRewardsDetails {
-        amount: kmd_rewards,
-        claimed_by_me,
-    });
+    tx_details.kmd_rewards = Some(KmdRewardsDetails::claimed_by_me(kmd_rewards));
     Ok(())
 }
 
@@ -4113,6 +4303,7 @@ pub fn get_trade_fee<T: UtxoCommonOps>(coin: T) -> Box<dyn Future<Item = TradeFe
         let amount = match fee {
             ActualFeeRate::Dynamic(f) => f,
             ActualFeeRate::FixedPerKb(f) => f,
+            ActualFeeRate::FixedPerKbDingo(f) => f,
         };
         Ok(TradeFee {
             coin: ticker,
@@ -4147,10 +4338,15 @@ where
     T: UtxoCommonOps + GetUtxoListOps,
 {
     let decimals = coin.as_ref().decimals;
-    let fee_rate = coin.get_fee_rate().await?;
+    let fee_rate = coin.get_fee_rate().await.map_mm_err()?;
     // [`FeePolicy::DeductFromOutput`] is used if the value is [`TradePreimageValue::UpperBound`] only
     let is_amount_upper_bound = matches!(fee_policy, FeePolicy::DeductFromOutput(_));
-    let my_address = coin.as_ref().derivation_method.single_addr_or_err().await?;
+    let my_address = coin
+        .as_ref()
+        .derivation_method
+        .single_addr_or_err()
+        .await
+        .map_mm_err()?;
 
     match fee_rate {
         // if it's a dynamic fee, we should generate a swap transaction to get an actual trade fee
@@ -4159,7 +4355,7 @@ where
             let dynamic_fee_rate = coin.increase_dynamic_fee_by_stage(fee_rate, stage);
 
             let outputs_count = outputs.len();
-            let (unspents, _recently_sent_txs) = coin.get_unspent_ordered_list(&my_address).await?;
+            let (unspents, _recently_sent_txs) = coin.get_unspent_ordered_list(&my_address).await.map_mm_err()?;
 
             let actual_fee_rate = ActualFeeRate::Dynamic(dynamic_fee_rate);
             let mut tx_builder = UtxoTxBuilder::new(coin)
@@ -4177,7 +4373,9 @@ where
 
             // We need to add extra tx fee for the absent change output for e.g. to ensure max_taker_vol is calculated correctly
             // (If we do not do this then in a swap the change output may appear and we may not have sufficient balance to pay taker fee)
-            let total_fee = if tx.outputs.len() == outputs_count {
+            let total_fee = if tx.outputs.len() == outputs_count
+                && matches!(stage, FeeApproxStage::TradePreimageMax | FeeApproxStage::OrderIssueMax)
+            {
                 // take into account the change output
                 data.fee_amount + actual_fee_rate.get_tx_fee_for_change(0)
             } else {
@@ -4186,9 +4384,9 @@ where
             };
             Ok(big_decimal_from_sat(total_fee as i64, decimals))
         },
-        ActualFeeRate::FixedPerKb(_fee) => {
+        ActualFeeRate::FixedPerKb(_fee) | ActualFeeRate::FixedPerKbDingo(_fee) => {
             let outputs_count = outputs.len();
-            let (unspents, _recently_sent_txs) = coin.get_unspent_ordered_list(&my_address).await?;
+            let (unspents, _recently_sent_txs) = coin.get_unspent_ordered_list(&my_address).await.map_mm_err()?;
             let mut tx_builder = UtxoTxBuilder::new(coin)
                 .await
                 .add_available_inputs(unspents)
@@ -4202,9 +4400,13 @@ where
                 TradePreimageError::from_generate_tx_error(e, ticker.to_string(), decimals, is_amount_upper_bound)
             })?;
 
-            // We need to add extra tx fee for the absent change output for e.g. to ensure max_taker_vol is calculated correctly
+            // We need to add extra tx fee for the absent change output for e.g. to ensure max_maker_vol or max_taker_vol is calculated correctly
             // (If we do not do this then in a swap the change output may appear and we may not have sufficient balance to pay taker fee)
-            let total_fee = if tx.outputs.len() == outputs_count {
+            let total_fee = if tx.outputs.len() == outputs_count
+                && matches!(stage, FeeApproxStage::TradePreimageMax | FeeApproxStage::OrderIssueMax)
+            {
+                // Do this for TradePreimageMax stage only to ensure max vol is not too low.
+                // Don't do this for TradePreimage stage (or others) as an insufficient amount error may be collected
                 let tx = UtxoTx::from(tx);
                 let tx_bytes = serialize(&tx);
                 // take into account the change output
@@ -4267,7 +4469,9 @@ where
 /// The fee to spend (receive) other payment is deducted from the trading amount so we should display it
 pub fn get_receiver_trade_fee<T: UtxoCommonOps>(coin: T) -> TradePreimageFut<TradeFee> {
     let fut = async move {
-        let amount_sat = get_htlc_spend_fee(&coin, DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox).await?;
+        let amount_sat = get_htlc_spend_fee(&coin, DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
+            .await
+            .map_mm_err()?;
         let amount = big_decimal_from_sat_unsigned(amount_sat, coin.as_ref().decimals).into();
         Ok(TradeFee {
             coin: coin.as_ref().conf.ticker.clone(),
@@ -4374,9 +4578,12 @@ where
     T: UtxoCommonOps,
 {
     /// Returns `true` if the given transaction has a known non-zero height.
-    fn can_tx_be_cached(tx: &RpcTransaction) -> bool { tx.height > Some(0) }
+    fn can_tx_be_cached(tx: &RpcTransaction) -> bool {
+        tx.height > Some(0)
+    }
 
     /// Calculates actual confirmations number of the given `tx` transaction loaded from cache.
+    #[allow(clippy::result_large_err)]
     fn calc_actual_cached_tx_confirmations(tx: &RpcTransaction, block_count: u64) -> UtxoRpcResult<u32> {
         let tx_height = tx.height.or_mm_err(|| {
             UtxoRpcError::Internal(format!(r#"Warning, height of cached "{:?}" tx is unknown"#, tx.txid))
@@ -4421,8 +4628,7 @@ where
             .get(&tx_hash)
             .or_mm_err(|| {
                 UtxoRpcError::Internal(format!(
-                    "'get_verbose_transactions_from_cache_or_rpc' should have returned '{:?}'",
-                    tx_hash
+                    "'get_verbose_transactions_from_cache_or_rpc' should have returned '{tx_hash:?}'"
                 ))
             })?
             .clone();
@@ -4524,11 +4730,15 @@ pub async fn get_verbose_transactions_from_cache_or_rpc(
 
 /// Swap contract address is not used by standard UTXO coins.
 #[inline]
-pub fn swap_contract_address() -> Option<BytesJson> { None }
+pub fn swap_contract_address() -> Option<BytesJson> {
+    None
+}
 
 /// Fallback swap contract address is not used by standard UTXO coins.
 #[inline]
-pub fn fallback_swap_contract() -> Option<BytesJson> { None }
+pub fn fallback_swap_contract() -> Option<BytesJson> {
+    None
+}
 
 /// Convert satoshis to BigDecimal amount of coin units
 #[inline]
@@ -4568,7 +4778,7 @@ pub fn address_from_pubkey(
 
 #[allow(clippy::too_many_arguments)]
 #[cfg_attr(test, mockable)]
-pub async fn validate_payment<'a, T: UtxoCommonOps>(
+pub async fn validate_payment<'a, T>(
     coin: T,
     tx: &'a UtxoTx,
     output_index: usize,
@@ -4580,8 +4790,11 @@ pub async fn validate_payment<'a, T: UtxoCommonOps>(
     time_lock: u32,
     try_spv_proof_until: u64,
     confirmations: u64,
-) -> ValidatePaymentResult<()> {
-    let amount = sat_from_big_decimal(&amount, coin.as_ref().decimals)?;
+) -> ValidatePaymentResult<()>
+where
+    T: UtxoCommonOps,
+{
+    let amount = sat_from_big_decimal(&amount, coin.as_ref().decimals).map_mm_err()?;
 
     let expected_redeem = tx_type_with_secret_hash.redeem_script(time_lock, first_pub0, second_pub0);
     let tx_hash = tx.tx_hash_as_bytes();
@@ -4603,8 +4816,7 @@ pub async fn validate_payment<'a, T: UtxoCommonOps>(
         && serialize_with_flags(tx, SERIALIZE_TRANSACTION_WITNESS).take() != tx_from_rpc.0
     {
         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-            "Provided payment tx {:?} doesn't match tx data from rpc {:?}",
-            tx, tx_from_rpc
+            "Provided payment tx {tx:?} doesn't match tx data from rpc {tx_from_rpc:?}"
         )));
     }
 
@@ -4627,7 +4839,7 @@ pub async fn validate_payment<'a, T: UtxoCommonOps>(
     }
 
     if let Some(watcher_reward) = watcher_reward {
-        let expected_reward = sat_from_big_decimal(&watcher_reward.amount, coin.as_ref().decimals)?;
+        let expected_reward = sat_from_big_decimal(&watcher_reward.amount, coin.as_ref().decimals).map_mm_err()?;
         let actual_reward = actual_output.value - amount;
         validate_watcher_reward(expected_reward, actual_reward, false)?;
     } else if actual_output.value != amount {
@@ -4657,7 +4869,12 @@ async fn search_for_swap_output_spend(
     output_index: usize,
     search_from_block: u64,
 ) -> Result<Option<FoundSwapTxSpend>, String> {
-    let mut tx: UtxoTx = try_s!(deserialize(tx).map_err(|e| ERRL!("{:?}", e)));
+    let mut tx: UtxoTx = try_s!(deserialize(tx).map_err(|e| ERRL!(
+        "Failed to deserialize transaction (coin={}, hex={}) : {}",
+        coin.conf.ticker,
+        hex::encode(tx),
+        e
+    )));
     tx.tx_hash_algo = coin.tx_hash_algo;
     drop_mutability!(tx);
     if tx.outputs.is_empty() {
@@ -4924,12 +5141,12 @@ where
         // Take into account that the dynamic fee may increase at each of the following stages up to [`UtxoCoinFields::tx_fee_volatility_percent`]:
         // - until a swap is started;
         // - during the swap.
-        FeeApproxStage::OrderIssue => base_percent * 2.,
+        FeeApproxStage::OrderIssue | FeeApproxStage::OrderIssueMax => base_percent * 2.,
         // Take into account that the dynamic fee may increase at each of the following stages up to [`UtxoCoinFields::tx_fee_volatility_percent`]:
         // - until an order is issued;
         // - until a swap is started;
         // - during the swap.
-        FeeApproxStage::TradePreimage => base_percent * 2.5,
+        FeeApproxStage::TradePreimage | FeeApproxStage::TradePreimageMax => base_percent * 2.5,
     };
     increase_by_percent(dynamic_fee, percent)
 }
@@ -5195,7 +5412,7 @@ where
     let total_expected_amount =
         &args.dex_fee.total_spend_amount().to_decimal() + &args.premium_amount + &args.trading_amount;
 
-    let expected_amount_sat = sat_from_big_decimal(&total_expected_amount, coin.as_ref().decimals)?;
+    let expected_amount_sat = sat_from_big_decimal(&total_expected_amount, coin.as_ref().decimals).map_mm_err()?;
 
     let time_lock = args
         .funding_time_lock
@@ -5213,11 +5430,11 @@ where
         script_pubkey: Builder::build_p2sh(&AddressHashEnum::AddressHash(dhash160(&redeem_script))).into(),
     };
 
-    if args.funding_tx.outputs.get(0) != Some(&expected_output) {
+    if args.funding_tx.outputs.first() != Some(&expected_output) {
         return MmError::err(ValidateSwapV2TxError::InvalidDestinationOrAmount(format!(
             "Expected {:?}, got {:?}",
             expected_output,
-            args.funding_tx.outputs.get(0)
+            args.funding_tx.outputs.first()
         )));
     }
 
@@ -5226,7 +5443,8 @@ where
         .rpc_client
         .get_transaction_bytes(&args.funding_tx.hash().reversed().into())
         .compat()
-        .await?;
+        .await
+        .map_mm_err()?;
     let actual_tx_bytes = serialize(args.funding_tx).take();
     if tx_bytes_from_rpc.0 != actual_tx_bytes {
         return MmError::err(ValidateSwapV2TxError::TxBytesMismatch {
@@ -5461,6 +5679,22 @@ fn test_pubkey_from_script_sig() {
 
     let script_sig_err = Script::from("493044022071edae37cf518e98db3f7637b9073a7a980b957b0c7b871415dbb4898ec3ebdc022031b402a6b98e64ffdf752266449ca979a9f70144dba77ed7a6a25bfab11648f6012103ad6f89abc2e5beaa8a3ac28e22170659b3209fe2ddf439681b4b8f31508c36fa");
     pubkey_from_script_sig(&script_sig_err).unwrap_err();
+}
+
+#[test]
+fn test_pubkey_from_axe_script_sig() {
+    let script_sig = Script::from("45304202205fa91d3dc0c88b1b0c2b5ecdf08b49c0458b6f10ff6b758b82c1934210f367fc021e51a96cf672048a44fef3256ba9a061b408f842b6b523624c28d6b5bbd1680121023c5ba1d7ef6fa015eb33defb3aba2a961898a51bbb7ff30344d07ba75ad3f289");
+    let expected_pub = H264::from("023c5ba1d7ef6fa015eb33defb3aba2a961898a51bbb7ff30344d07ba75ad3f289");
+    let actual_pub = pubkey_from_script_sig(&script_sig).unwrap();
+    assert_eq!(expected_pub, actual_pub);
+}
+
+#[test]
+fn test_pubkey_from_empty_script_sig() {
+    let script_sig = Script::from("");
+    assert!(pubkey_from_script_sig(&script_sig).is_err());
+    let script_sig = Script::from("00");
+    assert!(pubkey_from_script_sig(&script_sig).is_err());
 }
 
 #[test]

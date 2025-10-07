@@ -5,19 +5,25 @@ use crate::lp_healthcheck::peer_connection_healthcheck_rpc;
 use crate::lp_native_dex::init_hw::{cancel_init_trezor, init_trezor, init_trezor_status, init_trezor_user_action};
 #[cfg(target_arch = "wasm32")]
 use crate::lp_native_dex::init_metamask::{cancel_connect_metamask, connect_metamask, connect_metamask_status};
-use crate::lp_ordermatch::{best_orders_rpc_v2, orderbook_rpc_v2, start_simple_market_maker_bot,
-                           stop_simple_market_maker_bot};
-use crate::lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, start_version_stat_collection,
-                      stop_version_stat_collection, update_version_stat_collection};
+use crate::lp_ordermatch::{
+    best_orders_rpc_v2, orderbook_rpc_v2, start_simple_market_maker_bot, stop_simple_market_maker_bot,
+};
+use crate::lp_stats::{
+    add_node_to_version_stat, remove_node_from_version_stat, start_version_stat_collection,
+    stop_version_stat_collection, update_version_stat_collection,
+};
 use crate::lp_swap::swap_v2_rpcs::{active_swaps_rpc, my_recent_swaps_rpc, my_swap_status_rpc};
 use crate::lp_swap::{get_locked_amount_rpc, max_maker_vol, recreate_swap_data, trade_preimage_rpc};
 use crate::lp_wallet::{change_mnemonic_password, delete_wallet_rpc, get_mnemonic_rpc, get_wallet_names_rpc};
 use crate::rpc::lp_commands::db_id::get_shared_db_id;
-use crate::rpc::lp_commands::one_inch::rpcs::{one_inch_v6_0_classic_swap_contract_rpc,
-                                              one_inch_v6_0_classic_swap_create_rpc,
-                                              one_inch_v6_0_classic_swap_liquidity_sources_rpc,
-                                              one_inch_v6_0_classic_swap_quote_rpc,
-                                              one_inch_v6_0_classic_swap_tokens_rpc};
+use crate::rpc::lp_commands::lr_swap::{
+    lr_execute_routed_trade_rpc, lr_find_best_quote_rpc, lr_get_quotes_for_tokens_rpc,
+};
+use crate::rpc::lp_commands::one_inch::rpcs::{
+    one_inch_v6_0_classic_swap_contract_rpc, one_inch_v6_0_classic_swap_create_rpc,
+    one_inch_v6_0_classic_swap_liquidity_sources_rpc, one_inch_v6_0_classic_swap_quote_rpc,
+    one_inch_v6_0_classic_swap_tokens_rpc,
+};
 use crate::rpc::lp_commands::pubkey::*;
 use crate::rpc::lp_commands::tokens::get_token_info;
 use crate::rpc::lp_commands::tokens::{approve_token_rpc, get_token_allowance_rpc};
@@ -28,35 +34,47 @@ use crate::rpc::wc_commands::{new_connection, ping_session};
 use coins::eth::fee_estimation::rpc::get_eth_estimated_fee_per_gas;
 use coins::eth::EthCoin;
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
-use coins::rpc_command::offline_keys::get_private_keys;
-use coins::rpc_command::{account_balance::account_balance,
-                         get_current_mtp::get_current_mtp_rpc,
-                         get_enabled_coins::get_enabled_coins_rpc,
-                         get_new_address::{cancel_get_new_address, get_new_address, init_get_new_address,
-                                           init_get_new_address_status, init_get_new_address_user_action},
-                         init_account_balance::{cancel_account_balance, init_account_balance,
-                                                init_account_balance_status},
-                         init_create_account::{cancel_create_new_account, init_create_new_account,
-                                               init_create_new_account_status, init_create_new_account_user_action},
-                         init_scan_for_new_addresses::{cancel_scan_for_new_addresses, init_scan_for_new_addresses,
-                                                       init_scan_for_new_addresses_status},
-                         init_withdraw::{cancel_withdraw, init_withdraw, withdraw_status, withdraw_user_action}};
-#[cfg(feature = "enable-sia")] use coins::siacoin::SiaCoin;
+use coins::rpc_command::{
+    account_balance::account_balance,
+    consolidate_utxos::consolidate_utxos_rpc,
+    fetch_utxos::fetch_utxos_rpc,
+    get_current_mtp::get_current_mtp_rpc,
+    get_enabled_coins::get_enabled_coins_rpc,
+    get_new_address::{
+        cancel_get_new_address, get_new_address, init_get_new_address, init_get_new_address_status,
+        init_get_new_address_user_action,
+    },
+    init_account_balance::{cancel_account_balance, init_account_balance, init_account_balance_status},
+    init_create_account::{
+        cancel_create_new_account, init_create_new_account, init_create_new_account_status,
+        init_create_new_account_user_action,
+    },
+    init_scan_for_new_addresses::{
+        cancel_scan_for_new_addresses, init_scan_for_new_addresses, init_scan_for_new_addresses_status,
+    },
+    init_withdraw::{cancel_withdraw, init_withdraw, withdraw_status, withdraw_user_action},
+    offline_keys::get_private_keys,
+};
+#[cfg(feature = "enable-sia")]
+use coins::siacoin::SiaCoin;
 use coins::tendermint::{TendermintCoin, TendermintToken};
 use coins::utxo::bch::BchCoin;
 use coins::utxo::qtum::QtumCoin;
 use coins::utxo::slp::SlpToken;
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::z_coin::ZCoin;
-use coins::{add_delegation, claim_staking_rewards, delegations_info, get_my_address, get_raw_transaction,
-            get_swap_transaction_fee_policy, nft, ongoing_undelegations_info, remove_delegation,
-            set_swap_transaction_fee_policy, sign_message, sign_raw_transaction, validators_info, verify_message,
-            withdraw};
-use coins_activation::{cancel_init_l2, cancel_init_platform_coin_with_tokens, cancel_init_standalone_coin,
-                       cancel_init_token, enable_platform_coin_with_tokens, enable_token, init_l2, init_l2_status,
-                       init_l2_user_action, init_platform_coin_with_tokens, init_platform_coin_with_tokens_status,
-                       init_platform_coin_with_tokens_user_action, init_standalone_coin, init_standalone_coin_status,
-                       init_standalone_coin_user_action, init_token, init_token_status, init_token_user_action};
+use coins::{
+    add_delegation, claim_staking_rewards, delegations_info, get_my_address, get_raw_transaction,
+    get_swap_gas_fee_policy, nft, ongoing_undelegations_info, remove_delegation, set_swap_gas_fee_policy, sign_message,
+    sign_raw_transaction, validators_info, verify_message, withdraw,
+};
+use coins_activation::{
+    cancel_init_l2, cancel_init_platform_coin_with_tokens, cancel_init_standalone_coin, cancel_init_token,
+    enable_platform_coin_with_tokens, enable_token, init_l2, init_l2_status, init_l2_user_action,
+    init_platform_coin_with_tokens, init_platform_coin_with_tokens_status, init_platform_coin_with_tokens_user_action,
+    init_standalone_coin, init_standalone_coin_status, init_standalone_coin_user_action, init_token, init_token_status,
+    init_token_user_action,
+};
 use common::log::{error, warn};
 use common::HttpStatusCode;
 use futures::Future as Future03;
@@ -65,8 +83,9 @@ use mm2_core::data_asker::send_asked_data_rpc;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_rpc::mm_protocol::{MmRpcBuilder, MmRpcRequest, MmRpcVersion};
-use nft::{clear_nft_db, get_nft_list, get_nft_metadata, get_nft_transfers, refresh_nft_metadata, update_nft,
-          withdraw_nft};
+use nft::{
+    clear_nft_db, get_nft_list, get_nft_metadata, get_nft_transfers, refresh_nft_metadata, update_nft, withdraw_nft,
+};
 use serde::de::DeserializeOwned;
 use serde_json::{self as json, Value as Json};
 use std::net::SocketAddr;
@@ -160,10 +179,31 @@ async fn experimental_rpcs_dispatcher(
     ctx: MmArc,
     experimental_method: &str,
 ) -> DispatcherResult<Response<Vec<u8>>> {
+    #[cfg(feature = "enable-solana")]
+    match request.method.as_str() {
+        "experimental::enable_solana_with_assets" => {
+            return handle_mmrpc(
+                ctx,
+                request,
+                enable_platform_coin_with_tokens::<coins::solana::SolanaCoin>,
+            )
+            .await
+        },
+        "experimental::enable_solana_token" => {
+            return handle_mmrpc(ctx, request, enable_token::<coins::solana::SolanaToken>).await
+        },
+        _ => {},
+    };
+
     if let Some(staking_method) = experimental_method.strip_prefix("staking::") {
         return staking_dispatcher(request, ctx, staking_method).await;
     }
-
+    if let Some(lr_method) = experimental_method.strip_prefix("liquidity_routing::") {
+        return liquidity_routing_dispatcher(request, ctx, lr_method).await;
+    }
+    if let Some(one_inch_method) = experimental_method.strip_prefix("1inch_v6_0::") {
+        return one_inch_dispatcher(request, ctx, one_inch_method).await;
+    }
     MmError::err(DispatcherError::NoSuchMethod)
 }
 
@@ -202,6 +242,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "get_token_allowance" => handle_mmrpc(ctx, request, get_token_allowance_rpc).await,
         "best_orders" => handle_mmrpc(ctx, request, best_orders_rpc_v2).await,
         "clear_nft_db" => handle_mmrpc(ctx, request, clear_nft_db).await,
+        "consolidate_utxos" => handle_mmrpc(ctx, request, consolidate_utxos_rpc).await,
         "delete_wallet" => handle_mmrpc(ctx, request, delete_wallet_rpc).await,
         "enable_bch_with_tokens" => handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<BchCoin>).await,
         "enable_slp" => handle_mmrpc(ctx, request, enable_token::<SlpToken>).await,
@@ -212,6 +253,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
             handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<TendermintCoin>).await
         },
         "enable_tendermint_token" => handle_mmrpc(ctx, request, enable_token::<TendermintToken>).await,
+        "fetch_utxos" => handle_mmrpc(ctx, request, fetch_utxos_rpc).await,
         "get_current_mtp" => handle_mmrpc(ctx, request, get_current_mtp_rpc).await,
         "get_enabled_coins" => handle_mmrpc(ctx, request, get_enabled_coins_rpc).await,
         "get_locked_amount" => handle_mmrpc(ctx, request, get_locked_amount_rpc).await,
@@ -252,17 +294,10 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "peer_connection_healthcheck" => handle_mmrpc(ctx, request, peer_connection_healthcheck_rpc).await,
         "withdraw_nft" => handle_mmrpc(ctx, request, withdraw_nft).await,
         "get_eth_estimated_fee_per_gas" => handle_mmrpc(ctx, request, get_eth_estimated_fee_per_gas).await,
-        "get_swap_transaction_fee_policy" => handle_mmrpc(ctx, request, get_swap_transaction_fee_policy).await,
-        "set_swap_transaction_fee_policy" => handle_mmrpc(ctx, request, set_swap_transaction_fee_policy).await,
+        "get_swap_gas_fee_policy" => handle_mmrpc(ctx, request, get_swap_gas_fee_policy).await,
+        "set_swap_gas_fee_policy" => handle_mmrpc(ctx, request, set_swap_gas_fee_policy).await,
         "send_asked_data" => handle_mmrpc(ctx, request, send_asked_data_rpc).await,
         "z_coin_tx_history" => handle_mmrpc(ctx, request, coins::my_tx_history_v2::z_coin_tx_history_rpc).await,
-        "1inch_v6_0_classic_swap_contract" => handle_mmrpc(ctx, request, one_inch_v6_0_classic_swap_contract_rpc).await,
-        "1inch_v6_0_classic_swap_quote" => handle_mmrpc(ctx, request, one_inch_v6_0_classic_swap_quote_rpc).await,
-        "1inch_v6_0_classic_swap_create" => handle_mmrpc(ctx, request, one_inch_v6_0_classic_swap_create_rpc).await,
-        "1inch_v6_0_classic_swap_liquidity_sources" => {
-            handle_mmrpc(ctx, request, one_inch_v6_0_classic_swap_liquidity_sources_rpc).await
-        },
-        "1inch_v6_0_classic_swap_tokens" => handle_mmrpc(ctx, request, one_inch_v6_0_classic_swap_tokens_rpc).await,
         "wc_new_connection" => handle_mmrpc(ctx, request, new_connection).await,
         "wc_get_session" => handle_mmrpc(ctx, request, get_session).await,
         "wc_get_sessions" => handle_mmrpc(ctx, request, get_all_sessions).await,
@@ -492,6 +527,36 @@ async fn staking_dispatcher(
         "claim_rewards" => handle_mmrpc(ctx, request, claim_staking_rewards).await,
         "delegate" => handle_mmrpc(ctx, request, add_delegation).await,
         "undelegate" => handle_mmrpc(ctx, request, remove_delegation).await,
+        _ => MmError::err(DispatcherError::NoSuchMethod),
+    }
+}
+
+async fn one_inch_dispatcher(
+    request: MmRpcRequest,
+    ctx: MmArc,
+    lr_method: &str,
+) -> DispatcherResult<Response<Vec<u8>>> {
+    match lr_method {
+        "classic_swap_contract" => handle_mmrpc(ctx, request, one_inch_v6_0_classic_swap_contract_rpc).await,
+        "classic_swap_quote" => handle_mmrpc(ctx, request, one_inch_v6_0_classic_swap_quote_rpc).await,
+        "classic_swap_create" => handle_mmrpc(ctx, request, one_inch_v6_0_classic_swap_create_rpc).await,
+        "classic_swap_liquidity_sources" => {
+            handle_mmrpc(ctx, request, one_inch_v6_0_classic_swap_liquidity_sources_rpc).await
+        },
+        "classic_swap_tokens" => handle_mmrpc(ctx, request, one_inch_v6_0_classic_swap_tokens_rpc).await,
+        _ => MmError::err(DispatcherError::NoSuchMethod),
+    }
+}
+
+async fn liquidity_routing_dispatcher(
+    request: MmRpcRequest,
+    ctx: MmArc,
+    lr_method: &str,
+) -> DispatcherResult<Response<Vec<u8>>> {
+    match lr_method {
+        "find_best_quote" => handle_mmrpc(ctx, request, lr_find_best_quote_rpc).await,
+        "get_quotes_for_tokens" => handle_mmrpc(ctx, request, lr_get_quotes_for_tokens_rpc).await,
+        "execute_routed_trade" => handle_mmrpc(ctx, request, lr_execute_routed_trade_rpc).await,
         _ => MmError::err(DispatcherError::NoSuchMethod),
     }
 }

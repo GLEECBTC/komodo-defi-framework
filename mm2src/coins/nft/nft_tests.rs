@@ -1,11 +1,14 @@
 use crate::hd_wallet::AddrToString;
-use crate::nft::nft_structs::{Chain, NftFromMoralis, NftListFilters, NftTransferHistoryFilters,
-                              NftTransferHistoryFromMoralis, PhishingDomainReq, PhishingDomainRes, SpamContractReq,
-                              SpamContractRes, TransferMeta};
+use crate::nft::nft_structs::{
+    Chain, NftFromMoralis, NftListFilters, NftTransferHistoryFilters, NftTransferHistoryFromMoralis, PhishingDomainReq,
+    PhishingDomainRes, SpamContractReq, SpamContractRes, TransferMeta,
+};
 use crate::nft::storage::db_test_helpers::{get_nft_ctx, nft, nft_list, nft_transfer_history};
 use crate::nft::storage::{NftListStorageOps, NftTransferHistoryStorageOps, RemoveNftResult};
-use crate::nft::{check_moralis_ipfs_bafy, get_domain_from_url, is_malicious, process_metadata_for_spam_link,
-                 process_text_for_spam_link};
+use crate::nft::{
+    check_moralis_ipfs_bafy, get_domain_from_url, is_malicious, process_metadata_for_spam_link,
+    process_text_for_spam_link,
+};
 use common::cross_test;
 use ethereum_types::Address;
 use mm2_net::transport::send_post_request_to_uri;
@@ -90,10 +93,7 @@ cross_test!(test_check_for_spam_links, {
 });
 
 cross_test!(test_moralis_requests, {
-    let uri_nft_list = format!(
-        "{}/{}/nft?chain=POLYGON&format=decimal",
-        MORALIS_API_ENDPOINT_TEST, TEST_WALLET_ADDR_EVM
-    );
+    let uri_nft_list = format!("{MORALIS_API_ENDPOINT_TEST}/{TEST_WALLET_ADDR_EVM}/nft?chain=POLYGON&format=decimal");
     let response_nft_list = send_request_to_uri(uri_nft_list.as_str(), None).await.unwrap();
     let nfts_list = response_nft_list["result"].as_array().unwrap();
     for nft_json in nfts_list {
@@ -101,10 +101,8 @@ cross_test!(test_moralis_requests, {
         assert_eq!(TEST_WALLET_ADDR_EVM, nft_moralis.common.owner_of.addr_to_string());
     }
 
-    let uri_history = format!(
-        "{}/{}/nft/transfers?chain=POLYGON&format=decimal",
-        MORALIS_API_ENDPOINT_TEST, TEST_WALLET_ADDR_EVM
-    );
+    let uri_history =
+        format!("{MORALIS_API_ENDPOINT_TEST}/{TEST_WALLET_ADDR_EVM}/nft/transfers?chain=POLYGON&format=decimal");
     let response_transfer_history = send_request_to_uri(uri_history.as_str(), None).await.unwrap();
     let mut transfer_list = response_transfer_history["result"].as_array().unwrap().clone();
     assert!(!transfer_list.is_empty());
@@ -116,8 +114,7 @@ cross_test!(test_moralis_requests, {
     );
 
     let uri_meta = format!(
-        "{}/nft/0xed55e4477b795eaa9bb4bca24df42214e1a05c18/1111777?chain=POLYGON&format=decimal",
-        MORALIS_API_ENDPOINT_TEST
+        "{MORALIS_API_ENDPOINT_TEST}/nft/0xed55e4477b795eaa9bb4bca24df42214e1a05c18/1111777?chain=POLYGON&format=decimal"
     );
     let response_meta = send_request_to_uri(uri_meta.as_str(), None).await.unwrap();
     let nft_moralis: NftFromMoralis = serde_json::from_str(&response_meta.to_string()).unwrap();
@@ -129,7 +126,7 @@ cross_test!(test_antispam_scan_endpoints, {
         network: Chain::Eth,
         addresses: "0x0ded8542fc8b2b4e781b96e99fee6406550c9b7c,0x8d1355b65da254f2cc4611453adfa8b7a13f60ee".to_string(),
     };
-    let uri_contract = format!("{}/api/blocklist/contract/scan", BLOCKLIST_API_ENDPOINT);
+    let uri_contract = format!("{BLOCKLIST_API_ENDPOINT}/api/blocklist/contract/scan");
     let req_json = serde_json::to_string(&req_spam).unwrap();
     let contract_scan_res = send_post_request_to_uri(uri_contract.as_str(), req_json).await.unwrap();
     let spam_res: SpamContractRes = serde_json::from_slice(&contract_scan_res).unwrap();
@@ -146,7 +143,7 @@ cross_test!(test_antispam_scan_endpoints, {
         domains: "disposal-account-case-1f677.web.app,defi8090.vip".to_string(),
     };
     let req_json = serde_json::to_string(&req_phishing).unwrap();
-    let uri_domain = format!("{}/api/blocklist/domain/scan", BLOCKLIST_API_ENDPOINT);
+    let uri_domain = format!("{BLOCKLIST_API_ENDPOINT}/api/blocklist/domain/scan");
     let domain_scan_res = send_post_request_to_uri(uri_domain.as_str(), req_json).await.unwrap();
     let phishing_res: PhishingDomainRes = serde_json::from_slice(&domain_scan_res).unwrap();
     assert!(phishing_res.result.get("disposal-account-case-1f677.web.app").unwrap());
@@ -159,7 +156,7 @@ cross_test!(
         use crate::nft::nft_structs::UriMeta;
 
         let hex_token_uri = hex::encode("https://tikimetadata.s3.amazonaws.com/tiki_box.json");
-        let uri_decode = format!("{}/url/decode/{}", BLOCKLIST_API_ENDPOINT, hex_token_uri);
+        let uri_decode = format!("{BLOCKLIST_API_ENDPOINT}/url/decode/{hex_token_uri}");
         let decode_res = send_request_to_uri(&uri_decode, None).await.unwrap();
         let uri_meta: UriMeta = serde_json::from_value(decode_res).unwrap();
         assert_eq!(
@@ -216,7 +213,7 @@ cross_test!(test_nft_list, {
         .await
         .unwrap();
     assert_eq!(nft_list.nfts.len(), 1);
-    let nft = nft_list.nfts.get(0).unwrap();
+    let nft = nft_list.nfts.first().unwrap();
     assert_eq!(nft.block_number, 28056721);
     assert_eq!(nft_list.skipped, 2);
     assert_eq!(nft_list.total, 4);
@@ -466,7 +463,7 @@ cross_test!(test_add_get_transfers, {
         .get_transfers_by_token_addr_id(chain, TOKEN_ADD.to_string(), token_id)
         .await
         .unwrap()
-        .get(0)
+        .first()
         .unwrap()
         .clone();
     assert_eq!(transfer1.block_number, 28056721);
@@ -513,7 +510,7 @@ cross_test!(test_transfer_history, {
         .await
         .unwrap();
     assert_eq!(transfer_history.transfer_history.len(), 1);
-    let transfer = transfer_history.transfer_history.get(0).unwrap();
+    let transfer = transfer_history.transfer_history.first().unwrap();
     assert_eq!(transfer.block_number, 28056721);
     assert_eq!(transfer_history.skipped, 2);
     assert_eq!(transfer_history.total, 4);
@@ -559,7 +556,7 @@ cross_test!(test_transfer_history_filters, {
         .await
         .unwrap();
     assert_eq!(transfer_history.transfer_history.len(), 4);
-    let transfer = transfer_history.transfer_history.get(0).unwrap();
+    let transfer = transfer_history.transfer_history.first().unwrap();
     assert_eq!(transfer.block_number, 28056726);
 
     let transfer_history1 = storage
@@ -567,7 +564,7 @@ cross_test!(test_transfer_history_filters, {
         .await
         .unwrap();
     assert_eq!(transfer_history1.transfer_history.len(), 1);
-    let transfer1 = transfer_history1.transfer_history.get(0).unwrap();
+    let transfer1 = transfer_history1.transfer_history.first().unwrap();
     assert_eq!(transfer1.block_number, 25919780);
 
     let transfer_history2 = storage
@@ -575,7 +572,7 @@ cross_test!(test_transfer_history_filters, {
         .await
         .unwrap();
     assert_eq!(transfer_history2.transfer_history.len(), 2);
-    let transfer_0 = transfer_history2.transfer_history.get(0).unwrap();
+    let transfer_0 = transfer_history2.transfer_history.first().unwrap();
     assert_eq!(transfer_0.block_number, 28056721);
     let transfer_1 = transfer_history2.transfer_history.get(1).unwrap();
     assert_eq!(transfer_1.block_number, 25919780);
@@ -611,7 +608,7 @@ cross_test!(test_get_update_transfer_meta, {
         .get_transfers_by_token_addr_id(chain, token_add, Default::default())
         .await
         .unwrap();
-    let transfer_upd = transfer_upd.get(0).unwrap();
+    let transfer_upd = transfer_upd.first().unwrap();
     assert_eq!(transfer_upd.token_name, Some("Tiki box".to_string()));
     assert!(transfer_upd.common.possible_spam);
 });

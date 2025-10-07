@@ -17,7 +17,7 @@
 //!
 //! fn is_static_library(path: &str) -> Result<(), MmError<E2>> {
 //!     let filename = filename(path)?;
-//!     let extension = get_file_extension(filename)?;
+//!     let extension = get_file_extension(filename).map_mm_err()?;
 //!     if extension == "a" || extension == "lib" {
 //!         Ok(())
 //!     } else {
@@ -42,7 +42,7 @@
 //! fn get_file_extension(filename: &str) -> Result<&str, MmError<E1>> { MmError::err(E1::new()) }
 //!
 //! fn is_static_library(path: &str) -> Result<(), MmError<E2>> {
-//!     let filename = filename(path).map_to_mm(|e1| E2::from_e1(e1))?;
+//!     let filename = filename(path).map_to_mm(|e1| E2::from_e1(e1)).map_mm_err()??;
 //!     let extension = get_file_extension(filename).mm_err(|e1| E2::from_e1(e1))?;
 //!     if extension == "a" || extension == "lib" {
 //!         Ok(())
@@ -115,11 +115,6 @@ pub trait SerMmErrorType: SerializeErrorType + fmt::Display + NotMmError {}
 
 impl<E> SerMmErrorType for E where E: SerializeErrorType + fmt::Display + NotMmError {}
 
-pub auto trait NotEqual {}
-impl<X> !NotEqual for (X, X) {}
-impl<T: ?Sized, A: Allocator> NotEqual for Box<T, A> {}
-impl<T: ?Sized> NotEqual for Arc<T> {}
-
 /// The unified error representation tracing an error path.
 #[derive(Clone, Eq, PartialEq)]
 pub struct MmError<E: NotMmError> {
@@ -131,7 +126,9 @@ impl<E> fmt::Display for MmError<E>
 where
     E: NotMmError + fmt::Display,
 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{} {}", self.trace.formatted(), self.etype) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {}", self.trace.formatted(), self.etype)
+    }
 }
 
 impl<E> fmt::Debug for MmError<E>
@@ -145,17 +142,6 @@ where
 
 impl<E: fmt::Display + StdError + NotMmError> StdError for MmError<E> {}
 
-/// Track the location whenever `MmError<E2>::from(MmError<E1>)` is called.
-impl<E1, E2> From<MmError<E1>> for MmError<E2>
-where
-    E1: NotMmError,
-    E2: From<E1> + NotMmError,
-    (E1, E2): NotEqual,
-{
-    #[track_caller]
-    fn from(orig: MmError<E1>) -> Self { orig.map(E2::from) }
-}
-
 /// Track the location whenever `MmError<E2>::from(E1)` is called.
 impl<E1, E2> From<E1> for MmError<E2>
 where
@@ -163,7 +149,9 @@ where
     E2: From<E1> + NotMmError,
 {
     #[track_caller]
-    fn from(e1: E1) -> Self { MmError::new(E2::from(e1)) }
+    fn from(e1: E1) -> Self {
+        MmError::new(E2::from(e1))
+    }
 }
 
 impl<E> Serialize for MmError<E>
@@ -198,7 +186,9 @@ impl<E> HttpStatusCode for MmError<E>
 where
     E: HttpStatusCode + NotMmError,
 {
-    fn status_code(&self) -> StatusCode { self.etype.status_code() }
+    fn status_code(&self) -> StatusCode {
+        self.etype.status_code()
+    }
 }
 
 pub struct MmErrorTrace {
@@ -206,7 +196,9 @@ pub struct MmErrorTrace {
 }
 
 impl MmErrorTrace {
-    pub fn new(trace: Vec<TraceLocation>) -> MmErrorTrace { MmErrorTrace { trace } }
+    pub fn new(trace: Vec<TraceLocation>) -> MmErrorTrace {
+        MmErrorTrace { trace }
+    }
 }
 
 impl<E: NotMmError> MmError<E> {
@@ -228,7 +220,9 @@ impl<E: NotMmError> MmError<E> {
         }
     }
 
-    pub fn split(self) -> (E, MmErrorTrace) { (self.etype, MmErrorTrace::new(self.trace)) }
+    pub fn split(self) -> (E, MmErrorTrace) {
+        (self.etype, MmErrorTrace::new(self.trace))
+    }
 
     #[track_caller]
     pub fn map<MapE, F>(mut self, f: F) -> MmError<MapE>
@@ -244,16 +238,22 @@ impl<E: NotMmError> MmError<E> {
     }
 
     #[track_caller]
-    pub fn err<T>(etype: E) -> Result<T, MmError<E>> { Err(MmError::new(etype)) }
+    pub fn err<T>(etype: E) -> Result<T, MmError<E>> {
+        Err(MmError::new(etype))
+    }
 
     #[track_caller]
     pub fn err_with_trace<T>(etype: E, trace: MmErrorTrace) -> Result<T, MmError<E>> {
         Err(MmError::new_with_trace(etype, trace))
     }
 
-    pub fn get_inner(&self) -> &E { &self.etype }
+    pub fn get_inner(&self) -> &E {
+        &self.etype
+    }
 
-    pub fn into_inner(self) -> E { self.etype }
+    pub fn into_inner(self) -> E {
+        self.etype
+    }
 
     /// Format the [`MmError::trace`] similar to JSON path notation: `mm2.lp_swap.utxo.rpc_client`.
     /// The return path is deduplicated.
@@ -291,7 +291,7 @@ pub trait FormattedTrace {
 /// location_file:379]
 /// ```
 #[derive(Clone, Debug, Display, Eq, PartialEq)]
-#[display(fmt = "{}:{}]", file, line)]
+#[display(fmt = "{file}:{line}]")]
 pub struct TraceLocation {
     file: &'static str,
     line: u32,
@@ -307,15 +307,23 @@ impl From<&'static Location<'static>> for TraceLocation {
 }
 
 impl FormattedTrace for TraceLocation {
-    fn formatted(&self) -> String { self.to_string() }
+    fn formatted(&self) -> String {
+        self.to_string()
+    }
 }
 
 impl TraceLocation {
-    pub fn new(file: &'static str, line: u32) -> TraceLocation { TraceLocation { file, line } }
+    pub fn new(file: &'static str, line: u32) -> TraceLocation {
+        TraceLocation { file, line }
+    }
 
-    pub fn file(&self) -> &'static str { self.file }
+    pub fn file(&self) -> &'static str {
+        self.file
+    }
 
-    pub fn line(&self) -> u32 { self.line }
+    pub fn line(&self) -> u32 {
+        self.line
+    }
 }
 
 impl<T: FormattedTrace> FormattedTrace for Vec<T> {
@@ -344,7 +352,7 @@ mod tests {
     #[derive(Display, Serialize, SerializeErrorType)]
     #[serde(tag = "error_type", content = "error_data")]
     enum ForwardedError {
-        #[display(fmt = "Not sufficient balance. Top up your balance by {}", missing)]
+        #[display(fmt = "Not sufficient balance. Top up your balance by {missing}")]
         NotSufficientBalance { missing: u64 },
     }
 
@@ -367,7 +375,7 @@ mod tests {
 
         const FORWARDED_LINE: u32 = line!() + 2;
         fn forward_error(actual: u64, required: u64) -> Result<(), MmError<ForwardedError>> {
-            generate_error(actual, required)?;
+            generate_error(actual, required).map_mm_err()?;
             unreachable!("'generate_error' must return an error")
         }
 
@@ -377,8 +385,7 @@ mod tests {
         let error = forward_error(actual, required).expect_err("'forward_error' must return an error");
 
         let expected_display = format!(
-            "mm_error:{}] mm_error:{}] Not sufficient balance. Top up your balance by {}",
-            FORWARDED_LINE, GENERATED_LINE, missing
+            "mm_error:{FORWARDED_LINE}] mm_error:{GENERATED_LINE}] Not sufficient balance. Top up your balance by {missing}"
         );
         assert_eq!(error.to_string(), expected_display);
 
@@ -386,7 +393,7 @@ mod tests {
         let expected_path = "mm_error";
         assert_eq!(error.path(), expected_path);
 
-        let expected_stack_trace = format!("mm_error:{}] mm_error:{}]", FORWARDED_LINE, GENERATED_LINE);
+        let expected_stack_trace = format!("mm_error:{FORWARDED_LINE}] mm_error:{GENERATED_LINE}]");
         assert_eq!(error.stack_trace(), expected_stack_trace);
 
         let actual_json = json::to_value(error).expect("!json::to_value");
@@ -435,7 +442,7 @@ mod tests {
     #[derive(Display)]
     #[allow(dead_code)]
     enum ForwardedErrorWithBox {
-        #[display(fmt = "Not sufficient balance. Top up your balance by {}", missing)]
+        #[display(fmt = "Not sufficient balance. Top up your balance by {missing}")]
         NotSufficientBalance {
             missing: u64,
         },
@@ -462,7 +469,7 @@ mod tests {
 
         const FORWARDED_LINE: u32 = line!() + 2;
         fn forward_error_for_box(actual: u64, required: u64) -> Result<(), MmError<ForwardedErrorWithBox>> {
-            generate_error_for_box(actual, required)?;
+            generate_error_for_box(actual, required).map_mm_err()?;
             unreachable!("'generate_error' must return an error")
         }
 
@@ -472,8 +479,7 @@ mod tests {
         let error = forward_error_for_box(actual, required).expect_err("'forward_error' must return an error");
 
         let expected_display = format!(
-            "mm_error:{}] mm_error:{}] Not sufficient balance. Top up your balance by {}",
-            FORWARDED_LINE, GENERATED_LINE, missing
+            "mm_error:{FORWARDED_LINE}] mm_error:{GENERATED_LINE}] Not sufficient balance. Top up your balance by {missing}"
         );
         assert_eq!(error.to_string(), expected_display);
 
@@ -481,7 +487,7 @@ mod tests {
         let expected_path = "mm_error";
         assert_eq!(error.path(), expected_path);
 
-        let expected_stack_trace = format!("mm_error:{}] mm_error:{}]", FORWARDED_LINE, GENERATED_LINE);
+        let expected_stack_trace = format!("mm_error:{FORWARDED_LINE}] mm_error:{GENERATED_LINE}]");
         assert_eq!(error.stack_trace(), expected_stack_trace);
     }
 }

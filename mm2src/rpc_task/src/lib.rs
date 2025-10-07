@@ -6,8 +6,10 @@ use serde::Serialize;
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
-#[macro_use] extern crate ser_error_derive;
-#[macro_use] extern crate serde_derive;
+#[macro_use]
+extern crate ser_error_derive;
+#[macro_use]
+extern crate serde_derive;
 
 mod handle;
 mod manager;
@@ -34,21 +36,16 @@ type UserActionSender<UserAction> = oneshot::Sender<UserAction>;
 
 #[derive(Clone, Display)]
 pub enum RpcTaskError {
-    #[display(fmt = "RPC task timeout '{:?}'", _0)]
+    #[display(fmt = "RPC task timeout '{_0:?}'")]
     Timeout(Duration),
     NoSuchTask(TaskId),
-    #[display(
-        fmt = "RPC '{}' task is in unexpected status. Actual: '{}', expected: '{}'",
-        task_id,
-        actual,
-        expected
-    )]
+    #[display(fmt = "RPC '{task_id}' task is in unexpected status. Actual: '{actual}', expected: '{expected}'")]
     UnexpectedTaskStatus {
         task_id: TaskId,
         actual: TaskStatusError,
         expected: TaskStatusError,
     },
-    #[display(fmt = "RPC 'task' is awaiting '{}' user action", expected)]
+    #[display(fmt = "RPC 'task' is awaiting '{expected}' user action")]
     UnexpectedUserAction {
         expected: String,
     },
@@ -66,11 +63,15 @@ pub enum TaskStatusError {
 }
 
 impl TaskStatusError {
-    fn is_finished(&self) -> bool { matches!(self, TaskStatusError::Finished) }
+    fn is_finished(&self) -> bool {
+        matches!(self, TaskStatusError::Finished)
+    }
 }
 
 impl From<TimeoutError> for RpcTaskError {
-    fn from(e: TimeoutError) -> Self { RpcTaskError::Timeout(e.duration) }
+    fn from(e: TimeoutError) -> Self {
+        RpcTaskError::Timeout(e.duration)
+    }
 }
 
 /// We can't simplify the generic types because there are places where the [`RpcTaskStatus::map_err`] method is used.
@@ -92,7 +93,9 @@ where
     Item: Serialize,
     Error: SerMmErrorType,
 {
-    pub fn is_ready(&self) -> bool { matches!(self, RpcTaskStatus::Ok(_) | RpcTaskStatus::Error(_)) }
+    pub fn is_ready(&self) -> bool {
+        matches!(self, RpcTaskStatus::Ok(_) | RpcTaskStatus::Error(_))
+    }
 
     pub fn map_err<NewError, F>(self, f: F) -> RpcTaskStatus<Item, NewError, InProgressStatus, AwaitingStatus>
     where
