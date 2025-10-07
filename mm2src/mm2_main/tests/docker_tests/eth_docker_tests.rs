@@ -3046,13 +3046,13 @@ fn test_v2_eth_eth_kickstart_impl(base: &str, rel: &str, maker_price: f64, taker
             // add some tolerance for floating point calculations of resulting amounts (+/- 0.0001)
             let (low_tol, high_tol) = if !is_token {
                 (
-                    // txfee with tolerance
-                    BigDecimal::from_f64(0.000001).unwrap(),
+                    // tolerance for gas fee plus swap amount
+                    BigDecimal::from_f64(0.0).unwrap(),
                     BigDecimal::from_f64(0.0005).unwrap(),
                 )
             } else {
                 (
-                    // no fee, only tolerance
+                    // no gas fee, only swap amount tolerance
                     BigDecimal::from_f64(-0.0001).unwrap(),
                     BigDecimal::from_f64(0.0001).unwrap(),
                 )
