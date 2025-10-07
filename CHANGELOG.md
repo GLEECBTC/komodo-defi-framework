@@ -8,6 +8,7 @@
 **Build and Dependency Management**:
 - A CI job was added to build macOS Universal2 artifacts for KDF, this combines `x86_64-apple-darwin` and `aarch64-apple-darwin` binaries via `lipo` to produce a single binary that runs natively on both Intel and Apple Silicon. The universal binary is uploaded as `kdf_<commit>-mac-universal.zip`. [#2628](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2628)
 - The `parity-util-mem` dependency was removed. [#2632](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2632)
+- CI container base image was bumped to `debian:bullseye-slim` [#2534](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2534) [#2641](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2641)
 
 ---
 
