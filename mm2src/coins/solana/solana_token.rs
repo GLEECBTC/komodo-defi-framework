@@ -191,21 +191,18 @@ impl MmCoin for SolanaToken {
                 .await
                 .map_err(|e| WithdrawError::Transport(e.into_inner()))?;
 
-            // TODO: If platform_coin balance is zero, they can't afford the
-            // fee, so do early-return here.
-
             // `to` can be either a Solana address, or a token address. We create
             // `to_token_account` regardless to support the both cases.
             let to = SolanaAddress::from_str(&req.to).map_err(|e| WithdrawError::InvalidAddress(e.to_string()))?;
             let to_token_account = get_associated_token_address(&to, &token.protocol_info.mint_address);
 
-            let amount_u64 = if req.max {
-                let balance = token
-                    .my_balance()
-                    .compat()
-                    .await
-                    .map_err(|e| WithdrawError::Transport(e.to_string()))?;
+            let balance = token
+                .my_balance()
+                .compat()
+                .await
+                .map_err(|e| WithdrawError::Transport(e.to_string()))?;
 
+            let amount_u64 = if req.max {
                 balance.spendable.to_u64().ok_or_else(|| {
                     MmError::new(WithdrawError::InternalError(format!(
                         "Couldn't convert {} to u64.",
@@ -227,6 +224,15 @@ impl MmCoin for SolanaToken {
                 return MmError::err(WithdrawError::AmountTooLow {
                     amount: req.amount,
                     threshold: token.min_tx_amount(),
+                });
+            }
+
+            let amount_decimal = lamports_to_big_decimal(amount_u64, token.protocol_info.decimals);
+            if balance.spendable < amount_decimal {
+                return MmError::err(WithdrawError::NotSufficientBalance {
+                    coin: token.ticker.to_owned(),
+                    available: balance.spendable,
+                    required: amount_decimal,
                 });
             }
 
@@ -290,6 +296,21 @@ impl MmCoin for SolanaToken {
                 .get_fee_for_message(tx.message())
                 .map_err(|e| WithdrawError::Transport(e.to_string()))?;
             let fee_dec = lamports_to_big_decimal(fee_lamports, super::solana_coin::SOLANA_DECIMALS);
+
+            let platform_coin_balance = coin
+                .my_balance()
+                .compat()
+                .await
+                .map_err(|e| WithdrawError::Transport(e.to_string()))?
+                .spendable;
+
+            if fee_dec > platform_coin_balance {
+                return MmError::err(WithdrawError::NotSufficientPlatformBalanceForFee {
+                    available: platform_coin_balance,
+                    required: fee_dec,
+                    coin: coin.ticker().to_owned(),
+                });
+            }
 
             let received_by_me = if to == coin.address {
                 amount_dec.clone()
