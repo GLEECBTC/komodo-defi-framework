@@ -18,9 +18,9 @@ use crate::utxo::utxo_common::{big_decimal_from_sat, big_decimal_from_sat_unsign
 use crate::utxo::{sat_from_big_decimal, utxo_common, BlockchainNetwork};
 use crate::{
     BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend,
-    HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions,
-    PaymentInstructionsErr, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionResult,
-    RefundError, RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput, SendPaymentArgs,
+    GetRawTransactionRequest, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
+    PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, RawTransactionError, RawTransactionFut,
+    RawTransactionResult, RefundError, RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput, SendPaymentArgs,
     SignRawTransactionRequest, SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TradeFee, TradePreimageFut,
     TradePreimageResult, TradePreimageValue, Transaction, TransactionEnum, TransactionErr, TransactionResult,
     TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult, ValidateFeeArgs,
@@ -1235,7 +1235,7 @@ impl MmCoin for LightningCoin {
         self.platform.abortable_system.weak_spawner()
     }
 
-    fn get_raw_transaction(&self, _req: RawTransactionRequest) -> RawTransactionFut<'_> {
+    fn get_raw_transaction(&self, _req: GetRawTransactionRequest) -> RawTransactionFut<'_> {
         let fut = async move {
             MmError::err(RawTransactionError::InternalError(
                 "get_raw_transaction method is not supported for lightning, please use get_payment_details method instead.".into(),

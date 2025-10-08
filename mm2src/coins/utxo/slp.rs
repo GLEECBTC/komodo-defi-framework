@@ -18,8 +18,8 @@ use crate::utxo::{
 };
 use crate::{
     BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInput, DerivationMethod, DexFee, FeeApproxStage,
-    FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, NumConversError,
-    PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest, RawTransactionResult, RefundPaymentArgs,
+    FoundSwapTxSpend, GetRawTransactionRequest, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
+    NumConversError, PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionResult, RefundPaymentArgs,
     SearchForSwapTxSpendInput, SendPaymentArgs, SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps,
     SwapTxTypeWithSecretHash, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue,
     TransactionData, TransactionDetails, TransactionEnum, TransactionErr, TransactionResult, TxFeeDetails,
@@ -1571,7 +1571,7 @@ impl MmCoin for SlpToken {
         self.conf.abortable_system.weak_spawner()
     }
 
-    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut<'_> {
+    fn get_raw_transaction(&self, req: GetRawTransactionRequest) -> RawTransactionFut<'_> {
         Box::new(
             utxo_common::get_raw_transaction(self.platform_coin.as_ref(), req)
                 .boxed()

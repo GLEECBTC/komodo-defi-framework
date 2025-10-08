@@ -1,8 +1,8 @@
 #![allow(clippy::all)]
 
 use super::{
-    CoinBalance, CommonSwapOpsV2, FindPaymentSpendError, FundingTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-    RawTransactionFut, RawTransactionRequest, RefundTakerPaymentArgs, SearchForFundingSpendErr, SwapOps, TradeFee,
+    CoinBalance, CommonSwapOpsV2, FindPaymentSpendError, FundingTxSpend, GetRawTransactionRequest, HistorySyncState,
+    MarketCoinOps, MmCoin, RawTransactionFut, RefundTakerPaymentArgs, SearchForFundingSpendErr, SwapOps, TradeFee,
     TransactionEnum, TransactionFut,
 };
 use crate::coin_errors::{AddressFromPubkeyError, ValidatePaymentResult};
@@ -415,7 +415,7 @@ impl MmCoin for TestCoin {
         unimplemented!()
     }
 
-    fn get_raw_transaction(&self, _req: RawTransactionRequest) -> RawTransactionFut<'_> {
+    fn get_raw_transaction(&self, _req: GetRawTransactionRequest) -> RawTransactionFut<'_> {
         unimplemented!()
     }
 

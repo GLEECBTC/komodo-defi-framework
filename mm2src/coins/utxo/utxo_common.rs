@@ -17,14 +17,14 @@ use crate::watcher_common::validate_watcher_reward;
 use crate::{
     scan_for_new_addresses_impl, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput, DexFee,
     DexFeeBurnDestination, GenPreimageResult, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
-    GetWithdrawSenderAddress, RawTransactionError, RawTransactionRequest, RawTransactionRes, RawTransactionResult,
+    GetRawTransactionRequest, GetWithdrawSenderAddress, RawTransactionError, RawTransactionResult,
     RefundFundingSecretArgs, RefundMakerPaymentSecretArgs, RefundPaymentArgs, RewardTarget, SearchForSwapTxSpendInput,
     SendMakerPaymentArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SendTakerFundingArgs,
-    SignRawTransactionEnum, SignRawTransactionRequest, SignUtxoTransactionParams, SignatureError, SignatureResult,
-    SpendMakerPaymentArgs, SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash, TradePreimageValue, TransactionData,
-    TransactionFut, TransactionResult, TxFeeDetails, TxGenError, TxMarshalingErr, TxPreimageWithSig,
-    ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, ValidateSwapV2TxError,
-    ValidateSwapV2TxResult, ValidateTakerFundingArgs, ValidateTakerFundingSpendPreimageError,
+    SignRawTransactionEnum, SignRawTransactionRequest, SignRawTransactionRes, SignUtxoTransactionParams,
+    SignatureError, SignatureResult, SpendMakerPaymentArgs, SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash,
+    TradePreimageValue, TransactionData, TransactionFut, TransactionResult, TxFeeDetails, TxGenError, TxMarshalingErr,
+    TxPreimageWithSig, ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
+    ValidateSwapV2TxError, ValidateSwapV2TxResult, ValidateTakerFundingArgs, ValidateTakerFundingSpendPreimageError,
     ValidateTakerFundingSpendPreimageResult, ValidateTakerPaymentSpendPreimageError,
     ValidateTakerPaymentSpendPreimageResult, ValidateWatcherSpendInput, VerificationError, VerificationResult,
     WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawResult,
@@ -3287,7 +3287,7 @@ async fn sign_raw_utxo_tx<T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps>(
         .map_err(|err| RawTransactionError::SigningError(err.to_string()))?;
 
     let tx_signed_bytes = serialize_with_flags(&tx_signed, SERIALIZE_TRANSACTION_WITNESS);
-    Ok(RawTransactionRes {
+    Ok(SignRawTransactionRes {
         tx_hex: tx_signed_bytes.into(),
     })
 }
@@ -3456,7 +3456,7 @@ pub const fn should_burn_dex_fee() -> bool {
     false
 } // TODO: fix back to true when negotiation version added
 
-pub async fn get_raw_transaction(coin: &UtxoCoinFields, req: RawTransactionRequest) -> RawTransactionResult {
+pub async fn get_raw_transaction(coin: &UtxoCoinFields, req: GetRawTransactionRequest) -> RawTransactionResult {
     let hash = H256Json::from_str(&req.tx_hash).map_to_mm(|e| RawTransactionError::InvalidHashError(e.to_string()))?;
     let hex = coin
         .rpc_client
@@ -3464,7 +3464,7 @@ pub async fn get_raw_transaction(coin: &UtxoCoinFields, req: RawTransactionReque
         .compat()
         .await
         .map_err(|e| RawTransactionError::Transport(e.to_string()))?;
-    Ok(RawTransactionRes { tx_hex: hex })
+    Ok(SignRawTransactionRes { tx_hex: hex })
 }
 
 pub async fn get_tx_hex_by_hash(coin: &UtxoCoinFields, tx_hash: Vec<u8>) -> RawTransactionResult {
@@ -3479,7 +3479,7 @@ pub async fn get_tx_hex_by_hash(coin: &UtxoCoinFields, tx_hash: Vec<u8>) -> RawT
         .compat()
         .await
         .map_err(|e| RawTransactionError::Transport(e.to_string()))?;
-    Ok(RawTransactionRes { tx_hex: hex })
+    Ok(SignRawTransactionRes { tx_hex: hex })
 }
 
 pub async fn withdraw<T>(coin: T, req: WithdrawRequest) -> WithdrawResult

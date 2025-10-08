@@ -10,9 +10,9 @@ use crate::hd_wallet::HDAddressSelector;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{
     big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
-    CoinBalance, ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
-    MmCoin, MyAddressError, NegotiateSwapContractAddrErr, RawTransactionError, RawTransactionFut,
-    RawTransactionRequest, RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs,
+    CoinBalance, ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend, GetRawTransactionRequest,
+    HistorySyncState, MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr, RawTransactionError,
+    RawTransactionFut, RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs,
     SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps, TradeFee, TradePreimageFut,
     TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr, TransactionResult,
     TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
@@ -574,7 +574,7 @@ impl MmCoin for TendermintToken {
         Box::new(fut.boxed().compat())
     }
 
-    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut<'_> {
+    fn get_raw_transaction(&self, req: GetRawTransactionRequest) -> RawTransactionFut<'_> {
         self.platform_coin.get_raw_transaction(req)
     }
 

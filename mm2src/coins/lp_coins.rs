@@ -320,9 +320,9 @@ pub type TradePreimageFut<T> = Box<dyn Future<Item = T, Error = MmError<TradePre
 pub type CoinFindResult<T> = Result<T, MmError<CoinFindError>>;
 pub type TxHistoryFut<T> = Box<dyn Future<Item = T, Error = MmError<TxHistoryError>> + Send>;
 pub type TxHistoryResult<T> = Result<T, MmError<TxHistoryError>>;
-pub type RawTransactionResult = Result<RawTransactionRes, MmError<RawTransactionError>>;
+pub type RawTransactionResult = Result<SignRawTransactionRes, MmError<RawTransactionError>>;
 pub type RawTransactionFut<'a> =
-    Box<dyn Future<Item = RawTransactionRes, Error = MmError<RawTransactionError>> + Send + 'a>;
+    Box<dyn Future<Item = SignRawTransactionRes, Error = MmError<RawTransactionError>> + Send + 'a>;
 pub type RefundResult<T> = Result<T, MmError<RefundError>>;
 /// Helper type used for swap transactions' spend preimage generation result
 pub type GenPreimageResult<Coin> = MmResult<TxPreimageWithSig<Coin>, TxGenError>;
@@ -438,13 +438,13 @@ impl HttpStatusCode for GetMyAddressError {
 }
 
 #[derive(Deserialize)]
-pub struct RawTransactionRequest {
+pub struct GetRawTransactionRequest {
     pub coin: String,
     pub tx_hash: String,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct RawTransactionRes {
+pub struct SignRawTransactionRes {
     /// Raw bytes of signed transaction in hexadecimal string, this should be return hexadecimal encoded signed transaction for get_raw_transaction
     pub tx_hex: BytesJson,
 }
@@ -3606,7 +3606,7 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut;
 
-    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut<'_>;
+    fn get_raw_transaction(&self, req: GetRawTransactionRequest) -> RawTransactionFut<'_>;
 
     fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut<'_>;
 
@@ -5439,7 +5439,7 @@ pub async fn withdraw(ctx: MmArc, req: WithdrawRequest) -> WithdrawResult {
     coin.withdraw(req).compat().await
 }
 
-pub async fn get_raw_transaction(ctx: MmArc, req: RawTransactionRequest) -> RawTransactionResult {
+pub async fn get_raw_transaction(ctx: MmArc, req: GetRawTransactionRequest) -> RawTransactionResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     coin.get_raw_transaction(req).compat().await
 }

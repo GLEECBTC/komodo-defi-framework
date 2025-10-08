@@ -17,10 +17,10 @@ use crate::utxo::sat_from_big_decimal;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{
     big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs, CoinBalance,
-    ConfirmPaymentInput, DelegationError, DexFee, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
-    MmCoin, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed,
-    RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes, RawTransactionResult,
-    RefundPaymentArgs, RpcCommonOps, SearchForSwapTxSpendInput, SendPaymentArgs, SignRawTransactionRequest,
+    ConfirmPaymentInput, DelegationError, DexFee, FeeApproxStage, FoundSwapTxSpend, GetRawTransactionRequest,
+    HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, PrivKeyPolicy,
+    PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionResult, RefundPaymentArgs,
+    RpcCommonOps, SearchForSwapTxSpendInput, SendPaymentArgs, SignRawTransactionRequest, SignRawTransactionRes,
     SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, ToBytes, TradeFee, TradePreimageError,
     TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionData, TransactionDetails, TransactionEnum,
     TransactionErr, TransactionFut, TransactionResult, TransactionType, TxFeeDetails, TxMarshalingErr,
@@ -3459,17 +3459,18 @@ impl MmCoin for TendermintCoin {
                     TransactionType::StandardTransfer
                 },
                 memo: Some(memo),
+                rseeds: None,
             })
         };
         Box::new(fut.boxed().compat())
     }
 
-    fn get_raw_transaction(&self, mut req: RawTransactionRequest) -> RawTransactionFut<'_> {
+    fn get_raw_transaction(&self, mut req: GetRawTransactionRequest) -> RawTransactionFut<'_> {
         let coin = self.clone();
         let fut = async move {
             req.tx_hash.make_ascii_uppercase();
             let tx_from_rpc = coin.request_tx(req.tx_hash).await.map_mm_err()?;
-            Ok(RawTransactionRes {
+            Ok(SignRawTransactionRes {
                 tx_hex: tx_from_rpc.encode_to_vec().into(),
             })
         };
@@ -3485,7 +3486,7 @@ impl MmCoin for TendermintCoin {
             })?;
             let hash = hex::encode_upper(H256::from(hash));
             let tx_from_rpc = coin.request_tx(hash).await.map_mm_err()?;
-            Ok(RawTransactionRes {
+            Ok(SignRawTransactionRes {
                 tx_hex: tx_from_rpc.encode_to_vec().into(),
             })
         };
