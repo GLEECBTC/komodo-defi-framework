@@ -64,7 +64,7 @@ pub struct StoredNegotiationData {
     taker_payment_locktime: u64,
     taker_funding_locktime: u64,
     maker_coin_htlc_pub_from_taker: BytesJson,
-    taker_coin_htlc_pub_from_taker: BytesJson,
+    pub taker_coin_htlc_pub_from_taker: BytesJson,
     maker_coin_swap_contract: Option<BytesJson>,
     taker_coin_swap_contract: Option<BytesJson>,
     taker_secret_hash: BytesJson,
@@ -148,6 +148,33 @@ pub enum MakerSwapEvent {
     Aborted { reason: AbortReason },
     /// Swap completed successfully.
     Completed,
+}
+
+impl MakerSwapEvent {
+    /// Returns true if the event is terminal, i.e. no more events will be produced after it.
+    pub fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            MakerSwapEvent::Aborted { .. } | MakerSwapEvent::Completed | MakerSwapEvent::MakerPaymentRefunded { .. }
+        )
+    }
+
+    /// Returns negotiation data if the event contains it.
+    pub fn negotiation_data(&self) -> Option<&StoredNegotiationData> {
+        match self {
+            MakerSwapEvent::WaitingForTakerFunding { negotiation_data, .. }
+            | MakerSwapEvent::TakerFundingReceived { negotiation_data, .. }
+            | MakerSwapEvent::MakerPaymentSentFundingSpendGenerated { negotiation_data, .. }
+            | MakerSwapEvent::MakerPaymentRefundRequired { negotiation_data, .. }
+            | MakerSwapEvent::TakerPaymentReceived { negotiation_data, .. }
+            | MakerSwapEvent::TakerPaymentReceivedAndPreimageValidationSkipped { negotiation_data, .. }
+            | MakerSwapEvent::TakerPaymentSpent { negotiation_data, .. } => Some(negotiation_data),
+            MakerSwapEvent::Initialized { .. }
+            | MakerSwapEvent::MakerPaymentRefunded { .. }
+            | MakerSwapEvent::Aborted { .. }
+            | MakerSwapEvent::Completed => None,
+        }
+    }
 }
 
 /// Storage for maker swaps.
@@ -451,7 +478,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
 
     /// Returns data that is unique for this swap.
     #[inline]
-    fn unique_data(&self) -> Vec<u8> {
+    pub fn unique_data(&self) -> Vec<u8> {
         self.secret_hash()
     }
 
@@ -2091,6 +2118,7 @@ impl<MakerCoin, TakerCoin> Aborted<MakerCoin, TakerCoin> {
     }
 }
 
+// NOTES(tpu-status): These LastState impls should be the ones who send the swap status to the seed nodes (and store stats internally)
 #[async_trait]
 impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOpsV2> LastState
     for Aborted<MakerCoin, TakerCoin>

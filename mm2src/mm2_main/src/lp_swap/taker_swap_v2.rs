@@ -63,7 +63,7 @@ pub struct StoredNegotiationData {
     maker_payment_locktime: u64,
     maker_secret_hash: BytesJson,
     taker_coin_maker_address: String,
-    maker_coin_htlc_pub_from_maker: BytesJson,
+    pub maker_coin_htlc_pub_from_maker: BytesJson,
     taker_coin_htlc_pub_from_maker: BytesJson,
     maker_coin_swap_contract: Option<BytesJson>,
     taker_coin_swap_contract: Option<BytesJson>,
@@ -178,6 +178,40 @@ pub enum TakerSwapEvent {
     Aborted { reason: AbortReason },
     /// Swap completed successfully.
     Completed,
+}
+
+impl TakerSwapEvent {
+    /// Returns true if the event is terminal, i.e. no more events will be produced after it.
+    pub fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            TakerSwapEvent::Aborted { .. }
+                | TakerSwapEvent::Completed
+                | TakerSwapEvent::TakerFundingRefunded { .. }
+                | TakerSwapEvent::TakerPaymentRefunded { .. }
+        )
+    }
+
+    /// Returns negotiation data if the event contains it.
+    pub fn negotiation_data(&self) -> Option<&StoredNegotiationData> {
+        match self {
+            TakerSwapEvent::Negotiated { negotiation_data, .. }
+            | TakerSwapEvent::TakerFundingSent { negotiation_data, .. }
+            | TakerSwapEvent::TakerFundingRefundRequired { negotiation_data, .. }
+            | TakerSwapEvent::MakerPaymentAndFundingSpendPreimgReceived { negotiation_data, .. }
+            | TakerSwapEvent::TakerPaymentSent { negotiation_data, .. }
+            | TakerSwapEvent::TakerPaymentSentAndPreimageSendingSkipped { negotiation_data, .. }
+            | TakerSwapEvent::MakerPaymentConfirmed { negotiation_data, .. }
+            | TakerSwapEvent::TakerPaymentSpent { negotiation_data, .. }
+            | TakerSwapEvent::MakerPaymentSpent { negotiation_data, .. }
+            | TakerSwapEvent::TakerPaymentRefundRequired { negotiation_data, .. } => Some(negotiation_data),
+            TakerSwapEvent::Initialized { .. }
+            | TakerSwapEvent::TakerFundingRefunded { .. }
+            | TakerSwapEvent::TakerPaymentRefunded { .. }
+            | TakerSwapEvent::Aborted { .. }
+            | TakerSwapEvent::Completed => None,
+        }
+    }
 }
 
 /// Storage for taker swaps.
@@ -476,7 +510,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         self.started_at + self.lock_duration
     }
 
-    fn unique_data(&self) -> Vec<u8> {
+    pub fn unique_data(&self) -> Vec<u8> {
         self.uuid.as_bytes().to_vec()
     }
 

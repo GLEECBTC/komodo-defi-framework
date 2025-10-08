@@ -100,6 +100,13 @@ pub const ADD_MAKER_TAKER_GUI_AND_VERSION: &[&str] = &[
 
 pub const SELECT_ID_BY_UUID: &str = "SELECT id FROM stats_swaps WHERE uuid = ?1";
 
+pub const ADD_SWAP_VERSION_AND_MARKET_MARGIN: &[&str] = &[
+    "ALTER TABLE stats_swaps ADD COLUMN swap_version INTEGER NOT NULL DEFAULT 0;",
+    "ALTER TABLE stats_swaps ADD COLUMN market_margin DECIMAL;",
+    // NULL = unknown, 0 = not a bot, 1 = bot
+    "ALTER TABLE stats_swaps ADD COLUMN is_maker_bot INTEGER;",
+];
+
 /// Returns SQL statements to initially fill stats_swaps table using existing DB with JSON files
 pub async fn create_and_fill_stats_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
     let maker_swaps = SavedSwap::load_all_from_maker_stats_db(ctx).await.unwrap_or_default();
