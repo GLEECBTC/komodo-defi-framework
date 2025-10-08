@@ -1029,9 +1029,9 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             },
         };
 
-        let total_payment_value = &(&state_machine.taker_volume + &state_machine.dex_fee().total_spend_amount())
-            + &state_machine.taker_premium;
-        let preimage_value = TradePreimageValue::Exact(total_payment_value.to_decimal());
+        let payment_value_with_premium = &state_machine.taker_volume + &state_machine.taker_premium;
+        let total_value_with_premium = &payment_value_with_premium + &state_machine.dex_fee().total_spend_amount();
+        let preimage_value = TradePreimageValue::Exact(total_value_with_premium.to_decimal());
         let stage = FeeApproxStage::StartSwap;
 
         let taker_payment_fee = match state_machine
@@ -1056,8 +1056,9 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
 
         let prepared_params = TakerSwapPreparedParams {
             dex_fee: state_machine.dex_fee().total_spend_amount(),
+            // fee_to_send_dex_fee is not used in TPU but the coin must be set correctly
             fee_to_send_dex_fee: TradeFee {
-                coin: state_machine.taker_coin.ticker().into(),
+                coin: state_machine.taker_coin.platform_ticker().into(),
                 amount: Default::default(),
                 paid_from_trading_vol: false,
             },
@@ -1069,7 +1070,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             &state_machine.ctx,
             &state_machine.taker_coin,
             &state_machine.maker_coin,
-            total_payment_value,
+            payment_value_with_premium,
             Some(&state_machine.uuid),
             Some(prepared_params),
             FeeApproxStage::StartSwap,
