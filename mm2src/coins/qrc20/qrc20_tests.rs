@@ -606,6 +606,7 @@ fn test_transfer_details_by_hash() {
         kmd_rewards: None,
         transaction_type: Default::default(),
         memo: None,
+        rseeds: None,
     };
     assert_eq!(actual, expected);
 
@@ -680,6 +681,7 @@ fn test_transfer_details_by_hash() {
         kmd_rewards: None,
         transaction_type: Default::default(),
         memo: None,
+        rseeds: None,
     };
     assert_eq!(actual, expected);
 
