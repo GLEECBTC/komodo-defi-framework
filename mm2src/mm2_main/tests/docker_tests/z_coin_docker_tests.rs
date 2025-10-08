@@ -99,7 +99,7 @@ async fn zombie_coin_withdraw_and_send_maker_payment() {
             .expect("expected valid WithdrawRequest"),
         )
         .await;
-    assert!(withdraw_res.is_ok());
+    assert!(withdraw_res.is_ok(), "withdraw error {:?}", withdraw_res);
 
     let send_tx_res = coin
         .z_send_raw_tx(
@@ -112,7 +112,7 @@ async fn zombie_coin_withdraw_and_send_maker_payment() {
             .expect("expected valid ZcoinSendRawTransactionRequest"),
         )
         .await;
-    assert!(send_tx_res.is_ok());
+    assert!(send_tx_res.is_ok(), "send tx error {:?}", send_tx_res);
 
     let time_lock = now_sec() - 3600;
     let secret_hash = [0; 20];

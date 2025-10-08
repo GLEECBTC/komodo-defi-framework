@@ -771,6 +771,10 @@ impl ZCoin {
             .await
             .map_err(RawTransactionError::TransactionError)?;
 
+        if !validate_rseeds(&req.rseeds) {
+            return MmError::err(RawTransactionError::InvalidParam("invalid rseed".to_owned()));
+        }
+
         for rseed in req.rseeds {
             self.z_fields
                 .locked_notes_db
@@ -2415,4 +2419,18 @@ fn rseed_to_string(rseed: &Rseed) -> String {
         Rseed::BeforeZip212(rcm) => rcm.to_string(),
         Rseed::AfterZip212(rseed) => jubjub::Fr::from_bytes_wide(prf_expand(rseed, &INPUT).as_array()).to_string(),
     }
+}
+
+#[inline]
+fn validate_rseeds(rseeds: &Vec<String>) -> bool {
+    const MAX_RSEED_OR_RCM_LEN: usize = 64;
+    for rseed in rseeds {
+        if let Ok(v) = hex::decode(str_strip_0x!(rseed)) {
+            if v.len() <= MAX_RSEED_OR_RCM_LEN {
+                continue;
+            }
+        }
+        return false;
+    }
+    true
 }
