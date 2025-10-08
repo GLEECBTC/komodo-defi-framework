@@ -769,7 +769,7 @@ impl ZCoin {
         let tx_hash = utxo_common::send_raw_tx(self.as_ref(), &req.tx_hex)
             .compat()
             .await
-            .map_err(|err| RawTransactionError::TransactionError(err))?;
+            .map_err(RawTransactionError::TransactionError)?;
 
         for rseed in req.rseeds {
             self.z_fields
@@ -2163,6 +2163,79 @@ impl InitWithdrawCoin for ZCoin {
     }
 }
 
+impl ZCoin {
+    #[cfg(feature = "run-docker-tests")]
+    pub async fn withdraw_for_tests(&self, req: WithdrawRequest) -> Result<TransactionDetails, MmError<WithdrawError>> {
+        if req.fee.is_some() {
+            return MmError::err(WithdrawError::UnsupportedError(
+                "Setting a custom withdraw fee is not supported for ZCoin yet".to_owned(),
+            ));
+        }
+
+        if req.from.is_some() {
+            return MmError::err(WithdrawError::UnsupportedError(
+                "Withdraw from a specific address is not supported for ZCoin yet".to_owned(),
+            ));
+        }
+
+        let to_addr = decode_payment_address(z_mainnet_constants::HRP_SAPLING_PAYMENT_ADDRESS, &req.to)
+            .map_to_mm(|e| WithdrawError::InvalidAddress(format!("{e}")))?
+            .or_mm_err(|| WithdrawError::InvalidAddress(format!("Address {} decoded to None", req.to)))?;
+        let amount = if req.max {
+            let fee = self.get_one_kbyte_tx_fee().await.map_mm_err()?;
+            let balance = self.my_balance().compat().await.map_mm_err()?;
+            balance.spendable - fee
+        } else {
+            req.amount
+        };
+        let satoshi = sat_from_big_decimal(&amount, self.decimals()).map_mm_err()?;
+
+        let memo = req.memo.as_deref().map(interpret_memo_string).transpose()?;
+        let z_output = ZOutput {
+            to_addr,
+            amount: Amount::from_u64(satoshi)
+                .map_to_mm(|_| NumConversError(format!("Failed to get ZCash amount from {amount}")))
+                .map_mm_err()?,
+            // TODO add optional viewing_key and memo fields to the WithdrawRequest
+            viewing_key: Some(self.z_fields.evk.fvk.ovk),
+            memo,
+        };
+
+        let GenTxData { tx, data, rseeds, .. } = self.gen_tx(vec![], vec![z_output]).await.map_mm_err()?;
+        let mut tx_bytes = Vec::with_capacity(1024);
+        tx.write(&mut tx_bytes)
+            .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+        let mut tx_hash = tx.txid().0.to_vec();
+        tx_hash.reverse();
+
+        let received_by_me = big_decimal_from_sat_unsigned(data.received_by_me, self.decimals());
+        let spent_by_me = big_decimal_from_sat_unsigned(data.spent_by_me, self.decimals());
+        let tx_hash_hex = hex::encode(&tx_hash);
+
+        Ok(TransactionDetails {
+            tx: TransactionData::new_signed(tx_bytes.into(), tx_hash_hex),
+            from: vec![self.z_fields.my_z_addr_encoded.clone()],
+            to: vec![req.to],
+            my_balance_change: &received_by_me - &spent_by_me,
+            total_amount: spent_by_me.clone(),
+            spent_by_me,
+            received_by_me,
+            block_height: 0,
+            timestamp: 0,
+            fee_details: Some(TxFeeDetails::Utxo(UtxoFeeDetails {
+                coin: Some(self.ticker().to_owned()),
+                amount: big_decimal_from_sat_unsigned(data.fee_amount, self.decimals()),
+            })),
+            coin: self.ticker().to_owned(),
+            internal_id: tx_hash.into(),
+            kmd_rewards: None,
+            transaction_type: Default::default(),
+            memo: req.memo,
+            rseeds: Some(rseeds),
+        })
+    }
+}
+
 /// Waits until there are enough _unlocked_ Sapling notes to cover `total_required`.
 /// TODO: Consider adding `wait_until` argument.
 /// TODO: Integrate this into `light_wallet_db_sync_loop` instead of having a separate function.
@@ -2211,7 +2284,7 @@ async fn wait_for_spendable_balance_impl(
         let sum_available = u64::from(sum_available);
         let sum_available = big_decimal_from_sat_unsigned(sum_available, selfi.decimals());
 
-        // Reteurn InsufficientBalance error when all notes are unlocked but amount is insufficient.
+        // Return InsufficientBalance error when all notes are unlocked but amount is insufficient.
         if sum_available < total_required && unlocked_notes_len == wallet_notes_len {
             return MmError::err(GenTxError::InsufficientBalance {
                 coin: selfi.ticker().to_string(),

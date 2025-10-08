@@ -1,17 +1,21 @@
+use crate::common::Future01CompatExt;
 use bitcrypto::dhash160;
 use coins::z_coin::{
     z_coin_from_conf_and_params_with_docker, z_send_dex_fee, ZCoin, ZcoinActivationParams, ZcoinRpcMode,
 };
-use coins::DexFeeBurnDestination;
+use coins::MarketCoinOps;
+use coins::WithdrawRequest;
 use coins::{
     coin_errors::ValidatePaymentError, CoinProtocol, DexFee, PrivKeyBuildPolicy, RefundPaymentArgs, SendPaymentArgs,
     SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash, ValidateFeeArgs,
 };
+use coins::{DexFeeBurnDestination, ZcoinSendRawTransactionRequest};
 use common::now_sec;
 use lazy_static::lazy_static;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
-use mm2_number::MmNumber;
+use mm2_number::{BigDecimal, MmNumber};
 use mm2_test_helpers::for_tests::zombie_conf_for_docker;
+use num_traits::Zero;
 use tempfile::TempDir;
 use tokio::sync::Mutex;
 
@@ -65,6 +69,72 @@ async fn prepare_zombie_sapling_cache() {
     let (_ctx, coin) = z_coin_from_spending_key("secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe", "fe").await;
     assert!(coin.is_sapling_state_synced().await);
     drop(_lock)
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn zombie_coin_withdraw_and_send_maker_payment() {
+    let _lock = GEN_TX_LOCK_MUTEX.lock().await;
+    let (_ctx, coin) = z_coin_from_spending_key("secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe", "fe").await;
+
+    assert!(coin.is_sapling_state_synced().await);
+
+    // wait tx balance to mine:
+    for retries in 0.. {
+        let balance = coin.my_balance().compat().await;
+        println!("zombie_coin balance={:?}", balance);
+        if balance.unwrap().spendable > BigDecimal::zero() {
+            break;
+        }
+        assert!(retries < 60, "balance empty");
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    }
+
+    let withdraw_res = coin
+        .withdraw_for_tests(
+            serde_json::from_value::<WithdrawRequest>(json!({
+                "amount": "10.0",
+                "to": "zs1hq65fswcur3uxe385cxxgynf37qz4jpfcj52sj9ndvfhc569qwd39alfv9k82e0zftp3xc2jfgj",
+                "coin": "ZOMBIE"
+            }))
+            .expect("expected valid WithdrawRequest"),
+        )
+        .await;
+    assert!(withdraw_res.is_ok());
+
+    let send_tx_res = coin
+        .z_send_raw_tx(
+            serde_json::from_value::<ZcoinSendRawTransactionRequest>(json!({
+                "coin": "ZOMBIE",
+                "rseeds": withdraw_res.as_ref().unwrap().rseeds.as_ref().unwrap(),
+                "received_by_me": withdraw_res.as_ref().unwrap().received_by_me,
+                "tx_hex": format!("{:x}", withdraw_res.as_ref().unwrap().tx.tx_hex().unwrap()),
+            }))
+            .expect("expected valid ZcoinSendRawTransactionRequest"),
+        )
+        .await;
+    assert!(send_tx_res.is_ok());
+
+    let time_lock = now_sec() - 3600;
+    let secret_hash = [0; 20];
+    let maker_uniq_data = [3; 32];
+    let taker_uniq_data = [5; 32];
+    let taker_key_pair = coin.derive_htlc_key_pair(taker_uniq_data.as_slice());
+    let taker_pub = taker_key_pair.public();
+    let args = SendPaymentArgs {
+        time_lock_duration: 0,
+        time_lock,
+        other_pubkey: taker_pub,
+        secret_hash: &secret_hash,
+        amount: "0.01".parse().unwrap(),
+        swap_contract_address: &None,
+        swap_unique_data: maker_uniq_data.as_slice(),
+        payment_instructions: &None,
+        watcher_reward: None,
+        wait_for_confirmation_until: 0,
+    };
+    let tx = coin.send_maker_payment(args).await.unwrap();
+    log!("payment tx {}", hex::encode(tx.tx_hash_as_bytes().0));
+    drop(_lock);
 }
 
 #[tokio::test(flavor = "current_thread")]
