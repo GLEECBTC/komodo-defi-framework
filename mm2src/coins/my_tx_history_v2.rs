@@ -250,6 +250,7 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
             kmd_rewards: None,
             transaction_type: self.transaction_type,
             memo: None,
+            rseeds: None,
         }
     }
 }

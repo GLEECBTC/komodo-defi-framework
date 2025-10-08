@@ -1571,6 +1571,7 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult
         kmd_rewards: None,
         transaction_type: TransactionType::StandardTransfer,
         memo: None,
+        rseeds: None,
     })
 }
 

@@ -2505,6 +2505,18 @@ impl KmdRewardsDetails {
     }
 }
 
+/// Request to send zcoin raw transaction with extra parameters
+#[derive(Clone, Debug, Deserialize)]
+pub struct ZcoinSendRawTransactionRequest {
+    coin: String,
+    /// List of rseeds used to create transaction notes, needed to lock sent notes properly
+    pub rseeds: Vec<String>,
+    /// Change amount
+    pub received_by_me: BigDecimal,
+    /// Serialized zcoin transaction
+    pub tx_hex: String,
+}
+
 #[derive(Default, Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum TransactionType {
     StakingDelegation,
@@ -2538,7 +2550,7 @@ pub struct TransactionDetails {
     /// The amount spent from "my" address
     spent_by_me: BigDecimal,
     /// The amount received by "my" address
-    received_by_me: BigDecimal,
+    pub received_by_me: BigDecimal,
     /// Resulting "my" balance change
     my_balance_change: BigDecimal,
     /// Block height
@@ -2560,6 +2572,8 @@ pub struct TransactionDetails {
     #[serde(default)]
     transaction_type: TransactionType,
     memo: Option<String>,
+    /// List of rseeds, for Zcoin
+    pub rseeds: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -5474,6 +5488,17 @@ pub async fn verify_message(ctx: MmArc, req: VerificationRequest) -> Verificatio
 pub async fn sign_raw_transaction(ctx: MmArc, req: SignRawTransactionRequest) -> RawTransactionResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     coin.sign_raw_tx(&req).await
+}
+
+pub async fn z_send_raw_transaction(
+    ctx: MmArc,
+    req: ZcoinSendRawTransactionRequest,
+) -> MmResult<String, RawTransactionError> {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
+    match coin {
+        MmCoinEnum::ZCoin(ref z_coin) => z_coin.z_send_raw_tx(req).await,
+        _ => MmError::err(RawTransactionError::NotImplemented { coin: req.coin }),
+    }
 }
 
 pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> DelegationResult {

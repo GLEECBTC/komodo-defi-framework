@@ -1705,6 +1705,7 @@ impl MmCoin for SlpToken {
                 kmd_rewards: None,
                 transaction_type: Default::default(),
                 memo: None,
+                rseeds: None,
             };
             Ok(details)
         };

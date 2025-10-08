@@ -486,6 +486,7 @@ pub struct TransactionDetails {
     pub internal_id: String,
     pub transaction_type: TransactionType,
     pub memo: Option<String>,
+    pub rseeds: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]

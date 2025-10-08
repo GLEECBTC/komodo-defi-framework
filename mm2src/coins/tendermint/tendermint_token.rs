@@ -569,6 +569,7 @@ impl MmCoin for TendermintToken {
                     TransactionType::TokenTransfer(token.token_id())
                 },
                 memo: Some(memo),
+                rseeds: None,
             })
         };
         Box::new(fut.boxed().compat())

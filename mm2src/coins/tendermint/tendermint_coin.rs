@@ -2745,6 +2745,7 @@ impl TendermintCoin {
             kmd_rewards: None,
             transaction_type: TransactionType::StakingDelegation,
             memo: Some(req.memo),
+            rseeds: None,
         })
     }
 
@@ -2874,6 +2875,7 @@ impl TendermintCoin {
             kmd_rewards: None,
             transaction_type: TransactionType::RemoveDelegation,
             memo: Some(req.memo),
+            rseeds: None,
         })
     }
 
@@ -3074,6 +3076,7 @@ impl TendermintCoin {
             kmd_rewards: None,
             transaction_type: TransactionType::ClaimDelegationRewards,
             memo: Some(req.memo),
+            rseeds: None,
         })
     }
 

@@ -975,6 +975,7 @@ where
                             kmd_rewards: None,
                             transaction_type,
                             memo: Some(deserialized_tx.body.memo.clone()),
+                            rseeds: None,
                         };
                         tx_details.push(details.clone());
 

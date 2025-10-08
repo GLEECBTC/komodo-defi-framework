@@ -66,7 +66,7 @@ use coins::z_coin::ZCoin;
 use coins::{
     add_delegation, claim_staking_rewards, delegations_info, get_my_address, get_raw_transaction,
     get_swap_gas_fee_policy, nft, ongoing_undelegations_info, remove_delegation, set_swap_gas_fee_policy, sign_message,
-    sign_raw_transaction, validators_info, verify_message, withdraw,
+    sign_raw_transaction, validators_info, verify_message, withdraw, z_send_raw_transaction,
 };
 use coins_activation::{
     cancel_init_l2, cancel_init_platform_coin_with_tokens, cancel_init_standalone_coin, cancel_init_token,
@@ -280,6 +280,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "remove_node_from_version_stat" => handle_mmrpc(ctx, request, remove_node_from_version_stat).await,
         "sign_message" => handle_mmrpc(ctx, request, sign_message).await,
         "sign_raw_transaction" => handle_mmrpc(ctx, request, sign_raw_transaction).await,
+        "z_send_raw_transaction" => handle_mmrpc(ctx, request, z_send_raw_transaction).await,
         "start_simple_market_maker_bot" => handle_mmrpc(ctx, request, start_simple_market_maker_bot).await,
         "start_version_stat_collection" => handle_mmrpc(ctx, request, start_version_stat_collection).await,
         "stop_simple_market_maker_bot" => handle_mmrpc(ctx, request, stop_simple_market_maker_bot).await,

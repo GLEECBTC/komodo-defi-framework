@@ -241,6 +241,7 @@ where
             kmd_rewards: data.kmd_rewards,
             transaction_type: Default::default(),
             memo: None,
+            rseeds: None,
         })
     }
 }

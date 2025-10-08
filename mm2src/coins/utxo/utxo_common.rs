@@ -4172,6 +4172,7 @@ pub async fn tx_details_by_hash<T: UtxoCommonOps>(
         kmd_rewards,
         transaction_type: Default::default(),
         memo: None,
+        rseeds: None,
     })
 }
 

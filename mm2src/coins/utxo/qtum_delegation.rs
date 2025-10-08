@@ -351,6 +351,7 @@ impl QtumCoin {
             kmd_rewards: None,
             transaction_type,
             memo: None,
+            rseeds: None,
         })
     }
 

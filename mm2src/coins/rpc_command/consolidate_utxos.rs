@@ -139,6 +139,7 @@ pub async fn consolidate_utxos_rpc(
                 kmd_rewards: None,
                 transaction_type: Default::default(),
                 memo: None,
+                rseeds: None,
             };
 
             if tx.should_update_kmd_rewards() {
