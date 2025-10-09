@@ -535,7 +535,7 @@ pub enum TPUSwapEvents {
 }
 
 impl TPUSwapStatusForStats {
-    async fn try_from_maker_state_machine(
+    pub async fn try_from_maker_state_machine(
         machine: &MakerSwapStateMachine<impl MmCoin + MakerCoinSwapOpsV2, impl MmCoin + TakerCoinSwapOpsV2>,
     ) -> Result<Self, SwapStatusGenerationError> {
         let repr = machine
@@ -628,7 +628,7 @@ impl TPUSwapStatusForStats {
         })
     }
 
-    async fn try_from_taker_state_machine(
+    pub async fn try_from_taker_state_machine(
         machine: &TakerSwapStateMachine<impl MmCoin + MakerCoinSwapOpsV2, impl MmCoin + TakerCoinSwapOpsV2>,
     ) -> Result<Self, SwapStatusGenerationError> {
         let repr = machine
