@@ -2118,7 +2118,6 @@ impl<MakerCoin, TakerCoin> Aborted<MakerCoin, TakerCoin> {
     }
 }
 
-// NOTES(tpu-status): These LastState impls should be the ones who send the swap status to the seed nodes (and store stats internally)
 #[async_trait]
 impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOpsV2> LastState
     for Aborted<MakerCoin, TakerCoin>
@@ -2129,6 +2128,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         self: Box<Self>,
         state_machine: &mut Self::StateMachine,
     ) -> <Self::StateMachine as StateMachineTrait>::Result {
+        // FIXME: Do we want to broadcast the swap status here?
         warn!("Swap {} was aborted with reason {}", state_machine.uuid, self.reason);
     }
 }

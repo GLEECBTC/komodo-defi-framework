@@ -466,64 +466,64 @@ pub(super) async fn swap_kickstart_handler_for_taker(
 /// The structure represents the swap information to be sent for statistics purposes.
 pub struct TPUSwapStatusForStats {
     /// The swap unique identifier
-    uuid: Uuid,
+    pub uuid: Uuid,
 
     /// The timestamp when the swap was started
-    started_at: u64,
+    pub started_at: u64,
     /// The timestamp when the swap was finished (either successfully or not)
-    finished_at: u64,
+    pub finished_at: u64,
 
     /// The coin name of the maker
-    maker_coin: String,
+    pub maker_coin: String,
     /// The public key of the maker (to which the taker's coins were paid)
-    maker_swap_pubkey: Option<String>,
+    pub maker_swap_pubkey: Option<String>,
     /// The amount of the maker's coin
-    maker_amount: BigDecimal,
+    pub maker_amount: BigDecimal,
 
     /// The coin name of the taker
-    taker_coin: String,
+    pub taker_coin: String,
     /// The public key of the taker (to which the maker's coins were paid)
-    taker_swap_pubkey: Option<String>,
+    pub taker_swap_pubkey: Option<String>,
     /// The amount of the taker's coin
-    taker_amount: BigDecimal,
+    pub taker_amount: BigDecimal,
 
     /// The price of the maker's coin in USD at the moment of the swap
-    maker_coin_usd_price: Option<BigDecimal>,
+    pub maker_coin_usd_price: Option<BigDecimal>,
     /// The price of the taker's coin in USD at the moment of the swap
-    taker_coin_usd_price: Option<BigDecimal>,
+    pub taker_coin_usd_price: Option<BigDecimal>,
     /// The difference (in +/- percentage) between the market price and the swap price at the moment of the swap (from the maker's pov)
-    market_margin: Option<BigDecimal>,
+    pub market_margin: Option<BigDecimal>,
     /// Is the maker a bot. Possible values are: Some(true) (yes), Some(false) (no), None (unknown)
-    is_maker_bot: Option<bool>,
+    pub is_maker_bot: Option<bool>,
 
     /// The GUI of the maker
-    maker_gui: Option<String>,
+    pub maker_gui: Option<String>,
     /// The maker's KDF version
-    maker_version: Option<String>,
+    pub maker_version: Option<String>,
     /// The GUI of the taker
-    taker_gui: Option<String>,
+    pub taker_gui: Option<String>,
     /// The taker's KDF version
-    taker_version: Option<String>,
+    pub taker_version: Option<String>,
 
     /// The version of the swap protocol used in the swap
     /// Note that this field should start with 2 because this struct is specific to TPU swaps
-    swap_version: u8,
+    pub swap_version: u8,
 
     // The next set of fields are extra and currently not part of the swap stats
     /// Maker's p2p pubkey
-    maker_p2p_pubkey: Secp256k1PubkeySerialize,
+    pub maker_p2p_pubkey: Secp256k1PubkeySerialize,
     /// Taker's p2p pubkey
-    taker_p2p_pubkey: Secp256k1PubkeySerialize,
+    pub taker_p2p_pubkey: Secp256k1PubkeySerialize,
 
     /// Premium paid by taker to maker
-    taker_premium: BigDecimal,
+    pub taker_premium: BigDecimal,
     /// The amount of fee paid by the taker to the DEX
-    dex_fee_amount: BigDecimal,
+    pub dex_fee_amount: BigDecimal,
     /// The amount of DEX fee burnt
-    dex_fee_burn: BigDecimal,
+    pub dex_fee_burn: BigDecimal,
 
     /// The maker or taker detailed swap events
-    events: TPUSwapEvents,
+    pub events: TPUSwapEvents,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -545,7 +545,6 @@ impl TPUSwapStatusForStats {
             .map_err(|_| SwapStatusGenerationError::StorageError)?;
 
         // Make sure the swap is finished (aborted, completed or refunded)
-        // FIXME: We might want to not share or store aborted swaps at all
         if repr.events.last().map(|e| !e.is_terminal()).unwrap_or(true) {
             return Err(SwapStatusGenerationError::SwapNotFinished);
         }
@@ -639,7 +638,6 @@ impl TPUSwapStatusForStats {
             .map_err(|_| SwapStatusGenerationError::StorageError)?;
 
         // Make sure the swap is finished (aborted, completed or refunded)
-        // FIXME: We might want to not share or store aborted swaps at all
         if repr.events.last().map(|e| !e.is_terminal()).unwrap_or(true) {
             return Err(SwapStatusGenerationError::SwapNotFinished);
         }
@@ -711,6 +709,19 @@ impl TPUSwapStatusForStats {
             dex_fee_burn: repr.dex_fee_burn.to_decimal(),
             events: TPUSwapEvents::FromTaker(repr.events),
         })
+    }
+
+    pub fn is_success(&self) -> bool {
+        match self.events {
+            TPUSwapEvents::FromMaker(ref events) => events
+                .last()
+                .map(|e| matches!(e, MakerSwapEvent::Completed))
+                .unwrap_or(false),
+            TPUSwapEvents::FromTaker(ref events) => events
+                .last()
+                .map(|e| matches!(e, TakerSwapEvent::Completed))
+                .unwrap_or(false),
+        }
     }
 }
 

@@ -2316,7 +2316,6 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
                             }
                         })
                         .ok();
-                    // NOTES(tpu-status): This has nothing to do with the stats, this is only storing the swap to *MY* database.
                     save_my_maker_swap_event(&ctx, &running_swap, to_save)
                         .await
                         .expect("!save_my_maker_swap_event");
@@ -2345,8 +2344,6 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
                             error!("!mark_swap_finished({}): {}", uuid, e);
                         }
 
-                        // NOTES(tpu-status): We broadcast the swap status at the very end and only once.
-                        //                    We also save it to our own stats db at this point.
                         if to_broadcast {
                             if let Err(e) = broadcast_my_swap_status(&ctx, uuid).await {
                                 error!("!broadcast_my_swap_status({}): {}", uuid, e);

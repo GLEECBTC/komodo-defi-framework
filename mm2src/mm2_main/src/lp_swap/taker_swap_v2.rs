@@ -2549,6 +2549,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         self: Box<Self>,
         state_machine: &mut Self::StateMachine,
     ) -> <Self::StateMachine as StateMachineTrait>::Result {
+        // FIXME: Do we want to broadcast the swap status here?
         warn!("Swap {} was aborted with reason {}", state_machine.uuid, self.reason);
     }
 }
