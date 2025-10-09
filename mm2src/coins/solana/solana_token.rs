@@ -6,6 +6,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use bitcrypto::sha256;
 use common::executor::abortable_queue::{AbortableQueue, WeakSpawner};
 use common::executor::{AbortableSystem, AbortedError};
 use common::Future01CompatExt;
@@ -168,6 +169,10 @@ impl SolanaToken {
         };
 
         Ok(SolanaToken(Arc::new(token_fields)))
+    }
+
+    fn token_id(&self) -> RpcBytes {
+        sha256(self.ticker().to_lowercase().as_bytes()).to_vec().into()
     }
 }
 
@@ -336,7 +341,7 @@ impl MmCoin for SolanaToken {
                 coin: req.coin,
                 internal_id: rpc::v1::types::Bytes(tx_hash.into_bytes()),
                 kmd_rewards: None,
-                transaction_type: crate::TransactionType::StandardTransfer,
+                transaction_type: crate::TransactionType::TokenTransfer(token.token_id()),
                 // TODO: Add memo instruction to the TX.
                 memo: None,
             })
