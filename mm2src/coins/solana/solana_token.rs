@@ -265,7 +265,7 @@ impl MmCoin for SolanaToken {
 
             let transfer_ix = spl_token_program::instruction::transfer_checked(
                 &spl_token_program::id(),
-                &coin.address,
+                &token.address,
                 &token.protocol_info.mint_address,
                 &to_token_account,
                 &coin.address,
