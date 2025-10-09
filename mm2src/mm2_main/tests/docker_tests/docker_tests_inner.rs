@@ -25,9 +25,9 @@ use http::StatusCode;
 use mm2_libp2p::behaviours::atomicdex::MAX_TIME_GAP_FOR_CONNECTED_PEER;
 use mm2_number::{BigDecimal, BigRational, MmNumber};
 use mm2_test_helpers::for_tests::{
-    check_my_swap_status_amounts, disable_coin, disable_coin_err, enable_eth_coin, enable_eth_with_tokens_v2,
-    erc20_dev_conf, eth_dev_conf, get_locked_amount, kmd_conf, max_maker_vol, mm_dump, mycoin1_conf, mycoin_conf,
-    set_price, start_swaps, wait_for_swap_contract_negotiation, wait_for_swap_negotiation_failure, MarketMakerIt,
+    check_my_swap_status_amounts, disable_coin, disable_coin_err, enable_eth_coin, erc20_dev_conf, eth_dev_conf,
+    get_locked_amount, kmd_conf, max_maker_vol, mm_dump, mycoin1_conf, mycoin_conf, set_price, start_swaps,
+    task_enable_eth_with_tokens, wait_for_swap_contract_negotiation, wait_for_swap_negotiation_failure, MarketMakerIt,
     Mm2TestConf, DEFAULT_RPC_PASSWORD,
 };
 use mm2_test_helpers::{get_passphrase, structs::*};
@@ -4300,7 +4300,7 @@ fn test_withdraw_and_send_hd_eth_erc20() {
     let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
     log!("Alice log path: {}", mm_hd.log_path.display());
 
-    let eth_enable = block_on(enable_eth_with_tokens_v2(
+    let eth_enable = block_on(task_enable_eth_with_tokens(
         &mm_hd,
         "ETH",
         &["ERC20DEV"],
@@ -5690,7 +5690,7 @@ fn test_approve_erc20() {
         hex::decode(str_strip_0x!(res["result"].as_str().unwrap())).is_ok(),
         "approve_token result incorrect"
     );
-
+    thread::sleep(Duration::from_secs(5));
     let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method":"get_token_allowance",
