@@ -434,7 +434,7 @@ impl EthGasLimitV2 {
         coin_type: &EthCoinType,
         payment_type: EthPaymentType,
         method: PaymentMethod,
-    ) -> Result<u64, String> {
+    ) -> Result<U256, String> {
         match coin_type {
             EthCoinType::Eth => {
                 let gas_limit = match payment_type {
@@ -451,7 +451,7 @@ impl EthGasLimitV2 {
                         PaymentMethod::RefundSecret => self.taker.eth_taker_refund_secret,
                     },
                 };
-                Ok(gas_limit)
+                Ok(gas_limit.into())
             },
             EthCoinType::Erc20 { .. } => {
                 let gas_limit = match payment_type {
@@ -468,25 +468,25 @@ impl EthGasLimitV2 {
                         PaymentMethod::RefundSecret => self.taker.erc20_taker_refund_secret,
                     },
                 };
-                Ok(gas_limit)
+                Ok(gas_limit.into())
             },
             EthCoinType::Nft { .. } => Err("NFT protocol is not supported for ETH and ERC20 Swaps".to_string()),
         }
     }
 
-    fn nft_gas_limit(&self, contract_type: &ContractType, method: PaymentMethod) -> u64 {
+    fn nft_gas_limit(&self, contract_type: &ContractType, method: PaymentMethod) -> U256 {
         match contract_type {
             ContractType::Erc1155 => match method {
-                PaymentMethod::Send => self.nft_maker.erc1155_payment,
-                PaymentMethod::Spend => self.nft_maker.erc1155_taker_spend,
-                PaymentMethod::RefundTimelock => self.nft_maker.erc1155_maker_refund_timelock,
-                PaymentMethod::RefundSecret => self.nft_maker.erc1155_maker_refund_secret,
+                PaymentMethod::Send => self.nft_maker.erc1155_payment.into(),
+                PaymentMethod::Spend => self.nft_maker.erc1155_taker_spend.into(),
+                PaymentMethod::RefundTimelock => self.nft_maker.erc1155_maker_refund_timelock.into(),
+                PaymentMethod::RefundSecret => self.nft_maker.erc1155_maker_refund_secret.into(),
             },
             ContractType::Erc721 => match method {
-                PaymentMethod::Send => self.nft_maker.erc721_payment,
-                PaymentMethod::Spend => self.nft_maker.erc721_taker_spend,
-                PaymentMethod::RefundTimelock => self.nft_maker.erc721_maker_refund_timelock,
-                PaymentMethod::RefundSecret => self.nft_maker.erc721_maker_refund_secret,
+                PaymentMethod::Send => self.nft_maker.erc721_payment.into(),
+                PaymentMethod::Spend => self.nft_maker.erc721_taker_spend.into(),
+                PaymentMethod::RefundTimelock => self.nft_maker.erc721_maker_refund_timelock.into(),
+                PaymentMethod::RefundSecret => self.nft_maker.erc721_maker_refund_secret.into(),
             },
         }
     }
@@ -3960,6 +3960,32 @@ impl EthCoin {
     async fn get_address_lock(&self, address: Address) -> Arc<AsyncMutex<()>> {
         self.address_nonce_locks.get_adddress_lock(address).await
     }
+
+    /// Estimate gas for the token `approve` contract call
+    async fn estimate_approve_gas_limit(
+        &self,
+        token_addr: Address,
+        value: TradePreimageValue,
+    ) -> TradePreimageResult<U256> {
+        let value = match value {
+            TradePreimageValue::Exact(value) | TradePreimageValue::UpperBound(value) => {
+                u256_from_big_decimal(&value, self.decimals).map_mm_err()?
+            },
+        };
+        let allowed = self.allowance(self.swap_contract_address).compat().await.map_mm_err()?;
+        if allowed < value {
+            // Pass a dummy spender. Let's use `my_address`.
+            let spender = self.derivation_method.single_addr_or_err().await.map_mm_err()?;
+            let approve_function = ERC20_CONTRACT.function("approve")?;
+            let approve_data = approve_function.encode_input(&[Token::Address(spender), Token::Uint(value)])?;
+            let (approve_gas_limit, _) = self
+                .estimate_gas_for_contract_call(token_addr, Bytes::from(approve_data), 0.into())
+                .await
+                .map_mm_err()?;
+            return Ok(approve_gas_limit);
+        }
+        Ok(0.into())
+    }
 }
 
 #[cfg_attr(test, mockable)]
@@ -6115,27 +6141,9 @@ impl MmCoin for EthCoin {
             },
             EthCoinType::Erc20 { token_addr, .. } => {
                 let mut gas = U256::from(self.gas_limit.erc20_payment);
-                let value = match value {
-                    TradePreimageValue::Exact(value) | TradePreimageValue::UpperBound(value) => {
-                        u256_from_big_decimal(&value, self.decimals).map_mm_err()?
-                    },
-                };
-                let allowed = self.allowance(self.swap_contract_address).compat().await.map_mm_err()?;
-                if allowed < value {
-                    // estimate gas for the `approve` contract call
+                // Add gas for `approve` `erc20Payment` contract calls or zero
+                gas += self.estimate_approve_gas_limit(token_addr, value).await?;
 
-                    // Pass a dummy spender. Let's use `my_address`.
-                    let spender = self.derivation_method.single_addr_or_err().await.map_mm_err()?;
-                    let approve_function = ERC20_CONTRACT.function("approve")?;
-                    let approve_data = approve_function.encode_input(&[Token::Address(spender), Token::Uint(value)])?;
-                    let (approve_gas_limit, _) = self
-                        .estimate_gas_for_contract_call(token_addr, Bytes::from(approve_data), 0.into())
-                        .await
-                        .map_mm_err()?;
-
-                    // this gas_limit includes gas for `approve`, `erc20Payment` contract calls
-                    gas += approve_gas_limit;
-                }
                 // add 'senderRefund' gas if requested
                 if matches!(stage, FeeApproxStage::TradePreimage | FeeApproxStage::TradePreimageMax) {
                     gas += U256::from(self.gas_limit.erc20_sender_refund);

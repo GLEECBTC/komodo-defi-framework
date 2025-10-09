@@ -824,27 +824,6 @@ pub fn lp_atomic_locktime(maker_coin: &str, taker_coin: &str, version: AtomicLoc
     }
 }
 
-/// Returns lock time with default setting, used for trade fee estimations
-pub fn lp_atomic_locktime_v2_default(maker_coin: &str, taker_coin: &str) -> u64 {
-    let my_conf_settings = SwapConfirmationsSettings {
-        maker_coin_confs: 1,
-        maker_coin_nota: true,
-        taker_coin_confs: 1,
-        taker_coin_nota: true,
-    };
-    let other_conf_settings = SwapConfirmationsSettings {
-        maker_coin_confs: 1,
-        maker_coin_nota: false,
-        taker_coin_confs: 1,
-        taker_coin_nota: false,
-    };
-    let version = AtomicLocktimeVersion::V2 {
-        my_conf_settings,
-        other_conf_settings,
-    };
-    lp_atomic_locktime(maker_coin, taker_coin, version)
-}
-
 #[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
 pub struct NegotiationDataV1 {
     started_at: u64,

@@ -7,8 +7,8 @@ use super::{
 use crate::lp_swap::swap_lock::SwapLock;
 use crate::lp_swap::swap_v2_pb::*;
 use crate::lp_swap::{
-    broadcast_swap_v2_msg_every, check_coin_balances_for_swap, lp_atomic_locktime_v2_default, recv_swap_v2_msg,
-    swap_v2_topic, SwapConfirmationsSettings, TransactionIdentifier, MAX_STARTED_AT_DIFF, TAKER_SWAP_V2_TYPE,
+    broadcast_swap_v2_msg_every, check_coin_balances_for_swap, recv_swap_v2_msg, swap_v2_topic,
+    SwapConfirmationsSettings, TransactionIdentifier, MAX_STARTED_AT_DIFF, TAKER_SWAP_V2_TYPE,
 };
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
@@ -22,7 +22,7 @@ use coins::{
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{AbortableSystem, Timer};
 use common::log::{debug, error, info, warn};
-use common::{now_sec, Future01CompatExt};
+use common::Future01CompatExt;
 use crypto::privkey::SerializableSecp256k1Keypair;
 use crypto::secret_hash_algo::SecretHashAlgo;
 use derive_more::Display;
@@ -2708,7 +2708,6 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                 premium_amount: 0.into(),
                 trading_amount: self.volume.clone().into(),
                 upper_bound_amount,
-                lock_time: now_sec() + lp_atomic_locktime_v2_default(self.my_coin.ticker(), self.other_coin.ticker()),
             })
             .await
             .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, self.my_coin.ticker()))?;

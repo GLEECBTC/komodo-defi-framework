@@ -597,12 +597,7 @@ impl MakerCoinSwapOpsV2 for UtxoStandardCoin {
         &self,
         args: GetFeeToSendMakerPaymentArgs,
     ) -> TradePreimageResult<TradeFee> {
-        let preimage_value = if args.upper_bound_amount {
-            TradePreimageValue::UpperBound(args.amount)
-        } else {
-            TradePreimageValue::Exact(args.amount)
-        };
-        utxo_common::get_sender_trade_fee(self, preimage_value, args.stage).await
+        utxo_common::get_sender_trade_fee(self, args.amount, args.stage).await
     }
 
     async fn get_fee_to_spend_maker_payment_v2(&self, _stage: FeeApproxStage) -> TradePreimageResult<TradeFee> {

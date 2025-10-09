@@ -1448,7 +1448,6 @@ pub struct GetTakerFundingFeeArgs {
     pub premium_amount: BigDecimal,
     pub trading_amount: BigDecimal,
     pub upper_bound_amount: bool,
-    pub lock_time: u64,
 }
 
 /// Helper struct wrapping arguments for [TakerCoinSwapOpsV2::refund_taker_funding_secret]
@@ -1749,10 +1748,8 @@ pub trait ParseNftAssocTypes {
 }
 
 pub struct GetFeeToSendMakerPaymentArgs {
-    pub time_lock: u64,
-    pub amount: BigDecimal,
+    pub amount: TradePreimageValue,
     pub stage: FeeApproxStage,
-    pub upper_bound_amount: bool,
 }
 
 pub struct SendMakerPaymentArgs<'a, Coin: ParseCoinAssocTypes + ?Sized> {

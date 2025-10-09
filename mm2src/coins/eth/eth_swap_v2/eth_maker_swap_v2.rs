@@ -3,13 +3,13 @@ use super::{
 };
 use crate::coin_errors::{ValidatePaymentError, ValidatePaymentResult};
 use crate::eth::{
-    decode_contract_call, get_function_input_data, u256_from_big_decimal, u256_to_big_decimal, Bytes, EthCoin,
-    EthCoinType, FeeApproxStage, SignedEthTx, ETH_DECIMALS, MAKER_SWAP_V2,
+    decode_contract_call, get_function_input_data, u256_from_big_decimal, EthCoin, EthCoinType, FeeApproxStage,
+    SignedEthTx, MAKER_SWAP_V2,
 };
 use crate::{
-    GetFeeToSendMakerPaymentArgs, MarketCoinOps, ParseCoinAssocTypes, RefundMakerPaymentSecretArgs,
-    RefundMakerPaymentTimelockArgs, SendMakerPaymentArgs, SpendMakerPaymentArgs, SwapTxTypeWithSecretHash, TradeFee,
-    TradePreimageError, TradePreimageResult, TransactionErr, ValidateMakerPaymentArgs,
+    GetFeeToSendMakerPaymentArgs, ParseCoinAssocTypes, RefundMakerPaymentSecretArgs, RefundMakerPaymentTimelockArgs,
+    SendMakerPaymentArgs, SpendMakerPaymentArgs, SwapTxTypeWithSecretHash, TradeFee, TradePreimageError,
+    TradePreimageResult, TransactionErr, ValidateMakerPaymentArgs,
 };
 use ethabi::{Function, Token};
 use ethcore_transaction::Action;
@@ -62,55 +62,18 @@ impl EthCoin {
         &self,
         args: GetFeeToSendMakerPaymentArgs,
     ) -> TradePreimageResult<TradeFee> {
-        const NON_ZERO_SECRET_HASH: [u8; 32] = [1_u8; 32];
-        const NON_EMPTY_ADDRESS: [u8; 20] = [1_u8; 20];
-        let maker_swap_v2_contract = self
-            .swap_v2_contracts
-            .ok_or_else(|| {
-                TradePreimageError::InternalError(ERRL!("Expected swap_v2_contracts to be Some, but found None"))
-            })?
-            .maker_swap_v2_contract;
-        let payment_amount = u256_from_big_decimal(&args.amount, self.decimals)
-            .map_err(|err| TradePreimageError::InternalError(ERRL!("{}", err)))?;
-        let payment_args = {
-            MakerPaymentArgs {
-                taker_address: Address::from_slice(&NON_EMPTY_ADDRESS),
-                taker_secret_hash: &NON_ZERO_SECRET_HASH,
-                maker_secret_hash: &NON_ZERO_SECRET_HASH,
-                payment_time_lock: args.time_lock,
-            }
-        };
-        let (eth_value, data) = match &self.coin_type {
-            EthCoinType::Eth => {
-                let data = self
-                    .prepare_maker_eth_payment_data(&payment_args)
-                    .await
-                    .map_err(|err| TradePreimageError::InternalError(ERRL!("{}", err)))?;
-                (payment_amount, data)
-            },
-            EthCoinType::Erc20 {
-                platform: _,
-                token_addr,
-            } => {
-                let data = self
-                    .prepare_maker_erc20_payment_data(&payment_args, payment_amount, *token_addr)
-                    .await
-                    .map_err(|err| TradePreimageError::InternalError(ERRL!("{}", err)))?;
-                (0.into(), data)
-            },
-            EthCoinType::Nft { .. } => return MmError::err(TradePreimageError::NftProtocolNotSupported),
-        };
-        let (gas_limit, fee_per_gas) = self
-            .estimate_gas_for_contract_call_if_conf(maker_swap_v2_contract, Bytes::from(data.clone()), eth_value)
-            .await
-            .map_mm_err()?;
-        let total_fee = gas_limit * fee_per_gas;
-        let total_fee = u256_to_big_decimal(total_fee, ETH_DECIMALS).map_mm_err()?;
-        Ok(TradeFee {
-            coin: self.platform_ticker().to_owned(),
-            amount: total_fee.into(),
-            paid_from_trading_vol: false,
-        })
+        let mut gas_limit = self
+            .gas_limit_v2
+            .gas_limit(&self.coin_type, EthPaymentType::MakerPayments, PaymentMethod::Send)
+            .map_err(|e| TradePreimageError::InternalError(ERRL!("{}", e)))?;
+
+        // Add token approval call gas limit
+        // TODO: for taker funding we have the taker.approve_payment constant.
+        // Maybe we could make the same for maker and save extra call
+        if let EthCoinType::Erc20 { token_addr, .. } = self.coin_type {
+            gas_limit += self.estimate_approve_gas_limit(token_addr, args.amount).await?;
+        }
+        self.estimate_trade_fee(gas_limit, args.stage).await
     }
 
     pub(crate) async fn send_maker_payment_v2_impl(
@@ -278,7 +241,7 @@ impl EthCoin {
             U256::from(ZERO_VALUE),
             Action::Call(maker_swap_v2_contract),
             data,
-            Some(U256::from(gas_limit)),
+            Some(gas_limit),
         )
         .compat()
         .await
@@ -323,7 +286,7 @@ impl EthCoin {
             U256::from(ZERO_VALUE),
             Action::Call(maker_swap_v2_contract),
             data,
-            Some(U256::from(gas_limit)),
+            Some(gas_limit),
         )
         .compat()
         .await
@@ -339,7 +302,7 @@ impl EthCoin {
             .gas_limit_v2
             .gas_limit(&self.coin_type, EthPaymentType::MakerPayments, PaymentMethod::Spend)
             .map_err(|e| TradePreimageError::InternalError(ERRL!("{}", e)))?;
-        self.estimate_trade_fee(gas_limit.into(), stage).await
+        self.estimate_trade_fee(gas_limit, stage).await
     }
 
     /// Estimate refund payment fee
@@ -351,7 +314,7 @@ impl EthCoin {
             .gas_limit_v2
             .gas_limit(&self.coin_type, EthPaymentType::MakerPayments, PaymentMethod::Spend)
             .map_err(|e| TradePreimageError::InternalError(ERRL!("{}", e)))?;
-        self.estimate_trade_fee(gas_limit.into(), stage).await
+        self.estimate_trade_fee(gas_limit, stage).await
     }
 
     pub(crate) async fn spend_maker_payment_v2_impl(
@@ -376,7 +339,7 @@ impl EthCoin {
             U256::from(ZERO_VALUE),
             Action::Call(maker_swap_v2_contract),
             data,
-            Some(U256::from(gas_limit)),
+            Some(gas_limit),
         )
         .compat()
         .await

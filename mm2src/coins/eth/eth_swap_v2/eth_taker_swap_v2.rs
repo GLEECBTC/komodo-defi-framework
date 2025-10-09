@@ -87,7 +87,7 @@ impl EthCoin {
             .gas_limit_v2
             .gas_limit(&self.coin_type, EthPaymentType::TakerPayments, PaymentMethod::Send)
             .map_err(|e| TradePreimageError::InternalError(ERRL!("{}", e)))?;
-        self.estimate_trade_fee(gas_limit.into(), args.stage).await
+        self.estimate_trade_fee(gas_limit, args.stage).await
     }
 
     /// Calls `"ethTakerPayment"` or `"erc20TakerPayment"` swap contract methods.
@@ -320,7 +320,7 @@ impl EthCoin {
             U256::from(ZERO_VALUE),
             Action::Call(taker_swap_v2_contract),
             data,
-            Some(U256::from(gas_limit)),
+            Some(gas_limit),
         )
         .compat()
         .await
@@ -374,7 +374,7 @@ impl EthCoin {
             U256::from(ZERO_VALUE),
             Action::Call(taker_swap_v2_contract),
             data,
-            Some(U256::from(gas_limit)),
+            Some(gas_limit),
         )
         .compat()
         .await
@@ -435,7 +435,7 @@ impl EthCoin {
                 U256::from(ZERO_VALUE),
                 Action::Call(taker_swap_v2_contract),
                 data,
-                Some(U256::from(gas_limit)),
+                Some(gas_limit),
             )
             .compat()
             .await?;
@@ -651,7 +651,7 @@ impl EthCoin {
             .gas_limit(&self.coin_type, EthPaymentType::TakerPayments, PaymentMethod::Spend)
             .map_err(|e| TradePreimageError::InternalError(ERRL!("{}", e)))?;
         // TODO: add stage to param
-        self.estimate_trade_fee(gas_limit.into(), stage).await
+        self.estimate_trade_fee(gas_limit, stage).await
     }
 
     /// Estimate fee to spend taker funding using the gas_limit const
@@ -679,7 +679,7 @@ impl EthCoin {
                 PaymentMethod::RefundTimelock,
             )
             .map_err(|e| TradePreimageError::InternalError(ERRL!("{}", e)))?;
-        self.estimate_trade_fee(gas_limit.into(), stage).await
+        self.estimate_trade_fee(gas_limit, stage).await
     }
 
     /// Retrieves the taker smart contract address, the corresponding function, and the token address.

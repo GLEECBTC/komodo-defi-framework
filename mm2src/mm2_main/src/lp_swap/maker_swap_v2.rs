@@ -6,11 +6,11 @@ use super::{
     NEGOTIATION_TIMEOUT_SEC,
 };
 use crate::lp_swap::swap_lock::SwapLock;
+use crate::lp_swap::swap_v2_pb::*;
 use crate::lp_swap::{
     broadcast_swap_v2_msg_every, check_coin_balances_for_swap, recv_swap_v2_msg, SwapConfirmationsSettings,
     TransactionIdentifier, MAKER_SWAP_V2_TYPE, MAX_STARTED_AT_DIFF,
 };
-use crate::lp_swap::{lp_atomic_locktime_v2_default, swap_v2_pb::*};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use coins::hd_wallet::AddrToString;
@@ -18,8 +18,8 @@ use coins::{
     CanRefundHtlc, ConfirmPaymentInput, DexFee, FeeApproxStage, FundingTxSpend, GenTakerFundingSpendArgs,
     GenTakerPaymentSpendArgs, GetFeeToSendMakerPaymentArgs, MakerCoinSwapOpsV2, MmCoin, ParseCoinAssocTypes,
     RefundMakerPaymentSecretArgs, RefundMakerPaymentTimelockArgs, SearchForFundingSpendErr, SendMakerPaymentArgs,
-    SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, ToBytes, TradeFee, Transaction, TxPreimageWithSig,
-    ValidateTakerFundingArgs,
+    SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, ToBytes, TradeFee, TradePreimageValue, Transaction,
+    TxPreimageWithSig, ValidateTakerFundingArgs,
 };
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{AbortableSystem, Timer};
@@ -2240,13 +2240,16 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
     }
 
     async fn get_my_coin_fees(&self, upper_bound_amount: bool) -> CheckBalanceResult<TradeFee> {
+        let preimage_value = if upper_bound_amount {
+            TradePreimageValue::UpperBound(self.volume.clone().into())
+        } else {
+            TradePreimageValue::Exact(self.volume.clone().into())
+        };
         let fee = self
             .my_coin
             .get_fee_to_send_maker_payment_v2(GetFeeToSendMakerPaymentArgs {
                 stage: self.stage,
-                amount: self.volume.clone().into(),
-                upper_bound_amount,
-                time_lock: now_sec() + lp_atomic_locktime_v2_default(self.my_coin.ticker(), self.other_coin.ticker()),
+                amount: preimage_value,
             })
             .await
             .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, self.my_coin.ticker()))?;
