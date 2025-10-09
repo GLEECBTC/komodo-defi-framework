@@ -1,4 +1,3 @@
-use crate::eth::EthTxFeeDetails;
 use crate::nft::nft_structs::{
     Chain, Nft, NftList, NftListFilters, NftTokenAddrId, NftTransferHistory, NftTransferHistoryFilters,
     NftsTransferHistoryList, TransferMeta,
@@ -7,10 +6,15 @@ use async_trait::async_trait;
 use ethereum_types::Address;
 use mm2_err_handle::mm_error::MmResult;
 use mm2_err_handle::mm_error::NotMmError;
-use mm2_number::{BigDecimal, BigUint};
-use serde::{Deserialize, Serialize};
+use mm2_number::BigUint;
 use std::collections::HashSet;
 use std::num::NonZeroUsize;
+
+cfg_native! {
+    use crate::eth::EthTxFeeDetails;
+    use mm2_number::BigDecimal;
+    use serde::{Deserialize, Serialize};
+}
 
 #[cfg(any(test, target_arch = "wasm32"))]
 pub(crate) mod db_test_helpers;

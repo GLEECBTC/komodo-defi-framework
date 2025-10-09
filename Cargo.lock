@@ -2584,15 +2584,6 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.11.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab5ef0d4909ef3724cc8cce6ccc8572c5c817592e9285f5464f8e86f8bd3726e"
-dependencies = [
- "ahash 0.7.8",
-]
-
-[[package]]
-name = "hashbrown"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db0d4cf898abf0081f964436dc980e96670a0f36863e4b83aaacdb65c9d7ccc3"
@@ -3565,7 +3556,7 @@ dependencies = [
  "libp2p-identity",
  "libp2p-swarm",
  "log",
- "lru 0.10.1",
+ "lru",
  "quick-protobuf",
  "quick-protobuf-codec",
  "smallvec",
@@ -3949,15 +3940,6 @@ dependencies = [
 
 [[package]]
 name = "lru"
-version = "0.7.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32613e41de4c47ab04970c348ca7ae7382cf116625755af070b008a15516a889"
-dependencies = [
- "hashbrown 0.11.2",
-]
-
-[[package]]
-name = "lru"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "718e8fae447df0c7e1ba7f5189829e63fd536945c8988d61444c19039f16b670"
@@ -4150,7 +4132,7 @@ dependencies = [
 
 [[package]]
 name = "mm2_bin_lib"
-version = "2.5.1-beta"
+version = "2.5.2-beta"
 dependencies = [
  "chrono",
  "common",
@@ -4389,7 +4371,6 @@ dependencies = [
  "mm2_test_helpers",
  "mocktopus",
  "num-traits",
- "parity-util-mem",
  "parking_lot",
  "primitive-types",
  "primitives",
@@ -4983,14 +4964,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c32561d248d352148124f036cac253a644685a21dc9fea383eb4907d7bd35a8f"
 dependencies = [
  "cfg-if 1.0.0",
- "ethereum-types",
  "hashbrown 0.12.1",
  "impl-trait-for-tuples",
- "lru 0.7.5",
  "parity-util-mem-derive",
- "parking_lot",
  "primitive-types",
- "smallvec",
  "winapi",
 ]
 

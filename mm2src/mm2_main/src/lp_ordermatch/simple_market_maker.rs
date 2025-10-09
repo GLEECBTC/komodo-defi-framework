@@ -204,22 +204,6 @@ pub enum StartSimpleMakerBotError {
     InternalError(String),
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
-#[serde(tag = "error_type", content = "error_data")]
-pub enum SwapUpdateNotificationError {
-    #[display(fmt = "{_0}")]
-    MyRecentSwapsError(LatestSwapsErr),
-    #[display(fmt = "Swap info not available")]
-    SwapInfoNotAvailable,
-}
-
-impl From<LatestSwapsErr> for SwapUpdateNotificationError {
-    fn from(e: LatestSwapsErr) -> Self {
-        SwapUpdateNotificationError::MyRecentSwapsError(e)
-    }
-}
-
 impl HttpStatusCode for StartSimpleMakerBotError {
     fn status_code(&self) -> StatusCode {
         match self {
