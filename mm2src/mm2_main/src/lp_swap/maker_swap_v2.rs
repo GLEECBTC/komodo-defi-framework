@@ -15,10 +15,11 @@ use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use coins::hd_wallet::AddrToString;
 use coins::{
-    CanRefundHtlc, ConfirmPaymentInput, DexFee, FeeApproxStage, FundingTxSpend, GenTakerFundingSpendArgs,
-    GenTakerPaymentSpendArgs, MakerCoinSwapOpsV2, MmCoin, ParseCoinAssocTypes, RefundMakerPaymentSecretArgs,
-    RefundMakerPaymentTimelockArgs, SearchForFundingSpendErr, SendMakerPaymentArgs, SwapTxTypeWithSecretHash,
-    TakerCoinSwapOpsV2, ToBytes, TradePreimageValue, Transaction, TxPreimageWithSig, ValidateTakerFundingArgs,
+    ensure_tx_is_broadcasted, CanRefundHtlc, ConfirmPaymentInput, DexFee, FeeApproxStage, FundingTxSpend,
+    GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, MakerCoinSwapOpsV2, MmCoin, ParseCoinAssocTypes,
+    RefundMakerPaymentSecretArgs, RefundMakerPaymentTimelockArgs, SearchForFundingSpendErr, SendMakerPaymentArgs,
+    SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, ToBytes, TradePreimageValue, Transaction, TxPreimageWithSig,
+    ValidateTakerFundingArgs,
 };
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{AbortableSystem, Timer};
@@ -420,6 +421,9 @@ pub struct MakerSwapStateMachine<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCo
     pub abortable_system: AbortableQueue,
     /// Taker's P2P pubkey
     pub taker_p2p_pubkey: PublicKey,
+    /// Whether to require confirmation of taker funding transaction before sending maker payment.
+    /// If false, mempool visibility is sufficient.
+    pub require_taker_funding_confirm_before_maker_payment: bool,
     /// Determines if the taker payment spend transaction must be confirmed before marking swap as Completed.
     pub require_taker_payment_spend_confirm: bool,
     /// Swap protocol version
@@ -429,6 +433,18 @@ pub struct MakerSwapStateMachine<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCo
 impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOpsV2>
     MakerSwapStateMachine<MakerCoin, TakerCoin>
 {
+    /// Required confirmations for taker funding before sending maker payment.
+    /// One confirmation at most is safe enough for this stage of the swap.
+    /// Makers can opt out if they want to serve faster swaps to taker at the risk of getting their funds stuck occasionally.
+    #[inline]
+    fn taker_funding_required_confs(&self) -> u64 {
+        if self.require_taker_funding_confirm_before_maker_payment {
+            self.conf_settings.taker_coin_confs.min(1)
+        } else {
+            0
+        }
+    }
+
     /// Timeout for taker payment's on-chain confirmation.
     #[inline]
     fn taker_payment_conf_timeout(&self) -> u64 {
@@ -740,6 +756,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             uuid,
             p2p_keypair: repr.p2p_keypair.map(|k| k.into_inner()),
             taker_p2p_pubkey: repr.taker_p2p_pub.into(),
+            require_taker_funding_confirm_before_maker_payment: true,
             require_taker_payment_spend_confirm: true,
             swap_version: repr.swap_version,
         };
@@ -1262,6 +1279,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
     type StateMachine = MakerSwapStateMachine<MakerCoin, TakerCoin>;
 
     async fn on_changed(self: Box<Self>, state_machine: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
+        // 1) Offline semantic validation
         let unique_data = state_machine.unique_data();
         let validation_args = ValidateTakerFundingArgs {
             funding_tx: &self.taker_funding,
@@ -1281,6 +1299,42 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             return Self::change_state(Aborted::new(reason), state_machine).await;
         }
 
+        // 2) Propagation/confirm gate for taker funding
+        {
+            let visible = ensure_tx_is_broadcasted(
+                &state_machine.taker_coin,
+                &self.taker_funding,
+                SWAP_TX_VISIBILITY_GRACE_SECS,
+                SWAP_TX_VISIBILITY_POLL_SECS,
+            )
+            .await;
+
+            let confs = state_machine.taker_funding_required_confs();
+            if confs == 0 {
+                if !visible {
+                    let reason = AbortReason::TakerFundingValidationFailed(
+                        "Taker funding transaction is not visible on network even after fallback rebroadcast".into(),
+                    );
+                    return Self::change_state(Aborted::new(reason), state_machine).await;
+                }
+            } else {
+                let input = ConfirmPaymentInput {
+                    payment_tx: self.taker_funding.tx_hex(),
+                    confirmations: confs,
+                    requires_nota: state_machine.conf_settings.taker_coin_nota,
+                    wait_until: state_machine.maker_payment_locktime(),
+                    check_every: 10,
+                };
+                if let Err(e) = state_machine.taker_coin.wait_for_confirmations(input).compat().await {
+                    let reason = AbortReason::TakerFundingValidationFailed(format!(
+                        "Taker funding wasn't confirmed in time: {e}"
+                    ));
+                    return Self::change_state(Aborted::new(reason), state_machine).await;
+                }
+            }
+        }
+
+        // 3) Prepare preimage and send maker payment
         let args = GenTakerFundingSpendArgs {
             funding_tx: &self.taker_funding,
             maker_pub: &state_machine.taker_coin.derive_htlc_pubkey_v2(&unique_data),

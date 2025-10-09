@@ -14,10 +14,10 @@ use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use coins::hd_wallet::AddrToString;
 use coins::{
-    CanRefundHtlc, ConfirmPaymentInput, DexFee, FeeApproxStage, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
-    MakerCoinSwapOpsV2, MmCoin, ParseCoinAssocTypes, RefundFundingSecretArgs, RefundTakerPaymentArgs,
-    SendTakerFundingArgs, SpendMakerPaymentArgs, SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, ToBytes, TradeFee,
-    TradePreimageValue, Transaction, TxPreimageWithSig, ValidateMakerPaymentArgs,
+    ensure_tx_is_broadcasted, CanRefundHtlc, ConfirmPaymentInput, DexFee, FeeApproxStage, GenTakerFundingSpendArgs,
+    GenTakerPaymentSpendArgs, MakerCoinSwapOpsV2, MmCoin, ParseCoinAssocTypes, RefundFundingSecretArgs,
+    RefundTakerPaymentArgs, SendTakerFundingArgs, SpendMakerPaymentArgs, SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2,
+    ToBytes, TradeFee, TradePreimageValue, Transaction, TxPreimageWithSig, ValidateMakerPaymentArgs,
 };
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{AbortableSystem, Timer};
@@ -1572,6 +1572,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         let unique_data = state_machine.unique_data();
         let my_secret_hash = state_machine.taker_secret_hash();
 
+        // 1) Offline semantic validation
         let input = ValidateMakerPaymentArgs {
             maker_payment_tx: &self.maker_payment,
             time_lock: self.negotiation_data.maker_payment_locktime,
@@ -1617,6 +1618,32 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             return Self::change_state(next_state, state_machine).await;
         }
 
+        // 2) Require maker payment visibility first. If it's not visible, refund funding.
+        {
+            let visible = ensure_tx_is_broadcasted(
+                &state_machine.maker_coin,
+                &self.maker_payment,
+                SWAP_TX_VISIBILITY_GRACE_SECS,
+                SWAP_TX_VISIBILITY_POLL_SECS,
+            )
+            .await;
+
+            if !visible {
+                let next_state = TakerFundingRefundRequired {
+                    maker_coin_start_block: self.maker_coin_start_block,
+                    taker_coin_start_block: self.taker_coin_start_block,
+                    taker_funding: self.taker_funding,
+                    negotiation_data: self.negotiation_data,
+                    reason: TakerFundingRefundReason::DidNotReceiveMakerPayment(
+                        "Maker payment transaction is not visible on network even after fallback rebroadcast".into(),
+                    ),
+                };
+                return Self::change_state(next_state, state_machine).await;
+            }
+        }
+
+        // 3) Spend funding if maker payment is visible and no confirmation is required
+        // or wait for confirmation and then spend funding in `MakerPaymentConfirmed` state.
         if state_machine.require_maker_payment_confirm_before_funding_spend {
             let input = ConfirmPaymentInput {
                 payment_tx: self.maker_payment.tx_hex(),

@@ -31,6 +31,18 @@ cfg_wasm32!(
     use mm2_db::indexed_db::{DbTransactionError, InitDbError, MultiIndex};
 );
 
+/// Best‑effort mempool visibility grace period (seconds).
+/// Set to ~2× the average Ethereum block time (~15s → 30s).
+/// Rationale: avoid failing early when propagation is temporarily slow (e.g., private/MEV relays,
+/// node lag), while still keeping swaps fast by proceeding as soon as the tx is reasonably
+/// expected to be discoverable by its txid. This is not a confirmation wait, only a visibility window.
+pub(super) const SWAP_TX_VISIBILITY_GRACE_SECS: f64 = 30.0;
+/// Poll interval (seconds) while waiting for tx visibility within the grace window.
+/// Default 1s balances responsiveness and RPC load for public mempools.
+/// DISCUSS: On private/MEV‑protected relays the tx may remain invisible until inclusion,
+/// consider a longer interval (e.g., 2–3s) or adaptive backoff to reduce unnecessary requests.
+pub(super) const SWAP_TX_VISIBILITY_POLL_SECS: f64 = 1.0;
+
 /// Information about active swap to be stored in swaps context
 pub struct ActiveSwapV2Info {
     pub uuid: Uuid,
