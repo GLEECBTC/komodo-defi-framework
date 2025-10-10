@@ -3982,6 +3982,8 @@ fn test_tx_history_tbtc_non_segwit() {
     }
 }
 
+/// NOTE: if this test fails this may be due to activity in the DOC chain with this address
+/// TODO: switch to UTXO docker container
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_update_maker_order() {
