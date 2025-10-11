@@ -459,6 +459,7 @@ pub fn add_v2swap_to_index(conn: &Connection, swap: &TPUSwapStatusForStats) -> R
                 ":maker_amount": swap.maker_amount.to_string(),
                 ":taker_amount": swap.taker_amount.to_string(),
                 ":is_success": (swap.is_success() as u32).to_string(),
+                // We will set those in the optional info update. For now setting them to NULL to conform with `INSERT_STATS_SWAP` statement.
                 ":maker_coin_usd_price": None::<String>,
                 ":taker_coin_usd_price": None::<String>,
                 ":maker_pubkey": None::<String>,
