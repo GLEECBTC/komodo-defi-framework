@@ -423,6 +423,7 @@ pub struct MakerSwapStateMachine<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCo
     pub taker_p2p_pubkey: PublicKey,
     /// Whether to require confirmation of taker funding transaction before sending maker payment.
     /// If false, mempool visibility is sufficient.
+    /// Default: false. Check `Trading Protocol Upgrade (“swap v2”) policy` section at the top of `swap_v2_common.rs`.
     pub require_taker_funding_confirm_before_maker_payment: bool,
     /// Determines if the taker payment spend transaction must be confirmed before marking swap as Completed.
     pub require_taker_payment_spend_confirm: bool,
@@ -756,7 +757,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             uuid,
             p2p_keypair: repr.p2p_keypair.map(|k| k.into_inner()),
             taker_p2p_pubkey: repr.taker_p2p_pub.into(),
-            require_taker_funding_confirm_before_maker_payment: true,
+            require_taker_funding_confirm_before_maker_payment: false,
             require_taker_payment_spend_confirm: true,
             swap_version: repr.swap_version,
         };
@@ -1309,6 +1310,28 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             )
             .await;
 
+            // IMPORTANT (timing):
+            // - Default: require_taker_funding_confirm_before_maker_payment = false.
+            // - Behavior: proceed once the taker funding transaction is visible in the mempool (0-conf).
+            //
+            // Rationale:
+            // - On UTXO chains, waiting for 1 confirmation often exceeds the taker's ~90 s window,
+            //   causing timeouts and wasted network fees.
+            //
+            // Trade-off:
+            // - If the funding transaction is dropped or replaced before confirmation, the maker's
+            //   payment may remain locked until the refund path becomes available.
+            //
+            // Intent and future options:
+            // - This is an intentional speed optimization.
+            // - We may expose a config for makers who want to opt into stricter confirmation requirements.
+            // - Alternatively, confirmations can be only allowed for trusted makers until a reputation system is in place.
+            //   Meaning takers increase the time-out where they wait for the maker payment p2p message from a trusted maker.
+            //   It can also be a setting from maker related to the volume of the trade.
+            //
+            // NOTE(PR #2496):
+            // It's worth considering allowing maker to not mark balance as locked by swap until funding transaction
+            // is visible or confirmed depending on if `require_taker_funding_confirm_before_maker_payment` is set.
             let confs = state_machine.taker_funding_required_confs();
             if confs == 0 {
                 if !visible {

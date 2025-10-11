@@ -451,6 +451,7 @@ pub struct TakerSwapStateMachine<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCo
     /// Maker's P2P pubkey
     pub maker_p2p_pubkey: PublicKey,
     /// Whether to require maker payment confirmation before transferring funding tx to payment
+    /// Default: true. Check `Trading Protocol Upgrade (“swap v2”) policy` section at the top of `swap_v2_common.rs`.
     pub require_maker_payment_confirm_before_funding_spend: bool,
     /// Determines if the maker payment spend transaction must be confirmed before marking swap as Completed.
     pub require_maker_payment_spend_confirm: bool,
@@ -1411,6 +1412,16 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             state_machine.p2p_keypair,
         );
 
+        // IMPORTANT(negotiation-window):
+        // The taker waits up to `NEGOTIATION_TIMEOUT_SEC` for the maker’s payment after the taker’s funding is broadcast.
+        // Since the maker proceeds on mempool-visible funding (0-conf), UTXO confirmation delays should not consume this window.
+        //
+        // Negotiation timing alignments to avoid drift:
+        // - Keep `NEGOTIATION_TIMEOUT_SEC` long enough for network propagation and several P2P resend cycles.
+        // - Prefer `NEGOTIATE_SEND_INTERVAL` to evenly divide `NEGOTIATION_TIMEOUT_SEC` so rebroadcasts align cleanly.
+        // - Ensure `SWAP_TX_VISIBILITY_POLL_SECS` is not less frequent than `NEGOTIATE_SEND_INTERVAL`, and avoid overly aggressive polling.
+        // - If maker payment confirmation is required before proceeding, grow `NEGOTIATION_TIMEOUT_SEC` to cover that delay.
+        // - These knobs are interrelated; `NEGOTIATION_TIMEOUT_SEC` can be reduced or tuned later, but adjust the others accordingly.
         let recv_fut = recv_swap_v2_msg(
             state_machine.ctx.clone(),
             |store| store.maker_payment.take(),
