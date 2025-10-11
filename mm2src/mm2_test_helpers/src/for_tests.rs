@@ -2598,6 +2598,33 @@ pub async fn wait_check_stats_swap_status(mm: &MarketMakerIt, uuid: &str, timeou
     }
 }
 
+pub async fn wait_for_swap_info_stats_db(mm: &MarketMakerIt, uuid: &str, timeout_sec: i64) {
+    let wait_until = get_utc_timestamp() + timeout_sec;
+    loop {
+        let response = mm
+            .rpc(&json!({
+                "userpass": mm.userpass,
+                "method": "swap_info_from_stats_db",
+                "mmrpc": "2.0",
+                "params": {
+                    "uuid": uuid,
+                }
+            }))
+            .await
+            .unwrap();
+
+        if response.0.is_success() {
+            break;
+        }
+
+        if get_utc_timestamp() > wait_until {
+            panic!("Timed out waiting for swap {} info in stats db", uuid);
+        }
+
+        Timer::sleep(1.).await;
+    }
+}
+
 pub async fn check_recent_swaps(mm: &MarketMakerIt, expected_len: usize) {
     let response = mm
         .rpc(&json!({
