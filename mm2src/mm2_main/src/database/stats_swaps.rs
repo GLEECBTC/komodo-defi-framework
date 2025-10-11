@@ -490,8 +490,8 @@ pub struct SwapStatusFromDB {
     pub taker_coin: String,
     pub started_at: u64,
     pub finished_at: u64,
-    pub maker_amount: String,
-    pub taker_amount: String,
+    pub maker_amount: f64,
+    pub taker_amount: f64,
     pub is_success: bool,
 }
 
