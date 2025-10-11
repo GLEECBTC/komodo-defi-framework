@@ -484,6 +484,46 @@ pub fn add_v2swap_to_index(conn: &Connection, swap: &TPUSwapStatusForStats) -> R
     Ok(())
 }
 
+#[derive(Debug, Serialize)]
+pub struct SwapStatusFromDB {
+    pub maker_coin: String,
+    pub taker_coin: String,
+    pub started_at: u64,
+    pub finished_at: u64,
+    pub maker_amount: String,
+    pub taker_amount: String,
+    pub is_success: bool,
+}
+
+pub fn fetch_swap_status(conn: &Connection, uuid: &str) -> Result<Option<SwapStatusFromDB>, String> {
+    const SELECT_SWAP_STATUS_BY_UUID: &str = "SELECT maker_coin, taker_coin, started_at, finished_at, maker_amount, taker_amount, is_success FROM stats_swaps WHERE uuid = ?1";
+
+    let params = vec![uuid.to_string()];
+    let query_row = conn.query_row(SELECT_SWAP_STATUS_BY_UUID, params_from_iter(params.iter()), |row| {
+        Ok(SwapStatusFromDB {
+            maker_coin: row.get(0)?,
+            taker_coin: row.get(1)?,
+            started_at: row.get(2)?,
+            finished_at: row.get(3)?,
+            maker_amount: row.get(4)?,
+            taker_amount: row.get(5)?,
+            is_success: row.get::<_, u32>(6)? != 0,
+        })
+    });
+    match query_row.optional() {
+        Ok(Some(swap_status)) => Ok(Some(swap_status)),
+        Ok(None) => Ok(None),
+        Err(e) => {
+            let err_msg = format!(
+                "Error {} on query {} with params {:?}",
+                e, SELECT_SWAP_STATUS_BY_UUID, params
+            );
+            error!("{}", err_msg);
+            Err(err_msg)
+        },
+    }
+}
+
 #[test]
 fn test_split_coin() {
     let input = "";
