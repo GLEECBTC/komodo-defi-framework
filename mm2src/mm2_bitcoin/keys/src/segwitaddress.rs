@@ -276,8 +276,7 @@ mod tests {
         let bytes = hex_to_bytes(x_only_pub).unwrap();
         let x_only_pub = H256::from_slice(&bytes).unwrap();
         let hrp = "tb";
-        let addr =
-            SegwitAddress::new_with_version(&LockingDestination::TweakedXOnlyPubkey(x_only_pub), hrp.to_string(), 1);
+        let addr = SegwitAddress::new(&LockingDestination::TweakedXOnlyPubkey(x_only_pub), hrp.to_string(), 1).unwrap();
         assert_eq!(
             &addr.to_string(),
             "tb1p6h5fuzmnvpdthf5shf0qqjzwy7wsqc5rhmgq2ks9xrak4ry6mtrscsqvzp"
