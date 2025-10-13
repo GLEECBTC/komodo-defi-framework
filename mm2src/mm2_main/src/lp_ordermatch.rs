@@ -2541,6 +2541,25 @@ enum OrderbookRequestingState {
 
 type H64 = [u8; 8];
 
+/// A narrow contract for trie mutations. The Orderbook builds these ops,
+/// TrieStore applies them (and only TrieStore mutates MemoryDB/history).
+#[derive(Clone, Debug)]
+enum TrieOp {
+    Insert {
+        pubkey: String,
+        alb_pair: String,
+        uuid: Uuid,
+        /// Full OrderbookItem is needed to maintain delta history
+        /// (and to regenerate deltas for Sync responses).
+        order: OrderbookItem,
+    },
+    Remove {
+        pubkey: String,
+        alb_pair: String,
+        uuid: Uuid,
+    },
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 struct TrieDiff<Key, Value> {
     delta: Vec<(Key, Option<Value>)>,
@@ -2666,6 +2685,135 @@ impl Default for TrieStore {
     }
 }
 
+impl TrieStore {
+    /// Apply a sequence of trie operations produced by the Orderbook.
+    /// This is the only place mutating MemoryDB and trie histories.
+    fn apply_ops<I>(&mut self, ops: I)
+    where
+        I: IntoIterator<Item = TrieOp>,
+    {
+        for op in ops {
+            match op {
+                TrieOp::Insert {
+                    pubkey,
+                    alb_pair,
+                    uuid,
+                    order,
+                } => self.apply_insert(&pubkey, &alb_pair, uuid, order),
+                TrieOp::Remove { pubkey, alb_pair, uuid } => self.apply_remove(&pubkey, &alb_pair, uuid),
+            }
+        }
+    }
+
+    fn apply_insert(&mut self, pubkey: &str, alb_pair: &str, uuid: Uuid, order: OrderbookItem) {
+        let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, pubkey);
+
+        let pair_root = order_pair_root_mut(&mut pubkey_state.trie_roots, alb_pair);
+        let prev_root = *pair_root;
+
+        pubkey_state.orders_uuids.insert((uuid, alb_pair.to_owned()));
+
+        {
+            let mut pair_trie = match get_trie_mut(&mut self.memory_db, pair_root) {
+                Ok(trie) => trie,
+                Err(e) => {
+                    error!("Error getting {} trie with root {:?}", e, prev_root);
+                    return;
+                },
+            };
+            let order_bytes = order.trie_state_bytes();
+            if let Err(e) = pair_trie.insert(uuid.as_bytes(), &order_bytes) {
+                error!(
+                    "Error {:?} on insertion to trie. Key {}, value {:?}",
+                    e, uuid, order_bytes
+                );
+                return;
+            };
+        }
+
+        if prev_root != H64::default() {
+            let alb_pair_owned = alb_pair.to_owned();
+
+            let _ = pubkey_state
+                .order_pairs_trie_state_history
+                .update_expiration_status(alb_pair_owned.clone(), Duration::from_secs(TRIE_STATE_HISTORY_TIMEOUT));
+
+            let history = match pubkey_state
+                .order_pairs_trie_state_history
+                .get_mut_unchecked(&alb_pair_owned)
+            {
+                Some(t) => t,
+                None => {
+                    pubkey_state.order_pairs_trie_state_history.insert_expirable(
+                        alb_pair_owned.clone(),
+                        TrieOrderHistory {
+                            inner: TimedMap::new_with_map_kind(MapKind::FxHashMap),
+                        },
+                        Duration::from_secs(TRIE_STATE_HISTORY_TIMEOUT),
+                    );
+
+                    pubkey_state
+                        .order_pairs_trie_state_history
+                        .get_mut_unchecked(&alb_pair_owned)
+                        .expect("must exist")
+                },
+            };
+
+            history.insert_new_diff(
+                prev_root,
+                TrieDiff {
+                    delta: vec![(uuid, Some(order))],
+                    next_root: *pair_root,
+                },
+            );
+        }
+    }
+
+    fn apply_remove(&mut self, pubkey: &str, alb_pair: &str, uuid: Uuid) {
+        let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, pubkey);
+        let pair_state = order_pair_root_mut(&mut pubkey_state.trie_roots, alb_pair);
+        let old_state = *pair_state;
+
+        let to_remove = &(uuid, alb_pair.to_owned());
+        pubkey_state.orders_uuids.remove(to_remove);
+
+        if old_state == H64::default() || old_state == hashed_null_node::<Layout>() {
+            return;
+        }
+
+        *pair_state = match delta_trie_root::<Layout, _, _, _, _, _>(
+            &mut self.memory_db,
+            *pair_state,
+            vec![(*uuid.as_bytes(), None::<Vec<u8>>)],
+        ) {
+            Ok(root) => root,
+            Err(_) => {
+                error!("Failed to get existing trie with root {:?}", pair_state);
+                return;
+            },
+        };
+
+        let alb_pair_owned = alb_pair.to_owned();
+
+        let _ = pubkey_state
+            .order_pairs_trie_state_history
+            .update_expiration_status(alb_pair_owned.clone(), Duration::from_secs(TRIE_STATE_HISTORY_TIMEOUT));
+
+        if let Some(history) = pubkey_state
+            .order_pairs_trie_state_history
+            .get_mut_unchecked(&alb_pair_owned)
+        {
+            history.insert_new_diff(
+                old_state,
+                TrieDiff {
+                    delta: vec![(uuid, None)],
+                    next_root: *pair_state,
+                },
+            );
+        }
+    }
+}
+
 struct Orderbook {
     /// A map from (base, rel).
     ordered: HashMap<(String, String), BTreeSet<OrderedByPriceOrder>>,
@@ -2729,90 +2877,50 @@ impl Orderbook {
         self.order_set.get(uuid).cloned()
     }
 
-    fn insert_or_update_order_update_trie(&mut self, trie_store: &mut TrieStore, order: OrderbookItem) {
+    /// Index-only method: updates in-memory indices and returns the trie mutations
+    /// that must be applied by TrieStore. No trie/memory_db mutation happens here.
+    fn index_insert_or_update(&mut self, order: OrderbookItem) -> Vec<TrieOp> {
         // Ignore the order if it was recently cancelled
         if self.recently_cancelled.get(&order.uuid) == Some(&order.pubkey) {
             warn!("Maker order {} was recently cancelled, ignoring", order.uuid);
-            return;
+            return Vec::new();
         }
 
+        let mut trie_ops = Vec::with_capacity(1);
         let zero = BigRational::from_integer(0.into());
+
         if order.max_volume <= zero || order.price <= zero || order.min_volume < zero {
-            self.remove_order_trie_update(trie_store, order.uuid);
-            return;
-        } // else insert the order
-
-        self.insert_or_update_order(trie_store, order.clone());
-
-        let pubkey_state = pubkey_state_mut(&mut trie_store.pubkeys_state, &order.pubkey);
-
-        let alb_ordered = alb_ordered_pair(&order.base, &order.rel);
-        let pair_root = order_pair_root_mut(&mut pubkey_state.trie_roots, &alb_ordered);
-        let prev_root = *pair_root;
-
-        pubkey_state.orders_uuids.insert((order.uuid, alb_ordered.clone()));
-
-        {
-            let mut pair_trie = match get_trie_mut(&mut trie_store.memory_db, pair_root) {
-                Ok(trie) => trie,
-                Err(e) => {
-                    error!("Error getting {} trie with root {:?}", e, prev_root);
-                    return;
-                },
-            };
-            let order_bytes = order.trie_state_bytes();
-            if let Err(e) = pair_trie.insert(order.uuid.as_bytes(), &order_bytes) {
-                error!(
-                    "Error {:?} on insertion to trie. Key {}, value {:?}",
-                    e, order.uuid, order_bytes
-                );
-                return;
-            };
+            if let Some((_removed, op)) = self.index_remove(order.uuid) {
+                trie_ops.push(op);
+            }
+            return trie_ops;
         }
 
-        if prev_root != H64::default() {
-            let _ = pubkey_state
-                .order_pairs_trie_state_history
-                .update_expiration_status(alb_ordered.clone(), Duration::from_secs(TRIE_STATE_HISTORY_TIMEOUT));
+        let alb_pair = alb_ordered_pair(&order.base, &order.rel);
+        let op = TrieOp::Insert {
+            pubkey: order.pubkey.clone(),
+            alb_pair,
+            uuid: order.uuid,
+            order: order.clone(),
+        };
+        self.index_insert_or_update_inner(order);
+        trie_ops.push(op);
+        trie_ops
+    }
 
-            let history = match pubkey_state
-                .order_pairs_trie_state_history
-                .get_mut_unchecked(&alb_ordered)
-            {
-                Some(t) => t,
-                None => {
-                    pubkey_state.order_pairs_trie_state_history.insert_expirable(
-                        alb_ordered.clone(),
-                        TrieOrderHistory {
-                            inner: TimedMap::new_with_map_kind(MapKind::FxHashMap),
-                        },
-                        Duration::from_secs(TRIE_STATE_HISTORY_TIMEOUT),
-                    );
-
-                    pubkey_state
-                        .order_pairs_trie_state_history
-                        .get_mut_unchecked(&alb_ordered)
-                        .expect("must exist")
-                },
-            };
-
-            history.insert_new_diff(
-                prev_root,
-                TrieDiff {
-                    delta: vec![(order.uuid, Some(order.clone()))],
-                    next_root: *pair_root,
-                },
-            );
+    /// Compatibility shim while callers are migrated: now delegates to
+    /// the index method and asks TrieStore to apply trie ops.
+    fn insert_or_update_order_update_trie(&mut self, trie_store: &mut TrieStore, order: OrderbookItem) {
+        let ops = self.index_insert_or_update(order);
+        if !ops.is_empty() {
+            trie_store.apply_ops(ops);
         }
     }
 
-    fn insert_or_update_order(&mut self, trie_store: &mut TrieStore, order: OrderbookItem) {
+    /// Pure index update (no trie changes): replaces/creates an order in memory structures
+    /// and emits the "NewOrUpdatedItem" event.
+    fn index_insert_or_update_inner(&mut self, order: OrderbookItem) {
         log::debug!("Inserting order {:?}", order);
-        let zero = BigRational::from_integer(0.into());
-        if order.max_volume <= zero || order.price <= zero || order.min_volume < zero {
-            self.remove_order_trie_update(trie_store, order.uuid);
-            return;
-        } // else insert the order
 
         let base_rel = (order.base.clone(), order.rel.clone());
 
@@ -2853,7 +2961,9 @@ impl Orderbook {
         self.order_set.insert(order.uuid, order);
     }
 
-    fn remove_order_trie_update(&mut self, trie_store: &mut TrieStore, uuid: Uuid) -> Option<OrderbookItem> {
+    /// Pure index removal (no trie changes): removes from in-memory indices,
+    /// emits the "RemovedItem" event and returns the removed order and TrieOp.
+    fn index_remove(&mut self, uuid: Uuid) -> Option<(OrderbookItem, TrieOp)> {
         let order = self.order_set.remove(&uuid)?;
         let base_rel = (order.base.clone(), order.rel.clone());
 
@@ -2878,50 +2988,29 @@ impl Orderbook {
             }
         }
 
-        let alb_ordered = alb_ordered_pair(&order.base, &order.rel);
-        let pubkey_state = pubkey_state_mut(&mut trie_store.pubkeys_state, &order.pubkey);
-        let pair_state = order_pair_root_mut(&mut pubkey_state.trie_roots, &alb_ordered);
-        let old_state = *pair_state;
-
-        let to_remove = &(uuid, alb_ordered.clone());
-        pubkey_state.orders_uuids.remove(to_remove);
-
-        *pair_state = match delta_trie_root::<Layout, _, _, _, _, _>(
-            &mut trie_store.memory_db,
-            *pair_state,
-            vec![(*order.uuid.as_bytes(), None::<Vec<u8>>)],
-        ) {
-            Ok(root) => root,
-            Err(_) => {
-                error!("Failed to get existing trie with root {:?}", pair_state);
-                return Some(order);
-            },
-        };
-
-        let _ = pubkey_state
-            .order_pairs_trie_state_history
-            .update_expiration_status(alb_ordered.clone(), Duration::from_secs(TRIE_STATE_HISTORY_TIMEOUT));
-
-        if let Some(history) = pubkey_state
-            .order_pairs_trie_state_history
-            .get_mut_unchecked(&alb_ordered)
-        {
-            history.insert_new_diff(
-                old_state,
-                TrieDiff {
-                    delta: vec![(uuid, None)],
-                    next_root: *pair_state,
-                },
-            );
-        }
-
         self.streaming_manager
             .send_fn(
                 &OrderbookStreamer::derive_streamer_id((&order.base, &order.rel)),
                 || OrderbookItemChangeEvent::RemovedItem(order.uuid),
             )
             .ok();
-        Some(order)
+
+        // Stage a trie removal op for TrieStore
+        let alb_pair = alb_ordered_pair(&order.base, &order.rel);
+        let op = TrieOp::Remove {
+            pubkey: order.pubkey.clone(),
+            alb_pair,
+            uuid,
+        };
+
+        Some((order, op))
+    }
+
+    /// Compatibility shim: delegates to index_remove and lets TrieStore apply the trie mutation.
+    fn remove_order_trie_update(&mut self, trie_store: &mut TrieStore, uuid: Uuid) -> Option<OrderbookItem> {
+        let (removed, op) = self.index_remove(uuid)?;
+        trie_store.apply_ops(std::iter::once(op));
+        Some(removed)
     }
 
     fn is_subscribed_to(&self, topic: &str) -> bool {
