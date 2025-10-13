@@ -1104,7 +1104,7 @@ mod tests {
                 PaymentType::InboundPayment
             };
             let status_rng: u8 = rng.gen();
-            let status = if status_rng % 3 == 0 {
+            let status = if status_rng.is_multiple_of(3) {
                 HTLCStatus::Succeeded
             } else if status_rng % 3 == 1 {
                 HTLCStatus::Pending

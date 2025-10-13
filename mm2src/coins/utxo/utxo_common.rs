@@ -640,7 +640,7 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
     fn make_kmd_rewards_data(coin: &T, interest: u64) -> Option<KmdRewardsDetails> {
         let rewards_amount = big_decimal_from_sat_unsigned(interest, coin.as_ref().decimals);
         if coin.supports_interest() {
-            Some(KmdRewardsDetails::claimed_by_me(rewards_amount))
+            Some(KmdRewardsDetails::new(rewards_amount))
         } else {
             None
         }
@@ -4118,11 +4118,8 @@ pub async fn tx_details_by_hash<T: UtxoCommonOps>(
     //     // `fee = input_amount - actual_output_amount` or simplified `fee = input_amount - output_amount + kmd_rewards`
     //     let fee = input_amount as i64 - output_amount as i64 + kmd_rewards as i64;
     //
-    //     let my_address = &coin.as_ref().my_address;
-    //     let claimed_by_me = from_addresses.iter().all(|from| from == my_address) && to_addresses.contains(my_address);
     //     let kmd_rewards_details = KmdRewardsDetails {
     //         amount: big_decimal_from_sat_unsigned(kmd_rewards, coin.as_ref().decimals),
-    //         claimed_by_me,
     //     };
     //     (
     //         big_decimal_from_sat(fee, coin.as_ref().decimals),
@@ -4232,8 +4229,6 @@ where
 /// `actual_fee = input_amount - actual_output_amount` or `actual_fee = input_amount - output_amount + kmd_rewards`.
 /// Substitute [`TransactionDetails::fee`] to the last equation:
 /// `actual_fee = TransactionDetails::fee + kmd_rewards`
-///
-/// Note: This assumes that the KMD rewards is always claimed by us and thus sets the `claimed_by_me` field to true.
 pub async fn update_kmd_rewards<T>(
     coin: &T,
     tx_details: &mut TransactionDetails,
@@ -4271,7 +4266,7 @@ where
         }));
     }
 
-    tx_details.kmd_rewards = Some(KmdRewardsDetails::claimed_by_me(kmd_rewards));
+    tx_details.kmd_rewards = Some(KmdRewardsDetails::new(kmd_rewards));
     Ok(())
 }
 

@@ -216,9 +216,13 @@ pub const ERC20_ABI: &str = include_str!("eth/erc20_abi.json");
 const ERC721_ABI: &str = include_str!("eth/erc721_abi.json");
 /// https://github.com/ethereum/EIPs/blob/master/EIPS/eip-1155.md
 const ERC1155_ABI: &str = include_str!("eth/erc1155_abi.json");
+/// https://github.com/KomodoPlatform/etomic-swap/blob/7d4eafd4a408188a95aee78a41f0bf5f9116ffa2/contracts/EtomicSwapNft.sol
 const NFT_SWAP_CONTRACT_ABI: &str = include_str!("eth/nft_swap_contract_abi.json");
+/// https://github.com/KomodoPlatform/etomic-swap/blob/7d4eafd4a408188a95aee78a41f0bf5f9116ffa2/contracts/EtomicSwapMakerNftV2.sol
 const NFT_MAKER_SWAP_V2_ABI: &str = include_str!("eth/nft_maker_swap_v2_abi.json");
+/// https://github.com/KomodoPlatform/etomic-swap/blob/7d4eafd4a408188a95aee78a41f0bf5f9116ffa2/contracts/EtomicSwapMakerV2.sol
 const MAKER_SWAP_V2_ABI: &str = include_str!("eth/maker_swap_v2_abi.json");
+/// https://github.com/KomodoPlatform/etomic-swap/blob/7d4eafd4a408188a95aee78a41f0bf5f9116ffa2/contracts/EtomicSwapTakerV2.sol
 const TAKER_SWAP_V2_ABI: &str = include_str!("eth/taker_swap_v2_abi.json");
 
 /// Payment states from etomic swap smart contract: https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol#L5

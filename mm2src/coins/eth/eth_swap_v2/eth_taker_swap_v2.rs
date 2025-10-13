@@ -3,10 +3,10 @@ use super::{
     PaymentMethod, PrepareTxDataError, SpendTxSearchParams, ZERO_VALUE,
 };
 use crate::eth::{
-    decode_contract_call, get_function_input_data, u256_from_big_decimal, EthCoin, EthCoinType, ParseCoinAssocTypes,
-    RefundFundingSecretArgs, RefundTakerPaymentArgs, SendTakerFundingArgs, SignedEthTx, SwapTxTypeWithSecretHash,
-    TakerPaymentStateV2, TransactionErr, ValidateSwapV2TxError, ValidateSwapV2TxResult, ValidateTakerFundingArgs,
-    TAKER_SWAP_V2,
+    decode_contract_call, get_function_input_data, signed_tx_from_web3_tx, u256_from_big_decimal, EthCoin, EthCoinType,
+    ParseCoinAssocTypes, RefundFundingSecretArgs, RefundTakerPaymentArgs, SendTakerFundingArgs, SignedEthTx,
+    SwapTxTypeWithSecretHash, TakerPaymentStateV2, TransactionErr, ValidateSwapV2TxError, ValidateSwapV2TxResult,
+    ValidateTakerFundingArgs, TAKER_SWAP_V2,
 };
 use crate::{
     FindPaymentSpendError, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, SearchForFundingSpendErr,
@@ -172,7 +172,9 @@ impl EthCoin {
             ))
         })?;
         let taker_address = public_to_address(args.taker_pub);
-        validate_from_to_addresses(tx_from_rpc, taker_address, taker_swap_v2_contract).map_mm_err()?;
+        let signed_tx = signed_tx_from_web3_tx(tx_from_rpc.clone())
+            .map_err(|err| ValidateSwapV2TxError::WrongPaymentTx(format!("Could not parse tx: {:?}", err)))?;
+        validate_from_to_addresses(&signed_tx, taker_address, taker_swap_v2_contract).map_mm_err()?;
 
         let validation_args = {
             let dex_fee = u256_from_big_decimal(&args.dex_fee.fee_amount().into(), self.decimals).map_mm_err()?;
