@@ -318,11 +318,11 @@ impl Address {
                 AddressScriptType::P2WSH,
                 LockingDestination::default_witness_script_hash(),
             ),
-            (0, _) => return Err("Expect either 20 or 32 bytes long hash for witness v0 address".into()),
             (1, 32) => (
                 AddressScriptType::P2TR,
                 LockingDestination::default_tweaked_xonly_pubkey(),
             ),
+            (0, _) => return Err("Expect either 20 or 32 bytes long hash for witness v0 address".into()),
             (1, _) => return Err("Expect 32 bytes long public key for witness v1 address".into()),
             (v, _) => return Err(format!("Unsupported segwit version: {v}")),
         };
@@ -347,13 +347,13 @@ impl Address {
     }
 
     pub fn to_segwitaddress(&self) -> Result<SegwitAddress, String> {
-        match (&self.hrp, &self.addr_format) {
-            (Some(hrp), AddressFormat::Segwit { version }) => {
-                Ok(SegwitAddress::new(&self.locking_destination, hrp.to_string(), *version)
-                    .map_err(|e| e.to_string())?)
-            },
-            _ => Err("hrp and segwit version must be provided for segwit address".into()),
-        }
+        let Some(hrp) = &self.hrp else {
+            return Err("hrp must be provided for segwit address".into());
+        };
+        let AddressFormat::Segwit { version } = self.addr_format else {
+            return Err("address format must be segwit".into());
+        };
+        SegwitAddress::new(&self.locking_destination, hrp.to_string(), version).map_err(|e| e.to_string())
     }
 }
 

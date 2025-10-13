@@ -99,15 +99,10 @@ impl SegwitAddress {
     pub fn address_type(&self) -> Option<SegwitAddrType> {
         // BIP-141 p2wpkh or p2wsh addresses.
         match self.version_as_u8() {
-            0 => match self.program.len() {
-                20 => Some(SegwitAddrType::P2wpkh),
-                32 => Some(SegwitAddrType::P2wsh),
-                _ => None,
-            },
-            1 => match self.program.len() {
-                32 => Some(SegwitAddrType::P2tr),
-                _ => None,
-            },
+            0 if self.program.len() == 20 => Some(SegwitAddrType::P2wpkh),
+            0 if self.program.len() == 32 => Some(SegwitAddrType::P2wsh),
+            1 if self.program.len() == 32 => Some(SegwitAddrType::P2tr),
+            // Future versions or non-standard program sizes.
             _ => None,
         }
     }
