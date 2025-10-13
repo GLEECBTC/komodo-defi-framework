@@ -347,6 +347,8 @@ async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> Recreate
         taker_coin: started_event.taker_coin,
         maker_coin: started_event.maker_coin.clone(),
         maker_pubkey: H256Json::from(maker_p2p_pubkey),
+        // FIXME: If you peek into where we set the value of `taker_pubkey`, we only set it to `Default::default()`, which means such value is incorrect?
+        //        Same goes for `maker_pubkey` on the other side of the swap.
         my_persistent_pub: negotiated_event.taker_pubkey,
         lock_duration: started_event.lock_duration,
         maker_amount: started_event.maker_amount,
