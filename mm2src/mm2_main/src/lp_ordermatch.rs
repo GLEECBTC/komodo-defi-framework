@@ -65,7 +65,7 @@ use my_orders_storage::{
 use num_traits::identities::Zero;
 use order_events::{OrderStatusEvent, OrderStatusStreamer};
 use orderbook_events::{OrderbookItemChangeEvent, OrderbookStreamer};
-use parking_lot::Mutex as PaMutex;
+use parking_lot::{Mutex as PaMutex, RwLock as PaRwLock};
 use rpc::v1::types::H256 as H256Json;
 use secp256k1::PublicKey as Secp256k1Pubkey;
 use serde_json::{self as json, Value as Json};
@@ -327,10 +327,9 @@ async fn process_orders_keep_alive(
 ) -> OrderbookP2PHandlerResult {
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("from_ctx failed");
     let to_request = {
-        // Snapshot subscribed topics without holding the lock during TrieStore logic.
         let subscribed_topics: HashSet<String> = {
-            let orderbook = ordermatch_ctx.orderbook.lock();
-            orderbook.topics_subscribed_to.keys().cloned().collect()
+            let subs = ordermatch_ctx.orderbook_subscriptions.read();
+            subs.keys().cloned().collect()
         };
 
         let mut trie_store = ordermatch_ctx.trie_store.lock();
@@ -548,9 +547,10 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
     }
 
     let topic = orderbook_topic_from_base_rel(base, rel);
-    orderbook
-        .topics_subscribed_to
-        .insert(topic, OrderbookRequestingState::Requested);
+    {
+        let mut subs = ordermatch_ctx.orderbook_subscriptions.write();
+        subs.insert(topic, OrderbookRequestingState::Requested);
+    }
 
     Ok(())
 }
@@ -2946,7 +2946,6 @@ struct Orderbook {
     /// e.g., when receiving the order cancellation message before the order is created.
     /// Entries are kept for `RECENTLY_CANCELLED_TIMEOUT` seconds.
     recently_cancelled: TimedMap<Uuid, String>,
-    topics_subscribed_to: HashMap<String, OrderbookRequestingState>,
     my_p2p_pubkeys: HashSet<String>,
     /// A copy of the streaming manager to stream orderbook events out.
     streaming_manager: StreamingManager,
@@ -2961,7 +2960,6 @@ impl Default for Orderbook {
             unordered: HashMap::default(),
             order_set: HashMap::default(),
             recently_cancelled: TimedMap::new_with_map_kind(MapKind::FxHashMap),
-            topics_subscribed_to: HashMap::default(),
             my_p2p_pubkeys: HashSet::default(),
             streaming_manager: Default::default(),
         }
@@ -3130,10 +3128,6 @@ impl Orderbook {
         Some(removed)
     }
 
-    fn is_subscribed_to(&self, topic: &str) -> bool {
-        self.topics_subscribed_to.contains_key(topic)
-    }
-
     fn orderbook_item_with_proof(&self, order: OrderbookItem) -> OrderbookItemWithProof {
         OrderbookItemWithProof {
             order,
@@ -3149,6 +3143,8 @@ struct OrdermatchContext {
     pub orderbook: PaMutex<Orderbook>,
     /// Trie data store is extracted from `Orderbook` to reduce contention.
     pub trie_store: PaMutex<TrieStore>,
+    /// Tracks which orderbook topics we are subscribed to, separate from the order index.
+    pub orderbook_subscriptions: PaRwLock<HashMap<String, OrderbookRequestingState>>,
     /// The map from coin original ticker to the orderbook ticker
     /// It is used to share the same orderbooks for concurrently activated coins with different protocols
     /// E.g. BTC and BTC-Segwit
@@ -3192,6 +3188,7 @@ pub fn init_ordermatch_context(ctx: &MmArc) -> OrdermatchInitResult<()> {
         my_taker_orders: Default::default(),
         orderbook: PaMutex::new(Orderbook::new(ctx.event_stream_manager.clone())),
         trie_store: PaMutex::new(TrieStore::default()),
+        orderbook_subscriptions: PaRwLock::new(HashMap::default()),
         pending_maker_reserved: Default::default(),
         orderbook_tickers,
         original_tickers,
@@ -3222,6 +3219,8 @@ impl OrdermatchContext {
                 maker_orders_ctx: PaMutex::new(try_s!(MakerOrdersContext::new(ctx))),
                 my_taker_orders: Default::default(),
                 orderbook: PaMutex::new(Orderbook::new(ctx.event_stream_manager.clone())),
+                trie_store: PaMutex::new(TrieStore::default()),
+                orderbook_subscriptions: PaRwLock::new(HashMap::default()),
                 pending_maker_reserved: Default::default(),
                 orderbook_tickers: Default::default(),
                 original_tickers: Default::default(),
@@ -6360,9 +6359,9 @@ async fn subscribe_to_orderbook_topic(
     let topic = orderbook_topic_from_base_rel(base, rel);
     let is_orderbook_filled = {
         let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
-        let mut orderbook = ordermatch_ctx.orderbook.lock();
+        let mut subs = ordermatch_ctx.orderbook_subscriptions.write();
 
-        match orderbook.topics_subscribed_to.entry(topic.clone()) {
+        match subs.entry(topic.clone()) {
             Entry::Vacant(e) => {
                 // we weren't subscribed to the topic yet
                 e.insert(OrderbookRequestingState::NotRequested {
