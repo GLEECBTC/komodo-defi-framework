@@ -2156,7 +2156,6 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
     subscribe_to_topic(&ctx, swap_topic(&swap.uuid));
     let mut status = ctx.log.status_handle();
     let uuid_str = swap.uuid.to_string();
-    let to_broadcast = !(swap.maker_coin.is_privacy() || swap.taker_coin.is_privacy());
     macro_rules! swap_tags {
         () => {
             &[&"swap", &("uuid", uuid_str.as_str())]
@@ -2223,10 +2222,8 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
                             error!("!mark_swap_finished({}): {}", uuid, e);
                         }
 
-                        if to_broadcast {
-                            if let Err(e) = broadcast_my_swap_status(&ctx, uuid).await {
-                                error!("!broadcast_my_swap_status({}): {}", uuid, e);
-                            }
+                        if let Err(e) = broadcast_my_swap_status(&ctx, uuid).await {
+                            error!("!broadcast_my_swap_status({}): {}", uuid, e);
                         }
                         break;
                     },

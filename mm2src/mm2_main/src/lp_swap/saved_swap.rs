@@ -143,6 +143,11 @@ impl SavedSwap {
                 if let Some(ref mut event) = swap.events.first_mut() {
                     if let MakerSwapEvent::Started(ref mut data) = event.event {
                         data.secret = H256Json::default();
+                        // If we are using a spun up private key for this swap, then we probably want to hide our
+                        // persistent pubkey as well.
+                        if data.p2p_privkey.is_some() {
+                            data.my_persistent_pub = None;
+                        }
                         data.p2p_privkey = None;
                     }
                 }
@@ -150,6 +155,11 @@ impl SavedSwap {
             SavedSwap::Taker(swap) => {
                 if let Some(ref mut event) = swap.events.first_mut() {
                     if let TakerSwapEvent::Started(ref mut data) = event.event {
+                        // If we are using a spun up private key for this swap, then we probably want to hide our
+                        // persistent pubkey as well.
+                        if data.p2p_privkey.is_some() {
+                            data.my_persistent_pub = None;
+                        }
                         data.p2p_privkey = None;
                     }
                 }

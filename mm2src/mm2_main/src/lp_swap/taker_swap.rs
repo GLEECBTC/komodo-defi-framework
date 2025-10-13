@@ -467,7 +467,6 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
     subscribe_to_topic(&ctx, swap_topic(&swap.uuid));
     let mut status = ctx.log.status_handle();
     let uuid_str = uuid.to_string();
-    let to_broadcast = !(swap.maker_coin.is_privacy() || swap.taker_coin.is_privacy());
     let running_swap = Arc::new(swap);
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
     swap_ctx.init_msg_store(running_swap.uuid, running_swap.maker_pubkey);
@@ -524,10 +523,8 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
                             error!("!mark_swap_finished({}): {}", uuid_str, e);
                         }
 
-                        if to_broadcast {
-                            if let Err(e) = broadcast_my_swap_status(&ctx, running_swap.uuid).await {
-                                error!("!broadcast_my_swap_status({}): {}", uuid_str, e);
-                            }
+                        if let Err(e) = broadcast_my_swap_status(&ctx, running_swap.uuid).await {
+                            error!("!broadcast_my_swap_status({}): {}", uuid_str, e);
                         }
                         break;
                     },
