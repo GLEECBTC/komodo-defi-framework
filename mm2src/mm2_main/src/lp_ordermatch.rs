@@ -386,15 +386,25 @@ fn process_maker_order_updated(
 ) -> OrderbookP2PHandlerResult {
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("from_ctx failed");
     let uuid = updated_msg.uuid();
-    let mut orderbook = ordermatch_ctx.orderbook.lock();
 
-    let mut order = orderbook
-        .find_order_by_uuid_and_pubkey(&uuid, &from_pubkey)
-        .ok_or_else(|| MmError::new(OrderbookP2PHandlerError::OrderNotFound(uuid)))?;
-    order.apply_updated(&updated_msg);
-    drop_mutability!(order);
-    let mut trie_store = ordermatch_ctx.trie_store.lock();
-    orderbook.insert_or_update_order_update_trie(&mut trie_store, order);
+    // Phase 1: mutate in-memory order and build trie ops
+    let ops = {
+        let mut orderbook = ordermatch_ctx.orderbook.lock();
+
+        let mut order = orderbook
+            .find_order_by_uuid_and_pubkey(&uuid, &from_pubkey)
+            .ok_or_else(|| MmError::new(OrderbookP2PHandlerError::OrderNotFound(uuid)))?;
+        order.apply_updated(&updated_msg);
+        drop_mutability!(order);
+
+        orderbook.index_insert_or_update(order)
+    };
+
+    // Phase 2: apply trie ops
+    if !ops.is_empty() {
+        let mut trie_store = ordermatch_ctx.trie_store.lock();
+        trie_store.apply_ops(ops);
+    }
 
     Ok(())
 }
@@ -402,19 +412,34 @@ fn process_maker_order_updated(
 fn process_maker_order_cancelled(ctx: &MmArc, from_pubkey: String, cancelled_msg: new_protocol::MakerOrderCancelled) {
     let uuid = Uuid::from(cancelled_msg.uuid);
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
-    let mut orderbook = ordermatch_ctx.orderbook.lock();
-    // Add the order to the recently cancelled list to ignore it if a new order with the same uuid
-    // is received within the `RECENTLY_CANCELLED_TIMEOUT` timeframe.
-    // We do this even if the order is in the order_set, because it could have been added through
-    // means other than the order creation message.
-    orderbook
-        .recently_cancelled
-        .insert_expirable(uuid, from_pubkey.clone(), RECENTLY_CANCELLED_TIMEOUT);
-    if let Some(order) = orderbook.order_set.get(&uuid) {
-        if order.pubkey == from_pubkey {
-            let mut trie_store = ordermatch_ctx.trie_store.lock();
-            orderbook.remove_order_trie_update(&mut trie_store, uuid);
+
+    // Phase 1: update index and collect trie op
+    let maybe_op = {
+        let mut orderbook = ordermatch_ctx.orderbook.lock();
+
+        // Add the order to the recently cancelled list to ignore it if a new order with the same uuid
+        // is received within the `RECENTLY_CANCELLED_TIMEOUT` timeframe.
+        // We do this even if the order is in the order_set, because it could have been added through
+        // means other than the order creation message.
+        orderbook
+            .recently_cancelled
+            .insert_expirable(uuid, from_pubkey.clone(), RECENTLY_CANCELLED_TIMEOUT);
+
+        if let Some(order) = orderbook.order_set.get(&uuid) {
+            if order.pubkey == from_pubkey {
+                orderbook.index_remove(uuid).map(|(_removed, op)| op)
+            } else {
+                None
+            }
+        } else {
+            None
         }
+    };
+
+    // Phase 2: apply trie op
+    if let Some(op) = maybe_op {
+        let mut trie_store = ordermatch_ctx.trie_store.lock();
+        trie_store.apply_ops(std::iter::once(op));
     }
 }
 
@@ -527,29 +552,58 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
 /// Note this function locks the [`OrdermatchContext::orderbook`] async mutex.
 fn insert_or_update_order(ctx: &MmArc, item: OrderbookItem) {
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
-    let mut orderbook = ordermatch_ctx.orderbook.lock();
-    let mut trie_store = ordermatch_ctx.trie_store.lock();
-    orderbook.insert_or_update_order_update_trie(&mut trie_store, item)
+
+    // Phase 1: index under Orderbook lock
+    let ops = {
+        let mut orderbook = ordermatch_ctx.orderbook.lock();
+        orderbook.index_insert_or_update(item)
+    };
+
+    // Phase 2: apply trie ops under TrieStore lock
+    if !ops.is_empty() {
+        let mut trie_store = ordermatch_ctx.trie_store.lock();
+        trie_store.apply_ops(ops);
+    }
 }
 
 // use this function when notify maker order created
 fn insert_or_update_my_order(ctx: &MmArc, item: OrderbookItem, my_order: &MakerOrder) {
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
-    let mut orderbook = ordermatch_ctx.orderbook.lock();
-    let mut trie_store = ordermatch_ctx.trie_store.lock();
-    orderbook.insert_or_update_order_update_trie(&mut trie_store, item);
-    if let Some(key) = my_order.p2p_privkey {
-        orderbook.my_p2p_pubkeys.insert(hex::encode(key.public_slice()));
+
+    // Phase 1: index + my_p2p_pubkeys under Orderbook lock
+    let ops = {
+        let mut orderbook = ordermatch_ctx.orderbook.lock();
+        let ops = orderbook.index_insert_or_update(item);
+        if let Some(key) = my_order.p2p_privkey {
+            orderbook.my_p2p_pubkeys.insert(hex::encode(key.public_slice()));
+        }
+        ops
+    };
+
+    // Phase 2: apply trie ops under TrieStore lock
+    if !ops.is_empty() {
+        let mut trie_store = ordermatch_ctx.trie_store.lock();
+        trie_store.apply_ops(ops);
     }
 }
 
 fn delete_my_order(ctx: &MmArc, uuid: Uuid, p2p_privkey: Option<SerializableSecp256k1Keypair>) {
     let ordermatch_ctx: Arc<OrdermatchContext> = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
-    let mut orderbook = ordermatch_ctx.orderbook.lock();
-    let mut trie_store = ordermatch_ctx.trie_store.lock();
-    orderbook.remove_order_trie_update(&mut trie_store, uuid);
-    if let Some(key) = p2p_privkey {
-        orderbook.my_p2p_pubkeys.remove(&hex::encode(key.public_slice()));
+
+    // Phase 1: index remove + pubkey cleanup
+    let op = {
+        let mut orderbook = ordermatch_ctx.orderbook.lock();
+        let op = orderbook.index_remove(uuid).map(|(_removed, op)| op);
+        if let Some(key) = p2p_privkey {
+            orderbook.my_p2p_pubkeys.remove(&hex::encode(key.public_slice()));
+        }
+        op
+    };
+
+    // Phase 2: apply trie op
+    if let Some(op) = op {
+        let mut trie_store = ordermatch_ctx.trie_store.lock();
+        trie_store.apply_ops(std::iter::once(op));
     }
 }
 
@@ -1119,13 +1173,24 @@ fn maker_order_created_p2p_notify(
 
 fn process_my_maker_order_updated(ctx: &MmArc, message: &new_protocol::MakerOrderUpdated) {
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
-    let mut orderbook = ordermatch_ctx.orderbook.lock();
 
-    let uuid = message.uuid();
-    if let Some(mut order) = orderbook.find_order_by_uuid(&uuid) {
-        order.apply_updated(message);
+    // Phase 1: update index and build trie ops
+    let ops = {
+        let mut orderbook = ordermatch_ctx.orderbook.lock();
+
+        let uuid = message.uuid();
+        if let Some(mut order) = orderbook.find_order_by_uuid(&uuid) {
+            order.apply_updated(message);
+            orderbook.index_insert_or_update(order)
+        } else {
+            Vec::new()
+        }
+    };
+
+    // Phase 2: apply trie ops
+    if !ops.is_empty() {
         let mut trie_store = ordermatch_ctx.trie_store.lock();
-        orderbook.insert_or_update_order_update_trie(&mut trie_store, order);
+        trie_store.apply_ops(ops);
     }
 }
 
