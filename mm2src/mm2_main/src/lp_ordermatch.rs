@@ -260,62 +260,58 @@ struct ProcessTrieParams<'a> {
 
 fn process_pubkey_full_trie(
     orderbook: &mut Orderbook,
-    trie_store: &mut TrieStore,
     new_trie_orders: PubkeyOrders,
     params: ProcessTrieParams,
-) -> H64 {
-    remove_pubkey_pair_orders(orderbook, trie_store, params.pubkey, params.alb_pair);
+) -> Vec<TrieOp> {
+    // 1) Index-only removal of existing orders for (pubkey, pair),
+    //    emit RemovedItem events, do NOT generate per-UUID trie ops.
+    orderbook.index_remove_pubkey_pair_orders(params.pubkey, params.alb_pair);
 
+    // 2) Start with a single ClearPair op to reset trie/history/root for (pubkey, pair)
+    let mut ops = vec![TrieOp::ClearPair {
+        pubkey: params.pubkey.to_owned(),
+        alb_pair: params.alb_pair.to_owned(),
+    }];
+
+    // 3) Re-insert all incoming orders (index + trie ops)
     for (uuid, order) in new_trie_orders {
-        orderbook.insert_or_update_order_update_trie(
-            trie_store,
-            OrderbookItem::from_p2p_and_info(
-                order,
-                params.protocol_infos.get(&uuid).cloned().unwrap_or_default(),
-                params.conf_infos.get(&uuid).cloned(),
-            ),
+        let item = OrderbookItem::from_p2p_and_info(
+            order,
+            params.protocol_infos.get(&uuid).cloned().unwrap_or_default(),
+            params.conf_infos.get(&uuid).cloned(),
         );
+        let mut insert_ops = orderbook.index_insert_or_update(item);
+        ops.append(&mut insert_ops);
     }
 
-    let new_root = pubkey_state_mut(&mut trie_store.pubkeys_state, params.pubkey)
-        .trie_roots
-        .get(params.alb_pair)
-        .copied()
-        .unwrap_or_default();
-    new_root
+    ops
 }
 
 fn process_trie_delta(
     orderbook: &mut Orderbook,
-    trie_store: &mut TrieStore,
     delta_orders: HashMap<Uuid, Option<OrderbookP2PItem>>,
     params: ProcessTrieParams,
-) -> H64 {
-    for (uuid, order) in delta_orders {
-        match order {
-            Some(order) => orderbook.insert_or_update_order_update_trie(
-                trie_store,
-                OrderbookItem::from_p2p_and_info(
+) -> Vec<TrieOp> {
+    let mut ops = Vec::with_capacity(delta_orders.len());
+    for (uuid, maybe_order) in delta_orders {
+        match maybe_order {
+            Some(order) => {
+                let item = OrderbookItem::from_p2p_and_info(
                     order,
                     params.protocol_infos.get(&uuid).cloned().unwrap_or_default(),
                     params.conf_infos.get(&uuid).cloned(),
-                ),
-            ),
+                );
+                let mut insert_ops = orderbook.index_insert_or_update(item);
+                ops.append(&mut insert_ops);
+            },
             None => {
-                orderbook.remove_order_trie_update(trie_store, uuid);
+                if let Some((_removed, op)) = orderbook.index_remove(uuid) {
+                    ops.push(op);
+                }
             },
         }
     }
-
-    let new_root = match trie_store.pubkeys_state.get(params.pubkey) {
-        Some(pubkey_state) => pubkey_state
-            .trie_roots
-            .get(params.alb_pair)
-            .copied()
-            .unwrap_or_default(),
-        None => H64::default(),
-    };
-    new_root
+    ops
 }
 
 async fn process_orders_keep_alive(
@@ -357,9 +353,10 @@ async fn process_orders_keep_alive(
         )))
     })?;
 
-    {
+    // Phase 1: derive all index mutations and collect trie ops under the Orderbook lock
+    let ops = {
         let mut orderbook = ordermatch_ctx.orderbook.lock();
-        let mut trie_store = ordermatch_ctx.trie_store.lock();
+        let mut ops = Vec::new();
         for (pair, diff) in response.pair_orders_diff {
             let params = ProcessTrieParams {
                 pubkey: &from_pubkey,
@@ -367,13 +364,19 @@ async fn process_orders_keep_alive(
                 protocol_infos: &response.protocol_infos,
                 conf_infos: &response.conf_infos,
             };
-            let _new_root = match diff {
-                DeltaOrFullTrie::Delta(delta) => process_trie_delta(&mut orderbook, &mut trie_store, delta, params),
-                DeltaOrFullTrie::FullTrie(values) => {
-                    process_pubkey_full_trie(&mut orderbook, &mut trie_store, values, params)
-                },
+            let mut pair_ops = match diff {
+                DeltaOrFullTrie::Delta(delta) => process_trie_delta(&mut orderbook, delta, params),
+                DeltaOrFullTrie::FullTrie(values) => process_pubkey_full_trie(&mut orderbook, values, params),
             };
+            ops.append(&mut pair_ops);
         }
+        ops
+    };
+
+    // Phase 2: apply all trie ops under the TrieStore lock
+    if !ops.is_empty() {
+        let mut trie_store = ordermatch_ctx.trie_store.lock();
+        trie_store.apply_ops(ops);
     }
 
     Ok(())
@@ -401,7 +404,6 @@ fn process_maker_order_updated(
             .find_order_by_uuid_and_pubkey(&uuid, &from_pubkey)
             .ok_or_else(|| MmError::new(OrderbookP2PHandlerError::OrderNotFound(uuid)))?;
         order.apply_updated(&updated_msg);
-        drop_mutability!(order);
 
         orderbook.index_insert_or_update(order)
     };
@@ -506,44 +508,59 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
     };
 
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
-    let mut orderbook = ordermatch_ctx.orderbook.lock();
-    let mut trie_store = ordermatch_ctx.trie_store.lock();
 
     let my_pubsecp = mm2_internal_pubkey_hex(ctx, String::from).map_err(MmError::into_inner)?;
 
-    let alb_pair = alb_ordered_pair(base, rel);
-    for (pubkey, GetOrderbookPubkeyItem { orders, .. }) in pubkey_orders {
-        let pubkey_bytes = match hex::decode(&pubkey) {
-            Ok(b) => b,
-            Err(e) => {
-                warn!("Error {} decoding pubkey {}", e, pubkey);
-                continue;
-            },
-        };
+    // Phase 1: build all index mutations and collect trie ops under the Orderbook lock
+    let ops = {
+        let mut orderbook = ordermatch_ctx.orderbook.lock();
 
-        let pubkey_without_prefix: [u8; 32] = match pubkey_bytes.get(1..).map(|slice| slice.try_into()) {
-            Some(Ok(arr)) => arr,
-            _ => {
-                warn!("Invalid pubkey length (not 32 bytes) for {}", pubkey);
-                continue;
-            },
-        };
+        let alb_pair = alb_ordered_pair(base, rel);
+        let mut all_ops = Vec::new();
 
-        if is_my_order(&pubkey, &my_pubsecp, &orderbook.my_p2p_pubkeys) {
-            continue;
+        for (pubkey, GetOrderbookPubkeyItem { orders, .. }) in pubkey_orders {
+            let pubkey_bytes = match hex::decode(&pubkey) {
+                Ok(b) => b,
+                Err(e) => {
+                    warn!("Error {} decoding pubkey {}", e, pubkey);
+                    continue;
+                },
+            };
+
+            let pubkey_without_prefix: [u8; 32] = match pubkey_bytes.get(1..).map(|slice| slice.try_into()) {
+                Some(Ok(arr)) => arr,
+                _ => {
+                    warn!("Invalid pubkey length (not 32 bytes) for {}", pubkey);
+                    continue;
+                },
+            };
+
+            if is_my_order(&pubkey, &my_pubsecp, &orderbook.my_p2p_pubkeys) {
+                continue;
+            }
+
+            if is_pubkey_banned(ctx, &pubkey_without_prefix.into()) {
+                warn!("Pubkey {} is banned", pubkey);
+                continue;
+            }
+
+            let params = ProcessTrieParams {
+                pubkey: &pubkey,
+                alb_pair: &alb_pair,
+                protocol_infos: &protocol_infos,
+                conf_infos: &conf_infos,
+            };
+            let mut pair_ops = process_pubkey_full_trie(&mut orderbook, orders, params);
+            all_ops.append(&mut pair_ops);
         }
 
-        if is_pubkey_banned(ctx, &pubkey_without_prefix.into()) {
-            warn!("Pubkey {} is banned", pubkey);
-            continue;
-        }
-        let params = ProcessTrieParams {
-            pubkey: &pubkey,
-            alb_pair: &alb_pair,
-            protocol_infos: &protocol_infos,
-            conf_infos: &conf_infos,
-        };
-        let _new_root = process_pubkey_full_trie(&mut orderbook, &mut trie_store, orders, params);
+        all_ops
+    };
+
+    // Phase 2: apply trie ops under the TrieStore lock
+    if !ops.is_empty() {
+        let mut trie_store = ordermatch_ctx.trie_store.lock();
+        trie_store.apply_ops(ops);
     }
 
     let topic = orderbook_topic_from_base_rel(base, rel);
@@ -624,40 +641,6 @@ where
         Err((CryptoCtxError::NotInitialized, _)) => Ok(None),
         Err((CryptoCtxError::Internal(error), trace)) => MmError::err_with_trace(err_construct(error), trace),
     }
-}
-
-fn remove_pubkey_pair_orders(orderbook: &mut Orderbook, trie_store: &mut TrieStore, pubkey: &str, alb_pair: &str) {
-    let pubkey_state = match trie_store.pubkeys_state.get_mut(pubkey) {
-        Some(state) => state,
-        None => return,
-    };
-
-    if !pubkey_state.trie_roots.contains_key(alb_pair) {
-        return;
-    }
-
-    pubkey_state.order_pairs_trie_state_history.remove(&alb_pair.to_owned());
-
-    let mut orders_to_remove = Vec::with_capacity(pubkey_state.orders_uuids.len());
-    pubkey_state.orders_uuids.retain(|(uuid, alb)| {
-        if alb == alb_pair {
-            orders_to_remove.push(*uuid);
-            false
-        } else {
-            true
-        }
-    });
-
-    for order in orders_to_remove {
-        orderbook.remove_order_trie_update(trie_store, order);
-    }
-
-    let pubkey_state = match trie_store.pubkeys_state.get_mut(pubkey) {
-        Some(state) => state,
-        None => return,
-    };
-
-    pubkey_state.trie_roots.remove(alb_pair);
 }
 
 pub async fn handle_orderbook_msg(
@@ -2617,6 +2600,12 @@ type H64 = [u8; 8];
 /// TrieStore applies them (and only TrieStore mutates MemoryDB/history).
 #[derive(Clone, Debug)]
 enum TrieOp {
+    /// Reset an entire (pubkey, pair) subtrie.
+    ///
+    /// - Drops the subtrie's root and delta history for this (pubkey, pair).
+    /// - Intended to precede a full rebuild via subsequent Insert ops.
+    /// - After a clear, any remote delta requests that reference old roots will fall back to a FullTrie response.
+    ClearPair { pubkey: String, alb_pair: String },
     Insert {
         pubkey: String,
         alb_pair: String,
@@ -2764,15 +2753,46 @@ impl TrieStore {
     where
         I: IntoIterator<Item = TrieOp>,
     {
+        #[derive(Default)]
+        struct Group {
+            clear: bool,
+            inserts: Vec<(Uuid, OrderbookItem)>,
+            removes: Vec<Uuid>,
+        }
+
+        // 1) Group ops by (pubkey, alb_pair) to minimize repeated trie/historical touches.
+        let mut groups: HashMap<(String, String), Group> = HashMap::new();
         for op in ops {
             match op {
+                TrieOp::ClearPair { pubkey, alb_pair } => {
+                    groups.entry((pubkey, alb_pair)).or_default().clear = true;
+                },
                 TrieOp::Insert {
                     pubkey,
                     alb_pair,
                     uuid,
                     order,
-                } => self.apply_insert(&pubkey, &alb_pair, uuid, order),
-                TrieOp::Remove { pubkey, alb_pair, uuid } => self.apply_remove(&pubkey, &alb_pair, uuid),
+                } => {
+                    let g = groups.entry((pubkey, alb_pair)).or_default();
+                    g.inserts.push((uuid, order));
+                },
+                TrieOp::Remove { pubkey, alb_pair, uuid } => {
+                    groups.entry((pubkey, alb_pair)).or_default().removes.push(uuid);
+                },
+            }
+        }
+
+        // 2) Apply per group: ClearPair (if any) -> all Inserts -> all Removes
+        for ((pubkey, alb_pair), g) in groups {
+            if g.clear {
+                self.apply_clear_pair(&pubkey, &alb_pair);
+            }
+            // TODO(perf): reuse a single TrieDBMut for all inserts in this (pubkey, pair) group.
+            for (uuid, order) in g.inserts {
+                self.apply_insert(&pubkey, &alb_pair, uuid, order);
+            }
+            for uuid in g.removes {
+                self.apply_remove(&pubkey, &alb_pair, uuid);
             }
         }
     }
@@ -2882,6 +2902,16 @@ impl TrieStore {
                     next_root: *pair_state,
                 },
             );
+        }
+    }
+
+    fn apply_clear_pair(&mut self, pubkey: &str, alb_pair: &str) {
+        if let Some(pubkey_state) = self.pubkeys_state.get_mut(pubkey) {
+            pubkey_state.order_pairs_trie_state_history.remove(&alb_pair.to_owned());
+
+            pubkey_state.orders_uuids.retain(|(_uuid, pair)| pair != alb_pair);
+
+            pubkey_state.trie_roots.remove(alb_pair);
         }
     }
 
@@ -3023,15 +3053,6 @@ impl Orderbook {
         trie_ops
     }
 
-    /// Compatibility shim while callers are migrated: now delegates to
-    /// the index method and asks TrieStore to apply trie ops.
-    fn insert_or_update_order_update_trie(&mut self, trie_store: &mut TrieStore, order: OrderbookItem) {
-        let ops = self.index_insert_or_update(order);
-        if !ops.is_empty() {
-            trie_store.apply_ops(ops);
-        }
-    }
-
     /// Pure index update (no trie changes): replaces/creates an order in memory structures
     /// and emits the "NewOrUpdatedItem" event.
     fn index_insert_or_update_inner(&mut self, order: OrderbookItem) {
@@ -3119,6 +3140,28 @@ impl Orderbook {
         };
 
         Some((order, op))
+    }
+
+    fn index_remove_pubkey_pair_orders(&mut self, pubkey: &str, alb_pair: &str) {
+        let (base, rel) = match alb_pair.split_once(':') {
+            Some((a, b)) => (a, b),
+            None => return,
+        };
+
+        let pairs = [(base.to_owned(), rel.to_owned()), (rel.to_owned(), base.to_owned())];
+
+        for pair in pairs {
+            if let Some(uuids) = self.unordered.get(&pair).cloned() {
+                for uuid in uuids {
+                    if let Some(order) = self.order_set.get(&uuid) {
+                        if order.pubkey == pubkey {
+                            // ignore the trie op here, we’re going to ClearPair at the trie layer
+                            let _ = self.index_remove(uuid);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Compatibility shim: delegates to index_remove and lets TrieStore apply the trie mutation.
