@@ -327,9 +327,16 @@ async fn process_orders_keep_alive(
 ) -> OrderbookP2PHandlerResult {
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("from_ctx failed");
     let to_request = {
-        let mut orderbook = ordermatch_ctx.orderbook.lock();
+        // Snapshot subscribed topics without holding the lock during TrieStore logic.
+        let subscribed_topics: HashSet<String> = {
+            let orderbook = ordermatch_ctx.orderbook.lock();
+            orderbook.topics_subscribed_to.keys().cloned().collect()
+        };
+
         let mut trie_store = ordermatch_ctx.trie_store.lock();
-        orderbook.process_keep_alive(&mut trie_store, &from_pubkey, keep_alive, i_am_relay)
+        trie_store.prepare_sync_request_for_keep_alive(&from_pubkey, keep_alive, i_am_relay, |topic: &str| {
+            subscribed_topics.contains(topic)
+        })
     };
 
     let req = match to_request {
@@ -2877,6 +2884,51 @@ impl TrieStore {
             );
         }
     }
+
+    /// Build a SyncPubkeyOrderbookState request if keep-alive indicates our local trie roots are stale.
+    /// This avoids touching Orderbook (and its lock). Topic subscription is provided via `is_subscribed`.
+    fn prepare_sync_request_for_keep_alive(
+        &mut self,
+        from_pubkey: &str,
+        message: new_protocol::PubkeyKeepAlive,
+        i_am_relay: bool,
+        mut is_subscribed: impl FnMut(&str) -> bool,
+    ) -> Option<OrdermatchRequest> {
+        let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
+        pubkey_state.last_keep_alive = now_sec();
+
+        let mut trie_roots_to_request = HashMap::new();
+        for (alb_pair, trie_root) in message.trie_roots {
+            let topic = orderbook_topic_from_ordered_pair(&alb_pair);
+            let subscribed = is_subscribed(&topic);
+            if !subscribed && !i_am_relay {
+                continue;
+            }
+
+            if trie_root == H64::default() || trie_root == hashed_null_node::<Layout>() {
+                log::debug!(
+                    "Received zero or hashed_null_node pair {} trie root from pub {}",
+                    alb_pair,
+                    from_pubkey
+                );
+                continue;
+            }
+
+            let actual_trie_root = order_pair_root_mut(&mut pubkey_state.trie_roots, &alb_pair);
+            if *actual_trie_root != trie_root {
+                trie_roots_to_request.insert(alb_pair, trie_root);
+            }
+        }
+
+        if trie_roots_to_request.is_empty() {
+            return None;
+        }
+
+        Some(OrdermatchRequest::SyncPubkeyOrderbookState {
+            pubkey: from_pubkey.to_owned(),
+            trie_roots: trie_roots_to_request,
+        })
+    }
 }
 
 struct Orderbook {
@@ -3080,49 +3132,6 @@ impl Orderbook {
 
     fn is_subscribed_to(&self, topic: &str) -> bool {
         self.topics_subscribed_to.contains_key(topic)
-    }
-
-    fn process_keep_alive(
-        &mut self,
-        trie_store: &mut TrieStore,
-        from_pubkey: &str,
-        message: new_protocol::PubkeyKeepAlive,
-        i_am_relay: bool,
-    ) -> Option<OrdermatchRequest> {
-        let pubkey_state = pubkey_state_mut(&mut trie_store.pubkeys_state, from_pubkey);
-        pubkey_state.last_keep_alive = now_sec();
-        let mut trie_roots_to_request = HashMap::new();
-        for (alb_pair, trie_root) in message.trie_roots {
-            let subscribed = self
-                .topics_subscribed_to
-                .contains_key(&orderbook_topic_from_ordered_pair(&alb_pair));
-            if !subscribed && !i_am_relay {
-                continue;
-            }
-
-            if trie_root == H64::default() || trie_root == hashed_null_node::<Layout>() {
-                log::debug!(
-                    "Received zero or hashed_null_node pair {} trie root from pub {}",
-                    alb_pair,
-                    from_pubkey
-                );
-
-                continue;
-            }
-            let actual_trie_root = order_pair_root_mut(&mut pubkey_state.trie_roots, &alb_pair);
-            if *actual_trie_root != trie_root {
-                trie_roots_to_request.insert(alb_pair, trie_root);
-            }
-        }
-
-        if trie_roots_to_request.is_empty() {
-            return None;
-        }
-
-        Some(OrdermatchRequest::SyncPubkeyOrderbookState {
-            pubkey: from_pubkey.to_owned(),
-            trie_roots: trie_roots_to_request,
-        })
     }
 
     fn orderbook_item_with_proof(&self, order: OrderbookItem) -> OrderbookItemWithProof {
