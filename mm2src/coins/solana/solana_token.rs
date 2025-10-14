@@ -23,7 +23,7 @@ use serde::Deserialize;
 
 use crate::coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentResult};
 use crate::hd_wallet::HDAddressSelector;
-use crate::solana::solana_coin::lamports_to_big_decimal;
+use crate::solana::solana_coin::{include_lamports_to_big_decimal, u64_lamports_to_big_decimal};
 use crate::solana::SolanaFeeDetails;
 use crate::{
     solana::SolanaCoin, BalanceFut, CoinBalance, RawTransactionFut, RawTransactionRequest, TxFeeDetails, WithdrawFut,
@@ -40,7 +40,7 @@ use crate::{
 use solana_pubkey::Pubkey as SolanaAddress;
 use solana_transaction::Transaction;
 use spl_associated_token_account_client::address::get_associated_token_address;
-use spl_associated_token_account_client::instruction::create_associated_token_account;
+use spl_associated_token_account_client::instruction::create_associated_token_account_idempotent;
 use spl_token as spl_token_program;
 
 pub struct SolanaTokenFields {
@@ -134,7 +134,7 @@ impl SolanaToken {
             kind: SolanaTokenInitErrorKind::UnhealthyRPCs,
         })?;
 
-        match rpc.get_account(&protocol_info.mint_address) {
+        match rpc.get_account(&protocol_info.mint_address).await {
             Ok(mint_account) => {
                 if mint_account.owner != spl_token_program::id() {
                     return MmError::err(SolanaTokenInitError {
@@ -172,7 +172,7 @@ impl SolanaToken {
     }
 
     fn token_id(&self) -> RpcBytes {
-        sha256(self.ticker().to_lowercase().as_bytes()).to_vec().into()
+        sha256(&self.protocol_info.mint_address.to_bytes()).to_vec().into()
     }
 }
 
@@ -219,8 +219,7 @@ impl MmCoin for SolanaToken {
                     )))
                 })?
             } else {
-                let scale = BigDecimal::from(10u64.pow(token.protocol_info.decimals as u32));
-                let big_decimal = &req.amount * &scale;
+                let big_decimal = include_lamports_to_big_decimal(&req.amount, token.protocol_info.decimals);
 
                 big_decimal.to_u64().ok_or_else(|| {
                     MmError::new(WithdrawError::InternalError(format!(
@@ -236,7 +235,7 @@ impl MmCoin for SolanaToken {
                 });
             }
 
-            let amount_decimal = lamports_to_big_decimal(amount_u64, token.protocol_info.decimals);
+            let amount_decimal = u64_lamports_to_big_decimal(amount_u64, token.protocol_info.decimals);
             if balance.spendable < amount_decimal {
                 return MmError::err(WithdrawError::NotSufficientBalance {
                     coin: token.ticker.to_owned(),
@@ -250,12 +249,12 @@ impl MmCoin for SolanaToken {
             //  - Transfer.
             let mut instructions = Vec::new();
 
-            if let Err(e) = rpc.get_account(&to_token_account) {
+            if let Err(e) = rpc.get_account(&to_token_account).await {
                 if !e.kind.to_string().contains("AccountNotFound") {
                     return MmError::err(WithdrawError::Transport(e.to_string()));
                 }
 
-                instructions.push(create_associated_token_account(
+                instructions.push(create_associated_token_account_idempotent(
                     &coin.address,
                     &to,
                     &token.protocol_info.mint_address,
@@ -278,6 +277,7 @@ impl MmCoin for SolanaToken {
 
             let recent_blockhash = rpc
                 .get_latest_blockhash()
+                .await
                 .map_err(|e| WithdrawError::Transport(e.to_string()))?;
 
             let tx = Transaction::new_signed_with_payer(
@@ -299,12 +299,13 @@ impl MmCoin for SolanaToken {
 
             let tx_data = crate::TransactionData::new_signed(rpc::v1::types::Bytes(tx_bytes), tx_hash.clone());
 
-            let amount_dec = lamports_to_big_decimal(amount_u64, token.protocol_info.decimals);
+            let amount_dec = u64_lamports_to_big_decimal(amount_u64, token.protocol_info.decimals);
 
             let fee_lamports = rpc
                 .get_fee_for_message(tx.message())
+                .await
                 .map_err(|e| WithdrawError::Transport(e.to_string()))?;
-            let fee_dec = lamports_to_big_decimal(fee_lamports, super::solana_coin::SOLANA_DECIMALS);
+            let fee_dec = u64_lamports_to_big_decimal(fee_lamports, super::solana_coin::SOLANA_DECIMALS);
 
             let platform_coin_balance = coin
                 .my_balance()
@@ -333,11 +334,11 @@ impl MmCoin for SolanaToken {
                 to: vec![to.to_string()],
                 total_amount: amount_dec.clone(),
                 spent_by_me: amount_dec.clone(),
+                my_balance_change: &received_by_me - &amount_dec,
                 received_by_me,
-                my_balance_change: -amount_dec,
                 block_height: 0,
                 timestamp: 0,
-                fee_details: Some(TxFeeDetails::Solana(SolanaFeeDetails { amount: fee_dec })),
+                fee_details: Some(TxFeeDetails::Solana(SolanaFeeDetails { total_amount: fee_dec })),
                 coin: req.coin,
                 internal_id: rpc::v1::types::Bytes(tx_hash.into_bytes()),
                 kmd_rewards: None,
