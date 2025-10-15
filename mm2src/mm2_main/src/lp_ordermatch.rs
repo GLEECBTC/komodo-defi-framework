@@ -36,7 +36,8 @@ use common::{bits256, log, new_uuid, now_ms, now_sec};
 use crypto::privkey::SerializableSecp256k1Keypair;
 use crypto::{CryptoCtx, CryptoCtxError};
 use derive_more::Display;
-use futures::{compat::Future01CompatExt, lock::Mutex as AsyncMutex, TryFutureExt};
+use futures::channel::mpsc::{unbounded, UnboundedSender};
+use futures::{compat::Future01CompatExt, lock::Mutex as AsyncMutex, StreamExt, TryFutureExt};
 use hash256_std_hasher::Hash256StdHasher;
 use hash_db::Hasher;
 use http::Response;
@@ -373,10 +374,9 @@ async fn process_orders_keep_alive(
         ops
     };
 
-    // Phase 2: apply all trie ops under the TrieStore lock
+    // Phase 2: enqueue trie ops for background application
     if !ops.is_empty() {
-        let mut trie_store = ordermatch_ctx.trie_store.lock();
-        trie_store.apply_ops(ops);
+        let _ = ordermatch_ctx.trie_ops_tx.unbounded_send(ops);
     }
 
     Ok(())
@@ -408,10 +408,9 @@ fn process_maker_order_updated(
         orderbook.index_insert_or_update(order)
     };
 
-    // Phase 2: apply trie ops
+    // Phase 2: enqueue trie ops
     if !ops.is_empty() {
-        let mut trie_store = ordermatch_ctx.trie_store.lock();
-        trie_store.apply_ops(ops);
+        let _ = ordermatch_ctx.trie_ops_tx.unbounded_send(ops);
     }
 
     Ok(())
@@ -444,10 +443,9 @@ fn process_maker_order_cancelled(ctx: &MmArc, from_pubkey: String, cancelled_msg
         }
     };
 
-    // Phase 2: apply trie op
+    // Phase 2: enqueue trie op
     if let Some(op) = maybe_op {
-        let mut trie_store = ordermatch_ctx.trie_store.lock();
-        trie_store.apply_ops(std::iter::once(op));
+        let _ = ordermatch_ctx.trie_ops_tx.unbounded_send(vec![op]);
     }
 }
 
@@ -557,10 +555,9 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
         all_ops
     };
 
-    // Phase 2: apply trie ops under the TrieStore lock
+    // Phase 2: enqueue trie ops under the background worker
     if !ops.is_empty() {
-        let mut trie_store = ordermatch_ctx.trie_store.lock();
-        trie_store.apply_ops(ops);
+        let _ = ordermatch_ctx.trie_ops_tx.unbounded_send(ops);
     }
 
     let topic = orderbook_topic_from_base_rel(base, rel);
@@ -583,10 +580,9 @@ fn insert_or_update_order(ctx: &MmArc, item: OrderbookItem) {
         orderbook.index_insert_or_update(item)
     };
 
-    // Phase 2: apply trie ops under TrieStore lock
+    // Phase 2: enqueue trie ops under the background worker
     if !ops.is_empty() {
-        let mut trie_store = ordermatch_ctx.trie_store.lock();
-        trie_store.apply_ops(ops);
+        let _ = ordermatch_ctx.trie_ops_tx.unbounded_send(ops);
     }
 }
 
@@ -604,10 +600,9 @@ fn insert_or_update_my_order(ctx: &MmArc, item: OrderbookItem, my_order: &MakerO
         ops
     };
 
-    // Phase 2: apply trie ops under TrieStore lock
+    // Phase 2: enqueue trie ops under the background worker
     if !ops.is_empty() {
-        let mut trie_store = ordermatch_ctx.trie_store.lock();
-        trie_store.apply_ops(ops);
+        let _ = ordermatch_ctx.trie_ops_tx.unbounded_send(ops);
     }
 }
 
@@ -624,10 +619,9 @@ fn delete_my_order(ctx: &MmArc, uuid: Uuid, p2p_privkey: Option<SerializableSecp
         op
     };
 
-    // Phase 2: apply trie op
+    // Phase 2: enqueue trie op
     if let Some(op) = op {
-        let mut trie_store = ordermatch_ctx.trie_store.lock();
-        trie_store.apply_ops(std::iter::once(op));
+        let _ = ordermatch_ctx.trie_ops_tx.unbounded_send(vec![op]);
     }
 }
 
@@ -1177,10 +1171,9 @@ fn process_my_maker_order_updated(ctx: &MmArc, message: &new_protocol::MakerOrde
         }
     };
 
-    // Phase 2: apply trie ops
+    // Phase 2: enqueue trie ops
     if !ops.is_empty() {
-        let mut trie_store = ordermatch_ctx.trie_store.lock();
-        trie_store.apply_ops(ops);
+        let _ = ordermatch_ctx.trie_ops_tx.unbounded_send(ops);
     }
 }
 
@@ -2961,6 +2954,18 @@ impl TrieStore {
     }
 }
 
+fn spawn_trie_store_worker(ctx: &MmArc, trie_store: Arc<PaMutex<TrieStore>>) -> UnboundedSender<Vec<TrieOp>> {
+    let (tx, mut rx) = unbounded::<Vec<TrieOp>>();
+    let spawner = ctx.spawner();
+    spawner.spawn(async move {
+        while let Some(ops) = rx.next().await {
+            let mut store = trie_store.lock();
+            store.apply_ops(ops);
+        }
+    });
+    tx
+}
+
 struct Orderbook {
     /// A map from (base, rel).
     ordered: HashMap<(String, String), BTreeSet<OrderedByPriceOrder>>,
@@ -3164,13 +3169,6 @@ impl Orderbook {
         }
     }
 
-    /// Compatibility shim: delegates to index_remove and lets TrieStore apply the trie mutation.
-    fn remove_order_trie_update(&mut self, trie_store: &mut TrieStore, uuid: Uuid) -> Option<OrderbookItem> {
-        let (removed, op) = self.index_remove(uuid)?;
-        trie_store.apply_ops(std::iter::once(op));
-        Some(removed)
-    }
-
     fn orderbook_item_with_proof(&self, order: OrderbookItem) -> OrderbookItemWithProof {
         OrderbookItemWithProof {
             order,
@@ -3185,7 +3183,9 @@ struct OrdermatchContext {
     pub my_taker_orders: AsyncMutex<HashMap<Uuid, TakerOrder>>,
     pub orderbook: PaMutex<Orderbook>,
     /// Trie data store is extracted from `Orderbook` to reduce contention.
-    pub trie_store: PaMutex<TrieStore>,
+    pub trie_store: Arc<PaMutex<TrieStore>>,
+    /// Sender to enqueue trie mutations for background application.
+    pub trie_ops_tx: UnboundedSender<Vec<TrieOp>>,
     /// Tracks which orderbook topics we are subscribed to, separate from the order index.
     pub orderbook_subscriptions: PaRwLock<HashMap<String, OrderbookRequestingState>>,
     /// The map from coin original ticker to the orderbook ticker
@@ -3226,11 +3226,15 @@ pub fn init_ordermatch_context(ctx: &MmArc) -> OrdermatchInitResult<()> {
         }
     }
 
+    let trie_store = Arc::new(PaMutex::new(TrieStore::default()));
+    let trie_ops_tx = spawn_trie_store_worker(ctx, trie_store.clone());
+
     let ordermatch_context = OrdermatchContext {
         maker_orders_ctx: PaMutex::new(MakerOrdersContext::new(ctx)?),
         my_taker_orders: Default::default(),
         orderbook: PaMutex::new(Orderbook::new(ctx.event_stream_manager.clone())),
-        trie_store: PaMutex::new(TrieStore::default()),
+        trie_store,
+        trie_ops_tx,
         orderbook_subscriptions: PaRwLock::new(HashMap::default()),
         pending_maker_reserved: Default::default(),
         orderbook_tickers,
@@ -3258,11 +3262,14 @@ impl OrdermatchContext {
     #[cfg(test)]
     fn from_ctx(ctx: &MmArc) -> Result<Arc<OrdermatchContext>, String> {
         Ok(try_s!(from_ctx(&ctx.ordermatch_ctx, move || {
+            let trie_store = Arc::new(PaMutex::new(TrieStore::default()));
+            let trie_ops_tx = spawn_trie_store_worker(ctx, trie_store.clone());
             Ok(OrdermatchContext {
                 maker_orders_ctx: PaMutex::new(try_s!(MakerOrdersContext::new(ctx))),
                 my_taker_orders: Default::default(),
                 orderbook: PaMutex::new(Orderbook::new(ctx.event_stream_manager.clone())),
-                trie_store: PaMutex::new(TrieStore::default()),
+                trie_store,
+                trie_ops_tx,
                 orderbook_subscriptions: PaRwLock::new(HashMap::default()),
                 pending_maker_reserved: Default::default(),
                 orderbook_tickers: Default::default(),
@@ -3930,30 +3937,51 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
 
         {
             // remove "timed out" pubkeys states with their orders from trie store + index
-            let mut orderbook = ordermatch_ctx.orderbook.lock();
-            let mut trie_store = ordermatch_ctx.trie_store.lock();
-            let mut uuids_to_remove = vec![];
-            let mut pubkeys_to_remove = vec![];
-            for (pubkey, state) in trie_store.pubkeys_state.iter() {
-                let is_ours = orderbook.my_p2p_pubkeys.contains(pubkey);
-                let to_keep =
-                    pubkey == &my_pubsecp || is_ours || state.last_keep_alive + maker_order_timeout > now_sec();
-                if !to_keep {
-                    for (uuid, _) in &state.orders_uuids {
-                        uuids_to_remove.push(*uuid);
+            // Step 1: snapshot which uuids and pubkeys to remove
+            let (uuids_to_remove, pubkeys_to_remove) = {
+                let orderbook = ordermatch_ctx.orderbook.lock();
+                let trie_store = ordermatch_ctx.trie_store.lock();
+                let mut uuids = Vec::new();
+                let mut pubs = Vec::new();
+                for (pubkey, state) in trie_store.pubkeys_state.iter() {
+                    let is_ours = orderbook.my_p2p_pubkeys.contains(pubkey);
+                    let to_keep =
+                        pubkey == &my_pubsecp || is_ours || state.last_keep_alive + maker_order_timeout > now_sec();
+                    if !to_keep {
+                        for (uuid, _) in &state.orders_uuids {
+                            uuids.push(*uuid);
+                        }
+                        pubs.push(pubkey.clone());
                     }
-                    pubkeys_to_remove.push(pubkey.clone());
+                }
+                (uuids, pubs)
+            };
+
+            // Step 2: drop from index and build trie ops
+            let ops = {
+                let mut orderbook = ordermatch_ctx.orderbook.lock();
+                let mut ops = Vec::new();
+                for uuid in uuids_to_remove {
+                    if let Some((_removed, op)) = orderbook.index_remove(uuid) {
+                        ops.push(op);
+                    }
+                }
+                collect_orderbook_metrics(&ctx, &orderbook);
+                ops
+            };
+
+            // Step 3: cleanup pubkeys_state
+            {
+                let mut trie_store = ordermatch_ctx.trie_store.lock();
+                for pubkey in pubkeys_to_remove {
+                    trie_store.pubkeys_state.remove(&pubkey);
                 }
             }
 
-            for uuid in uuids_to_remove {
-                orderbook.remove_order_trie_update(&mut trie_store, uuid);
+            // Step 4: enqueue trie ops
+            if !ops.is_empty() {
+                let _ = ordermatch_ctx.trie_ops_tx.unbounded_send(ops);
             }
-            for pubkey in pubkeys_to_remove {
-                trie_store.pubkeys_state.remove(&pubkey);
-            }
-
-            collect_orderbook_metrics(&ctx, &orderbook);
         }
 
         {
