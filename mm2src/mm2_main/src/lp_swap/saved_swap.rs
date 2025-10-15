@@ -6,6 +6,7 @@ use coins::lp_coinfind;
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_number::BigDecimal;
 use rpc::v1::types::H256 as H256Json;
 use uuid::Uuid;
 #[cfg(target_arch = "wasm32")]
@@ -175,6 +176,62 @@ impl SavedSwap {
         match self {
             SavedSwap::Maker(maker) => maker.fetch_and_set_usd_prices().await,
             SavedSwap::Taker(taker) => taker.fetch_and_set_usd_prices().await,
+        }
+    }
+
+    pub fn taker_pubkey(&self) -> Option<Result<String, String>> {
+        match self {
+            SavedSwap::Taker(swap) => Some(swap.taker_pubkey()),
+            SavedSwap::Maker(_) => None,
+        }
+    }
+
+    pub fn maker_pubkey(&self) -> Option<Result<String, String>> {
+        match self {
+            SavedSwap::Maker(swap) => Some(swap.maker_pubkey()),
+            SavedSwap::Taker(_) => None,
+        }
+    }
+
+    pub fn maker_usd_price(&self) -> Option<&BigDecimal> {
+        match self {
+            SavedSwap::Maker(swap) => swap.maker_coin_usd_price.as_ref(),
+            SavedSwap::Taker(swap) => swap.maker_coin_usd_price.as_ref(),
+        }
+    }
+
+    pub fn taker_usd_price(&self) -> Option<&BigDecimal> {
+        match self {
+            SavedSwap::Maker(swap) => swap.taker_coin_usd_price.as_ref(),
+            SavedSwap::Taker(swap) => swap.taker_coin_usd_price.as_ref(),
+        }
+    }
+
+    pub fn maker_gui(&self) -> Option<&String> {
+        match self {
+            SavedSwap::Maker(swap) => swap.gui.as_ref(),
+            SavedSwap::Taker(_) => None,
+        }
+    }
+
+    pub fn taker_gui(&self) -> Option<&String> {
+        match self {
+            SavedSwap::Taker(swap) => swap.gui.as_ref(),
+            SavedSwap::Maker(_) => None,
+        }
+    }
+
+    pub fn maker_mm_version(&self) -> Option<&String> {
+        match self {
+            SavedSwap::Maker(swap) => swap.mm_version.as_ref(),
+            SavedSwap::Taker(_) => None,
+        }
+    }
+
+    pub fn taker_mm_version(&self) -> Option<&String> {
+        match self {
+            SavedSwap::Taker(swap) => swap.mm_version.as_ref(),
+            SavedSwap::Maker(_) => None,
         }
     }
 }
