@@ -1910,15 +1910,10 @@ fn test_process_get_orderbook_request() {
     orders_by_pubkeys.insert(pubkey2, pubkey2_orders);
     orders_by_pubkeys.insert(pubkey3, pubkey3_orders);
 
-    let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
-    let mut orderbook = ordermatch_ctx.orderbook.lock();
-
     for order in orders_by_pubkeys.values().flatten() {
-        orderbook.insert_or_update_order_update_trie(order.clone());
+        insert_or_update_order(&ctx, order.clone());
     }
-
-    // avoid dead lock on orderbook as process_get_orderbook_request also acquires it
-    drop(orderbook);
+    flush_trie(&ctx);
 
     let encoded = process_get_orderbook_request(ctx, "RICK".into(), "MORTY".into())
         .unwrap()
@@ -1950,8 +1945,6 @@ fn test_process_get_orderbook_request() {
 #[test]
 fn test_process_get_orderbook_request_limit() {
     let (ctx, pubkey, secret) = make_ctx_for_tests();
-    let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
-    let mut orderbook = ordermatch_ctx.orderbook.lock();
 
     let orders = make_random_orders(
         pubkey,
@@ -1962,11 +1955,9 @@ fn test_process_get_orderbook_request_limit() {
     );
 
     for order in orders {
-        orderbook.insert_or_update_order_update_trie(order);
+        insert_or_update_order(&ctx, order);
     }
-
-    // avoid dead lock on orderbook as process_get_orderbook_request also acquires it
-    drop(orderbook);
+    flush_trie(&ctx);
 
     let err = process_get_orderbook_request(ctx, "RICK".into(), "MORTY".into()).expect_err("Expected an error");
 
@@ -2007,6 +1998,7 @@ fn test_request_and_fill_orderbook() {
             insert_or_update_order(&ctx, extra_order);
         }
     }
+    flush_trie(&ctx);
 
     let expected_request = P2PRequest::Ordermatch(OrdermatchRequest::GetOrderbook {
         base: "RICK".into(),
@@ -2059,6 +2051,7 @@ fn test_request_and_fill_orderbook() {
     });
 
     block_on(request_and_fill_orderbook(&ctx, "RICK", "MORTY")).unwrap();
+    flush_trie(&ctx);
 
     // check if the best asks and bids are in the orderbook
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
@@ -2090,7 +2083,8 @@ fn test_request_and_fill_orderbook() {
 
     let rick_morty_pair = alb_ordered_pair("RICK", "MORTY");
     for (pubkey, orders) in expected_orders {
-        let pubkey_state = orderbook
+        let trie_store = ordermatch_ctx.trie_store.lock();
+        let pubkey_state = trie_store
             .pubkeys_state
             .get(&pubkey)
             .unwrap_or_else(|| panic!("!pubkey_state.get() {} pubkey", pubkey));
@@ -2107,7 +2101,7 @@ fn test_request_and_fill_orderbook() {
             .unwrap_or_else(|| panic!("!pubkey_state.trie_roots.get() {}", rick_morty_pair));
 
         // check if the root contains only expected orders
-        let trie = TrieDB::<Layout>::new(&orderbook.memory_db, root).expect("!TrieDB::new()");
+        let trie = TrieDB::<Layout>::new(&trie_store.memory_db, root).expect("!TrieDB::new()");
         let mut in_trie: Vec<(Uuid, OrderbookItem)> = trie
             .iter()
             .expect("!TrieDB::iter()")
@@ -2428,16 +2422,16 @@ fn test_taker_request_can_match_with_uuid() {
 
 #[test]
 fn test_orderbook_insert_or_update_order() {
-    let (_, pubkey, secret) = make_ctx_for_tests();
-    let mut orderbook = Orderbook::default();
+    let (ctx, pubkey, secret) = make_ctx_for_tests();
     let order = make_random_orders(pubkey, &secret, "C1".into(), "C2".into(), 1).remove(0);
-    orderbook.insert_or_update_order_update_trie(order);
+    insert_or_update_order(&ctx, order);
+    flush_trie(&ctx);
 }
 
 fn pair_trie_root_by_pub(ctx: &MmArc, pubkey: &str, pair: &str) -> H64 {
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
-    let orderbook = ordermatch_ctx.orderbook.lock();
-    *orderbook
+    let trie_store = ordermatch_ctx.trie_store.lock();
+    *trie_store
         .pubkeys_state
         .get(pubkey)
         .unwrap()
@@ -2448,14 +2442,23 @@ fn pair_trie_root_by_pub(ctx: &MmArc, pubkey: &str, pair: &str) -> H64 {
 
 fn clone_orderbook_memory_db(ctx: &MmArc) -> MemoryDB<Blake2Hasher64> {
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
-    let orderbook = ordermatch_ctx.orderbook.lock();
-    orderbook.memory_db.clone()
+    let trie_store = ordermatch_ctx.trie_store.lock();
+    trie_store.memory_db.clone()
 }
 
 fn remove_order(ctx: &MmArc, uuid: Uuid) {
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
-    let mut orderbook = ordermatch_ctx.orderbook.lock();
-    orderbook.remove_order_trie_update(uuid);
+    if let Some((_removed, op)) = ordermatch_ctx.orderbook.lock().index_remove(uuid) {
+        let _ = ordermatch_ctx.trie_ops_tx.unbounded_send(vec![op]);
+        // Ensure the removal is applied by the background worker before proceeding
+        ordermatch_ctx.wait_trie_ops_flushed();
+    };
+}
+
+/// Wait until the background trie worker has applied all pending ops.
+fn flush_trie(ctx: &MmArc) {
+    let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
+    ordermatch_ctx.wait_trie_ops_flushed();
 }
 
 #[test]
@@ -2466,6 +2469,7 @@ fn test_process_sync_pubkey_orderbook_state_after_new_orders_added() {
     for order in orders {
         insert_or_update_order(&ctx, order);
     }
+    flush_trie(&ctx);
 
     let alb_ordered_pair = alb_ordered_pair("C1", "C2");
     let pair_trie_root = pair_trie_root_by_pub(&ctx, &pubkey, &alb_ordered_pair);
@@ -2478,6 +2482,7 @@ fn test_process_sync_pubkey_orderbook_state_after_new_orders_added() {
     for order in new_orders {
         insert_or_update_order(&ctx, order.clone());
     }
+    flush_trie(&ctx);
 
     let mut result = process_sync_pubkey_orderbook_state(ctx.clone(), pubkey.clone(), prev_pairs_state)
         .unwrap()
@@ -2516,16 +2521,18 @@ fn test_diff_should_not_be_written_if_hash_not_changed_on_insert() {
     for order in orders.clone() {
         insert_or_update_order(&ctx, order);
     }
+    flush_trie(&ctx);
 
     let alb_ordered_pair = alb_ordered_pair("C1", "C2");
     let pair_trie_root = pair_trie_root_by_pub(&ctx, &pubkey, &alb_ordered_pair);
     for order in orders {
         insert_or_update_order(&ctx, order);
     }
+    flush_trie(&ctx);
 
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
-    let orderbook = ordermatch_ctx.orderbook.lock();
-    let pubkey_state = orderbook.pubkeys_state.get(&pubkey).unwrap();
+    let trie_store = ordermatch_ctx.trie_store.lock();
+    let pubkey_state = trie_store.pubkeys_state.get(&pubkey).unwrap();
     assert!(!pubkey_state
         .order_pairs_trie_state_history
         .get(&alb_ordered_pair)
@@ -2541,6 +2548,7 @@ fn test_process_sync_pubkey_orderbook_state_after_orders_removed() {
     for order in orders.clone() {
         insert_or_update_order(&ctx, order);
     }
+    flush_trie(&ctx);
 
     let alb_ordered_pair = alb_ordered_pair("C1", "C2");
     let pair_trie_root = pair_trie_root_by_pub(&ctx, &pubkey, &alb_ordered_pair);
@@ -2555,6 +2563,7 @@ fn test_process_sync_pubkey_orderbook_state_after_orders_removed() {
     for order in to_remove {
         remove_order(&ctx, order.uuid);
     }
+    flush_trie(&ctx);
 
     let mut result = process_sync_pubkey_orderbook_state(ctx.clone(), pubkey.clone(), prev_pairs_state)
         .unwrap()
@@ -2598,13 +2607,14 @@ fn test_diff_should_not_be_written_if_hash_not_changed_on_remove() {
     for uuid in &to_remove {
         remove_order(&ctx, *uuid);
     }
+    flush_trie(&ctx);
 
     let alb_ordered_pair = alb_ordered_pair("C1", "C2");
     let pair_trie_root = pair_trie_root_by_pub(&ctx, &pubkey, &alb_ordered_pair);
 
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
-    let orderbook = ordermatch_ctx.orderbook.lock();
-    let pubkey_state = orderbook.pubkeys_state.get(&pubkey).unwrap();
+    let trie_store = ordermatch_ctx.trie_store.lock();
+    let pubkey_state = trie_store.pubkeys_state.get(&pubkey).unwrap();
     assert!(!pubkey_state
         .order_pairs_trie_state_history
         .get(&alb_ordered_pair)
@@ -2614,11 +2624,15 @@ fn test_diff_should_not_be_written_if_hash_not_changed_on_remove() {
 
 #[test]
 fn test_orderbook_pubkey_sync_request() {
-    let mut orderbook = Orderbook::default();
-    orderbook.topics_subscribed_to.insert(
-        orderbook_topic_from_base_rel("C1", "C2"),
-        OrderbookRequestingState::Requested,
-    );
+    let ctx = mm_ctx_with_iguana(None);
+    let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
+    {
+        let mut subs = ordermatch_ctx.orderbook_subscriptions.write();
+        subs.insert(
+            orderbook_topic_from_base_rel("C1", "C2"),
+            OrderbookRequestingState::Requested,
+        );
+    }
     let pubkey = "pubkey";
 
     let mut trie_roots = HashMap::new();
@@ -2630,7 +2644,15 @@ fn test_orderbook_pubkey_sync_request() {
         timestamp: now_sec(),
     };
 
-    let request = orderbook.process_keep_alive(pubkey, message, false).unwrap();
+    let subscribed_topics: HashSet<String> = {
+        let subs = ordermatch_ctx.orderbook_subscriptions.read();
+        subs.keys().cloned().collect()
+    };
+    let mut trie_store = ordermatch_ctx.trie_store.lock();
+    let request = trie_store
+        .prepare_sync_request_for_keep_alive(pubkey, message, false, |topic| subscribed_topics.contains(topic))
+        .unwrap();
+
     match request {
         OrdermatchRequest::SyncPubkeyOrderbookState {
             trie_roots: pairs_trie_roots,
@@ -2645,11 +2667,15 @@ fn test_orderbook_pubkey_sync_request() {
 
 #[test]
 fn test_orderbook_pubkey_sync_request_relay() {
-    let mut orderbook = Orderbook::default();
-    orderbook.topics_subscribed_to.insert(
-        orderbook_topic_from_base_rel("C1", "C2"),
-        OrderbookRequestingState::Requested,
-    );
+    let ctx = mm_ctx_with_iguana(None);
+    let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
+    {
+        let mut subs = ordermatch_ctx.orderbook_subscriptions.write();
+        subs.insert(
+            orderbook_topic_from_base_rel("C1", "C2"),
+            OrderbookRequestingState::Requested,
+        );
+    }
     let pubkey = "pubkey";
 
     let mut trie_roots = HashMap::new();
@@ -2661,7 +2687,15 @@ fn test_orderbook_pubkey_sync_request_relay() {
         timestamp: now_sec(),
     };
 
-    let request = orderbook.process_keep_alive(pubkey, message, true).unwrap();
+    let subscribed_topics: HashSet<String> = {
+        let subs = ordermatch_ctx.orderbook_subscriptions.read();
+        subs.keys().cloned().collect()
+    };
+    let mut trie_store = ordermatch_ctx.trie_store.lock();
+    let request = trie_store
+        .prepare_sync_request_for_keep_alive(pubkey, message, true, |topic| subscribed_topics.contains(topic))
+        .unwrap();
+
     match request {
         OrdermatchRequest::SyncPubkeyOrderbookState {
             trie_roots: pairs_trie_roots,
@@ -2732,16 +2766,17 @@ fn test_process_sync_pubkey_orderbook_state_points_to_not_uptodate_trie_root() {
     for order in orders.iter() {
         insert_or_update_order(&ctx, order.clone());
     }
+    flush_trie(&ctx);
 
     let alb_pair = alb_ordered_pair("RICK", "MORTY");
 
     // update trie root by adding a new order and do not update history
     let (old_root, _new_root) = {
         let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
+        let mut trie_store = ordermatch_ctx.trie_store.lock();
         let mut orderbook = ordermatch_ctx.orderbook.lock();
 
-        log!("{:?}, found {:?}", pubkey, orderbook.pubkeys_state.keys());
-        let old_root = *orderbook
+        let old_root = *trie_store
             .pubkeys_state
             .get_mut(&pubkey)
             .expect("!pubkeys_state")
@@ -2751,13 +2786,13 @@ fn test_process_sync_pubkey_orderbook_state_points_to_not_uptodate_trie_root() {
 
         let order_bytes = new_order.trie_state_bytes();
         let mut new_root = old_root;
-        let mut trie = get_trie_mut(&mut orderbook.memory_db, &mut new_root).expect("!get_trie_mut");
+        let mut trie = get_trie_mut(&mut trie_store.memory_db, &mut new_root).expect("!get_trie_mut");
         trie.insert(new_order.uuid.as_bytes(), &order_bytes)
             .expect("Error on order insertion");
         drop(trie);
 
-        // update root in orderbook trie_roots
-        orderbook
+        // update root in trie_store trie_roots
+        trie_store
             .pubkeys_state
             .get_mut(&pubkey)
             .expect("!pubkeys_state")
@@ -2791,8 +2826,11 @@ fn test_process_sync_pubkey_orderbook_state_points_to_not_uptodate_trie_root() {
     assert_eq!(full_trie, expected);
 }
 
-fn check_if_orderbook_contains_only(orderbook: &Orderbook, pubkey: &str, orders: &[OrderbookItem]) {
-    let pubkey_state = orderbook.pubkeys_state.get(pubkey).expect("!pubkeys_state");
+fn check_if_orderbook_contains_only(ctx: &MmArc, pubkey: &str, orders: &[OrderbookItem]) {
+    let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
+    let orderbook = ordermatch_ctx.orderbook.lock();
+    let trie_store = ordermatch_ctx.trie_store.lock();
+    let pubkey_state = trie_store.pubkeys_state.get(pubkey).expect("!pubkeys_state");
 
     // order_set
     let expected_set: HashMap<_, _> = orders.iter().map(|order| (order.uuid, order.clone())).collect();
@@ -2822,7 +2860,7 @@ fn check_if_orderbook_contains_only(orderbook: &Orderbook, pubkey: &str, orders:
     }
     assert_eq!(orderbook.unordered, expected_unordered);
 
-    // history
+    // history keys
     let actual_keys: HashSet<_> = pubkey_state
         .order_pairs_trie_state_history
         .keys()
@@ -2842,12 +2880,12 @@ fn check_if_orderbook_contains_only(orderbook: &Orderbook, pubkey: &str, orders:
         .collect();
     assert_eq!(pubkey_state.orders_uuids, expected_uuids);
 
-    // trie_roots
+    // trie_roots contents
     let actual_trie_orders: HashMap<_, _> = pubkey_state
         .trie_roots
         .iter()
         .map(|(alb_pair, trie_root)| {
-            let trie = TrieDB::<Layout>::new(&orderbook.memory_db, trie_root).expect("!TrieDB::new");
+            let trie = TrieDB::<Layout>::new(&trie_store.memory_db, trie_root).expect("!TrieDB::new");
             let mut trie: Vec<(Uuid, OrderbookItem)> = trie
                 .iter()
                 .expect("!TrieDB::iter")
@@ -2862,6 +2900,7 @@ fn check_if_orderbook_contains_only(orderbook: &Orderbook, pubkey: &str, orders:
             (alb_pair.clone(), trie)
         })
         .collect();
+
     let mut expected_trie_orders = HashMap::new();
     for order in orders.iter() {
         let trie = expected_trie_orders
@@ -2884,14 +2923,23 @@ fn test_remove_and_purge_pubkey_pair_orders() {
     for order in rick_morty_orders.iter().chain(rick_kmd_orders.iter()) {
         insert_or_update_order(&ctx, order.clone());
     }
+    flush_trie(&ctx);
 
     let rick_morty_pair = alb_ordered_pair("RICK", "MORTY");
 
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
-    let mut orderbook = ordermatch_ctx.orderbook.lock();
-
-    remove_pubkey_pair_orders(&mut orderbook, &pubkey, &rick_morty_pair);
-    check_if_orderbook_contains_only(&orderbook, &pubkey, &rick_kmd_orders);
+    {
+        let mut orderbook = ordermatch_ctx.orderbook.lock();
+        orderbook.index_remove_pubkey_pair_orders(&pubkey, &rick_morty_pair);
+    }
+    {
+        let mut trie_store = ordermatch_ctx.trie_store.lock();
+        trie_store.apply_ops(vec![TrieOp::ClearPair {
+            pubkey: pubkey.clone(),
+            alb_pair: rick_morty_pair.clone(),
+        }]);
+    }
+    check_if_orderbook_contains_only(&ctx, &pubkey, &rick_kmd_orders);
 }
 
 #[test]
@@ -2904,40 +2952,46 @@ fn test_orderbook_sync_trie_diff_time_cache() {
     for order in &rick_morty_orders[..5] {
         insert_or_update_order(&ctx_bob, order.clone());
     }
+    flush_trie(&ctx_bob);
 
     std::thread::sleep(Duration::from_secs(3));
 
     for order in &rick_morty_orders[5..10] {
         insert_or_update_order(&ctx_bob, order.clone());
     }
+    flush_trie(&ctx_bob);
 
     let ordermatch_ctx_bob = OrdermatchContext::from_ctx(&ctx_bob).unwrap();
-    let orderbook_bob = ordermatch_ctx_bob.orderbook.lock();
-    let bob_state = orderbook_bob.pubkeys_state.get(&pubkey_bob).unwrap();
+    let trie_store_bob = ordermatch_ctx_bob.trie_store.lock();
+    let bob_state = trie_store_bob.pubkeys_state.get(&pubkey_bob).unwrap();
     let rick_morty_history_bob = bob_state.order_pairs_trie_state_history.get(&rick_morty_pair).unwrap();
     assert_eq!(rick_morty_history_bob.len(), 5);
 
     // alice has an outdated state, for which bob doesn't have history anymore as it's expired
-    let (ctx_alice, ..) = make_ctx_for_tests();
+    let (ctx_alice, pubkey_alice, ..) = make_ctx_for_tests();
 
     for order in &rick_morty_orders[..3] {
         insert_or_update_order(&ctx_alice, order.clone());
     }
+    flush_trie(&ctx_alice);
 
     let ordermatch_ctx_alice = OrdermatchContext::from_ctx(&ctx_alice).unwrap();
-    let mut orderbook_alice = ordermatch_ctx_alice.orderbook.lock();
-    let bob_state_on_alice_side = orderbook_alice.pubkeys_state.get(&pubkey_bob).unwrap();
+    let mut trie_store_alice = ordermatch_ctx_alice.trie_store.lock();
+    let bob_state_on_alice_side = trie_store_alice.pubkeys_state.get(&pubkey_bob).unwrap();
 
     let alice_root = bob_state_on_alice_side.trie_roots.get(&rick_morty_pair).unwrap();
     let bob_root = bob_state.trie_roots.get(&rick_morty_pair).unwrap();
 
-    let bob_history_on_sync = DeltaOrFullTrie::from_history(
-        rick_morty_history_bob,
-        *alice_root,
-        *bob_root,
-        &orderbook_bob.memory_db,
-        |uuid: &Uuid| orderbook_bob.order_set.get(uuid).cloned(),
-    )
+    let bob_history_on_sync = {
+        let orderbook_bob_guard = ordermatch_ctx_bob.orderbook.lock();
+        DeltaOrFullTrie::from_history(
+            rick_morty_history_bob,
+            *alice_root,
+            *bob_root,
+            &trie_store_bob.memory_db,
+            |uuid: &Uuid| orderbook_bob_guard.order_set.get(uuid).cloned(),
+        )
+    }
     .unwrap();
 
     let full_trie = match bob_history_on_sync {
@@ -2951,45 +3005,70 @@ fn test_orderbook_sync_trie_diff_time_cache() {
         protocol_infos: &HashMap::new(),
         conf_infos: &HashMap::new(),
     };
-    let new_alice_root = process_pubkey_full_trie(
-        &mut orderbook_alice,
-        full_trie
-            .into_iter()
-            .map(|(uuid, order)| (uuid, order.into()))
-            .collect(),
-        params,
-    );
 
+    {
+        // Phase 1: build ops (index only)
+        let ops = {
+            let mut orderbook_alice = ordermatch_ctx_alice.orderbook.lock();
+            process_pubkey_full_trie(
+                &mut orderbook_alice,
+                full_trie
+                    .into_iter()
+                    .map(|(uuid, order)| (uuid, order.into()))
+                    .collect(),
+                params,
+            )
+        };
+
+        // Phase 2: apply trie ops to update roots
+        if !ops.is_empty() {
+            trie_store_alice.apply_ops(ops);
+        }
+    }
+
+    // Compare the updated root on Alice with Bob
+    let new_alice_root = {
+        *trie_store_alice
+            .pubkeys_state
+            .get(&pubkey_alice)
+            .unwrap()
+            .trie_roots
+            .get(&rick_morty_pair)
+            .unwrap()
+    };
     assert_eq!(new_alice_root, *bob_root);
 
-    drop(orderbook_bob);
-    drop(orderbook_alice);
+    drop(trie_store_bob);
+    drop(trie_store_alice);
 
     for order in &rick_morty_orders[10..] {
         insert_or_update_order(&ctx_bob, order.clone());
     }
+    flush_trie(&ctx_bob);
 
-    let mut orderbook_bob = ordermatch_ctx_bob.orderbook.lock();
+    remove_order(&ctx_bob, rick_morty_orders[12].uuid);
 
-    orderbook_bob.remove_order_trie_update(rick_morty_orders[12].uuid);
-
-    let bob_state = orderbook_bob.pubkeys_state.get(&pubkey_bob).unwrap();
+    let trie_store_bob = ordermatch_ctx_bob.trie_store.lock();
+    let bob_state = trie_store_bob.pubkeys_state.get(&pubkey_bob).unwrap();
     let rick_morty_history_bob = bob_state.order_pairs_trie_state_history.get(&rick_morty_pair).unwrap();
 
-    let mut orderbook_alice = ordermatch_ctx_alice.orderbook.lock();
-    let bob_state_on_alice_side = orderbook_alice.pubkeys_state.get(&pubkey_bob).unwrap();
+    let mut trie_store_alice = ordermatch_ctx_alice.trie_store.lock();
+    let bob_state_on_alice_side = trie_store_alice.pubkeys_state.get(&pubkey_bob).unwrap();
 
     let alice_root = bob_state_on_alice_side.trie_roots.get(&rick_morty_pair).unwrap();
     let bob_root = bob_state.trie_roots.get(&rick_morty_pair).unwrap();
 
-    let bob_history_on_sync = DeltaOrFullTrie::from_history(
-        rick_morty_history_bob,
-        *alice_root,
-        *bob_root,
-        &orderbook_bob.memory_db,
-        |uuid: &Uuid| orderbook_bob.order_set.get(uuid).cloned(),
-    )
-    .unwrap();
+    let bob_history_on_sync = {
+        let orderbook_bob_guard = ordermatch_ctx_bob.orderbook.lock();
+        DeltaOrFullTrie::from_history(
+            rick_morty_history_bob,
+            *alice_root,
+            *bob_root,
+            &trie_store_bob.memory_db,
+            |uuid: &Uuid| orderbook_bob_guard.order_set.get(uuid).cloned(),
+        )
+        .unwrap()
+    };
 
     // Check that alice gets orders from history this time
     let trie_delta = match bob_history_on_sync {
@@ -3003,14 +3082,35 @@ fn test_orderbook_sync_trie_diff_time_cache() {
         protocol_infos: &HashMap::new(),
         conf_infos: &HashMap::new(),
     };
-    let new_alice_root = process_trie_delta(
-        &mut orderbook_alice,
-        trie_delta
-            .into_iter()
-            .map(|(uuid, order)| (uuid, order.map(From::from)))
-            .collect(),
-        params,
-    );
+
+    // Phase 1: build ops under Orderbook
+    let ops = {
+        let mut orderbook_alice_guard = ordermatch_ctx_alice.orderbook.lock();
+        process_trie_delta(
+            &mut orderbook_alice_guard,
+            trie_delta
+                .into_iter()
+                .map(|(uuid, order)| (uuid, order.map(From::from)))
+                .collect(),
+            params,
+        )
+    };
+
+    // Phase 2: apply trie ops
+    if !ops.is_empty() {
+        trie_store_alice.apply_ops(ops);
+    }
+
+    // Compare updated root with Bob
+    let new_alice_root = {
+        *trie_store_alice
+            .pubkeys_state
+            .get(&pubkey_bob)
+            .unwrap()
+            .trie_roots
+            .get(&rick_morty_pair)
+            .unwrap()
+    };
     assert_eq!(new_alice_root, *bob_root);
 }
 
@@ -3032,10 +3132,11 @@ fn test_orderbook_order_pairs_trie_state_history_updates_expiration_on_insert() 
     for order in &rick_morty_orders[5..10] {
         insert_or_update_order(&ctx_bob, order.clone());
     }
+    flush_trie(&ctx_bob);
 
     let ordermatch_ctx_bob = OrdermatchContext::from_ctx(&ctx_bob).unwrap();
-    let orderbook_bob = ordermatch_ctx_bob.orderbook.lock();
-    let bob_state = orderbook_bob.pubkeys_state.get(&pubkey_bob).unwrap();
+    let trie_store_bob = ordermatch_ctx_bob.trie_store.lock();
+    let bob_state = trie_store_bob.pubkeys_state.get(&pubkey_bob).unwrap();
 
     // Only the last inserted 5 orders are found
     assert_eq!(
@@ -3047,7 +3148,7 @@ fn test_orderbook_order_pairs_trie_state_history_updates_expiration_on_insert() 
         5
     );
 
-    drop(orderbook_bob);
+    drop(trie_store_bob);
 
     std::thread::sleep(Duration::from_secs(2));
 
@@ -3055,10 +3156,11 @@ fn test_orderbook_order_pairs_trie_state_history_updates_expiration_on_insert() 
     for order in &rick_morty_orders[10..] {
         insert_or_update_order(&ctx_bob, order.clone());
     }
+    flush_trie(&ctx_bob);
 
     let ordermatch_ctx_bob = OrdermatchContext::from_ctx(&ctx_bob).unwrap();
-    let orderbook_bob = ordermatch_ctx_bob.orderbook.lock();
-    let bob_state = orderbook_bob.pubkeys_state.get(&pubkey_bob).unwrap();
+    let trie_store_bob = ordermatch_ctx_bob.trie_store.lock();
+    let bob_state = trie_store_bob.pubkeys_state.get(&pubkey_bob).unwrap();
 
     assert_eq!(
         bob_state
@@ -3069,13 +3171,13 @@ fn test_orderbook_order_pairs_trie_state_history_updates_expiration_on_insert() 
         10
     );
 
-    drop(orderbook_bob);
+    drop(trie_store_bob);
 
     std::thread::sleep(Duration::from_secs(1));
 
     let ordermatch_ctx_bob = OrdermatchContext::from_ctx(&ctx_bob).unwrap();
-    let orderbook_bob = ordermatch_ctx_bob.orderbook.lock();
-    let bob_state = orderbook_bob.pubkeys_state.get(&pubkey_bob).unwrap();
+    let trie_store_bob = ordermatch_ctx_bob.trie_store.lock();
+    let bob_state = trie_store_bob.pubkeys_state.get(&pubkey_bob).unwrap();
 
     // After 3 seconds from inserting orders number 6-10 these orders have not expired due to updated expiration on inserting orders 11-15
     assert_eq!(

@@ -37,6 +37,8 @@ use crypto::privkey::SerializableSecp256k1Keypair;
 use crypto::{CryptoCtx, CryptoCtxError};
 use derive_more::Display;
 use futures::channel::mpsc::{unbounded, UnboundedSender};
+#[cfg(test)]
+use futures::channel::oneshot;
 use futures::{compat::Future01CompatExt, lock::Mutex as AsyncMutex, StreamExt, TryFutureExt};
 use hash256_std_hasher::Hash256StdHasher;
 use hash_db::Hasher;
@@ -393,7 +395,7 @@ fn process_maker_order_updated(
     from_pubkey: String,
     updated_msg: new_protocol::MakerOrderUpdated,
 ) -> OrderbookP2PHandlerResult {
-    let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("from_ctx failed");
+    let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
     let uuid = updated_msg.uuid();
 
     // Phase 1: mutate in-memory order and build trie ops
@@ -2591,7 +2593,8 @@ type H64 = [u8; 8];
 
 /// A narrow contract for trie mutations. The Orderbook builds these ops,
 /// TrieStore applies them (and only TrieStore mutates MemoryDB/history).
-#[derive(Clone, Debug)]
+#[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 enum TrieOp {
     /// Reset an entire (pubkey, pair) subtrie.
     ///
@@ -2612,6 +2615,11 @@ enum TrieOp {
         alb_pair: String,
         uuid: Uuid,
     },
+    /// Remove all trie state for a pubkey after prior per-UUID removals have been applied.
+    RemovePubkey { pubkey: String },
+    #[cfg(test)]
+    /// Barrier op: notify when all previous ops (across prior messages) have been applied.
+    Flush(oneshot::Sender<()>),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -2723,22 +2731,13 @@ fn collect_orderbook_metrics(ctx: &MmArc, orderbook: &Orderbook) {
 
 /// Trie-related state extracted from `Orderbook` to reduce contention on the main
 /// order index. All trie operations go through this store.
+#[derive(Default)]
 pub struct TrieStore {
     /// a map of orderbook states of known maker pubkeys
     pubkeys_state: HashMap<String, OrderbookPubkeyState>,
     /// MemoryDB instance to store Patricia Tries data
     memory_db: MemoryDB<Blake2Hasher64>,
 }
-
-impl Default for TrieStore {
-    fn default() -> Self {
-        TrieStore {
-            pubkeys_state: HashMap::default(),
-            memory_db: MemoryDB::default(),
-        }
-    }
-}
-
 impl TrieStore {
     /// Apply a sequence of trie operations produced by the Orderbook.
     /// This is the only place mutating MemoryDB and trie histories.
@@ -2755,6 +2754,12 @@ impl TrieStore {
 
         // 1) Group ops by (pubkey, alb_pair) to minimize repeated trie/historical touches.
         let mut groups: HashMap<(String, String), Group> = HashMap::new();
+        // Track pubkeys to remove after all per-pair ops are applied.
+        let mut pubkeys_to_remove: HashSet<String> = HashSet::new();
+        #[cfg(test)]
+        // Pending flush acknowledgements for this batch.
+        let mut flush_senders: Vec<oneshot::Sender<()>> = Vec::new();
+
         for op in ops {
             match op {
                 TrieOp::ClearPair { pubkey, alb_pair } => {
@@ -2772,6 +2777,13 @@ impl TrieStore {
                 TrieOp::Remove { pubkey, alb_pair, uuid } => {
                     groups.entry((pubkey, alb_pair)).or_default().removes.push(uuid);
                 },
+                TrieOp::RemovePubkey { pubkey } => {
+                    pubkeys_to_remove.insert(pubkey);
+                },
+                #[cfg(test)]
+                TrieOp::Flush(done) => {
+                    flush_senders.push(done);
+                },
             }
         }
 
@@ -2787,6 +2799,17 @@ impl TrieStore {
             for uuid in g.removes {
                 self.apply_remove(&pubkey, &alb_pair, uuid);
             }
+        }
+
+        // 3) Remove entire pubkey states after their per-UUID removals have been processed.
+        for pubkey in pubkeys_to_remove {
+            self.pubkeys_state.remove(&pubkey);
+        }
+
+        #[cfg(test)]
+        // 4) Notify flush waiters for this batch.
+        for tx in flush_senders {
+            let _ = tx.send(());
         }
     }
 
@@ -3298,6 +3321,16 @@ impl OrdermatchContext {
     #[cfg(target_arch = "wasm32")]
     pub async fn ordermatch_db(&self) -> InitDbResult<OrdermatchDbLocked<'_>> {
         self.ordermatch_db.get_or_initialize().await
+    }
+
+    #[cfg(test)]
+    /// Block until the background trie worker has applied all previously enqueued ops.
+    /// This still goes through the unbounded_send path and only waits for a Flush ack.
+    pub fn wait_trie_ops_flushed(&self) {
+        let (tx, rx) = oneshot::channel::<()>();
+        let _ = self.trie_ops_tx.unbounded_send(vec![TrieOp::Flush(tx)]);
+        // Wait for acknowledgement from the worker
+        let _ = futures::executor::block_on(rx);
     }
 }
 
@@ -3958,7 +3991,7 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
             };
 
             // Step 2: drop from index and build trie ops
-            let ops = {
+            let mut ops = {
                 let mut orderbook = ordermatch_ctx.orderbook.lock();
                 let mut ops = Vec::new();
                 for uuid in uuids_to_remove {
@@ -3970,12 +4003,9 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                 ops
             };
 
-            // Step 3: cleanup pubkeys_state
-            {
-                let mut trie_store = ordermatch_ctx.trie_store.lock();
-                for pubkey in pubkeys_to_remove {
-                    trie_store.pubkeys_state.remove(&pubkey);
-                }
+            // Step 3: enqueue pubkey removals to be applied AFTER per-UUID trie removals
+            for pubkey in pubkeys_to_remove {
+                ops.push(TrieOp::RemovePubkey { pubkey });
             }
 
             // Step 4: enqueue trie ops
