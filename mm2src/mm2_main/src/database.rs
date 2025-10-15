@@ -5,6 +5,7 @@ pub mod my_swaps;
 pub mod stats_nodes;
 pub mod stats_swaps;
 
+use crate::database::stats_swaps::fix_maker_and_taker_pubkeys_in_stats_db;
 use crate::CREATE_MY_SWAPS_TABLE;
 use common::log::{debug, error, info};
 use db_common::sqlite::run_optimization_pragmas;
@@ -126,6 +127,10 @@ fn migration_13() -> Vec<(&'static str, Vec<String>)> {
     ]
 }
 
+async fn migration_14(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
+    fix_maker_and_taker_pubkeys_in_stats_db(ctx).await
+}
+
 async fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option<Vec<(&'static str, Vec<String>)>> {
     match current_migration {
         1 => Some(migration_1(ctx).await),
@@ -141,6 +146,7 @@ async fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option
         11 => Some(migration_11()),
         12 => Some(migration_12()),
         13 => Some(migration_13()),
+        14 => Some(migration_14(ctx).await),
         _ => None,
     }
 }

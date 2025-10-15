@@ -116,6 +116,40 @@ pub async fn create_and_fill_stats_swaps_from_json_statements(ctx: &MmArc) -> Ve
     result
 }
 
+pub async fn fix_maker_and_taker_pubkeys_in_stats_db(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
+    let maker_swaps = SavedSwap::load_all_from_maker_stats_db(ctx).await.unwrap_or_default();
+    let taker_swaps = SavedSwap::load_all_from_taker_stats_db(ctx).await.unwrap_or_default();
+
+    let mut result = vec![(CREATE_STATS_SWAPS_TABLE, vec![])];
+
+    // Update all the `maker_pubkey`s using maker's `my_persistent_pub` field
+    for maker_swap in maker_swaps {
+        const UPDATE_MAKER_PUBKEY: &str = "UPDATE stats_swaps SET maker_pubkey = ?1 WHERE uuid = ?2;";
+        match maker_swap.maker_pubkey() {
+            Ok(maker_pubkey) => {
+                result.push((UPDATE_MAKER_PUBKEY, vec![maker_pubkey, maker_swap.uuid.to_string()]));
+            },
+            Err(e) => {
+                error!("Error {} on getting maker_pubkey for swap {}", e, maker_swap.uuid);
+            },
+        }
+    }
+    // Update all the `taker_pubkey`s using taker's `my_persistent_pub` field
+    for taker_swap in taker_swaps {
+        const UPDATE_TAKER_PUBKEY: &str = "UPDATE stats_swaps SET taker_pubkey = ?1 WHERE uuid = ?2;";
+        match taker_swap.taker_pubkey() {
+            Ok(taker_pubkey) => {
+                result.push((UPDATE_TAKER_PUBKEY, vec![taker_pubkey, taker_swap.uuid.to_string()]));
+            },
+            Err(e) => {
+                error!("Error {} on getting taker_pubkey for swap {}", e, taker_swap.uuid);
+            },
+        }
+    }
+
+    result
+}
+
 fn split_coin(coin: &str) -> (String, String) {
     let mut split = coin.split('-');
     let ticker = split.next().expect("split returns empty string at least").into();
