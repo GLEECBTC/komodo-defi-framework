@@ -1086,17 +1086,17 @@ impl WalletRead for WalletIndexedDb {
                 _ => false,
             };
             if add_nullifier {
-                nullifiers.push((
-                    AccountId(
+                if let Some(ref nf_bytes) = note.nf {
+                    let account_id = AccountId(
                         note.account
                             .to_u32()
-                            .ok_or_else(|| ZcoinStorageError::GetFromStorageError("Invalid amount".to_string()))?,
-                    ),
-                    Nullifier::from_slice(&note.nf.clone().ok_or_else(|| {
-                        ZcoinStorageError::GetFromStorageError("Error while putting tx_meta".to_string())
-                    })?)
-                    .unwrap(),
-                ));
+                            .ok_or_else(|| ZcoinStorageError::GetFromStorageError("Invalid account id".to_string()))?,
+                    );
+                    let nf = Nullifier::from_slice(nf_bytes).map_err(|e| {
+                        ZcoinStorageError::GetFromStorageError(format!("Invalid nullifier bytes error: {}", e))
+                    })?;
+                    nullifiers.push((account_id, nf));
+                }
             }
         }
 
