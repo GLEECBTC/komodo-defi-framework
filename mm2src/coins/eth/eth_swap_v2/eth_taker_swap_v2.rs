@@ -4,9 +4,10 @@ use super::{
 };
 use crate::eth::{
     decode_contract_call, get_function_input_data, signed_tx_from_web3_tx, u256_from_big_decimal, EthCoin, EthCoinType,
-    ParseCoinAssocTypes, RefundFundingSecretArgs, RefundTakerPaymentArgs, SendTakerFundingArgs, SignedEthTx,
-    SwapTxTypeWithSecretHash, TakerPaymentStateV2, TransactionErr, ValidateSwapV2TxError, ValidateSwapV2TxResult,
-    ValidateTakerFundingArgs, TAKER_SWAP_V2,
+    FeeApproxStage, GetTakerFundingFeeArgs, ParseCoinAssocTypes, RefundFundingSecretArgs, RefundTakerPaymentArgs,
+    SendTakerFundingArgs, SignedEthTx, SwapTxTypeWithSecretHash, TakerPaymentStateV2, TradeFee, TradePreimageError,
+    TradePreimageResult, TransactionErr, ValidateSwapV2TxError, ValidateSwapV2TxResult, ValidateTakerFundingArgs,
+    TAKER_SWAP_V2,
 };
 use crate::{
     FindPaymentSpendError, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, SearchForFundingSpendErr,
@@ -78,6 +79,17 @@ struct TakerValidationArgs<'a> {
 }
 
 impl EthCoin {
+    pub(crate) async fn get_fee_to_send_taker_funding_impl(
+        &self,
+        args: GetTakerFundingFeeArgs,
+    ) -> TradePreimageResult<TradeFee> {
+        let gas_limit = self
+            .gas_limit_v2
+            .gas_limit(&self.coin_type, EthPaymentType::TakerPayments, PaymentMethod::Send)
+            .map_err(|e| TradePreimageError::InternalError(ERRL!("{}", e)))?;
+        self.estimate_trade_fee(gas_limit, args.stage).await
+    }
+
     /// Calls `"ethTakerPayment"` or `"erc20TakerPayment"` swap contract methods.
     /// Returns taker sent payment transaction.
     pub(crate) async fn send_taker_funding_impl(
@@ -88,9 +100,8 @@ impl EthCoin {
             .swap_v2_contracts
             .ok_or_else(|| TransactionErr::Plain(ERRL!("Expected swap_v2_contracts to be Some, but found None")))?
             .taker_swap_v2_contract;
-        // TODO add burnFee support
+        // NOTE burnFee is supported by the eth SwapFeeManager contract
         let dex_fee = try_tx_s!(u256_from_big_decimal(&args.dex_fee.fee_amount().into(), self.decimals));
-
         let payment_amount = try_tx_s!(u256_from_big_decimal(
             &(args.trading_amount.clone() + args.premium_amount.clone()),
             self.decimals
@@ -230,8 +241,14 @@ impl EthCoin {
             .await?;
         let decoded = try_tx_s!(decode_contract_call(send_func, args.funding_tx.unsigned().data()));
         let data = try_tx_s!(
-            self.prepare_taker_payment_approve_data(args, decoded, token_address)
-                .await
+            self.prepare_taker_payment_approve_data(
+                args.funding_tx.unsigned().value(),
+                decoded,
+                token_address,
+                args.taker_secret_hash,
+                args.maker_secret_hash
+            )
+            .await
         );
         let approve_tx = self
             .sign_and_send_transaction(
@@ -303,7 +320,7 @@ impl EthCoin {
             U256::from(ZERO_VALUE),
             Action::Call(taker_swap_v2_contract),
             data,
-            Some(U256::from(gas_limit)),
+            Some(gas_limit),
         )
         .compat()
         .await
@@ -357,7 +374,7 @@ impl EthCoin {
             U256::from(ZERO_VALUE),
             Action::Call(taker_swap_v2_contract),
             data,
-            Some(U256::from(gas_limit)),
+            Some(gas_limit),
         )
         .compat()
         .await
@@ -418,7 +435,7 @@ impl EthCoin {
                 U256::from(ZERO_VALUE),
                 Action::Call(taker_swap_v2_contract),
                 data,
-                Some(U256::from(gas_limit)),
+                Some(gas_limit),
             )
             .compat()
             .await?;
@@ -538,22 +555,23 @@ impl EthCoin {
     /// The `decoded` parameter should contain the transaction input data from the `ethTakerPayment` or `erc20TakerPayment` function of the EtomicSwapTakerV2 contract.
     async fn prepare_taker_payment_approve_data(
         &self,
-        args: &GenTakerFundingSpendArgs<'_, Self>,
+        value: U256,
         decoded: Vec<Token>,
         token_address: Address,
+        taker_secret_hash: &[u8],
+        maker_secret_hash: &[u8],
     ) -> Result<Vec<u8>, PrepareTxDataError> {
         let function = TAKER_SWAP_V2.function(TAKER_PAYMENT_APPROVE)?;
         let data = match self.coin_type {
             EthCoinType::Eth => {
-                let (dex_fee, amount) =
-                    get_dex_fee_and_amount_from_eth_payment_data(&decoded, args.funding_tx.unsigned().value())?;
+                let (dex_fee, amount) = get_dex_fee_and_amount_from_eth_payment_data(&decoded, value)?;
                 function.encode_input(&[
                     decoded[0].clone(),   // id from ethTakerPayment
                     Token::Uint(amount),  // calculated payment amount (tx value - dexFee)
                     Token::Uint(dex_fee), // dexFee from ethTakerPayment
                     decoded[2].clone(),   // receiver from ethTakerPayment
-                    Token::FixedBytes(args.taker_secret_hash.to_vec()),
-                    Token::FixedBytes(args.maker_secret_hash.to_vec()),
+                    Token::FixedBytes(taker_secret_hash.to_vec()),
+                    Token::FixedBytes(maker_secret_hash.to_vec()),
                     Token::Address(token_address), // should be zero address Address::default()
                 ])?
             },
@@ -564,8 +582,8 @@ impl EthCoin {
                     decoded[1].clone(), // amount from erc20TakerPayment
                     decoded[2].clone(), // dexFee from erc20TakerPayment
                     decoded[4].clone(), // receiver from erc20TakerPayment
-                    Token::FixedBytes(args.taker_secret_hash.to_vec()),
-                    Token::FixedBytes(args.maker_secret_hash.to_vec()),
+                    Token::FixedBytes(taker_secret_hash.to_vec()),
+                    Token::FixedBytes(maker_secret_hash.to_vec()),
                     Token::Address(token_address), // erc20 token address from EthCoinType::Erc20
                 ])?
             },
@@ -620,6 +638,48 @@ impl EthCoin {
                 "NFT protocol is not supported for ETH and ERC20 Swaps".to_string(),
             )),
         }
+    }
+
+    /// Estimate fee to spend taker funding using the gas_limit const
+    /// because we cannot get correct estimation from the chain for spending a non-existent funding.
+    pub(crate) async fn get_fee_to_spend_taker_funding_impl(
+        &self,
+        stage: FeeApproxStage,
+    ) -> TradePreimageResult<TradeFee> {
+        let gas_limit = self
+            .gas_limit_v2
+            .gas_limit(&self.coin_type, EthPaymentType::TakerPayments, PaymentMethod::Spend)
+            .map_err(|e| TradePreimageError::InternalError(ERRL!("{}", e)))?;
+        // TODO: add stage to param
+        self.estimate_trade_fee(gas_limit, stage).await
+    }
+
+    /// Estimate fee to spend taker funding using the gas_limit const
+    pub(crate) async fn get_fee_to_spend_taker_payment_impl(
+        &self,
+        stage: FeeApproxStage,
+    ) -> TradePreimageResult<TradeFee> {
+        let gas_limit = match self.coin_type {
+            EthCoinType::Eth | EthCoinType::Erc20 { .. } => self.gas_limit_v2.taker.approve_payment,
+            EthCoinType::Nft { .. } => return MmError::err(TradePreimageError::NftProtocolNotSupported),
+        };
+        self.estimate_trade_fee(gas_limit.into(), stage).await
+    }
+
+    /// Estimate fee to spend taker funding using the gas_limit const
+    pub(crate) async fn get_fee_to_refund_taker_payment_impl(
+        &self,
+        stage: FeeApproxStage,
+    ) -> TradePreimageResult<TradeFee> {
+        let gas_limit = self
+            .gas_limit_v2
+            .gas_limit(
+                &self.coin_type,
+                EthPaymentType::TakerPayments,
+                PaymentMethod::RefundTimelock,
+            )
+            .map_err(|e| TradePreimageError::InternalError(ERRL!("{}", e)))?;
+        self.estimate_trade_fee(gas_limit, stage).await
     }
 
     /// Retrieves the taker smart contract address, the corresponding function, and the token address.

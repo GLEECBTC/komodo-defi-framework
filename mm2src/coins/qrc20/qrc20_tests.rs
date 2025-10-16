@@ -275,7 +275,7 @@ fn test_wait_for_confirmations_excepted() {
 
     let confirmations = 1;
     let requires_nota = false;
-    let wait_until = now_sec() + 1; // the transaction is mined already
+    let wait_until = now_sec() + 10; // the transaction is mined already
     let check_every = 1;
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx,

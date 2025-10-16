@@ -901,9 +901,7 @@ fn test_order_should_be_updated_when_matched_partially() {
     block_on(mm_alice.stop()).unwrap();
 }
 
-#[test]
-// https://github.com/KomodoPlatform/atomicDEX-API/issues/471
-fn test_match_and_trade_setprice_max() {
+fn test_match_and_trade_setprice_max_impl(is_tpu: bool) {
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 2000.into());
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
@@ -914,11 +912,12 @@ fn test_match_and_trade_setprice_max() {
             "dht": "on",  // Enable DHT without delay.
             "passphrase": format!("0x{}", hex::encode(bob_priv_key)),
             "coins": coins,
-            "rpc_password": "pass",
+            "rpc_password": DEFAULT_RPC_PASSWORD,
             "i_am_seed": true,
+            "use_trading_proto_v2": is_tpu,
             "is_bootstrap_node": true
         }),
-        "pass".to_string(),
+        DEFAULT_RPC_PASSWORD.to_string(),
         None,
     )
     .unwrap();
@@ -931,10 +930,11 @@ fn test_match_and_trade_setprice_max() {
             "dht": "on",  // Enable DHT without delay.
             "passphrase": format!("0x{}", hex::encode(alice_priv_key)),
             "coins": coins,
-            "rpc_password": "pass",
+            "rpc_password": DEFAULT_RPC_PASSWORD,
             "seednodes": vec![format!("{}", mm_bob.ip)],
+            "use_trading_proto_v2": is_tpu
         }),
-        "pass".to_string(),
+        DEFAULT_RPC_PASSWORD.to_string(),
         None,
     )
     .unwrap();
@@ -1002,8 +1002,17 @@ fn test_match_and_trade_setprice_max() {
 }
 
 #[test]
-// https://github.com/KomodoPlatform/atomicDEX-API/issues/888
-fn test_max_taker_vol_swap() {
+// https://github.com/KomodoPlatform/atomicDEX-API/issues/471
+fn test_match_and_trade_setprice_max() {
+    test_match_and_trade_setprice_max_impl(false)
+}
+
+#[test]
+fn test_match_and_trade_setprice_max_v2() {
+    test_match_and_trade_setprice_max_impl(true)
+}
+
+fn test_max_taker_vol_swap_impl(is_tpu: bool, expected_vol: MmNumber) {
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 50.into());
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
@@ -1016,7 +1025,8 @@ fn test_max_taker_vol_swap() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
-            "is_bootstrap_node": true
+            "is_bootstrap_node": true,
+            "use_trading_proto_v2": is_tpu
         }),
         "pass".to_string(),
         None,
@@ -1035,9 +1045,11 @@ fn test_max_taker_vol_swap() {
             "coins": coins,
             "rpc_password": "pass",
             "seednodes": vec![format!("{}", mm_bob.ip)],
+            "use_trading_proto_v2": is_tpu
         }),
         "pass".to_string(),
         None,
+        // Note: dex fee discount:
         &[("MYCOIN_FEE_DISCOUNT", "")],
     ))
     .unwrap();
@@ -1079,10 +1091,8 @@ fn test_max_taker_vol_swap() {
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!max_taker_vol: {}", rc.1);
-    let vol: MaxTakerVolResponse = serde_json::from_str(&rc.1).unwrap();
-    let expected_vol = MmNumber::from((1294999865579, 25930000000));
-
-    let actual_vol = MmNumber::from(vol.result.clone());
+    let vol_res: MaxTakerVolResponse = serde_json::from_str(&rc.1).unwrap();
+    let actual_vol = MmNumber::from(vol_res.result.clone());
     log!("actual vol {}", actual_vol.to_decimal());
     log!("expected vol {}", expected_vol.to_decimal());
 
@@ -1094,7 +1104,7 @@ fn test_max_taker_vol_swap() {
         "base": "MYCOIN1",
         "rel": "MYCOIN",
         "price": "16",
-        "volume": vol.result,
+        "volume": vol_res.result,
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!sell: {}", rc.1);
@@ -1117,10 +1127,26 @@ fn test_max_taker_vol_swap() {
 
     let status_response: Json = serde_json::from_str(&rc.1).unwrap();
     let events_array = status_response["result"]["events"].as_array().unwrap();
-    let first_event_type = events_array[0]["event"]["type"].as_str().unwrap();
-    assert_eq!("Started", first_event_type);
+    if is_tpu {
+        let first_event_type = events_array[0]["event_type"].as_str().unwrap();
+        assert_eq!("Initialized", first_event_type);
+    } else {
+        let first_event_type = events_array[0]["event"]["type"].as_str().unwrap();
+        assert_eq!("Started", first_event_type);
+    }
     block_on(mm_bob.stop()).unwrap();
     block_on(mm_alice.stop()).unwrap();
+}
+
+#[test]
+// https://github.com/KomodoPlatform/atomicDEX-API/issues/888
+fn test_max_taker_vol_swap() {
+    test_max_taker_vol_swap_impl(false, MmNumber::from((1294999865579, 25930000000)));
+}
+
+#[test]
+fn test_max_taker_vol_swap_v2() {
+    test_max_taker_vol_swap_impl(true, MmNumber::from((129499954157, 2593000000)));
 }
 
 #[test]
@@ -2074,8 +2100,8 @@ fn test_get_max_taker_vol_dex_fee_min_tx_amount() {
     assert!(rc.0.is_success(), "!max_taker_vol: {}", rc.1);
     let json: Json = serde_json::from_str(&rc.1).unwrap();
     // the result of equation x + 0.00001 (dex fee) + 0.0000485 (miner fee 2740 + 2450) = 0.00532845
-    assert_eq!(json["result"]["numer"], Json::from("105331"));
-    assert_eq!(json["result"]["denom"], Json::from("20000000"));
+    assert_eq!(json["result"]["numer"], Json::from("52597"));
+    assert_eq!(json["result"]["denom"], Json::from("10000000"));
 
     let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
@@ -2150,8 +2176,8 @@ fn test_get_max_taker_vol_dust_threshold() {
     assert!(rc.0.is_success(), "!max_taker_vol: {}", rc.1);
     let json: Json = serde_json::from_str(&rc.1).unwrap();
     // the result of equation x + 0.000728 (dex fee) + 0.00004220 + 0.00003930 (miner fees) = 0.0016041, x > dust
-    assert_eq!(json["result"]["numer"], Json::from("3973"));
-    assert_eq!(json["result"]["denom"], Json::from("5000000"));
+    assert_eq!(json["result"]["numer"], Json::from("79253"));
+    assert_eq!(json["result"]["denom"], Json::from("100000000"));
 
     block_on(mm.stop()).unwrap();
 }
@@ -2220,19 +2246,19 @@ fn test_get_max_taker_vol_with_kmd() {
     block_on(mm_alice.stop()).unwrap();
 }
 
-#[test]
-fn test_get_max_maker_vol() {
+fn test_get_max_maker_vol_impl(is_tpu: bool, expected_volume: MmNumber) {
     let (_ctx, _, priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 1.into());
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
-    let conf = Mm2TestConf::seednode(&format!("0x{}", hex::encode(priv_key)), &coins);
+    let conf = if is_tpu {
+        Mm2TestConf::seednode_trade_v2(&format!("0x{}", hex::encode(priv_key)), &coins)
+    } else {
+        Mm2TestConf::seednode(&format!("0x{}", hex::encode(priv_key)), &coins)
+    };
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
     let (_dump_log, _dump_dashboard) = mm_dump(&mm.log_path);
 
     log!("{:?}", block_on(enable_native(&mm, "MYCOIN", &[], None)));
     log!("{:?}", block_on(enable_native(&mm, "MYCOIN1", &[], None)));
-
-    // 1 - tx_fee (274)
-    let expected_volume = MmNumber::from("0.99999726");
     let expected = MaxMakerVolResponse {
         coin: "MYCOIN1".to_string(),
         volume: MmNumberMultiRepr::from(expected_volume.clone()),
@@ -2244,6 +2270,16 @@ fn test_get_max_maker_vol() {
 
     let res = block_on(set_price(&mm, "MYCOIN1", "MYCOIN", "1", "0", true, None));
     assert_eq!(res.result.max_base_vol, expected_volume.to_decimal());
+}
+
+#[test]
+fn test_get_max_maker_vol() {
+    test_get_max_maker_vol_impl(true, MmNumber::from("0.99999726")); // 1 - tx_fee (274)
+}
+
+#[test]
+fn test_get_max_maker_vol_v2() {
+    test_get_max_maker_vol_impl(true, MmNumber::from("0.99999726"));
 }
 
 #[test]

@@ -365,8 +365,8 @@ pub(super) async fn swap_kickstart_coins<T: GetSwapCoins>(
 /// Handles the recreation and kickstart of a swap state machine.
 pub(super) async fn swap_kickstart_handler<
     T: StorableStateMachine<RecreateCtx = SwapRecreateCtx<MakerCoin, TakerCoin>>,
-    MakerCoin: MmCoin + MakerCoinSwapOpsV2,
-    TakerCoin: MmCoin + TakerCoinSwapOpsV2,
+    MakerCoin: MmCoin + MakerCoinSwapOpsV2 + Clone,
+    TakerCoin: MmCoin + TakerCoinSwapOpsV2 + Clone,
 >(
     swap_repr: <T::Storage as StateMachineStorage>::DbRepr,
     storage: T::Storage,

@@ -15,12 +15,12 @@ use mm2_test_helpers::for_tests::wait_check_stats_swap_status;
 use mm2_test_helpers::for_tests::{
     account_balance, btc_segwit_conf, btc_with_spv_conf, btc_with_sync_starting_header, check_recent_swaps,
     delete_wallet, enable_qrc20, enable_utxo_v2_electrum, eth_dev_conf, find_metrics_in_json, from_env_file,
-    get_new_address, get_shared_db_id, get_wallet_names, mm_spat, morty_conf, my_balance, rick_conf, sign_message,
-    start_swaps, tbtc_conf, tbtc_segwit_conf, tbtc_with_spv_conf, test_qrc20_history_impl, tqrc20_conf, verify_message,
-    wait_for_swaps_finish_and_check_status, wait_till_history_has_records, MarketMakerIt, Mm2InitPrivKeyPolicy,
-    Mm2TestConf, Mm2TestConfForSwap, RaiiDump, DOC_ELECTRUM_ADDRS, ETH_MAINNET_NODES, ETH_MAINNET_SWAP_CONTRACT,
-    ETH_SEPOLIA_NODES, ETH_SEPOLIA_SWAP_CONTRACT, MARTY_ELECTRUM_ADDRS, MORTY, QRC20_ELECTRUMS, RICK,
-    RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS, T_BCH_ELECTRUMS,
+    get_new_address, get_shared_db_id, get_wallet_names, mm_dump, mm_spat, morty_conf, my_balance, rick_conf,
+    sign_message, start_swaps, tbtc_conf, tbtc_segwit_conf, tbtc_with_spv_conf, test_qrc20_history_impl, tqrc20_conf,
+    verify_message, wait_for_swaps_finish_and_check_status, wait_till_history_has_records, MarketMakerIt,
+    Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, RaiiDump, DOC_ELECTRUM_ADDRS, ETH_MAINNET_NODES,
+    ETH_MAINNET_SWAP_CONTRACT, ETH_SEPOLIA_NODES, ETH_SEPOLIA_SWAP_CONTRACT, MARTY_ELECTRUM_ADDRS, MORTY,
+    QRC20_ELECTRUMS, RICK, RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS, T_BCH_ELECTRUMS,
 };
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::*;
@@ -2777,6 +2777,8 @@ fn test_convert_eth_address() {
     assert!(rc.1.contains("Address must be prefixed with 0x"));
 }
 
+/// TODO: Fails on electrum "blockchain.contract.event.get_history" call
+#[ignore = "electrum call failure"]
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_add_delegation_qtum() {
@@ -2814,6 +2816,7 @@ fn test_add_delegation_qtum() {
         None,
     )
         .unwrap();
+    let (_mm_dump_log, _mm_dump_dashboard) = mm_dump(&mm.log_path);
 
     let json = block_on(enable_electrum(
         &mm,
@@ -2927,6 +2930,8 @@ fn test_remove_delegation_qtum() {
     );
 }
 
+/// TODO: Fails on electrum "blockchain.contract.event.get_history" call
+#[ignore = "electrum call failure"]
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_query_delegations_info_qtum() {
@@ -2964,6 +2969,7 @@ fn test_query_delegations_info_qtum() {
         None,
     )
         .unwrap();
+    let (_mm_dump_log, _mm_dump_dashboard) = mm_dump(&mm.log_path);
 
     let json = block_on(enable_electrum(
         &mm,
@@ -3976,6 +3982,8 @@ fn test_tx_history_tbtc_non_segwit() {
     }
 }
 
+/// NOTE: if this test fails this may be due to activity in the DOC chain with this address
+/// TODO: switch to UTXO docker container
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_update_maker_order() {

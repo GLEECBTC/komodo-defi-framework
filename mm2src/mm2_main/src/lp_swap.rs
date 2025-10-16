@@ -124,15 +124,17 @@ mod trade_preimage;
 #[cfg(target_arch = "wasm32")]
 mod swap_wasm_db;
 
-pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError, CheckBalanceResult};
+pub use check_balance::{
+    check_coin_balances_for_swap, check_other_coin_balance_for_swap, CheckBalanceError, CheckBalanceResult,
+};
+pub(crate) use check_balance::{create_maker_total_fee_helper, create_taker_total_fee_helper, SwapTotalFeeHelper};
 use crypto::secret_hash_algo::SecretHashAlgo;
 use crypto::CryptoCtx;
 use keys::{KeyPair, SECP_SIGN, SECP_VERIFY};
 use maker_swap::MakerSwapEvent;
 pub use maker_swap::{
-    calc_max_maker_vol, check_balance_for_maker_swap, get_max_maker_vol, maker_swap_trade_preimage, run_maker_swap,
-    CoinVolumeInfo, MakerSavedEvent, MakerSavedSwap, MakerSwap, MakerSwapStatusChanged, MakerTradePreimage,
-    RunMakerSwapInput, MAKER_PAYMENT_SENT_LOG,
+    calc_max_maker_vol, get_max_maker_vol, maker_swap_trade_preimage, run_maker_swap, CoinVolumeInfo, MakerSavedEvent,
+    MakerSavedSwap, MakerSwap, MakerSwapStatusChanged, MakerTradePreimage, RunMakerSwapInput, MAKER_PAYMENT_SENT_LOG,
 };
 pub use max_maker_vol_rpc::max_maker_vol;
 use my_swaps_storage::{MySwapsOps, MySwapsStorage};
@@ -151,10 +153,9 @@ pub use swap_watcher::{
 };
 use taker_swap::TakerSwapEvent;
 pub use taker_swap::{
-    calc_max_taker_vol, check_balance_for_taker_swap, create_taker_swap_default_params, max_taker_vol,
-    max_taker_vol_from_available, run_taker_swap, taker_swap_trade_preimage, RunTakerSwapInput, TakerSavedSwap,
-    TakerSwap, TakerSwapData, TakerSwapPreparedParams, TakerTradePreimage, MAKER_PAYMENT_SPENT_BY_WATCHER_LOG,
-    REFUND_TEST_FAILURE_LOG, WATCHER_MESSAGE_SENT_LOG,
+    calc_max_taker_vol, max_taker_vol, max_taker_vol_from_available, run_taker_swap, taker_swap_trade_preimage,
+    RunTakerSwapInput, TakerSavedSwap, TakerSwap, TakerSwapData, TakerTradePreimage,
+    MAKER_PAYMENT_SPENT_BY_WATCHER_LOG, REFUND_TEST_FAILURE_LOG, WATCHER_MESSAGE_SENT_LOG,
 };
 pub use trade_preimage::trade_preimage_rpc;
 

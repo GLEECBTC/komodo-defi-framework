@@ -4481,6 +4481,7 @@ pub mod tendermint_falsecoin_tests {
         assert_eq!(hex::encode_upper(hash.as_slice()), expected_hash);
     }
 
+    #[ignore = "insufficient balance"]
     #[test]
     fn test_htlc_create_and_claim() {
         let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
@@ -5388,6 +5389,7 @@ pub mod tendermint_falsecoin_tests {
         assert_eq!(expected, actual);
     }
 
+    #[ignore = "insufficient balance"]
     #[test]
     fn test_claim_staking_rewards() {
         let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];

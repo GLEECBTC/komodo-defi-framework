@@ -434,7 +434,7 @@ impl EthGasLimitV2 {
         coin_type: &EthCoinType,
         payment_type: EthPaymentType,
         method: PaymentMethod,
-    ) -> Result<u64, String> {
+    ) -> Result<U256, String> {
         match coin_type {
             EthCoinType::Eth => {
                 let gas_limit = match payment_type {
@@ -451,7 +451,7 @@ impl EthGasLimitV2 {
                         PaymentMethod::RefundSecret => self.taker.eth_taker_refund_secret,
                     },
                 };
-                Ok(gas_limit)
+                Ok(gas_limit.into())
             },
             EthCoinType::Erc20 { .. } => {
                 let gas_limit = match payment_type {
@@ -468,25 +468,25 @@ impl EthGasLimitV2 {
                         PaymentMethod::RefundSecret => self.taker.erc20_taker_refund_secret,
                     },
                 };
-                Ok(gas_limit)
+                Ok(gas_limit.into())
             },
             EthCoinType::Nft { .. } => Err("NFT protocol is not supported for ETH and ERC20 Swaps".to_string()),
         }
     }
 
-    fn nft_gas_limit(&self, contract_type: &ContractType, method: PaymentMethod) -> u64 {
+    fn nft_gas_limit(&self, contract_type: &ContractType, method: PaymentMethod) -> U256 {
         match contract_type {
             ContractType::Erc1155 => match method {
-                PaymentMethod::Send => self.nft_maker.erc1155_payment,
-                PaymentMethod::Spend => self.nft_maker.erc1155_taker_spend,
-                PaymentMethod::RefundTimelock => self.nft_maker.erc1155_maker_refund_timelock,
-                PaymentMethod::RefundSecret => self.nft_maker.erc1155_maker_refund_secret,
+                PaymentMethod::Send => self.nft_maker.erc1155_payment.into(),
+                PaymentMethod::Spend => self.nft_maker.erc1155_taker_spend.into(),
+                PaymentMethod::RefundTimelock => self.nft_maker.erc1155_maker_refund_timelock.into(),
+                PaymentMethod::RefundSecret => self.nft_maker.erc1155_maker_refund_secret.into(),
             },
             ContractType::Erc721 => match method {
-                PaymentMethod::Send => self.nft_maker.erc721_payment,
-                PaymentMethod::Spend => self.nft_maker.erc721_taker_spend,
-                PaymentMethod::RefundTimelock => self.nft_maker.erc721_maker_refund_timelock,
-                PaymentMethod::RefundSecret => self.nft_maker.erc721_maker_refund_secret,
+                PaymentMethod::Send => self.nft_maker.erc721_payment.into(),
+                PaymentMethod::Spend => self.nft_maker.erc721_taker_spend.into(),
+                PaymentMethod::RefundTimelock => self.nft_maker.erc721_maker_refund_timelock.into(),
+                PaymentMethod::RefundSecret => self.nft_maker.erc721_maker_refund_secret.into(),
             },
         }
     }
@@ -3960,6 +3960,32 @@ impl EthCoin {
     async fn get_address_lock(&self, address: Address) -> Arc<AsyncMutex<()>> {
         self.address_nonce_locks.get_adddress_lock(address).await
     }
+
+    /// Estimate gas for the token `approve` contract call
+    async fn estimate_approve_gas_limit(
+        &self,
+        token_addr: Address,
+        value: TradePreimageValue,
+    ) -> TradePreimageResult<U256> {
+        let value = match value {
+            TradePreimageValue::Exact(value) | TradePreimageValue::UpperBound(value) => {
+                u256_from_big_decimal(&value, self.decimals).map_mm_err()?
+            },
+        };
+        let allowed = self.allowance(self.swap_contract_address).compat().await.map_mm_err()?;
+        if allowed < value {
+            // Pass a dummy spender. Let's use `my_address`.
+            let spender = self.derivation_method.single_addr_or_err().await.map_mm_err()?;
+            let approve_function = ERC20_CONTRACT.function("approve")?;
+            let approve_data = approve_function.encode_input(&[Token::Address(spender), Token::Uint(value)])?;
+            let (approve_gas_limit, _) = self
+                .estimate_gas_for_contract_call(token_addr, Bytes::from(approve_data), 0.into())
+                .await
+                .map_mm_err()?;
+            return Ok(approve_gas_limit);
+        }
+        Ok(0.into())
+    }
 }
 
 #[cfg_attr(test, mockable)]
@@ -3982,10 +4008,12 @@ impl EthCoin {
                 default_gas
             } else {
                 match &action {
-                    Action::Call(contract_addr) => coin
-                        .estimate_gas_for_contract_call_if_conf(*contract_addr, Bytes::from(data.clone()), value)
-                        .await
-                        .map_err(|err| TransactionErr::Plain(ERRL!("{}", err.get_inner())))?,
+                    Action::Call(contract_addr) => {
+                        coin.estimate_gas_for_contract_call_if_conf(*contract_addr, Bytes::from(data.clone()), value)
+                            .await
+                            .map_err(|err| TransactionErr::Plain(ERRL!("{}", err.get_inner())))?
+                            .0
+                    },
                     _ => return Err(TransactionErr::InternalError("no gas limit set".to_owned())),
                 }
             };
@@ -4888,7 +4916,7 @@ impl EthCoin {
         contract_addr: Address,
         call_data: Bytes,
         value: U256,
-    ) -> Web3RpcResult<U256> {
+    ) -> Web3RpcResult<(U256, U256)> {
         let coin = self.clone();
         let my_address = coin.derivation_method.single_addr_or_err().await.map_mm_err()?;
         let fee_policy_for_estimate =
@@ -4906,11 +4934,17 @@ impl EthCoin {
         };
         // gas price must be supplied because some smart contracts base their
         // logic on gas price, e.g. TUSD: https://github.com/KomodoPlatform/atomicDEX-API/issues/643
-        let estimate_gas_req = call_request_with_pay_for_gas_option(estimate_gas_req, pay_for_gas_option);
-        coin.estimate_gas_wrapper(estimate_gas_req)
+        let estimate_gas_req = call_request_with_pay_for_gas_option(estimate_gas_req, pay_for_gas_option.clone());
+        let gas_limit = coin
+            .estimate_gas_wrapper(estimate_gas_req)
             .compat()
             .await
-            .map_to_mm(Web3RpcError::from)
+            .map_to_mm(Web3RpcError::from)?;
+        let fee_per_gas = match pay_for_gas_option {
+            PayForGasOption::Legacy { gas_price } => gas_price,
+            PayForGasOption::Eip1559 { max_fee_per_gas, .. } => max_fee_per_gas,
+        };
+        Ok((gas_limit, fee_per_gas))
     }
 
     /// Calls estimate_gas_for_contract_call if the `estimate_gas_mult` conf param is set or `default_gas` is None.
@@ -4920,16 +4954,16 @@ impl EthCoin {
         contract_addr: Address,
         call_data: Bytes,
         value: U256,
-    ) -> Web3RpcResult<U256> {
-        let gas_estimated = self
+    ) -> Web3RpcResult<(U256, U256)> {
+        let (gas_estimated, fee_per_gas) = self
             .estimate_gas_for_contract_call(contract_addr, call_data, value)
             .await?;
         if let Some(estimate_gas_mult) = self.estimate_gas_mult {
             let gas_estimated = u256_to_big_decimal(gas_estimated, 0).map_mm_err()?
                 * BigDecimal::from_f64(estimate_gas_mult).unwrap_or(BigDecimal::from(1));
-            Ok(u256_from_big_decimal(&gas_estimated, 0).map_mm_err()?)
+            Ok((u256_from_big_decimal(&gas_estimated, 0).map_mm_err()?, fee_per_gas))
         } else {
-            Ok(gas_estimated)
+            Ok((gas_estimated, fee_per_gas))
         }
     }
 
@@ -5902,6 +5936,27 @@ impl EthCoin {
             },
         }
     }
+
+    /// Estimated trade fee for the provided gas limit
+    pub async fn estimate_trade_fee(&self, gas_limit: U256, stage: FeeApproxStage) -> TradePreimageResult<TradeFee> {
+        let pay_for_gas_option = self
+            .get_swap_pay_for_gas_option(self.get_swap_gas_fee_policy().await.map_mm_err()?)
+            .await
+            .map_mm_err()?;
+        let pay_for_gas_option = increase_gas_price_by_stage(pay_for_gas_option, &stage);
+        let total_fee = calc_total_fee(gas_limit, &pay_for_gas_option).map_mm_err()?;
+        let amount = u256_to_big_decimal(total_fee, ETH_DECIMALS).map_mm_err()?;
+        let fee_coin = match &self.coin_type {
+            EthCoinType::Eth => &self.ticker,
+            EthCoinType::Erc20 { platform, .. } => platform,
+            EthCoinType::Nft { .. } => return MmError::err(TradePreimageError::NftProtocolNotSupported),
+        };
+        Ok(TradeFee {
+            coin: fee_coin.into(),
+            amount: amount.into(),
+            paid_from_trading_vol: false,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -6077,7 +6132,6 @@ impl MmCoin for EthCoin {
         let pay_for_gas_option = increase_gas_price_by_stage(pay_for_gas_option, &stage);
         let gas_limit = match self.coin_type {
             EthCoinType::Eth => {
-                //let eth_payment_gas = self.
                 // this gas_limit includes gas for `ethPayment` and optionally `senderRefund` contract calls
                 if matches!(stage, FeeApproxStage::OrderIssueMax | FeeApproxStage::TradePreimageMax) {
                     U256::from(self.gas_limit.eth_payment) + U256::from(self.gas_limit.eth_sender_refund)
@@ -6087,27 +6141,9 @@ impl MmCoin for EthCoin {
             },
             EthCoinType::Erc20 { token_addr, .. } => {
                 let mut gas = U256::from(self.gas_limit.erc20_payment);
-                let value = match value {
-                    TradePreimageValue::Exact(value) | TradePreimageValue::UpperBound(value) => {
-                        u256_from_big_decimal(&value, self.decimals).map_mm_err()?
-                    },
-                };
-                let allowed = self.allowance(self.swap_contract_address).compat().await.map_mm_err()?;
-                if allowed < value {
-                    // estimate gas for the `approve` contract call
+                // Add gas for `approve` `erc20Payment` contract calls or zero
+                gas += self.estimate_approve_gas_limit(token_addr, value).await?;
 
-                    // Pass a dummy spender. Let's use `my_address`.
-                    let spender = self.derivation_method.single_addr_or_err().await.map_mm_err()?;
-                    let approve_function = ERC20_CONTRACT.function("approve")?;
-                    let approve_data = approve_function.encode_input(&[Token::Address(spender), Token::Uint(value)])?;
-                    let approve_gas_limit = self
-                        .estimate_gas_for_contract_call(token_addr, Bytes::from(approve_data), 0.into())
-                        .await
-                        .map_mm_err()?;
-
-                    // this gas_limit includes gas for `approve`, `erc20Payment` contract calls
-                    gas += approve_gas_limit;
-                }
                 // add 'senderRefund' gas if requested
                 if matches!(stage, FeeApproxStage::TradePreimage | FeeApproxStage::TradePreimageMax) {
                     gas += U256::from(self.gas_limit.erc20_sender_refund);
@@ -7551,6 +7587,24 @@ impl Eip1559Ops for EthCoin {
 
 #[async_trait]
 impl TakerCoinSwapOpsV2 for EthCoin {
+    /// Wrapper for [EthCoin::get_fee_to_send_taker_funding_impl]
+    async fn get_fee_to_send_taker_funding(&self, args: GetTakerFundingFeeArgs) -> TradePreimageResult<TradeFee> {
+        self.get_fee_to_send_taker_funding_impl(args).await
+    }
+
+    async fn get_fee_to_spend_taker_funding(&self, stage: FeeApproxStage) -> TradePreimageResult<TradeFee> {
+        self.get_fee_to_spend_taker_funding_impl(stage).await
+    }
+
+    async fn get_fee_to_spend_taker_payment(&self, stage: FeeApproxStage) -> TradePreimageResult<TradeFee> {
+        self.get_fee_to_spend_taker_payment_impl(stage).await
+    }
+
+    /// Estimate tx fee to spend taker payment
+    async fn get_fee_to_refund_taker_payment(&self, stage: FeeApproxStage) -> TradePreimageResult<TradeFee> {
+        self.get_fee_to_refund_taker_payment_impl(stage).await
+    }
+
     /// Wrapper for [EthCoin::send_taker_funding_impl]
     async fn send_taker_funding(&self, args: SendTakerFundingArgs<'_>) -> Result<Self::Tx, TransactionErr> {
         self.send_taker_funding_impl(args).await
@@ -7759,6 +7813,21 @@ impl EthCoin {
 
 #[async_trait]
 impl MakerCoinSwapOpsV2 for EthCoin {
+    async fn get_fee_to_send_maker_payment_v2(
+        &self,
+        args: GetFeeToSendMakerPaymentArgs,
+    ) -> TradePreimageResult<TradeFee> {
+        self.get_fee_to_send_maker_payment_v2_impl(args).await
+    }
+
+    async fn get_fee_to_spend_maker_payment_v2(&self, stage: FeeApproxStage) -> TradePreimageResult<TradeFee> {
+        self.get_fee_to_spend_maker_payment_v2_impl(stage).await
+    }
+
+    async fn get_fee_to_refund_maker_payment_v2(&self, stage: FeeApproxStage) -> TradePreimageResult<TradeFee> {
+        self.get_fee_to_refund_maker_payment_v2_impl(stage).await
+    }
+
     async fn send_maker_payment_v2(&self, args: SendMakerPaymentArgs<'_, Self>) -> Result<Self::Tx, TransactionErr> {
         self.send_maker_payment_v2_impl(args).await
     }

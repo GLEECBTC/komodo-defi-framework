@@ -1,6 +1,12 @@
-use super::taker_swap::MaxTakerVolumeLessThanDust;
+use std::ops::Deref;
+
+use super::maker_swap::LegacyMakerSwapTotalFeeHelper;
+use super::maker_swap_v2::MakerSwapV2TotalFeeHelper;
+use super::taker_swap::{LegacyTakerSwapTotalFeeHelper, MaxTakerVolumeLessThanDust};
+use super::taker_swap_v2::TakerSwapV2TotalFeeHelper;
 use super::{get_locked_amount, get_locked_amount_by_other_swaps};
-use coins::{BalanceError, MmCoin, TradeFee, TradePreimageError};
+use async_trait::async_trait;
+use coins::{BalanceError, DexFee, FeeApproxStage, MarketCoinOps, MmCoin, MmCoinEnum, TradeFee, TradePreimageError};
 use common::log::debug;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
@@ -18,12 +24,12 @@ pub async fn check_my_coin_balance_for_swap(
     ctx: &MmArc,
     coin: &dyn MmCoin,
     swap_uuid: Option<&Uuid>,
-    volume: MmNumber,
-    mut trade_fee: TradeFee,
-    taker_fee: Option<TakerFeeAdditionalInfo>,
+    volume: Option<MmNumber>,
+    dex_fee: Option<MmNumber>,
+    total_trade_fee: Option<MmNumber>,
 ) -> CheckBalanceResult<BigDecimal> {
     let ticker = coin.ticker();
-    debug!("Check my_coin '{}' balance for swap", ticker);
+    debug!("Checking coin '{}' balance for swap...", ticker);
     let balance: MmNumber = coin.my_spendable_balance().compat().await.map_mm_err()?.into();
 
     let locked = match swap_uuid {
@@ -31,51 +37,22 @@ pub async fn check_my_coin_balance_for_swap(
         None => get_locked_amount(ctx, ticker),
     };
 
-    let dex_fee = match taker_fee {
-        Some(TakerFeeAdditionalInfo {
-            dex_fee,
-            fee_to_send_dex_fee,
-        }) => {
-            if fee_to_send_dex_fee.coin != trade_fee.coin {
-                let err = format!(
-                    "trade_fee {:?} and fee_to_send_dex_fee {:?} coins are expected to be the same",
-                    trade_fee.coin, fee_to_send_dex_fee.coin
-                );
-                return MmError::err(CheckBalanceError::InternalError(err));
-            }
-            // increase `trade_fee` by the `fee_to_send_dex_fee`
-            trade_fee.amount += fee_to_send_dex_fee.amount;
-            dex_fee
-        },
-        None => MmNumber::from(0),
-    };
-
-    let total_trade_fee = if ticker == trade_fee.coin {
-        trade_fee.amount
-    } else {
-        let platform_coin_balance: MmNumber = coin.platform_coin_balance().compat().await.map_mm_err()?.into();
-        check_platform_coin_balance_for_swap(ctx, &platform_coin_balance, trade_fee, swap_uuid)
-            .await
-            .map_mm_err()?;
-        MmNumber::from(0)
-    };
-
     debug!(
-        "my_coin: {} balance: {:?} ({}), locked: {:?} ({}), volume: {:?} ({}), total_trade_fee: {:?} ({}), dex_fee: {:?} ({}",
+        "coin {} balance {:?} ({:?}), locked {:?} ({:?}), volume {:?} ({:?}), total_trade_fee {:?} ({:?}), dex_fee {:?} ({:?})",
         ticker,
         balance.to_fraction(),
         balance.to_decimal(),
         locked.to_fraction(),
         locked.to_decimal(),
-        volume.to_fraction(),
-        volume.to_decimal(),
-        total_trade_fee.to_fraction(),
-        total_trade_fee.to_decimal(),
-        dex_fee.to_fraction(),
-        dex_fee.to_decimal()
+        volume.as_ref().map(|val| val.to_fraction()),
+        volume.as_ref().map(|val| val.to_decimal()),
+        total_trade_fee.as_ref().map(|val| val.to_fraction()),
+        total_trade_fee.as_ref().map(|val| val.to_decimal()),
+        dex_fee.as_ref().map(|val| val.to_fraction()),
+        dex_fee.as_ref().map(|val| val.to_decimal()),
     );
 
-    let required = volume + total_trade_fee + dex_fee;
+    let required = volume.unwrap_or_default() + total_trade_fee.unwrap_or_default() + dex_fee.unwrap_or_default();
     let available = &balance - &locked;
 
     if available < required {
@@ -95,9 +72,12 @@ pub async fn check_other_coin_balance_for_swap(
     swap_uuid: Option<&Uuid>,
     trade_fee: TradeFee,
 ) -> CheckBalanceResult<()> {
-    if trade_fee.paid_from_trading_vol {
-        return Ok(());
+    macro_rules! is_platform_fee {
+        ($ticker: expr, $trade_fee: expr) => {
+            $ticker != $trade_fee.coin
+        };
     }
+
     let ticker = coin.ticker();
     debug!(
         "Check other_coin '{}' balance for swap to pay trade fee, trade_fee coin {}",
@@ -110,7 +90,10 @@ pub async fn check_other_coin_balance_for_swap(
         None => get_locked_amount(ctx, ticker),
     };
 
-    if ticker == trade_fee.coin {
+    if !is_platform_fee!(ticker, trade_fee) {
+        if trade_fee.paid_from_trading_vol {
+            return Ok(());
+        }
         let available = &balance - &locked;
         let required = trade_fee.amount;
         debug!(
@@ -132,8 +115,7 @@ pub async fn check_other_coin_balance_for_swap(
             });
         }
     } else {
-        let platform_coin_balance: MmNumber = coin.platform_coin_balance().compat().await.map_mm_err()?.into();
-        check_platform_coin_balance_for_swap(ctx, &platform_coin_balance, trade_fee, swap_uuid)
+        check_platform_coin_balance_for_swap(ctx, coin, trade_fee, swap_uuid)
             .await
             .map_mm_err()?;
     }
@@ -143,10 +125,12 @@ pub async fn check_other_coin_balance_for_swap(
 
 pub async fn check_platform_coin_balance_for_swap(
     ctx: &MmArc,
-    balance: &MmNumber,
+    coin: &(dyn MarketCoinOps + Sync),
     trade_fee: TradeFee,
     swap_uuid: Option<&Uuid>,
 ) -> CheckBalanceResult<()> {
+    let balance = coin.platform_coin_balance().compat().await.map_mm_err()?;
+    let balance = MmNumber::from(balance);
     let ticker = trade_fee.coin.as_str();
     debug!(
         "Check if the platform coin '{}' has sufficient balance to pay the trade fee {:?} ({})",
@@ -160,7 +144,7 @@ pub async fn check_platform_coin_balance_for_swap(
         Some(uuid) => get_locked_amount_by_other_swaps(ctx, uuid, ticker),
         None => get_locked_amount(ctx, ticker),
     };
-    let available = balance - &locked;
+    let available = &balance - &locked;
 
     debug!(
         "Platform coin: {} balance: {:?} ({}), locked: {:?} ({})",
@@ -180,11 +164,6 @@ pub async fn check_platform_coin_balance_for_swap(
     } else {
         Ok(())
     }
-}
-
-pub struct TakerFeeAdditionalInfo {
-    pub dex_fee: MmNumber,
-    pub fee_to_send_dex_fee: TradeFee,
 }
 
 #[derive(Debug, Display, Serialize, SerializeErrorType)]
@@ -293,5 +272,190 @@ impl CheckBalanceError {
             required: max_vol_err.min_tx_amount.to_decimal(),
             locked_by_swaps: Some(locked_by_swaps),
         }
+    }
+}
+
+pub async fn check_coin_balances_for_swap(
+    ctx: &MmArc,
+    swap_uuid: Option<&Uuid>,
+    total_fee_helper: &(dyn SwapTotalFeeHelper + Sync),
+    upper_bound_volume: bool,
+) -> CheckBalanceResult<BigDecimal> {
+    let my_coin_fees = total_fee_helper.get_my_coin_fees(upper_bound_volume).await?;
+    let other_coin_fees = total_fee_helper.get_other_coin_fees().await?;
+    let balance = check_my_coin_balance_for_swap(
+        ctx,
+        total_fee_helper.get_my_coin(),
+        swap_uuid,
+        Some(total_fee_helper.get_my_coin_volume()),
+        total_fee_helper.get_dex_fee(),
+        if !total_fee_helper.is_my_platform_fee(&my_coin_fees) {
+            Some(my_coin_fees.clone().amount)
+        } else {
+            None
+        },
+    )
+    .await?;
+    if total_fee_helper.is_my_platform_fee(&my_coin_fees) {
+        check_platform_coin_balance_for_swap(ctx, total_fee_helper.get_my_coin(), my_coin_fees.clone(), swap_uuid)
+            .await?;
+    }
+    check_other_coin_balance_for_swap(ctx, total_fee_helper.get_other_coin(), swap_uuid, other_coin_fees).await?;
+    Ok(balance)
+}
+
+/// Helper to return total fees for legacy and TPU swaps, either for maker or taker,
+/// to balance checking or calculating function
+#[async_trait]
+pub trait SwapTotalFeeHelper {
+    /// Returns my coin object
+    fn get_my_coin(&self) -> &dyn MmCoin;
+
+    /// Returns my coin trade volume
+    fn get_my_coin_volume(&self) -> MmNumber;
+
+    /// Returns dex fee for taker or None
+    fn get_dex_fee(&self) -> Option<MmNumber>;
+
+    /// Estimates fees for the party trading my_coin
+    async fn get_my_coin_fees(&self, upper_bound_amount: bool) -> CheckBalanceResult<TradeFee>;
+
+    /// Returns for other coin object
+    fn get_other_coin(&self) -> &dyn MmCoin;
+
+    /// Estimates fees for the party trading other_coin
+    async fn get_other_coin_fees(&self) -> CheckBalanceResult<TradeFee>;
+
+    /// Returns true if fees for my_coin are paid in platfrom coin (different from my_coin)
+    fn is_my_platform_fee(&self, fees: &TradeFee) -> bool {
+        self.get_my_coin().ticker() != fees.coin
+    }
+
+    /// Returns true if fees for other_coin are paid in platfrom coin (different from other__coin)
+    fn is_other_platform_fee(&self, fees: &TradeFee) -> bool {
+        self.get_other_coin().ticker() != fees.coin
+    }
+}
+
+#[allow(clippy::result_large_err)]
+pub(crate) fn create_taker_total_fee_helper<'a>(
+    ctx: &MmArc,
+    my_coin: &'a MmCoinEnum,
+    other_coin: &'a MmCoinEnum,
+    volume: MmNumber,
+    dex_fee: Option<DexFee>,
+    stage: FeeApproxStage,
+) -> CheckBalanceResult<Box<dyn SwapTotalFeeHelper + 'a + Sync + Send>> {
+    let dex_fee = dex_fee.unwrap_or_else(|| DexFee::new_from_taker_coin(my_coin.deref(), other_coin.ticker(), &volume));
+    // Note that if the remote side does not support TPU the swap will downgrade to legacy swap
+    // so the total fee calculated by TakerSwapV2TotalFeeHelper may be not accurate
+    if ctx.conf["use_trading_proto_v2"].as_bool().unwrap_or_default() {
+        match (my_coin, other_coin) {
+            (MmCoinEnum::UtxoCoin(my_coin), MmCoinEnum::UtxoCoin(other_coin)) => {
+                Ok(Box::new(TakerSwapV2TotalFeeHelper {
+                    my_coin: my_coin.clone(),
+                    other_coin: other_coin.clone(),
+                    volume,
+                    dex_fee,
+                    stage,
+                }))
+            },
+            (MmCoinEnum::EthCoin(my_coin), MmCoinEnum::EthCoin(other_coin)) => {
+                Ok(Box::new(TakerSwapV2TotalFeeHelper {
+                    my_coin: my_coin.clone(),
+                    other_coin: other_coin.clone(),
+                    volume,
+                    dex_fee,
+                    stage,
+                }))
+            },
+            (MmCoinEnum::UtxoCoin(my_coin), MmCoinEnum::EthCoin(other_coin)) => {
+                Ok(Box::new(TakerSwapV2TotalFeeHelper {
+                    my_coin: my_coin.clone(),
+                    other_coin: other_coin.clone(),
+                    volume,
+                    dex_fee,
+                    stage,
+                }))
+            },
+            (MmCoinEnum::EthCoin(my_coin), MmCoinEnum::UtxoCoin(other_coin)) => {
+                Ok(Box::new(TakerSwapV2TotalFeeHelper {
+                    my_coin: my_coin.clone(),
+                    other_coin: other_coin.clone(),
+                    volume,
+                    dex_fee,
+                    stage,
+                }))
+            },
+            (_, _) => MmError::err(CheckBalanceError::InternalError(
+                "swap v2 not supported for this coin".to_string(),
+            )),
+        }
+    } else {
+        Ok(Box::new(LegacyTakerSwapTotalFeeHelper {
+            my_coin: my_coin.deref(),
+            other_coin: other_coin.deref(),
+            volume,
+            dex_fee,
+            stage,
+        }))
+    }
+}
+
+#[allow(clippy::result_large_err)]
+pub(crate) fn create_maker_total_fee_helper<'a>(
+    ctx: &MmArc,
+    my_coin: &'a MmCoinEnum,
+    other_coin: &'a MmCoinEnum,
+    volume: MmNumber,
+    stage: FeeApproxStage,
+) -> CheckBalanceResult<Box<dyn SwapTotalFeeHelper + 'a + Sync + Send>> {
+    // Note that if the remote side does not support TPU the swap will downgrade to legacy swap
+    // so the total fee calculated by TakerSwapV2TotalFeeHelper may be not accurate
+    if ctx.conf["use_trading_proto_v2"].as_bool().unwrap_or_default() {
+        match (my_coin, other_coin) {
+            (MmCoinEnum::UtxoCoin(my_coin), MmCoinEnum::UtxoCoin(other_coin)) => {
+                Ok(Box::new(MakerSwapV2TotalFeeHelper {
+                    my_coin: my_coin.clone(),
+                    other_coin: other_coin.clone(),
+                    volume,
+                    stage,
+                }))
+            },
+            (MmCoinEnum::EthCoin(my_coin), MmCoinEnum::EthCoin(other_coin)) => {
+                Ok(Box::new(MakerSwapV2TotalFeeHelper {
+                    my_coin: my_coin.clone(),
+                    other_coin: other_coin.clone(),
+                    volume,
+                    stage,
+                }))
+            },
+            (MmCoinEnum::UtxoCoin(my_coin), MmCoinEnum::EthCoin(other_coin)) => {
+                Ok(Box::new(MakerSwapV2TotalFeeHelper {
+                    my_coin: my_coin.clone(),
+                    other_coin: other_coin.clone(),
+                    volume,
+                    stage,
+                }))
+            },
+            (MmCoinEnum::EthCoin(my_coin), MmCoinEnum::UtxoCoin(other_coin)) => {
+                Ok(Box::new(MakerSwapV2TotalFeeHelper {
+                    my_coin: my_coin.clone(),
+                    other_coin: other_coin.clone(),
+                    volume,
+                    stage,
+                }))
+            },
+            (_, _) => MmError::err(CheckBalanceError::InternalError(
+                "swap v2 not supported for this coin".to_string(),
+            )),
+        }
+    } else {
+        Ok(Box::new(LegacyMakerSwapTotalFeeHelper {
+            my_coin: my_coin.deref(),
+            other_coin: other_coin.deref(),
+            volume,
+            stage,
+        }))
     }
 }

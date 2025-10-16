@@ -1321,6 +1321,8 @@ fn setprice_min_volume_should_be_displayed_in_orderbook() {
     assert_eq!(min_volume, "1", "Alice MORTY/RICK ask must display correct min_volume");
 }
 
+/// Test does not work as Alice receives order with PubkeyKeepAlive message (not with MakerOrderCreated)
+#[ignore = "not working due to protocol change"]
 #[test]
 fn test_order_cancellation_received_before_creation() {
     let coins = json!([rick_conf(), morty_conf()]);

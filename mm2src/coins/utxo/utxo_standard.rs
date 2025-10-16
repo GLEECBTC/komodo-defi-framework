@@ -33,19 +33,19 @@ use crate::utxo::utxo_tx_history_v2::{
 use crate::{
     CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinBalanceMap, CoinWithDerivationMethod,
     CoinWithPrivKeyPolicy, CommonSwapOpsV2, ConfirmPaymentInput, DexFee, FindPaymentSpendError, FundingTxSpend,
-    GenPreimageResult, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, GetWithdrawSenderAddress, IguanaBalanceOps,
-    IguanaPrivKey, MakerCoinSwapOpsV2, MmCoinEnum, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy,
-    RawTransactionRequest, RawTransactionResult, RefundFundingSecretArgs, RefundMakerPaymentSecretArgs,
-    RefundMakerPaymentTimelockArgs, RefundPaymentArgs, RefundTakerPaymentArgs, SearchForFundingSpendErr,
-    SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
-    SendTakerFundingArgs, SignRawTransactionRequest, SignatureResult, SpendMakerPaymentArgs, SpendPaymentArgs, SwapOps,
-    SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, ToBytes, TradePreimageValue, TransactionFut, TransactionResult,
-    TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult, ValidateFeeArgs, ValidateMakerPaymentArgs,
-    ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, ValidateSwapV2TxResult,
-    ValidateTakerFundingArgs, ValidateTakerFundingSpendPreimageResult, ValidateTakerPaymentSpendPreimageResult,
-    ValidateWatcherSpendInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward,
-    WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
-    WithdrawFut,
+    GenPreimageResult, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, GetFeeToSendMakerPaymentArgs,
+    GetTakerFundingFeeArgs, GetWithdrawSenderAddress, IguanaBalanceOps, IguanaPrivKey, MakerCoinSwapOpsV2, MmCoinEnum,
+    NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, RawTransactionRequest, RawTransactionResult,
+    RefundFundingSecretArgs, RefundMakerPaymentSecretArgs, RefundMakerPaymentTimelockArgs, RefundPaymentArgs,
+    RefundTakerPaymentArgs, SearchForFundingSpendErr, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
+    SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SendTakerFundingArgs, SignRawTransactionRequest,
+    SignatureResult, SpendMakerPaymentArgs, SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2,
+    ToBytes, TradePreimageValue, TransactionFut, TransactionResult, TxMarshalingErr, TxPreimageWithSig,
+    ValidateAddressResult, ValidateFeeArgs, ValidateMakerPaymentArgs, ValidateOtherPubKeyErr, ValidatePaymentError,
+    ValidatePaymentFut, ValidatePaymentInput, ValidateSwapV2TxResult, ValidateTakerFundingArgs,
+    ValidateTakerFundingSpendPreimageResult, ValidateTakerPaymentSpendPreimageResult, ValidateWatcherSpendInput,
+    VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError,
+    WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut,
 };
 use bitcrypto::sign_message_hash;
 use common::executor::{AbortableSystem, AbortedError};
@@ -593,6 +593,21 @@ impl ToBytes for Public {
 
 #[async_trait]
 impl MakerCoinSwapOpsV2 for UtxoStandardCoin {
+    async fn get_fee_to_send_maker_payment_v2(
+        &self,
+        args: GetFeeToSendMakerPaymentArgs,
+    ) -> TradePreimageResult<TradeFee> {
+        utxo_common::get_sender_trade_fee(self, args.amount, args.stage).await
+    }
+
+    async fn get_fee_to_spend_maker_payment_v2(&self, _stage: FeeApproxStage) -> TradePreimageResult<TradeFee> {
+        utxo_common::get_receiver_trade_fee(self.clone()).compat().await
+    }
+
+    async fn get_fee_to_refund_maker_payment_v2(&self, _stage: FeeApproxStage) -> TradePreimageResult<TradeFee> {
+        utxo_common::get_receiver_trade_fee(self.clone()).compat().await
+    }
+
     async fn send_maker_payment_v2(&self, args: SendMakerPaymentArgs<'_, Self>) -> Result<Self::Tx, TransactionErr> {
         utxo_common::send_maker_payment_v2(self.clone(), args).await
     }
@@ -652,6 +667,32 @@ impl MakerCoinSwapOpsV2 for UtxoStandardCoin {
 
 #[async_trait]
 impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
+    async fn get_fee_to_send_taker_funding(&self, args: GetTakerFundingFeeArgs) -> TradePreimageResult<TradeFee> {
+        let total_amount =
+            &args.dex_fee.total_spend_amount().to_decimal() + &args.premium_amount + &args.trading_amount;
+        let preimage_value = if args.upper_bound_amount {
+            TradePreimageValue::UpperBound(total_amount)
+        } else {
+            TradePreimageValue::Exact(total_amount)
+        };
+        utxo_common::get_sender_trade_fee(self, preimage_value, args.stage).await
+    }
+
+    /// Estimate tx fee to spend taker funding
+    async fn get_fee_to_spend_taker_funding(&self, _stage: FeeApproxStage) -> TradePreimageResult<TradeFee> {
+        utxo_common::get_receiver_trade_fee(self.clone()).compat().await
+    }
+
+    /// Estimate tx fee to spend taker payment
+    async fn get_fee_to_spend_taker_payment(&self, _stage: FeeApproxStage) -> TradePreimageResult<TradeFee> {
+        utxo_common::get_receiver_trade_fee(self.clone()).compat().await
+    }
+
+    /// Estimate tx fee to refund taker payment
+    async fn get_fee_to_refund_taker_payment(&self, _stage: FeeApproxStage) -> TradePreimageResult<TradeFee> {
+        utxo_common::get_receiver_trade_fee(self.clone()).compat().await
+    }
+
     async fn send_taker_funding(&self, args: SendTakerFundingArgs<'_>) -> Result<Self::Tx, TransactionErr> {
         utxo_common::send_taker_funding(self.clone(), args).await
     }

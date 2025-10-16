@@ -1845,7 +1845,7 @@ where
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg_attr(target_arch = "wasm32", expect(dead_code))]
 #[derive(Serialize, Deserialize, Debug)]
 struct ToWaitForLogRe {
     ctx: u32,

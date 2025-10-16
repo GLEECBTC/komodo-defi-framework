@@ -21,7 +21,7 @@ use crate::{
     WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
     WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WeakSpawner, WithdrawFut, WithdrawRequest,
 };
-use crate::{DexFee, ToBytes, ValidateWatcherSpendInput};
+use crate::{DexFee, GetTakerFundingFeeArgs, ToBytes, ValidateWatcherSpendInput};
 use async_trait::async_trait;
 use common::executor::AbortedError;
 use futures01::Future;
@@ -617,6 +617,22 @@ impl ParseCoinAssocTypes for TestCoin {
 impl TakerCoinSwapOpsV2 for TestCoin {
     async fn send_taker_funding(&self, args: SendTakerFundingArgs<'_>) -> Result<Self::Tx, TransactionErr> {
         todo!()
+    }
+
+    async fn get_fee_to_send_taker_funding(&self, args: GetTakerFundingFeeArgs) -> TradePreimageResult<TradeFee> {
+        unimplemented!()
+    }
+
+    async fn get_fee_to_spend_taker_funding(&self, _stage: FeeApproxStage) -> TradePreimageResult<TradeFee> {
+        unimplemented!()
+    }
+
+    async fn get_fee_to_spend_taker_payment(&self, _stage: FeeApproxStage) -> TradePreimageResult<TradeFee> {
+        unimplemented!()
+    }
+
+    async fn get_fee_to_refund_taker_payment(&self, _stage: FeeApproxStage) -> TradePreimageResult<TradeFee> {
+        unimplemented!()
     }
 
     async fn validate_taker_funding(&self, args: ValidateTakerFundingArgs<'_, Self>) -> ValidateSwapV2TxResult {

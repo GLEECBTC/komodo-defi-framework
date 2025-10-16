@@ -1013,7 +1013,9 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
     // Please note if we pass the exact value, the `get_sender_trade_fee` will fail with 'Not sufficient balance: Couldn't collect enough value from utxos'.
     // So we should deduct trade fee from the output.
     let max_trade_fee = block_on(coin.get_sender_trade_fee(
-        TradePreimageValue::UpperBound(qtum_balance.clone()),
+        TradePreimageValue::UpperBound(
+            qtum_balance.clone() / (MmNumber::from(1) + DexFee::dex_fee_rate(coin.ticker(), "MYCOIN")).to_decimal(),
+        ),
         FeeApproxStage::TradePreimageMax,
     ))
     .expect("!get_sender_trade_fee");
