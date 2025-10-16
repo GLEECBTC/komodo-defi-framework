@@ -545,7 +545,7 @@ impl TPUSwapStatusForStats {
             .map_err(|_| SwapStatusGenerationError::StorageError)?;
 
         // Make sure the swap is finished (aborted, completed or refunded)
-        if repr.events.last().map(|e| !e.is_terminal()).unwrap_or(true) {
+        if repr.events.last().map(|e| !e.is_end_state()).unwrap_or(true) {
             return Err(SwapStatusGenerationError::SwapNotFinished);
         }
 
@@ -638,7 +638,7 @@ impl TPUSwapStatusForStats {
             .map_err(|_| SwapStatusGenerationError::StorageError)?;
 
         // Make sure the swap is finished (aborted, completed or refunded)
-        if repr.events.last().map(|e| !e.is_terminal()).unwrap_or(true) {
+        if repr.events.last().map(|e| !e.is_end_state()).unwrap_or(true) {
             return Err(SwapStatusGenerationError::SwapNotFinished);
         }
 

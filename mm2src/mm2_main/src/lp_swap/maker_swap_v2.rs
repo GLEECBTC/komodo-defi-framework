@@ -151,8 +151,8 @@ pub enum MakerSwapEvent {
 }
 
 impl MakerSwapEvent {
-    /// Returns true if the event is terminal, i.e. no more events will be produced after it.
-    pub fn is_terminal(&self) -> bool {
+    /// Returns true if the event is an end state of the swap, i.e. no more events will be produced after it.
+    pub fn is_end_state(&self) -> bool {
         matches!(
             self,
             MakerSwapEvent::Aborted { .. } | MakerSwapEvent::Completed | MakerSwapEvent::MakerPaymentRefunded { .. }
