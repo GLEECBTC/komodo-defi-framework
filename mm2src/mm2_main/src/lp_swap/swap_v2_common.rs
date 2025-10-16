@@ -464,6 +464,7 @@ pub(super) async fn swap_kickstart_handler_for_taker(
 
 #[derive(Debug, Deserialize, Serialize)]
 /// The structure represents the swap information to be sent for statistics purposes.
+// NOTE: This is a big struct. Better not add Clone derive to it unless absolutely necessary.
 pub struct TPUSwapStatusForStats {
     /// The swap unique identifier
     pub uuid: Uuid,
