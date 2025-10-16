@@ -120,7 +120,7 @@ pub async fn fix_maker_and_taker_pubkeys_in_stats_db(ctx: &MmArc) -> Vec<(&'stat
     let maker_swaps = SavedSwap::load_all_from_maker_stats_db(ctx).await.unwrap_or_default();
     let taker_swaps = SavedSwap::load_all_from_taker_stats_db(ctx).await.unwrap_or_default();
 
-    let mut result = vec![(CREATE_STATS_SWAPS_TABLE, vec![])];
+    let mut result = Vec::new();
 
     // Update all the `maker_pubkey`s using maker's `my_persistent_pub` field
     for maker_swap in maker_swaps {
@@ -131,6 +131,7 @@ pub async fn fix_maker_and_taker_pubkeys_in_stats_db(ctx: &MmArc) -> Vec<(&'stat
             },
             Err(e) => {
                 error!("Error {} on getting maker_pubkey for swap {}", e, maker_swap.uuid);
+                result.push((UPDATE_MAKER_PUBKEY, vec!["NULL".into(), maker_swap.uuid.to_string()]));
             },
         }
     }
@@ -143,6 +144,7 @@ pub async fn fix_maker_and_taker_pubkeys_in_stats_db(ctx: &MmArc) -> Vec<(&'stat
             },
             Err(e) => {
                 error!("Error {} on getting taker_pubkey for swap {}", e, taker_swap.uuid);
+                result.push((UPDATE_TAKER_PUBKEY, vec!["NULL".into(), taker_swap.uuid.to_string()]));
             },
         }
     }
