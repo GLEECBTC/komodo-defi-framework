@@ -322,7 +322,7 @@ pub fn run_optimization_pragmas(conn: &Connection) -> Result<(), SqlError> {
     Ok(())
 }
 
-pub fn execute_batch(statement: &'static [&str]) -> Vec<(&'static str, Vec<String>)> {
+pub fn execute_batch<T>(statement: &'static [&str]) -> Vec<(&'static str, Vec<T>)> {
     statement.iter().map(|sql| (*sql, vec![])).collect()
 }
 

@@ -3,7 +3,7 @@
 use crate::lp_swap::{MakerSavedSwap, SavedSwap, SavedSwapIo, TakerSavedSwap};
 use common::log::{debug, error};
 use db_common::{owned_named_params,
-                sqlite::{rusqlite::{params_from_iter, Connection, OptionalExtension},
+                sqlite::{rusqlite::{params_from_iter, types::Value as SqlValue, Connection, OptionalExtension},
                          AsSqlNamedParams, OwnedSqlNamedParams}};
 use mm2_core::mm_ctx::MmArc;
 use std::collections::HashSet;
@@ -92,7 +92,7 @@ pub const ADD_MAKER_TAKER_GUI_AND_VERSION: &[&str] = &[
 pub const SELECT_ID_BY_UUID: &str = "SELECT id FROM stats_swaps WHERE uuid = ?1";
 
 /// Returns SQL statements to initially fill stats_swaps table using existing DB with JSON files
-pub async fn create_and_fill_stats_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
+pub async fn create_and_fill_stats_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<SqlValue>)> {
     let maker_swaps = SavedSwap::load_all_from_maker_stats_db(ctx).await.unwrap_or_default();
     let taker_swaps = SavedSwap::load_all_from_taker_stats_db(ctx).await.unwrap_or_default();
 
@@ -116,7 +116,7 @@ pub async fn create_and_fill_stats_swaps_from_json_statements(ctx: &MmArc) -> Ve
     result
 }
 
-pub async fn fix_maker_and_taker_pubkeys_in_stats_db(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
+pub async fn fix_maker_and_taker_pubkeys_in_stats_db(ctx: &MmArc) -> Vec<(&'static str, Vec<SqlValue>)> {
     let maker_swaps = SavedSwap::load_all_from_maker_stats_db(ctx).await.unwrap_or_default();
     let taker_swaps = SavedSwap::load_all_from_taker_stats_db(ctx).await.unwrap_or_default();
 
@@ -127,11 +127,17 @@ pub async fn fix_maker_and_taker_pubkeys_in_stats_db(ctx: &MmArc) -> Vec<(&'stat
         const UPDATE_MAKER_PUBKEY: &str = "UPDATE stats_swaps SET maker_pubkey = ?1 WHERE uuid = ?2;";
         match maker_swap.maker_pubkey() {
             Ok(maker_pubkey) => {
-                result.push((UPDATE_MAKER_PUBKEY, vec![maker_pubkey, maker_swap.uuid.to_string()]));
+                result.push((UPDATE_MAKER_PUBKEY, vec![
+                    maker_pubkey.into(),
+                    maker_swap.uuid.to_string().into(),
+                ]));
             },
             Err(e) => {
                 error!("Error {} on getting maker_pubkey for swap {}", e, maker_swap.uuid);
-                result.push((UPDATE_MAKER_PUBKEY, vec!["NULL".into(), maker_swap.uuid.to_string()]));
+                result.push((UPDATE_MAKER_PUBKEY, vec![
+                    SqlValue::Null,
+                    maker_swap.uuid.to_string().into(),
+                ]));
             },
         }
     }
@@ -140,11 +146,17 @@ pub async fn fix_maker_and_taker_pubkeys_in_stats_db(ctx: &MmArc) -> Vec<(&'stat
         const UPDATE_TAKER_PUBKEY: &str = "UPDATE stats_swaps SET taker_pubkey = ?1 WHERE uuid = ?2;";
         match taker_swap.taker_pubkey() {
             Ok(taker_pubkey) => {
-                result.push((UPDATE_TAKER_PUBKEY, vec![taker_pubkey, taker_swap.uuid.to_string()]));
+                result.push((UPDATE_TAKER_PUBKEY, vec![
+                    taker_pubkey.into(),
+                    taker_swap.uuid.to_string().into(),
+                ]));
             },
             Err(e) => {
                 error!("Error {} on getting taker_pubkey for swap {}", e, taker_swap.uuid);
-                result.push((UPDATE_TAKER_PUBKEY, vec!["NULL".into(), taker_swap.uuid.to_string()]));
+                result.push((UPDATE_TAKER_PUBKEY, vec![
+                    SqlValue::Null,
+                    taker_swap.uuid.to_string().into(),
+                ]));
             },
         }
     }
@@ -201,7 +213,7 @@ fn insert_stats_maker_swap_sql(swap: &MakerSavedSwap) -> Option<(&'static str, O
     Some((INSERT_STATS_SWAP, params))
 }
 
-fn insert_stats_maker_swap_sql_init(swap: &MakerSavedSwap) -> Option<(&'static str, Vec<String>)> {
+fn insert_stats_maker_swap_sql_init(swap: &MakerSavedSwap) -> Option<(&'static str, Vec<SqlValue>)> {
     let swap_data = match swap.swap_data() {
         Ok(d) => d,
         Err(e) => {
@@ -229,7 +241,11 @@ fn insert_stats_maker_swap_sql_init(swap: &MakerSavedSwap) -> Option<(&'static s
         swap_data.maker_amount.to_string(),
         swap_data.taker_amount.to_string(),
         (is_success as u32).to_string(),
-    ];
+    ]
+    .into_iter()
+    .map(SqlValue::from)
+    .collect();
+
     Some((INSERT_STATS_SWAP_ON_INIT, params))
 }
 
@@ -273,7 +289,7 @@ fn insert_stats_taker_swap_sql(swap: &TakerSavedSwap) -> Option<(&'static str, O
     Some((INSERT_STATS_SWAP, params))
 }
 
-fn insert_stats_taker_swap_sql_init(swap: &TakerSavedSwap) -> Option<(&'static str, Vec<String>)> {
+fn insert_stats_taker_swap_sql_init(swap: &TakerSavedSwap) -> Option<(&'static str, Vec<SqlValue>)> {
     let swap_data = match swap.swap_data() {
         Ok(d) => d,
         Err(e) => {
@@ -301,7 +317,11 @@ fn insert_stats_taker_swap_sql_init(swap: &TakerSavedSwap) -> Option<(&'static s
         swap_data.maker_amount.to_string(),
         swap_data.taker_amount.to_string(),
         (is_success as u32).to_string(),
-    ];
+    ]
+    .into_iter()
+    .map(SqlValue::from)
+    .collect();
+
     Some((INSERT_STATS_SWAP_ON_INIT, params))
 }
 

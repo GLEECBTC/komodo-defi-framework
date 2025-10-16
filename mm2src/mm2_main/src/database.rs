@@ -9,7 +9,7 @@ use crate::database::stats_swaps::fix_maker_and_taker_pubkeys_in_stats_db;
 use crate::CREATE_MY_SWAPS_TABLE;
 use common::log::{debug, error, info};
 use db_common::sqlite::run_optimization_pragmas;
-use db_common::sqlite::rusqlite::{params_from_iter, Result as SqlResult};
+use db_common::sqlite::rusqlite::{params_from_iter, types::Value as SqlValue, Result as SqlResult};
 use mm2_core::mm_ctx::MmArc;
 
 use my_swaps::{fill_my_swaps_from_json_statements, set_is_finished_for_legacy_swaps_statements};
@@ -72,66 +72,68 @@ fn clean_db(ctx: &MmArc) {
     }
 }
 
-async fn migration_1(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> { fill_my_swaps_from_json_statements(ctx).await }
+async fn migration_1(ctx: &MmArc) -> Vec<(&'static str, Vec<SqlValue>)> {
+    fill_my_swaps_from_json_statements(ctx).await
+}
 
-async fn migration_2(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
+async fn migration_2(ctx: &MmArc) -> Vec<(&'static str, Vec<SqlValue>)> {
     create_and_fill_stats_swaps_from_json_statements(ctx).await
 }
 
-fn migration_3() -> Vec<(&'static str, Vec<String>)> { vec![(stats_swaps::ADD_STARTED_AT_INDEX, vec![])] }
+fn migration_3() -> Vec<(&'static str, Vec<SqlValue>)> { vec![(stats_swaps::ADD_STARTED_AT_INDEX, vec![])] }
 
-fn migration_4() -> Vec<(&'static str, Vec<String>)> {
+fn migration_4() -> Vec<(&'static str, Vec<SqlValue>)> {
     db_common::sqlite::execute_batch(stats_swaps::ADD_SPLIT_TICKERS)
 }
 
-fn migration_5() -> Vec<(&'static str, Vec<String>)> { vec![(my_orders::CREATE_MY_ORDERS_TABLE, vec![])] }
+fn migration_5() -> Vec<(&'static str, Vec<SqlValue>)> { vec![(my_orders::CREATE_MY_ORDERS_TABLE, vec![])] }
 
-fn migration_6() -> Vec<(&'static str, Vec<String>)> {
+fn migration_6() -> Vec<(&'static str, Vec<SqlValue>)> {
     vec![
         (stats_nodes::CREATE_NODES_TABLE, vec![]),
         (stats_nodes::CREATE_STATS_NODES_TABLE, vec![]),
     ]
 }
 
-fn migration_7() -> Vec<(&'static str, Vec<String>)> {
+fn migration_7() -> Vec<(&'static str, Vec<SqlValue>)> {
     db_common::sqlite::execute_batch(stats_swaps::ADD_COINS_PRICE_INFOMATION)
 }
 
-fn migration_8() -> Vec<(&'static str, Vec<String>)> {
+fn migration_8() -> Vec<(&'static str, Vec<SqlValue>)> {
     db_common::sqlite::execute_batch(stats_swaps::ADD_MAKER_TAKER_PUBKEYS)
 }
 
-fn migration_9() -> Vec<(&'static str, Vec<String>)> {
+fn migration_9() -> Vec<(&'static str, Vec<SqlValue>)> {
     db_common::sqlite::execute_batch(my_swaps::TRADING_PROTO_UPGRADE_MIGRATION)
 }
 
-async fn migration_10(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
+async fn migration_10(ctx: &MmArc) -> Vec<(&'static str, Vec<SqlValue>)> {
     set_is_finished_for_legacy_swaps_statements(ctx).await
 }
 
-fn migration_11() -> Vec<(&'static str, Vec<String>)> {
+fn migration_11() -> Vec<(&'static str, Vec<SqlValue>)> {
     db_common::sqlite::execute_batch(stats_swaps::ADD_MAKER_TAKER_GUI_AND_VERSION)
 }
 
-fn migration_12() -> Vec<(&'static str, Vec<String>)> {
+fn migration_12() -> Vec<(&'static str, Vec<SqlValue>)> {
     vec![
         (my_swaps::ADD_OTHER_P2P_PUBKEY_FIELD, vec![]),
         (my_swaps::ADD_DEX_FEE_BURN_FIELD, vec![]),
     ]
 }
 
-fn migration_13() -> Vec<(&'static str, Vec<String>)> {
+fn migration_13() -> Vec<(&'static str, Vec<SqlValue>)> {
     vec![
         (my_swaps::ADD_SWAP_VERSION_FIELD, vec![]),  // Step 1: Add new column
         (my_swaps::SET_LEGACY_SWAP_VERSION, vec![]), // Step 2: Update old rows
     ]
 }
 
-async fn migration_14(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
+async fn migration_14(ctx: &MmArc) -> Vec<(&'static str, Vec<SqlValue>)> {
     fix_maker_and_taker_pubkeys_in_stats_db(ctx).await
 }
 
-async fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option<Vec<(&'static str, Vec<String>)>> {
+async fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option<Vec<(&'static str, Vec<SqlValue>)>> {
     match current_migration {
         1 => Some(migration_1(ctx).await),
         2 => Some(migration_2(ctx).await),
