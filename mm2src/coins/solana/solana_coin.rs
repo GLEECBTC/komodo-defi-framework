@@ -284,7 +284,7 @@ impl SolanaCoin {
                 });
             }
 
-            return Ok(balance_u64.saturating_sub(fee_u64));
+            return Ok(amount);
         }
 
         let requested_amount = include_lamports_to_big_decimal(&req.amount, SOLANA_DECIMALS);
@@ -377,18 +377,20 @@ impl MmCoin for SolanaCoin {
             let fee = u64_lamports_to_big_decimal(fee, SOLANA_DECIMALS);
 
             let received_by_me = if to == coin.address {
-                &amount_dec - &fee
+                amount_dec.clone()
             } else {
                 BigDecimal::zero()
             };
+
+            let spent_by_me = &amount_dec + &fee;
 
             Ok(TransactionDetails {
                 tx: tx_data,
                 from: vec![coin.address.to_string()],
                 to: vec![to.to_string()],
-                total_amount: amount_dec.clone(),
-                spent_by_me: amount_dec.clone(),
-                my_balance_change: &received_by_me - &amount_dec,
+                my_balance_change: &received_by_me - &spent_by_me,
+                spent_by_me,
+                total_amount: amount_dec,
                 received_by_me,
                 block_height: 0,
                 timestamp: 0,
