@@ -4,9 +4,9 @@
 use crate::lp_swap::{MyRecentSwapsUuids, MySwapsFilter, SavedSwap, SavedSwapIo};
 use common::log::debug;
 use common::PagingOptions;
-use db_common::sqlite::rusqlite::{types::Value as SqlValue, Connection, Error as SqlError, Result as SqlResult, ToSql};
+use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Result as SqlResult, ToSql};
 use db_common::sqlite::sql_builder::SqlBuilder;
-use db_common::sqlite::{offset_by_uuid, query_single_row};
+use db_common::sqlite::{offset_by_uuid, query_single_row, SqlValue};
 use mm2_core::mm_ctx::MmArc;
 use std::convert::TryInto;
 use uuid::{Error as UuidError, Uuid};

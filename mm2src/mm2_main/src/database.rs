@@ -8,8 +8,8 @@ pub mod stats_swaps;
 use crate::database::stats_swaps::fix_maker_and_taker_pubkeys_in_stats_db;
 use crate::CREATE_MY_SWAPS_TABLE;
 use common::log::{debug, error, info};
-use db_common::sqlite::run_optimization_pragmas;
-use db_common::sqlite::rusqlite::{params_from_iter, types::Value as SqlValue, Result as SqlResult};
+use db_common::sqlite::rusqlite::{params_from_iter, Result as SqlResult};
+use db_common::sqlite::{run_optimization_pragmas, SqlValue};
 use mm2_core::mm_ctx::MmArc;
 
 use my_swaps::{fill_my_swaps_from_json_statements, set_is_finished_for_legacy_swaps_statements};

@@ -3,8 +3,8 @@
 use crate::lp_swap::{MakerSavedSwap, SavedSwap, SavedSwapIo, TakerSavedSwap};
 use common::log::{debug, error};
 use db_common::{owned_named_params,
-                sqlite::{rusqlite::{params_from_iter, types::Value as SqlValue, Connection, OptionalExtension},
-                         AsSqlNamedParams, OwnedSqlNamedParams}};
+                sqlite::{rusqlite::{params_from_iter, Connection, OptionalExtension},
+                         AsSqlNamedParams, OwnedSqlNamedParams, SqlValue}};
 use mm2_core::mm_ctx::MmArc;
 use std::collections::HashSet;
 
