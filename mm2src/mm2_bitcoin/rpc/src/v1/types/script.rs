@@ -87,7 +87,9 @@ impl<'a> Deserialize<'a> for ScriptType {
         impl Visitor<'_> for ScriptTypeVisitor {
             type Value = ScriptType;
 
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result { formatter.write_str("script type") }
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("script type")
+            }
 
             fn visit_str<E>(self, value: &str) -> Result<ScriptType, E>
             where

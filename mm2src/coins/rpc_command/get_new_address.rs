@@ -1,23 +1,35 @@
 use crate::coin_balance::HDAddressBalance;
-use crate::hd_wallet::{AddressDerivingError, ConfirmAddressStatus, HDConfirmAddress, HDConfirmAddressError,
-                       InvalidBip44ChainError, NewAddressDeriveConfirmError, NewAddressDerivingError,
-                       RpcTaskConfirmAddress};
-use crate::{lp_coinfind_or_err, BalanceError, CoinBalance, CoinBalanceMap, CoinFindError, CoinsContext, MmCoinEnum,
-            UnexpectedDerivationMethod};
+use crate::hd_wallet::{
+    AddressDerivingError, ConfirmAddressStatus, HDConfirmAddress, HDConfirmAddressError, InvalidBip44ChainError,
+    NewAddressDeriveConfirmError, NewAddressDerivingError, RpcTaskConfirmAddress,
+};
+use crate::utxo::UtxoCommonOps;
+use crate::{
+    lp_coinfind_or_err, BalanceError, CoinBalance, CoinBalanceMap, CoinFindError, CoinsContext, MmCoinEnum,
+    UnexpectedDerivationMethod,
+};
 use async_trait::async_trait;
 use common::{HttpStatusCode, SuccessResponse};
-use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest};
+use crypto::hw_rpc_task::{
+    HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest,
+};
+use crypto::trezor::utxo::TrezorInputScriptType;
 use crypto::trezor::TrezorMessageType;
 use crypto::{from_hw_error, Bip44Chain, HwError, HwRpcError, WithHwRpcError};
 use derive_more::Display;
 use enum_derives::EnumFromTrait;
 use http::StatusCode;
+use keys::AddressFormat;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
-                           RpcTaskStatusRequest, RpcTaskUserActionError};
-use rpc_task::{RpcInitReq, RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared,
-               RpcTaskStatus, RpcTaskTypes};
+use rpc_task::rpc_common::{
+    CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError, RpcTaskStatusRequest,
+    RpcTaskUserActionError,
+};
+use rpc_task::{
+    RpcInitReq, RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus,
+    RpcTaskTypes,
+};
 use std::time::Duration;
 
 pub type GetNewAddressUserAction = HwRpcTaskUserAction;
@@ -80,6 +92,7 @@ impl From<BalanceError> for GetNewAddressRpcError {
             BalanceError::WalletStorageError(internal) | BalanceError::Internal(internal) => {
                 GetNewAddressRpcError::Internal(internal)
             },
+            BalanceError::NoSuchCoin { coin } => GetNewAddressRpcError::NoSuchCoin { coin },
         }
     }
 }
@@ -102,7 +115,9 @@ impl From<CoinFindError> for GetNewAddressRpcError {
 }
 
 impl From<InvalidBip44ChainError> for GetNewAddressRpcError {
-    fn from(e: InvalidBip44ChainError) -> Self { GetNewAddressRpcError::InvalidBip44Chain { chain: e.chain } }
+    fn from(e: InvalidBip44ChainError) -> Self {
+        GetNewAddressRpcError::InvalidBip44Chain { chain: e.chain }
+    }
 }
 
 impl From<NewAddressDerivingError> for GetNewAddressRpcError {
@@ -158,7 +173,9 @@ impl From<HDConfirmAddressError> for GetNewAddressRpcError {
 }
 
 impl From<HwError> for GetNewAddressRpcError {
-    fn from(e: HwError) -> Self { from_hw_error(e) }
+    fn from(e: HwError) -> Self {
+        from_hw_error(e)
+    }
 }
 
 impl From<RpcTaskError> for GetNewAddressRpcError {
@@ -289,18 +306,22 @@ impl RpcTaskTypes for InitGetNewAddressTask {
 
 #[async_trait]
 impl RpcTask for InitGetNewAddressTask {
-    fn initial_status(&self) -> Self::InProgressStatus { GetNewAddressInProgressStatus::Preparing }
+    fn initial_status(&self) -> Self::InProgressStatus {
+        GetNewAddressInProgressStatus::Preparing
+    }
 
     // Do nothing if the task has been cancelled.
     async fn cancel(self) {}
 
     async fn run(&mut self, task_handle: RpcTaskHandleShared<Self>) -> Result<Self::Item, MmError<Self::Error>> {
+        /// Caller to get and confirm a new HD address for an HD wallet
         async fn get_new_address_helper<Coin>(
             ctx: &MmArc,
             coin: &Coin,
             params: GetNewAddressParams,
             task_handle: GetNewAddressTaskHandleShared,
             trezor_message_type: TrezorMessageType,
+            trezor_script_type: Option<TrezorInputScriptType>,
         ) -> MmResult<GetNewAddressResponse<<Coin as GetNewAddressRpcOps>::BalanceObject>, GetNewAddressRpcError>
         where
             Coin: GetNewAddressRpcOps + Send + Sync,
@@ -315,31 +336,52 @@ impl RpcTask for InitGetNewAddressTask {
                 on_ready: GetNewAddressInProgressStatus::RequestingAccountBalance,
             };
             let confirm_address: RpcTaskConfirmAddress<InitGetNewAddressTask> =
-                RpcTaskConfirmAddress::new(ctx, task_handle, hw_statuses, trezor_message_type).map_mm_err()?;
+                RpcTaskConfirmAddress::new(ctx, task_handle, hw_statuses, trezor_message_type, trezor_script_type)
+                    .map_mm_err()?;
             coin.get_new_address_rpc(params, &confirm_address).await
         }
 
         match self.coin {
-            MmCoinEnum::UtxoCoinVariant(ref utxo) => Ok(GetNewAddressResponseEnum::Map(
-                get_new_address_helper(
-                    &self.ctx,
-                    utxo,
-                    self.req.params.clone(),
-                    task_handle,
-                    TrezorMessageType::Bitcoin,
-                )
-                .await?,
-            )),
-            MmCoinEnum::QtumCoinVariant(ref qtum) => Ok(GetNewAddressResponseEnum::Map(
-                get_new_address_helper(
-                    &self.ctx,
-                    qtum,
-                    self.req.params.clone(),
-                    task_handle,
-                    TrezorMessageType::Bitcoin,
-                )
-                .await?,
-            )),
+            MmCoinEnum::UtxoCoinVariant(ref utxo) => {
+                // Set script type to enable Trezor to correctly validate the derivation path
+                let trezor_script_type = match utxo.addr_format() {
+                    AddressFormat::Standard | AddressFormat::CashAddress { .. } => {
+                        Some(TrezorInputScriptType::SpendAddress)
+                    },
+                    AddressFormat::Segwit => Some(TrezorInputScriptType::SpendWitness),
+                };
+                Ok(GetNewAddressResponseEnum::Map(
+                    get_new_address_helper(
+                        &self.ctx,
+                        utxo,
+                        self.req.params.clone(),
+                        task_handle,
+                        TrezorMessageType::Bitcoin,
+                        trezor_script_type,
+                    )
+                    .await?,
+                ))
+            },
+            MmCoinEnum::QtumCoinVariant(ref qtum) => {
+                // Set script type to enable Trezor to correctly validate the derivation path
+                let trezor_script_type = match qtum.addr_format() {
+                    AddressFormat::Standard | AddressFormat::CashAddress { .. } => {
+                        Some(TrezorInputScriptType::SpendAddress)
+                    },
+                    AddressFormat::Segwit => Some(TrezorInputScriptType::SpendWitness),
+                };
+                Ok(GetNewAddressResponseEnum::Map(
+                    get_new_address_helper(
+                        &self.ctx,
+                        qtum,
+                        self.req.params.clone(),
+                        task_handle,
+                        TrezorMessageType::Bitcoin,
+                        trezor_script_type,
+                    )
+                    .await?,
+                ))
+            },
             MmCoinEnum::EthCoinVariant(ref eth) => Ok(GetNewAddressResponseEnum::Map(
                 get_new_address_helper(
                     &self.ctx,
@@ -347,6 +389,7 @@ impl RpcTask for InitGetNewAddressTask {
                     self.req.params.clone(),
                     task_handle,
                     TrezorMessageType::Ethereum,
+                    None,
                 )
                 .await?,
             )),

@@ -117,7 +117,9 @@ impl<'a> SqlInsert<'a> {
 
     /// Returns the reference to the specified SQL parameters.
     #[inline]
-    pub fn params(&self) -> &OwnedSqlParams { self.params.params() }
+    pub fn params(&self) -> &OwnedSqlParams {
+        self.params.params()
+    }
 
     /// Generates a string SQL request.
     pub fn sql(&self) -> SqlResult<String> {

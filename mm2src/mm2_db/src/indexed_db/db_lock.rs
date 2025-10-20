@@ -18,7 +18,9 @@ pub struct ConstructibleDb<Db> {
 }
 
 impl<Db: DbInstance> ConstructibleDb<Db> {
-    pub fn into_shared(self) -> SharedDb<Db> { Arc::new(self) }
+    pub fn into_shared(self) -> SharedDb<Db> {
+        Arc::new(self)
+    }
 
     /// Creates a new uninitialized `Db` instance from other Iguana and/or HD accounts.
     /// This can be initialized later using [`ConstructibleDb::get_or_initialize`].

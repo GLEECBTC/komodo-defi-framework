@@ -1,6 +1,8 @@
-use crate::{error::{WalletConnectError, USER_REQUESTED},
-            storage::WalletConnectStorageOps,
-            WalletConnectCtxImpl};
+use crate::{
+    error::{WalletConnectError, USER_REQUESTED},
+    storage::WalletConnectStorageOps,
+    WalletConnectCtxImpl,
+};
 
 use common::log::debug;
 use mm2_err_handle::prelude::{MapMmError, MmResult};

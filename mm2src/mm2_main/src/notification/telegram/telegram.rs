@@ -16,12 +16,14 @@ pub struct SendMessageResponse {
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum TelegramError {
-    #[display(fmt = "{}", _0)]
+    #[display(fmt = "{_0}")]
     RequestError(SlurpError),
 }
 
 impl From<SlurpError> for TelegramError {
-    fn from(err: SlurpError) -> Self { TelegramError::RequestError(err) }
+    fn from(err: SlurpError) -> Self {
+        TelegramError::RequestError(err)
+    }
 }
 
 #[derive(Clone)]

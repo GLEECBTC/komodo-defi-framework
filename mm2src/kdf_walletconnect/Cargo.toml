@@ -19,7 +19,7 @@ hkdf.workspace = true
 mm2_db = { path = "../mm2_db" }
 mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
-parking_lot = { workspace = true, features = ["nightly"] }
+parking_lot = { workspace = true }
 pairing_api.workspace = true
 rand = "0.8"
 relay_client.workspace = true

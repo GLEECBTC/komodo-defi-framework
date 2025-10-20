@@ -3,12 +3,14 @@ use common::executor::Timer;
 use common::{block_on, log, now_ms, now_sec, wait_until_ms};
 use mm2_number::BigDecimal;
 use mm2_test_helpers::electrums::doc_electrums;
-use mm2_test_helpers::for_tests::{disable_coin, enable_z_coin_light, init_withdraw, pirate_conf, rick_conf,
-                                  send_raw_transaction, withdraw_status, z_coin_tx_history, zombie_conf,
-                                  MarketMakerIt, Mm2TestConf, ARRR, PIRATE_ELECTRUMS, PIRATE_LIGHTWALLETD_URLS, RICK,
-                                  ZOMBIE_ELECTRUMS, ZOMBIE_LIGHTWALLETD_URLS, ZOMBIE_TICKER};
-use mm2_test_helpers::structs::{EnableCoinBalance, InitTaskResult, RpcV2Response, TransactionDetails, WithdrawStatus,
-                                ZcoinHistoryRes};
+use mm2_test_helpers::for_tests::{
+    disable_coin, enable_z_coin_light, init_withdraw, pirate_conf, rick_conf, send_raw_transaction, withdraw_status,
+    z_coin_tx_history, zombie_conf, MarketMakerIt, Mm2TestConf, ARRR, PIRATE_ELECTRUMS, PIRATE_LIGHTWALLETD_URLS, RICK,
+    ZOMBIE_ELECTRUMS, ZOMBIE_LIGHTWALLETD_URLS, ZOMBIE_TICKER,
+};
+use mm2_test_helpers::structs::{
+    EnableCoinBalance, InitTaskResult, RpcV2Response, TransactionDetails, WithdrawStatus, ZcoinHistoryRes,
+};
 use serde_json::{self as json, json, Value as Json};
 use std::collections::HashSet;
 use std::iter::FromIterator;
@@ -183,7 +185,7 @@ fn test_z_coin_tx_history() {
     // all transactions have default fee
     let expected_fee = BigDecimal::from_str("0.00001").unwrap();
     for tx in response.result.transactions.iter() {
-        assert_eq!(tx.transaction_fee, expected_fee, "Invalid fee for tx {:?}", tx);
+        assert_eq!(tx.transaction_fee, expected_fee, "Invalid fee for tx {tx:?}");
     }
 
     // withdraw transaction to the shielded address
@@ -532,9 +534,9 @@ fn trade_rick_zombie_light() {
 
     block_on(mm_bob.wait_for_log(5., |log| log.contains("Entering the maker_swap_loop RICK/ZOMBIE"))).unwrap();
 
-    block_on(mm_bob.wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))).unwrap();
+    block_on(mm_bob.wait_for_log(900., |log| log.contains(&format!("[swap uuid={uuid}] Finished")))).unwrap();
 
-    block_on(mm_alice.wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))).unwrap();
+    block_on(mm_alice.wait_for_log(900., |log| log.contains(&format!("[swap uuid={uuid}] Finished")))).unwrap();
 }
 
 // ignored because it requires a long-running Zcoin initialization process

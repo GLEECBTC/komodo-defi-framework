@@ -1,12 +1,16 @@
 use crate::context::CoinsActivationContext;
 use crate::platform_coin_with_tokens::{RegisterTokenInfo, TokenOf};
-use crate::prelude::{coin_conf_with_protocol, CoinConfWithProtocolError, CurrentBlock, TryFromCoinProtocol,
-                     TryPlatformCoinFromMmCoinEnum};
+use crate::prelude::{
+    coin_conf_with_protocol, CoinConfWithProtocolError, CurrentBlock, TryFromCoinProtocol,
+    TryPlatformCoinFromMmCoinEnum,
+};
 use crate::token::TokenProtocolParams;
 use async_trait::async_trait;
 use coins::coin_balance::CoinBalanceReport;
-use coins::{lp_coinfind, lp_coinfind_or_err, CoinBalanceMap, CoinProtocol, CoinsContext, CustomTokenError, MmCoinEnum,
-            RegisterCoinError};
+use coins::{
+    lp_coinfind, lp_coinfind_or_err, CoinBalanceMap, CoinProtocol, CoinsContext, CustomTokenError, MmCoinEnum,
+    RegisterCoinError,
+};
 use common::{log, HttpStatusCode, StatusCode, SuccessResponse};
 use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use crypto::HwRpcError;
@@ -14,10 +18,14 @@ use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::mm_error::{MmError, MmResult, NotMmError};
 use mm2_err_handle::prelude::*;
-use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
-                           RpcTaskStatusRequest, RpcTaskUserActionError, RpcTaskUserActionRequest};
-use rpc_task::{RpcInitReq, RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared,
-               RpcTaskStatus, RpcTaskTypes, TaskId};
+use rpc_task::rpc_common::{
+    CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError, RpcTaskStatusRequest,
+    RpcTaskUserActionError, RpcTaskUserActionRequest,
+};
+use rpc_task::{
+    RpcInitReq, RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus,
+    RpcTaskTypes, TaskId,
+};
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -252,7 +260,9 @@ pub struct InitTokenActivationResult {
 }
 
 impl CurrentBlock for InitTokenActivationResult {
-    fn current_block(&self) -> u64 { self.current_block }
+    fn current_block(&self) -> u64 {
+        self.current_block
+    }
 }
 
 /// Trait for the initial status of the token initialization task.
@@ -274,7 +284,9 @@ pub enum InitTokenInProgressStatus {
 }
 
 impl InitTokenInitialStatus for InitTokenInProgressStatus {
-    fn initial_status() -> Self { InitTokenInProgressStatus::ActivatingCoin }
+    fn initial_status() -> Self {
+        InitTokenInProgressStatus::ActivatingCoin
+    }
 }
 
 pub(crate) fn token_xpub_extractor_rpc_statuses(
@@ -293,37 +305,51 @@ pub(crate) fn token_xpub_extractor_rpc_statuses(
 #[derive(Clone, Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum InitTokenError {
-    #[display(fmt = "No such task '{}'", _0)]
+    #[display(fmt = "No such task '{_0}'")]
     NoSuchTask(TaskId),
-    #[display(fmt = "Initialization task has timed out {:?}", duration)]
-    TaskTimedOut { duration: Duration },
-    #[display(fmt = "Token {} is activated already", ticker)]
-    TokenIsAlreadyActivated { ticker: String },
-    #[display(fmt = "Token {} config is not found", _0)]
+    #[display(fmt = "Initialization task has timed out {duration:?}")]
+    TaskTimedOut {
+        duration: Duration,
+    },
+    #[display(fmt = "Token {ticker} is activated already")]
+    TokenIsAlreadyActivated {
+        ticker: String,
+    },
+    #[display(fmt = "Token {_0} config is not found")]
     TokenConfigIsNotFound(String),
-    #[display(fmt = "Token {} protocol parsing failed: {}", ticker, error)]
-    TokenProtocolParseError { ticker: String, error: String },
-    #[display(fmt = "Unexpected platform protocol {} for {}", protocol, ticker)]
-    UnexpectedTokenProtocol { ticker: String, protocol: Json },
-    #[display(fmt = "Error on platform coin {} creation: {}", ticker, error)]
-    TokenCreationError { ticker: String, error: String },
-    #[display(fmt = "Could not fetch balance: {}", _0)]
+    #[display(fmt = "Token {ticker} protocol parsing failed: {error}")]
+    TokenProtocolParseError {
+        ticker: String,
+        error: String,
+    },
+    #[display(fmt = "Unexpected platform protocol {protocol} for {ticker}")]
+    UnexpectedTokenProtocol {
+        ticker: String,
+        protocol: Json,
+    },
+    #[display(fmt = "Error on platform coin {ticker} creation: {error}")]
+    TokenCreationError {
+        ticker: String,
+        error: String,
+    },
+    #[display(fmt = "Could not fetch balance: {_0}")]
     CouldNotFetchBalance(String),
-    #[display(fmt = "Platform coin {} is not activated", _0)]
+    #[display(fmt = "Platform coin {_0} is not activated")]
     PlatformCoinIsNotActivated(String),
-    #[display(fmt = "{} is not a platform coin for token {}", platform_coin_ticker, token_ticker)]
+    #[display(fmt = "{platform_coin_ticker} is not a platform coin for token {token_ticker}")]
     UnsupportedPlatformCoin {
         platform_coin_ticker: String,
         token_ticker: String,
     },
-    #[display(fmt = "Custom token error: {}", _0)]
+    #[display(fmt = "Custom token error: {_0}")]
     CustomTokenError(CustomTokenError),
-    #[display(fmt = "{}", _0)]
+    #[display(fmt = "{_0}")]
     HwError(HwRpcError),
-    #[display(fmt = "Transport error: {}", _0)]
+    #[display(fmt = "Transport error: {_0}")]
     Transport(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
+    PlatformCoinMismatch,
 }
 
 impl From<CoinConfWithProtocolError> for InitTokenError {
@@ -364,6 +390,7 @@ impl HttpStatusCode for InitTokenError {
             | InitTokenError::UnexpectedTokenProtocol { .. }
             | InitTokenError::TokenCreationError { .. }
             | InitTokenError::PlatformCoinIsNotActivated(_)
+            | InitTokenError::PlatformCoinMismatch
             | InitTokenError::CustomTokenError(_) => StatusCode::BAD_REQUEST,
             InitTokenError::TaskTimedOut { .. } => StatusCode::REQUEST_TIMEOUT,
             InitTokenError::HwError(_) => StatusCode::GONE,

@@ -1,16 +1,17 @@
 use common::{block_on, log};
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::OrderbookResponse;
-use mm2_test_helpers::for_tests::{atom_testnet_conf, disable_coin, disable_coin_err, enable_tendermint,
-                                  enable_tendermint_token, enable_tendermint_without_balance,
-                                  get_tendermint_my_tx_history, ibc_withdraw, iris_ibc_nucleus_testnet_conf,
-                                  my_balance, nucleus_testnet_conf, orderbook, orderbook_v2, send_raw_transaction,
-                                  set_price, tendermint_add_delegation, tendermint_delegations,
-                                  tendermint_ongoing_undelegations, tendermint_remove_delegation,
-                                  tendermint_remove_delegation_raw, tendermint_validators, withdraw_v1, MarketMakerIt,
-                                  Mm2TestConf};
-use mm2_test_helpers::structs::{Bip44Chain, HDAccountAddressId, OrderbookAddress, OrderbookV2Response, RpcV2Response,
-                                TendermintActivationResult, TransactionDetails, TransactionType};
+use mm2_test_helpers::for_tests::{
+    atom_testnet_conf, disable_coin, disable_coin_err, enable_tendermint, enable_tendermint_token,
+    enable_tendermint_without_balance, get_tendermint_my_tx_history, ibc_withdraw, iris_ibc_nucleus_testnet_conf,
+    my_balance, nucleus_testnet_conf, orderbook, orderbook_v2, send_raw_transaction, set_price,
+    tendermint_add_delegation, tendermint_delegations, tendermint_ongoing_undelegations, tendermint_remove_delegation,
+    tendermint_remove_delegation_raw, tendermint_validators, withdraw_v1, MarketMakerIt, Mm2TestConf,
+};
+use mm2_test_helpers::structs::{
+    Bip44Chain, HDAccountAddressId, OrderbookAddress, OrderbookV2Response, RpcV2Response, TendermintActivationResult,
+    TransactionDetails, TransactionType,
+};
 use serde_json::json;
 use std::collections::HashSet;
 use std::iter::FromIterator;
@@ -200,9 +201,10 @@ fn test_tendermint_withdraw() {
     assert_eq!(tx_details.my_balance_change, expected_total * BigDecimal::from(-1));
     */
     assert_eq!(tx_details.received_by_me, BigDecimal::default());
-    assert_eq!(tx_details.to, vec![
-        "cosmos1svaw0aqc4584x825ju7ua03g5xtxwd0ahl86hz".to_owned()
-    ]);
+    assert_eq!(
+        tx_details.to,
+        vec!["cosmos1svaw0aqc4584x825ju7ua03g5xtxwd0ahl86hz".to_owned()]
+    );
     assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
 
     // withdraw and send transaction to ourselves
@@ -268,9 +270,10 @@ fn test_tendermint_withdraw_hd() {
     assert_eq!(tx_details.my_balance_change, expected_total * BigDecimal::from(-1));
     */
     assert_eq!(tx_details.received_by_me, BigDecimal::default());
-    assert_eq!(tx_details.to, vec![
-        "cosmos1g3ufk7awmktp6kr2kgzfvlhm4ujzq3ekk9j3n3".to_owned()
-    ]);
+    assert_eq!(
+        tx_details.to,
+        vec!["cosmos1g3ufk7awmktp6kr2kgzfvlhm4ujzq3ekk9j3n3".to_owned()]
+    );
     assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
 
     // withdraw and send transaction to ourselves
@@ -471,9 +474,10 @@ fn test_tendermint_token_withdraw() {
     assert_eq!(tx_details.spent_by_me, expected_total);
     assert_eq!(tx_details.my_balance_change, expected_total * BigDecimal::from(-1));
     assert_eq!(tx_details.received_by_me, BigDecimal::default());
-    assert_eq!(tx_details.to, vec![
-        "nuc1k2zmvy4kyxdfxv085kjlrygz2d78g78ew365gq".to_owned()
-    ]);
+    assert_eq!(
+        tx_details.to,
+        vec!["nuc1k2zmvy4kyxdfxv085kjlrygz2d78g78ew365gq".to_owned()]
+    );
     assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
 
     // withdraw and send transaction to ourselves
@@ -820,9 +824,10 @@ mod swap {
     use compatible_time::Duration;
     use ethereum_types::{Address, U256};
     use mm2_rpc::data::legacy::OrderbookResponse;
-    use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, doc_conf, enable_eth_coin,
-                                      iris_ibc_nucleus_testnet_conf, nucleus_testnet_conf,
-                                      wait_check_stats_swap_status, DOC_ELECTRUM_ADDRS};
+    use mm2_test_helpers::for_tests::{
+        check_my_swap_status, check_recent_swaps, doc_conf, enable_eth_coin, iris_ibc_nucleus_testnet_conf,
+        nucleus_testnet_conf, wait_check_stats_swap_status, DOC_ELECTRUM_ADDRS,
+    };
     use std::convert::TryFrom;
     use std::env;
     use std::str::FromStr;
@@ -1156,12 +1161,12 @@ mod swap {
         uuids.push(buy_json["result"]["uuid"].as_str().unwrap().to_owned());
 
         // ensure the swaps are started
-        let expected_log = format!("Entering the taker_swap_loop {}/{}", base, rel);
+        let expected_log = format!("Entering the taker_swap_loop {base}/{rel}");
         mm_alice
             .wait_for_log(5., |log| log.contains(&expected_log))
             .await
             .unwrap();
-        let expected_log = format!("Entering the maker_swap_loop {}/{}", base, rel);
+        let expected_log = format!("Entering the maker_swap_loop {base}/{rel}");
         mm_bob
             .wait_for_log(5., |log| log.contains(&expected_log))
             .await
@@ -1169,7 +1174,7 @@ mod swap {
 
         for uuid in uuids.iter() {
             // ensure the swaps are indexed to the SQLite database
-            let expected_log = format!("Inserting new swap {} to the SQLite database", uuid);
+            let expected_log = format!("Inserting new swap {uuid} to the SQLite database");
             mm_alice
                 .wait_for_log(5., |log| log.contains(&expected_log))
                 .await
@@ -1182,7 +1187,7 @@ mod swap {
 
         for uuid in uuids.iter() {
             match mm_bob
-                .wait_for_log(180., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))
+                .wait_for_log(180., |log| log.contains(&format!("[swap uuid={uuid}] Finished")))
                 .await
             {
                 Ok(_) => (),
@@ -1192,7 +1197,7 @@ mod swap {
             }
 
             match mm_alice
-                .wait_for_log(180., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))
+                .wait_for_log(180., |log| log.contains(&format!("[swap uuid={uuid}] Finished")))
                 .await
             {
                 Ok(_) => (),
@@ -1255,8 +1260,8 @@ mod swap {
         let bob_orderbook: OrderbookResponse = serde_json::from_str(&rc.1).unwrap();
         log!("{}/{} orderbook {:?}", base, rel, bob_orderbook);
 
-        assert_eq!(0, bob_orderbook.bids.len(), "{} {} bids must be empty", base, rel);
-        assert_eq!(0, bob_orderbook.asks.len(), "{} {} asks must be empty", base, rel);
+        assert_eq!(0, bob_orderbook.bids.len(), "{base} {rel} bids must be empty");
+        assert_eq!(0, bob_orderbook.asks.len(), "{base} {rel} asks must be empty");
 
         mm_bob.stop().await.unwrap();
         mm_alice.stop().await.unwrap();

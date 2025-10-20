@@ -21,20 +21,24 @@ const MAX_TIMESPAN: u32 = TARGET_TIMESPAN_SECONDS * RETARGETING_FACTOR;
 /// The maximum value for bits corresponding to lowest difficulty of 1
 pub const MAX_BITS_BTC: u32 = 486604799;
 
-fn is_retarget_height(height: u64) -> bool { height % RETARGETING_INTERVAL as u64 == 0 }
+fn is_retarget_height(height: u64) -> bool {
+    height.is_multiple_of(RETARGETING_INTERVAL as u64)
+}
 
 #[derive(Clone, Debug, Display, Eq, PartialEq)]
 pub enum NextBlockBitsError {
-    #[display(fmt = "Block headers storage error: {}", _0)]
+    #[display(fmt = "Block headers storage error: {_0}")]
     StorageError(BlockHeaderStorageError),
-    #[display(fmt = "Can't find Block header for {} with height {}", coin, height)]
+    #[display(fmt = "Can't find Block header for {coin} with height {height}")]
     NoSuchBlockHeader { coin: String, height: u64 },
-    #[display(fmt = "Can't find a Block header for {} with no max bits", coin)]
+    #[display(fmt = "Can't find a Block header for {coin} with no max bits")]
     NoBlockHeaderWithNoMaxBits { coin: String },
 }
 
 impl From<BlockHeaderStorageError> for NextBlockBitsError {
-    fn from(e: BlockHeaderStorageError) -> Self { NextBlockBitsError::StorageError(e) }
+    fn from(e: BlockHeaderStorageError) -> Self {
+        NextBlockBitsError::StorageError(e)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -60,7 +64,9 @@ pub async fn next_block_bits(
     }
 }
 
-fn range_constrain(value: i64, min: i64, max: i64) -> i64 { cmp::min(cmp::max(value, min), max) }
+fn range_constrain(value: i64, min: i64, max: i64) -> i64 {
+    cmp::min(cmp::max(value, min), max)
+}
 
 /// Returns constrained number of seconds since last retarget
 fn retarget_timespan(retarget_timestamp: u32, last_timestamp: u32) -> u32 {
@@ -185,7 +191,9 @@ pub(crate) mod tests {
         static ref BLOCK_HEADERS_MAP: HashMap<String, Vec<TestRawHeader>> = parse_block_headers();
     }
 
-    fn parse_block_headers() -> HashMap<String, Vec<TestRawHeader>> { serde_json::from_str(BLOCK_HEADERS_STR).unwrap() }
+    fn parse_block_headers() -> HashMap<String, Vec<TestRawHeader>> {
+        serde_json::from_str(BLOCK_HEADERS_STR).unwrap()
+    }
 
     fn get_block_headers_for_coin(coin: &str) -> HashMap<u64, BlockHeader> {
         BLOCK_HEADERS_MAP
@@ -202,9 +210,13 @@ pub(crate) mod tests {
 
     #[async_trait]
     impl BlockHeaderStorageOps for TestBlockHeadersStorage {
-        async fn init(&self) -> Result<(), BlockHeaderStorageError> { Ok(()) }
+        async fn init(&self) -> Result<(), BlockHeaderStorageError> {
+            Ok(())
+        }
 
-        async fn is_initialized_for(&self) -> Result<bool, BlockHeaderStorageError> { Ok(true) }
+        async fn is_initialized_for(&self) -> Result<bool, BlockHeaderStorageError> {
+            Ok(true)
+        }
 
         async fn add_block_headers_to_storage(
             &self,
@@ -252,7 +264,9 @@ pub(crate) mod tests {
             Ok(())
         }
 
-        async fn is_table_empty(&self) -> Result<(), BlockHeaderStorageError> { Ok(()) }
+        async fn is_table_empty(&self) -> Result<(), BlockHeaderStorageError> {
+            Ok(())
+        }
     }
 
     #[test]

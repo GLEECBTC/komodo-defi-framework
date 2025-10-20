@@ -9,8 +9,10 @@ use crate::{big_decimal_from_sat_unsigned, MyAddressError, RpcTransportEventHand
 use chain::{OutPoint, Transaction as UtxoTx, TransactionInput, TxHashAlgo};
 use common::custom_iter::TryIntoGroupMap;
 use common::executor::Timer;
-use common::jsonrpc_client::{JsonRpcBatchClient, JsonRpcClient, JsonRpcError, JsonRpcErrorType, JsonRpcRequest,
-                             JsonRpcRequestEnum, JsonRpcResponseFut, RpcRes};
+use common::jsonrpc_client::{
+    JsonRpcBatchClient, JsonRpcClient, JsonRpcError, JsonRpcErrorType, JsonRpcRequest, JsonRpcRequestEnum,
+    JsonRpcResponseFut, RpcRes,
+};
 use common::log::{error, info, warn};
 use common::{median, now_sec};
 use enum_derives::EnumFromStringify;
@@ -37,7 +39,8 @@ use futures::compat::Future01CompatExt;
 use futures::future::{FutureExt, TryFutureExt};
 use futures::lock::Mutex as AsyncMutex;
 use futures01::Future;
-#[cfg(test)] use mocktopus::macros::*;
+#[cfg(test)]
+use mocktopus::macros::*;
 use serde_json::{self as json, Value as Json};
 
 cfg_native! {
@@ -77,11 +80,15 @@ impl std::fmt::Display for UtxoRpcClientEnum {
 }
 
 impl From<ElectrumClient> for UtxoRpcClientEnum {
-    fn from(client: ElectrumClient) -> UtxoRpcClientEnum { UtxoRpcClientEnum::Electrum(client) }
+    fn from(client: ElectrumClient) -> UtxoRpcClientEnum {
+        UtxoRpcClientEnum::Electrum(client)
+    }
 }
 
 impl From<NativeClient> for UtxoRpcClientEnum {
-    fn from(client: NativeClient) -> UtxoRpcClientEnum { UtxoRpcClientEnum::Native(client) }
+    fn from(client: NativeClient) -> UtxoRpcClientEnum {
+        UtxoRpcClientEnum::Native(client)
+    }
 }
 
 impl Deref for UtxoRpcClientEnum {
@@ -279,15 +286,21 @@ impl From<JsonRpcError> for UtxoRpcError {
 }
 
 impl From<serialization::Error> for UtxoRpcError {
-    fn from(e: serialization::Error) -> Self { UtxoRpcError::InvalidResponse(format!("{:?}", e)) }
+    fn from(e: serialization::Error) -> Self {
+        UtxoRpcError::InvalidResponse(format!("{e:?}"))
+    }
 }
 
 impl From<NumConversError> for UtxoRpcError {
-    fn from(e: NumConversError) -> Self { UtxoRpcError::Internal(e.to_string()) }
+    fn from(e: NumConversError) -> Self {
+        UtxoRpcError::Internal(e.to_string())
+    }
 }
 
 impl From<keys::Error> for UtxoRpcError {
-    fn from(e: keys::Error) -> Self { UtxoRpcError::Internal(e.to_string()) }
+    fn from(e: keys::Error) -> Self {
+        UtxoRpcError::Internal(e.to_string())
+    }
 }
 
 impl UtxoRpcError {
@@ -311,7 +324,9 @@ impl UtxoRpcError {
         false
     }
 
-    pub fn is_network_error(&self) -> bool { matches!(self, UtxoRpcError::Transport(_)) }
+    pub fn is_network_error(&self) -> bool {
+        matches!(self, UtxoRpcError::Transport(_))
+    }
 }
 
 /// Common operations that both types of UTXO clients have but implement them differently
@@ -462,7 +477,9 @@ pub struct ListTransactionsItem {
 impl ListTransactionsItem {
     /// Checks if the transaction is conflicting.
     /// It means the transaction has conflicts or has negative confirmations.
-    pub fn is_conflicting(&self) -> bool { self.confirmations < 0 || !self.walletconflicts.is_empty() }
+    pub fn is_conflicting(&self) -> bool {
+        self.confirmations < 0 || !self.walletconflicts.is_empty()
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -634,7 +651,9 @@ impl<K, V> Default for ConcurrentRequestMap<K, V> {
 }
 
 impl<K: Clone + Eq + std::hash::Hash, V: Clone> ConcurrentRequestMap<K, V> {
-    pub fn new() -> ConcurrentRequestMap<K, V> { ConcurrentRequestMap::default() }
+    pub fn new() -> ConcurrentRequestMap<K, V> {
+        ConcurrentRequestMap::default()
+    }
 
     async fn wrap_request(&self, request_arg: K, request_fut: RpcRes<V>) -> Result<V, JsonRpcError> {
         let mut map = self.inner.lock().await;
@@ -701,7 +720,9 @@ impl Default for NativeClientImpl {
 pub struct NativeClient(pub Arc<NativeClientImpl>);
 impl Deref for NativeClient {
     type Target = NativeClientImpl;
-    fn deref(&self) -> &NativeClientImpl { &self.0 }
+    fn deref(&self) -> &NativeClientImpl {
+        &self.0
+    }
 }
 
 /// The trait provides methods to generate the JsonRpcClient instance info such as name of coin.
@@ -710,19 +731,29 @@ pub trait UtxoJsonRpcClientInfo: JsonRpcClient {
     fn coin_name(&self) -> &str;
 
     /// Generate client info from coin name
-    fn client_info(&self) -> String { format!("coin: {}", self.coin_name()) }
+    fn client_info(&self) -> String {
+        format!("coin: {}", self.coin_name())
+    }
 }
 
 impl UtxoJsonRpcClientInfo for NativeClientImpl {
-    fn coin_name(&self) -> &str { self.coin_ticker.as_str() }
+    fn coin_name(&self) -> &str {
+        self.coin_ticker.as_str()
+    }
 }
 
 impl JsonRpcClient for NativeClientImpl {
-    fn version(&self) -> &'static str { "1.0" }
+    fn version(&self) -> &'static str {
+        "1.0"
+    }
 
-    fn next_id(&self) -> u64 { self.request_id.fetch_add(1, AtomicOrdering::Relaxed) }
+    fn next_id(&self) -> u64 {
+        self.request_id.fetch_add(1, AtomicOrdering::Relaxed)
+    }
 
-    fn client_info(&self) -> String { UtxoJsonRpcClientInfo::client_info(self) }
+    fn client_info(&self) -> String {
+        UtxoJsonRpcClientInfo::client_info(self)
+    }
 
     #[cfg(target_arch = "wasm32")]
     fn transport(&self, _request: JsonRpcRequestEnum) -> JsonRpcResponseFut {
@@ -915,7 +946,9 @@ impl UtxoRpcClientOps for NativeClient {
         }
     }
 
-    fn get_relay_fee(&self) -> RpcRes<BigDecimal> { Box::new(self.get_network_info().map(|info| info.relay_fee)) }
+    fn get_relay_fee(&self) -> RpcRes<BigDecimal> {
+        Box::new(self.get_network_info().map(|info| info.relay_fee))
+    }
 
     fn find_output_spend(
         &self,
@@ -1084,7 +1117,9 @@ impl NativeClientImpl {
     }
 
     /// https://developer.bitcoin.org/reference/rpc/getblockcount.html
-    pub fn get_block_count(&self) -> RpcRes<u64> { rpc_func!(self, "getblockcount") }
+    pub fn get_block_count(&self) -> RpcRes<u64> {
+        rpc_func!(self, "getblockcount")
+    }
 
     /// https://developer.bitcoin.org/reference/rpc/getrawtransaction.html
     /// Always returns verbose transaction
@@ -1204,7 +1239,9 @@ impl NativeClientImpl {
     }
 
     /// https://developer.bitcoin.org/reference/rpc/getnetworkinfo.html
-    pub fn get_network_info(&self) -> RpcRes<NetworkInfo> { rpc_func!(self, "getnetworkinfo") }
+    pub fn get_network_info(&self) -> RpcRes<NetworkInfo> {
+        rpc_func!(self, "getnetworkinfo")
+    }
 
     /// https://developer.bitcoin.org/reference/rpc/getaddressinfo.html
     pub fn get_address_info(&self, address: &str) -> RpcRes<GetAddressInfoRes> {

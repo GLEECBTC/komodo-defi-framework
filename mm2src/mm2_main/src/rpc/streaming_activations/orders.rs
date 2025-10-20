@@ -17,7 +17,9 @@ pub enum OrderStatusStreamingRequestError {
 }
 
 impl HttpStatusCode for OrderStatusStreamingRequestError {
-    fn status_code(&self) -> StatusCode { StatusCode::BAD_REQUEST }
+    fn status_code(&self) -> StatusCode {
+        StatusCode::BAD_REQUEST
+    }
 }
 
 pub async fn enable_order_status(

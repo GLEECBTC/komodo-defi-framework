@@ -1,5 +1,6 @@
-use crate::lightning::ln_storage::{LightningStorage, NetworkGraph, NodesAddressesMap, NodesAddressesMapShared, Scorer,
-                                   TrustedNodesShared};
+use crate::lightning::ln_storage::{
+    LightningStorage, NetworkGraph, NodesAddressesMap, NodesAddressesMapShared, Scorer, TrustedNodesShared,
+};
 use async_trait::async_trait;
 use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::{BlockHash, Network, Txid};
@@ -22,7 +23,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
-#[cfg(target_family = "unix")] use std::os::unix::io::AsRawFd;
+#[cfg(target_family = "unix")]
+use std::os::unix::io::AsRawFd;
 
 #[cfg(target_family = "windows")]
 use {std::ffi::OsStr, std::os::windows::ffi::OsStrExt};
@@ -38,15 +40,21 @@ impl LightningFilesystemPersister {
     /// Initialize a new LightningPersister and set the path to the individual channels'
     /// files.
     #[inline]
-    pub fn new(main_path: PathBuf, backup_path: Option<PathBuf>) -> Self { Self { main_path, backup_path } }
+    pub fn new(main_path: PathBuf, backup_path: Option<PathBuf>) -> Self {
+        Self { main_path, backup_path }
+    }
 
     /// Get the directory which was provided when this persister was initialized.
     #[inline]
-    pub fn main_path(&self) -> PathBuf { self.main_path.clone() }
+    pub fn main_path(&self) -> PathBuf {
+        self.main_path.clone()
+    }
 
     /// Get the backup directory which was provided when this persister was initialized.
     #[inline]
-    pub fn backup_path(&self) -> Option<PathBuf> { self.backup_path.clone() }
+    pub fn backup_path(&self) -> Option<PathBuf> {
+        self.backup_path.clone()
+    }
 
     pub fn nodes_addresses_path(&self) -> PathBuf {
         let mut path = self.main_path();
@@ -114,9 +122,9 @@ impl LightningFilesystemPersister {
         for file_option in fs::read_dir(path)? {
             let file = file_option?;
             let owned_file_name = file.file_name();
-            let filename = owned_file_name.to_str().ok_or_else(|| {
-                invalid_data_err("Invalid ChannelMonitor file name", format!("{:?}", owned_file_name))
-            })?;
+            let filename = owned_file_name
+                .to_str()
+                .ok_or_else(|| invalid_data_err("Invalid ChannelMonitor file name", format!("{owned_file_name:?}")))?;
             if filename == "checkval" {
                 continue;
             }
@@ -272,15 +280,12 @@ impl LightningStorage for LightningFilesystemPersister {
             if !dir_path.exists() || backup_dir_path.as_ref().map(|path| !path.exists()).unwrap_or(false) {
                 Ok(false)
             } else if !dir_path.is_dir() {
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("{} is not a directory", dir_path.display()),
-                ))
+                Err(std::io::Error::other(format!(
+                    "{} is not a directory",
+                    dir_path.display()
+                )))
             } else if backup_dir_path.as_ref().map(|path| !path.is_dir()).unwrap_or(false) {
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "Backup path is not a directory",
-                ))
+                Err(std::io::Error::other("Backup path is not a directory"))
             } else {
                 let check_backup_ops = if let Some(backup_path) = backup_dir_path {
                     check_dir_operations(&backup_path).is_ok()

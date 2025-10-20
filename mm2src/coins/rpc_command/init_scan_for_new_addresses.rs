@@ -6,10 +6,12 @@ use common::{SerdeInfallible, SuccessResponse};
 use crypto::RpcDerivationPath;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
-                           RpcTaskStatusRequest};
-use rpc_task::{RpcInitReq, RpcTask, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus,
-               RpcTaskTypes};
+use rpc_task::rpc_common::{
+    CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError, RpcTaskStatusRequest,
+};
+use rpc_task::{
+    RpcInitReq, RpcTask, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes,
+};
 
 pub type ScanAddressesUserAction = SerdeInfallible;
 pub type ScanAddressesAwaitingStatus = SerdeInfallible;
@@ -86,7 +88,9 @@ impl RpcTaskTypes for InitScanAddressesTask {
 #[async_trait]
 impl RpcTask for InitScanAddressesTask {
     #[inline]
-    fn initial_status(&self) -> Self::InProgressStatus { ScanAddressesInProgressStatus::InProgress }
+    fn initial_status(&self) -> Self::InProgressStatus {
+        ScanAddressesInProgressStatus::InProgress
+    }
 
     // Do nothing if the task has been cancelled.
     async fn cancel(self) {}

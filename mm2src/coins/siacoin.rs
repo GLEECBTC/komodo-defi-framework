@@ -603,7 +603,6 @@ impl MmCoin for SiaCoin {
         &self,
         _value: TradePreimageValue,
         _stage: FeeApproxStage,
-        _include_refund_fee: bool,
     ) -> TradePreimageResult<TradeFee> {
         Ok(TradeFee {
             coin: self.conf.ticker.clone(),
@@ -641,7 +640,9 @@ impl MmCoin for SiaCoin {
 
     fn required_confirmations(&self) -> u64 { self.required_confirmations.load(AtomicOrdering::Relaxed) }
 
-    fn requires_notarization(&self) -> bool { false }
+    fn requires_notarization(&self) -> bool {
+        false
+    }
 
     fn set_required_confirmations(&self, confirmations: u64) {
         self.required_confirmations
@@ -656,7 +657,9 @@ impl MmCoin for SiaCoin {
 
     fn mature_confirmations(&self) -> Option<u32> { None }
 
-    fn coin_protocol_info(&self, _amount_to_receive: Option<MmNumber>) -> Vec<u8> { Vec::new() }
+    fn coin_protocol_info(&self, _amount_to_receive: Option<MmNumber>) -> Vec<u8> {
+        Vec::new()
+    }
 
     fn is_coin_protocol_supported(
         &self,
@@ -773,7 +776,7 @@ impl MarketCoinOps for SiaCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { Box::new(self.my_balance().map(|res| res.spendable)) }
+    fn platform_coin_balance(&self) -> BalanceFut<BigDecimal> { Box::new(self.my_balance().map(|res| res.spendable)) }
 
     fn platform_ticker(&self) -> &str { self.ticker() }
 
@@ -800,6 +803,11 @@ impl MarketCoinOps for SiaCoin {
         let tx: V2Transaction = try_fus!(serde_json::from_slice(tx).map_err(|e| e.to_string()));
         let str_tx = try_fus!(serde_json::to_string(&tx).map_err(|e| e.to_string()));
         self.send_raw_tx(&str_tx)
+    }
+
+    #[inline(always)]
+    async fn sign_raw_tx(&self, _args: &SignRawTransactionRequest) -> RawTransactionResult {
+        unimplemented!()
     }
 
     // TODO Alright - match the standard convention of Tryfrom<ConfirmPaymentInput> for SiaConfirmPaymentInput
@@ -867,7 +875,9 @@ impl MarketCoinOps for SiaCoin {
 
     fn min_trading_vol(&self) -> MmNumber { hastings_to_siacoin(1u64.into()).into() }
 
-    fn should_burn_dex_fee(&self) -> bool { false }
+    fn should_burn_dex_fee(&self) -> bool {
+        false
+    }
 
     fn is_trezor(&self) -> bool { self.priv_key_policy.is_trezor() }
 }

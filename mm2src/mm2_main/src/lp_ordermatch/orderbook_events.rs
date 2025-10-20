@@ -19,7 +19,9 @@ impl<'a> DeriveStreamerId<'a> for OrderbookStreamer {
     type InitParam = (MmArc, String, String);
     type DeriveParam = BaseAndRel<'a>;
 
-    fn new((ctx, base, rel): Self::InitParam) -> Self { Self { ctx, base, rel } }
+    fn new((ctx, base, rel): Self::InitParam) -> Self {
+        Self { ctx, base, rel }
+    }
 
     fn derive_streamer_id((base, rel): Self::DeriveParam) -> StreamerId {
         StreamerId::OrderbookUpdate {
@@ -42,7 +44,9 @@ pub enum OrderbookItemChangeEvent {
 impl EventStreamer for OrderbookStreamer {
     type DataInType = OrderbookItemChangeEvent;
 
-    fn streamer_id(&self) -> StreamerId { Self::derive_streamer_id((&self.base, &self.rel)) }
+    fn streamer_id(&self) -> StreamerId {
+        Self::derive_streamer_id((&self.base, &self.rel))
+    }
 
     async fn handle(
         self,

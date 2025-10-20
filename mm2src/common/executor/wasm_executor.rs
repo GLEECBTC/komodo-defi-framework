@@ -23,13 +23,17 @@ extern "C" {
 ///
 /// The `spawn` function must be used carefully to avoid hanging pointers.
 /// Please consider using `AbortableQueue`, `AbortableSimpleMap` or `spawn_abortable` instead.
-pub fn spawn(future: impl Future<Output = ()> + Send + 'static) { spawn_local(future) }
+pub fn spawn(future: impl Future<Output = ()> + Send + 'static) {
+    spawn_local(future)
+}
 
 /// # Important
 ///
 /// The `spawn` function must be used carefully to avoid hanging pointers.
 /// Please consider using `AbortableQueue`, `AbortableSimpleMap` or `spawn_abortable` instead.
-pub fn spawn_local(future: impl Future<Output = ()> + 'static) { wasm_bindgen_futures::spawn_local(future) }
+pub fn spawn_local(future: impl Future<Output = ()> + 'static) {
+    wasm_bindgen_futures::spawn_local(future)
+}
 
 pub fn spawn_local_abortable(future: impl Future<Output = ()> + 'static) -> AbortOnDropHandle {
     let (abortable, handle) = abortable(future);
@@ -96,7 +100,9 @@ impl Timer {
 
 /// When the `Timer` is destroyed, cancel its `setTimeout` timer.
 impl Drop for Timer {
-    fn drop(&mut self) { clearTimeout(self.timeout_id) }
+    fn drop(&mut self) {
+        clearTimeout(self.timeout_id)
+    }
 }
 
 impl Future for Timer {

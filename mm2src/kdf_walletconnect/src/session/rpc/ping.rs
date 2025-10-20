@@ -2,8 +2,10 @@ use crate::{error::WalletConnectError, WalletConnectCtxImpl};
 
 use common::custom_futures::timeout::FutureTimerExt;
 use mm2_err_handle::prelude::*;
-use relay_rpc::{domain::{MessageId, Topic},
-                rpc::params::{RequestParams, ResponseParamsSuccess}};
+use relay_rpc::{
+    domain::{MessageId, Topic},
+    rpc::params::{RequestParams, ResponseParamsSuccess},
+};
 
 pub(crate) async fn reply_session_ping_request(
     ctx: &WalletConnectCtxImpl,

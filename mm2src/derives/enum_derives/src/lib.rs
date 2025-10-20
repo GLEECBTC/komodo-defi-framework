@@ -3,8 +3,9 @@ use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::quote;
 use std::fmt;
 use syn::Meta::List;
-use syn::{parse_macro_input, Data, DataEnum, DeriveInput, Error, Field, Fields, ImplGenerics, Type, TypeGenerics,
-          WhereClause};
+use syn::{
+    parse_macro_input, Data, DataEnum, DeriveInput, Error, Field, Fields, ImplGenerics, Type, TypeGenerics, WhereClause,
+};
 use syn::{Attribute, NestedMeta, Variant};
 
 mod from_inner;
@@ -204,22 +205,21 @@ struct CompileError(String);
 
 impl CompileError {
     fn expected_enum(macro_ident: &str, found: &str) -> CompileError {
-        CompileError(format!("'{}' cannot be implement for a {}", macro_ident, found))
+        CompileError(format!("'{macro_ident}' cannot be implement for a {found}"))
     }
 
     fn expected_unnamed_inner(attr: MacroAttr) -> CompileError {
         CompileError(format!(
-            "'{}' attribute must be used for a variant with one unnamed inner type",
-            attr
+            "'{attr}' attribute must be used for a variant with one unnamed inner type"
         ))
     }
 
     fn expected_one_attr_on_variant(attr: MacroAttr) -> CompileError {
-        CompileError(format!("An enum variant can have only one '{}' attribute", attr))
+        CompileError(format!("An enum variant can have only one '{attr}' attribute"))
     }
 
     fn attr_must_be_used(attr: MacroAttr) -> CompileError {
-        CompileError(format!("'{}' must be used at least once", attr))
+        CompileError(format!("'{attr}' must be used at least once"))
     }
 
     fn expected_string_inner_ident(attr: MacroAttr) -> CompileError {
@@ -232,11 +232,15 @@ impl CompileError {
 }
 
 impl From<CompileError> for TokenStream {
-    fn from(e: CompileError) -> Self { TokenStream2::from(e).into() }
+    fn from(e: CompileError) -> Self {
+        TokenStream2::from(e).into()
+    }
 }
 
 impl From<CompileError> for TokenStream2 {
-    fn from(e: CompileError) -> Self { Error::new(Span::call_site(), e.0).to_compile_error() }
+    fn from(e: CompileError) -> Self {
+        Error::new(Span::call_site(), e.0).to_compile_error()
+    }
 }
 
 /// An information about the derive ident.
@@ -277,7 +281,9 @@ impl<'a> UnnamedInnerField<'a> {
     }
 
     /// Get a type of the field.
-    fn ty(&self) -> &Type { &self.field.ty }
+    fn ty(&self) -> &Type {
+        &self.field.ty
+    }
 }
 
 /// An implementation of `EnumFromInner` and `EnumFromTrait` macros.

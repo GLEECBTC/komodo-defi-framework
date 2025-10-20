@@ -5,8 +5,8 @@ mod docker_ordermatch_tests;
 mod docker_tests_inner;
 mod eth_docker_tests;
 pub mod qrc20_tests;
-// TODO Alright - move the ignored tests from this module to functional tests framework
-// #[cfg(feature = "enable-sia")] mod sia_docker_tests;
+#[cfg(feature = "enable-sia")]
+mod sia_docker_tests;
 mod slp_tests;
 mod swap_proto_v2_tests;
 mod swap_watcher_tests;
@@ -18,4 +18,6 @@ mod z_coin_docker_tests;
 // dummy test helping IDE to recognize this as test module
 #[test]
 #[allow(clippy::assertions_on_constants)]
-fn dummy() { assert!(true) }
+fn dummy() {
+    assert!(true)
+}

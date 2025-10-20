@@ -2,7 +2,9 @@ use super::taker_swap::TakerSwapCommand;
 use super::{AtomicSwap, TakerSavedSwap, TakerSwap};
 use crate::lp_swap::taker_swap::{TakerPaymentSpentData, TakerSavedEvent, TakerSwapEvent};
 use crate::lp_swap::{SavedSwap, SavedSwapIo, TransactionIdentifier, MAKER_PAYMENT_SPENT_BY_WATCHER_LOG};
-use coins::{FoundSwapTxSpend, SearchForSwapTxSpendInput, TransactionEnum, ValidateWatcherSpendInput, WatcherSpendType};
+use coins::{
+    FoundSwapTxSpend, SearchForSwapTxSpendInput, TransactionEnum, ValidateWatcherSpendInput, WatcherSpendType,
+};
 use common::log::info;
 use common::{now_ms, Future01CompatExt};
 use mm2_core::mm_ctx::MmArc;

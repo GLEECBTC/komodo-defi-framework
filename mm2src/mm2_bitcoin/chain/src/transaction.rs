@@ -39,7 +39,9 @@ impl OutPoint {
         }
     }
 
-    pub fn is_null(&self) -> bool { self.hash.is_zero() && self.index == u32::MAX }
+    pub fn is_null(&self) -> bool {
+        self.hash.is_zero() && self.index == u32::MAX
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -70,9 +72,13 @@ impl TransactionInput {
         }
     }
 
-    pub fn is_final(&self) -> bool { self.sequence == SEQUENCE_FINAL }
+    pub fn is_final(&self) -> bool {
+        self.sequence == SEQUENCE_FINAL
+    }
 
-    pub fn has_witness(&self) -> bool { !self.script_witness.is_empty() }
+    pub fn has_witness(&self) -> bool {
+        !self.script_witness.is_empty()
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -234,7 +240,9 @@ pub struct Transaction {
 }
 
 impl From<&'static str> for Transaction {
-    fn from(s: &'static str) -> Self { deserialize(&s.from_hex::<Vec<u8>>().unwrap() as &[u8]).unwrap() }
+    fn from(s: &'static str) -> Self {
+        deserialize(&s.from_hex::<Vec<u8>>().unwrap() as &[u8]).unwrap()
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -262,7 +270,9 @@ pub enum TxHashAlgo {
 pub struct TxHasNoOutputs {}
 
 impl std::fmt::Display for TxHasNoOutputs {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result { f.write_str("Tx has no outputs") }
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Tx has no outputs")
+    }
 }
 
 impl Transaction {
@@ -274,17 +284,29 @@ impl Transaction {
         }
     }
 
-    pub fn witness_hash(&self) -> H256 { dhash256(&serialize_with_flags(self, SERIALIZE_TRANSACTION_WITNESS)) }
+    pub fn witness_hash(&self) -> H256 {
+        dhash256(&serialize_with_flags(self, SERIALIZE_TRANSACTION_WITNESS))
+    }
 
-    pub fn inputs(&self) -> &[TransactionInput] { &self.inputs }
+    pub fn inputs(&self) -> &[TransactionInput] {
+        &self.inputs
+    }
 
-    pub fn outputs(&self) -> &[TransactionOutput] { &self.outputs }
+    pub fn outputs(&self) -> &[TransactionOutput] {
+        &self.outputs
+    }
 
-    pub fn is_empty(&self) -> bool { self.inputs.is_empty() || self.outputs.is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.inputs.is_empty() || self.outputs.is_empty()
+    }
 
-    pub fn is_null(&self) -> bool { self.inputs.iter().any(|input| input.previous_output.is_null()) }
+    pub fn is_null(&self) -> bool {
+        self.inputs.iter().any(|input| input.previous_output.is_null())
+    }
 
-    pub fn is_coinbase(&self) -> bool { self.inputs.len() == 1 && self.inputs[0].previous_output.is_null() }
+    pub fn is_coinbase(&self) -> bool {
+        self.inputs.len() == 1 && self.inputs[0].previous_output.is_null()
+    }
 
     pub fn is_final(&self) -> bool {
         // if lock_time is 0, transaction is final
@@ -314,7 +336,9 @@ impl Transaction {
         self.inputs.iter().all(TransactionInput::is_final)
     }
 
-    pub fn has_witness(&self) -> bool { self.inputs.iter().any(TransactionInput::has_witness) }
+    pub fn has_witness(&self) -> bool {
+        self.inputs.iter().any(TransactionInput::has_witness)
+    }
 
     pub fn total_spends(&self) -> u64 {
         let mut result = 0u64;
@@ -452,7 +476,9 @@ pub enum TxType {
 }
 
 impl TxType {
-    fn uses_witness(&self) -> bool { matches!(self, TxType::StandardWithWitness | TxType::PosvWithNTime) }
+    fn uses_witness(&self) -> bool {
+        matches!(self, TxType::StandardWithWitness | TxType::PosvWithNTime)
+    }
 }
 
 pub fn deserialize_tx<T>(reader: &mut Reader<T>, tx_type: TxType) -> Result<Transaction, Error>
@@ -620,7 +646,8 @@ impl Deserializable for Transaction {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(not(target_arch = "wasm32"))] use super::ExtTransaction;
+    #[cfg(not(target_arch = "wasm32"))]
+    use super::ExtTransaction;
     use super::{Bytes, OutPoint, Transaction, TransactionInput, TransactionOutput};
     use hash::{H256, H512};
     use hex::ToHex;
@@ -1022,7 +1049,7 @@ mod tests {
     fn kmd_687acd73ad23ce93e7ddabeece8eb228a0a0e15e4d265f7c717d7458ddce9bdd() {
         let transaction = "02000000000202ecf451020000001976a9140eaccdb0d80773734ebd6deab0b2d8ac1eed1e9188ac83349800000000001976a9145177f8b427e5f47342a4b8ab5dac770815d4389e88ac00000000010000000000000000c5629c52020000005d45bfb8839a898af4d22c3569923cd2017e4f574fd425ed6a35c9d2f746be10fecf8072db89387c1ae4b6a131dcb60541e512375c9250801133a7f599350f11435b0705a0a7bb1712fb224fe8d750b2881771481b6276bd680e75361e86124579575403b75b3ff60ee7c08a43ecf2a1a67e156e1bd2dc7c247f1ec4a712958c0c7b4f88c3aaee1661a5c26ed119ce08b25b65030967d078b6ebd5202878d27d64ceeb51139a3f86f40184f659878f0692cd863f76e8a0c18af2c09e1973176b87821b2b32e033833d28b1cfcc8ba2486aea8991de4cbb6e2634295956e341c35143c133f28ca978d3115b63c24e642b9f08cc61728e63a2cd51832a97c9482dfefedd12ad549d6791d6ccc4bb196ec433780680d8f9d5938e4c09cfe3701038031fbdede7125e5f92531d3374cc59eefbbd021118d0d7c992a9fe95b0027331e602154164bcf599f93ec90357c27ab68723d56ba812c9c05d2b4f053d077807f0c20a07f5cdc652851786fd3a2b5f9342a14c8cdba7dbac3bdb31ff64884853c64da56faf00bbad0b5010eb62a65fc5738a3a9bef7f14e7ce14c093efc0bdf7eef728030e45b1bf0419f025fe06918452ace10cc63be5e08f64e326f27989eac30de1de030850bab2d19f5f91073b45cf9be99d46f9f233856c75dd9ef4b8cf608e7853220317956376c1c3533ddca185af1b5da30e8cc95a0cb28463be840e24cc64e517c3030a413f7f670279e55dc2dac5092190c339e0769a25b50beba74098b7dfd9b232020d59ac11b915c4deb3cd6cd8e103952133a0da027837f8f4b8a35db033152fb85f7d001a14f0487fd9bd52c32ff3369bf4cfa0e4b7330d6ec94ea958cf5fa6c3481011e4e2e459deef5021b6e0c277bf1e11fc8fc0c7a5d779e34402d8a917d952520bb2492b36c5939a9c71920a12014794c50164e16dc1fb0dd9b47fd10c759c1c4f990ae17f04eae205b86a94ae8755cf5ea68bf9ee4963e3acc4b7211c9250772b9ddcf9cee78b37b4d398606e0b61d66798dc1fd409821dbd6e318853c4c9b5e0daa896dd4fb09cfad8ed081b26f4599b6124171588979035bfead194bb607a7fba38528d7a5c20439ba74b2720e5e50b1d3f34649ad8736599a395a8af4c1014997ae8de5ef3e42fcf3511859283b98674bcc73b3defc8423f82cbed23bf7cfcb1019c15d144b44001a61ab10f527369c55255528957d6a38077fa974ed14139e71adb2a1b17d6a377029189cc2e9a7196e367f7cdbc9af18cfc52ca381895cbe194a672bf5b988cec8fc53fc1eb6c357305e2f5aa43485408a3bfc0353ed8f277f0365af9acd0de3a6ab9e0eefc49d0edac4ac4e9aa42b19d38d9149d36c9cb7e5438d86c2df399ff91222fc7725b1868aa06bc2e109e4cedb2e4b071a667abc2e4c974edecac6626c14485dd36f6e53bb0ddb6bcbb7013310965de93302cc196aa26ab06c988cdc751eab3f621fb77316682a058dcd101b70d30fc5c12fc09ec356c6c25b9cda8d65dabc02f3760b90a48f3ffb16e54c1a98aebaccbf7cf20ba0df37c5480e475a1c451d41c63a1d9a59a11a35a92b9e6990ba0813103fc87efbecec6010f82d66ea25a5f9a52e3212c03e3ed9828acd1bdcf3d6aa6bc554cdb203acc2de30fdb27aa01b340a2bf59e85da1e031a5cb54b26854a5d9ecfb79f6b6f7c4835e11b9f8193c50030a3595965125cdbe8e0b07a7705b4afc5b839598c885b3adbbe66993ee13df0132150f647cbbe752d646088ad6cc0b5cc3cf19596edc6919baa8ee9f99c14af63f55c834542d48560d1d73f68edfb36df56ba129427fe17c11c813b072dda7453354746ff94c6616a5397fb5c6bfcf5b0b1c1daa81c97f6a6b9a2bb2e83a864860df321791b2aa8b0657f90e691d182233a049f1a1a8f3e353b9289a781fcc8a497772ca3fc0abc41bb38cbdba69752d9330d282d9a8d19449c2090139c00f4aaadef83cf4554ff8d0c0091ec424f4a5f82154ef12234e33581e0af30ed6752b40a799067771956d5471b2943d26cbbd6dedb612752547486648a0ee304ccd5c18a7ec7c096792f656988d07d8e0efdb9bda9ae6b0e7c2aba617261f464c95565bb9bd8f89d608371872b2dfe96fb5cadea12ef7aa5703342ade7f307efbbaed094357e4915e3e48bc03f99ae77c6b3f660aedf584915aa37f428751bda0c2e7faf4f1f4da43907ca716917c57502f72988dc2ac443e78aa0045c211e616a5c625632535ba6126ab0131e5a795edc35ef76730b08d3faecd3ddd4f588919dbcd984a8c8e97615a8d4d63e999536e8075acb90c2b36b2e57aa7eb12ec97a8d967468639a5ee651ab7d7328ba334915580c8960fcca335a6633e196beefb8e4cef53ac77814590a3d47486611e50adca3758d881b8cdef37d69b70c503d856389b7c1071db97a5b6bb66271f8229534b47a50e3aa2bf58bdef29e5ddc526ffbc400c09fbd5c3bf4bbd29027b6fe9bede49ccdb3588f52daeed648524dd1e9ae237b74eda79ef42a807ffa33a99a2a2ba237385f1fa997b09073945b87a6babef9e544d384fee7ed2068687ef4325358fc0e4dc47923f3f4f391650a3cf008d75a823a6e754bf8c8764462c6e7f9880d49997f8c6bd67792131604c5a8ca83ead333006";
         let t: Transaction = transaction.into();
-        println!("{:?}", t);
+        println!("{t:?}");
         assert_eq!(transaction, serialize(&t).to_hex::<String>());
     }
 
@@ -1031,7 +1058,7 @@ mod tests {
     fn kmd_5c480ed607993e0a28173ad030077a25a460d14cdd9dda494299c60b832233df() {
         let transaction = "02000000000202ecf451020000001976a9140eaccdb0d80773734ebd6deab0b2d8ac1eed1e9188ac83349800000000001976a9145177f8b427e5f47342a4b8ab5dac770815d4389e88ac00000000010000000000000000c5629c5202000000e69af4fa69bbf4766afa924efa74234f731e4bb886a8c97047f6e8679a42f4df7c27e739653d9c49a233f6e65483eedfdfe21e0c566953ad7a71def70dc8f5de3e46735b3217ae32082871d9741370ce7fb26392a261d613ef340d6c97220b5244364d12ed50a7a3c3d23202bee9cb98f4f98b5267c750207d492fdf5d1fc9d4326491262a67b455d9df5177ed87c20ad9d1a2514f8ec54ea7a0d442e1205e76425e773ec00b81a386abff593f341de8fe9733ed956e94ede7de199ca751d520d852cc812e09e19afd9fed4aa314b137c8a810cce86771b66badaf5a6e922fc6402c98b7d478e733fe018121c74e6e615110e70365df0452f701010d697490d9344f6fca14482bf8daecd8f3051fa40a6af3f72c9ee659f37821c1742312f82d021684fc6374c24fbe8802a250bfc60fdcff3363b19f5c6bbbf91d1b6ca192035e0204bb0a20ebd61536c0fbd6cf534615f537cd28c6f809aa5e5027d69f2e353d2d0a05d560d6d2e425bdaa61190a9bdf82f6594e857b2766e7fdbada2bdf165e125cb4931091eee8bf88d57d5b0404df69cce44731287da03dd0db0999b6cdc7e904021094d668fe5454d3c719dbc0012fd69c723edcfbd5e97a4c8bdb2bec13b54f04032bf94d7cac536cd5c64b05f5c1900e2e7be6c059b072b543d92e221c3ef4562f022f104d6594bf81836d0cd65cef476f65f78ee8d913819089ac7dfbe24230b05a022d8e60e011d93bcfc4f7fbf7747a7b0fa487cb1587c8e361b9d084bd4f6822ef03176ecd89df1b2290b628e17c1f5203a1bdd87954c7b0c12b7e061671be22cdb49cf50c2efce60ae3e52fbe8d740db41c5181d408bf1941a16a85d328a17c6f09ab92a5e06884659a02b96225de4de2edaa4595272fdf379ac0c5a8c9074324135127245d19621505d469d3c16e516e12832450c1c7c907325847ed6e80796a82ea3b6cbda51af6ca79fabc06aba17f73491ec4b5579e3f02fc0ca5589f7606b3c719fedb12439b0a4d7e19c9a5798d47e37483ef1ad492cc761d1bc2aee853e068bb23b418904db3b084af62594710d538b8fb82a4dbfb20ef25728c13df7dc548454295c3bd96de43f85fcf558a66261c376c43c740b9644bdbb34da613bd8ecd855ea66b77fcf97c1b7be238faa1a9dfe7caeb904e132cbf29496455d43d1960bc70f407069f4d2fe33fc40f1f22aa92291ea605952763b5bdd138ca85a24e97003915323dd89b15d63c0dbd76222b317a752584a3d0b8810c1135949fd3098f18a7afaaf8d479fe70110976d182e72b4a8f1ffbee84400bd3577b20ec70321654d8a9eb61562d67eab6d4527bc63a5f4f25b9631ca0095beb4abc493d5356dd1d133d6855e368794b3fe6d7d0995d3224c04b13b97310526a58195a321a1e2da8d2cd0af3f8fe3fc1504a994ffbce29cfa508c96ee2126ca7ab92f9503a476cd481a9414a1cc6ee24d18d06138160f931ea609441da60507581f24beb8605e8e2144f6ad620adc6c190e4e6a64364bbae3c99adf94e57fa13f2d2853e732f34131851276a368c23577ca21a4bb743a0cfc5ce8cb76c3e983211e9152e4e3c379edac6d0257a9bc70d706d004c33cc83f24acefcd730e46497e9dcceb84aaf6b46891098b8a274ebf83cba7ce86e3ac4776dd19d42cf0c903535d39c73f633afbaa5c9fd611a57320462f9e164d9fcd30b7f1a37cfd596bf744a785be880c92668bcbec40c3f64cb523ad1ce454b20783b1a0cabc4b1c45e2986a8fa9e646144c87f48f41f39409600a6914c25ac5706b6567307831a86abdee4b11e7efe480f0be8124f96b696dfaa11e48f23dc9deb0f38ecf1423d36af91aee697d25560e6d8a2d1f32b0bbc7392d4206bbfc8a32124c15bbc4be2cb92706fc3e7e7274688fb8f05f08d978e0bdd4ffbcf7d4254ab114c15175f033043059e6f19ac5c4728ae95bf00b5fb55221e313c1e2b5b9c09fb585aa300fb467c110625ed8f286f666f17453cfea74fb8dc1cc7eadd8fd1e7b073fffa0107817183d6c492b6136a2333323fdbde38de4df830b1dcae1ec6115401a3c834527d6924ff48e1a52e18bd8e5a060495050f57e83fcb5456dc2b868fe17e033d09d663a61e26490fc256251a199f554fd56d466ca7c65c9ee1cb6b25516f64120c4323868323c55943d3b224226150ab590b59f3896b30957e6beb5aaf8f7601feeab8e8d621af08059f59438ab1d2d23d603963d2eca6a65c62f9c1deb65f26cbe7d57b51a3a16d1bb13a7453a50c9a480f601fd576824518723543945d9a721ff02e2f4c667ee332ed1b2b3bc92a6f4348d24044e913ef0d080b9da700356fbf2c552efdd8cf37d294bdf1746237c08a33fbae3c6b79f742f5a7b0e8b9a2ae982c975ac93c851fc1ef4ff678ef5f9e7debb550dabb87bb0518ef69d715c0faf4b4c5c7896be17b04dbad7ba039b7e418e1cc68304c7563ebba0487ac4a335e95d021ea7d66903e11af70ec15f8c9bdc096c5312cfd3ae1cfcde3054016e0350c15483ef72fb87fc97ee0664c3d58e8f55db95b2c2f8a78e50d32309de0b5d41813064509aa57ea82f2200eb76bb02795f034165d18ff8e76b7c69d085750480e83f41bd27ac469c647a822f74ad604d12dd74c42a049a634686c0e";
         let t: Transaction = transaction.into();
-        println!("{:?}", t);
+        println!("{t:?}");
         assert_eq!(transaction, serialize(&t).to_hex::<String>());
     }
 
@@ -1039,7 +1066,7 @@ mod tests {
     fn sapling_negative_value_balance() {
         let transaction = "0400008085202f890162878ceccb1d4ea904681f3fffad22ec79aeea7e83f117a579ec60859ab9ee3e0000000000feffffff00e5c29360c701000010460afaffffffff00015280edc62c0e174cc112dfcc5c47c34d74d119bca3850c54bbe6383ed4d0d9f242c8cb5819674460802bd39257bf0bb7c7b5e9f9efb051e6f48d681f088c916e713187a7fcbce4eb6ec7f35d5bbdab1225ded98e2f845cddae36ebf45c9e7e00e28614c05416da18888e3883e9667e2df9a513612fe41df4c462b28473c1f10aa03cec99d1e4e23cd84d1bfee827ec9077ddb0d0537660017778e880c7835c9d81e4d8cfb1def0506805cac8fd3ebf2f231d15fbd9807e0ec7c50d26b24f8f07b21552dc0abc0feb4e7ee7ee40c620a07160a87a4683801539e4b22f0778960dd0a6e2b8d6b09cd5e0fbf40484340f9a88c0bea726d6221244ea5ba859f04af0dc8798c4e4379620bad0b7ac9093d877f23431f30a39173f8a2db2a6665a0cc0180f9eab676cac85aeeee14ec53abbb94f977b01437310c4543a390e4e4838c6a3b9de82d63ed7c4032d9c32d631adb477391a30807fffd33f98b8ed72b0684eb9f6afd02a4d9c935353448103d490f7095a725f75d75c3539d4e9ea7b76a725d4898403e9047288ad2ba46bec0e130f5ed160e4b2cf7a0db768a7a1f158baf067f6996f171269fa41df02c5b588fd12d430b40f8763b1d2f4b234f6a490ae90266c262fa8ec8da3172e87064d97d3a2a2700b5215739196553fe2d69db970f8b8d0252439f7829dcc7d8ec17dfa85e53320e26650876888a7505327b03abecb91b6367e4c3feada297ae0eff32ce0ff3780d924cb2f19ae97bb648fa6a49e6a8677ef4aa08b55bc9ae77ac6a2a7ad26c3c7ac718ef263ea53fbad012c641aed9997221a283743e337e97aa62ef6db3ae13835f4b572000f8c5a32b73aecfc7ae68b2b9924b6dde7c6fcca207e25feae0a024c4fcfd0207e9ad346b36af5fd581769cac99daeab680c593a617d9571ed5c247846d14cecda2acfe9cfbbb22408c1bc3bb7da3f7ac4a8ca0726ba01ee4531b5036fcc376970998b617d6cef7bbe4bdbf77d6adaebbdc0542ea60ff25b30cde6764777d1f821fd60f91499ccb3aac20d5ccd01ed313a53ac33bcbdaca460209aaa0e94feb16a82cbaa902210644777a21862c7dbc30df403c75e04dc47696230cf40dfa1045f480abdbebf4ebcbac6f700f287cef3d4b147ddf0e8e9d02ee9baa51604682d5b983dc6f8abee274be0e02a8a7de3fbb22563726c2e7d34b15c437e560e7ce1569ea2ed16e37d908e60af15fd44e46b8969fa74a0f24147553947da7db10fa3394c54413f1b4d6dfcab790a3a91027a1947a229644da8663f05bd05ff4a8621db679467ab74bf8eab1be5861f80b004af53cb679be479e82aa3de8ae5002521474e197975860a9b506e698ffaa385803c656dd984b60b0569ad617c6347722fddbde10f0f485362fbedfde0a600bf551c3f8b02778c4d6960a533fcb302";
         let t: Transaction = transaction.into();
-        println!("{:?}", t);
+        println!("{t:?}");
         assert_eq!(transaction, serialize(&t).to_hex::<String>());
     }
 

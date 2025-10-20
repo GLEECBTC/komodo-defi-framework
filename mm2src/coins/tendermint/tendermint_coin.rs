@@ -1,28 +1,33 @@
 use super::ethermint_account::EthermintAccount;
-use super::htlc::{ClaimHtlcMsg, ClaimHtlcProto, CreateHtlcMsg, CreateHtlcProto, HtlcType, QueryHtlcRequestProto,
-                  QueryHtlcResponse, TendermintHtlc, HTLC_STATE_COMPLETED, HTLC_STATE_OPEN, HTLC_STATE_REFUNDED};
+use super::htlc::{
+    ClaimHtlcMsg, ClaimHtlcProto, CreateHtlcMsg, CreateHtlcProto, HtlcType, QueryHtlcRequestProto, QueryHtlcResponse,
+    TendermintHtlc, HTLC_STATE_COMPLETED, HTLC_STATE_OPEN, HTLC_STATE_REFUNDED,
+};
 use super::ibc::transfer_v1::MsgTransfer;
 use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::rpc::*;
 use crate::coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::hd_wallet::{HDAddressSelector, HDPathAccountToAddressId};
 use crate::rpc_command::tendermint::ibc::ChannelId;
-use crate::rpc_command::tendermint::staking::{ClaimRewardsPayload, Delegation, DelegationPayload,
-                                              DelegationsQueryResponse, Undelegation, UndelegationEntry,
-                                              UndelegationsQueryResponse, ValidatorStatus};
+use crate::rpc_command::tendermint::staking::{
+    ClaimRewardsPayload, Delegation, DelegationPayload, DelegationsQueryResponse, Undelegation, UndelegationEntry,
+    UndelegationsQueryResponse, ValidatorStatus,
+};
 use crate::utxo::sat_from_big_decimal;
 use crate::utxo::utxo_common::big_decimal_from_sat;
-use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
-            CoinBalance, ConfirmPaymentInput, DelegationError, DexFee, FeeApproxStage, FoundSwapTxSpend,
-            HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, PrivKeyPolicy,
-            PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
-            RawTransactionResult, RefundPaymentArgs, RpcCommonOps, SearchForSwapTxSpendInput, SendPaymentArgs,
-            SignRawTransactionRequest, SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, ToBytes, TradeFee,
-            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionData,
-            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TransactionType,
-            TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
-            WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
+use crate::{
+    big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs, CoinBalance,
+    ConfirmPaymentInput, DelegationError, DexFee, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
+    MmCoin, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed,
+    RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes, RawTransactionResult,
+    RefundPaymentArgs, RpcCommonOps, SearchForSwapTxSpendInput, SendPaymentArgs, SignRawTransactionRequest,
+    SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, ToBytes, TradeFee, TradePreimageError,
+    TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionData, TransactionDetails, TransactionEnum,
+    TransactionErr, TransactionFut, TransactionResult, TransactionType, TxFeeDetails, TxMarshalingErr,
+    UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentFut,
+    ValidatePaymentInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner,
+    WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest,
+};
 use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
 use bip32::DerivationPath;
@@ -36,20 +41,24 @@ use cosmrs::bank::{MsgMultiSend, MsgSend, MultiSendIo};
 use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::distribution::MsgWithdrawDelegatorReward;
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
-use cosmrs::proto::cosmos::bank::v1beta1::{MsgMultiSend as MsgMultiSendProto, MsgSend as MsgSendProto,
-                                           QueryBalanceRequest, QueryBalanceResponse};
+use cosmrs::proto::cosmos::bank::v1beta1::{
+    MsgMultiSend as MsgMultiSendProto, MsgSend as MsgSendProto, QueryBalanceRequest, QueryBalanceResponse,
+};
 use cosmrs::proto::cosmos::base::query::v1beta1::PageRequest;
-use cosmrs::proto::cosmos::base::tendermint::v1beta1::{GetBlockByHeightRequest, GetBlockByHeightResponse,
-                                                       GetLatestBlockRequest, GetLatestBlockResponse};
+use cosmrs::proto::cosmos::base::tendermint::v1beta1::{
+    GetBlockByHeightRequest, GetBlockByHeightResponse, GetLatestBlockRequest, GetLatestBlockResponse,
+};
 use cosmrs::proto::cosmos::base::v1beta1::{Coin as CoinProto, DecCoin};
 use cosmrs::proto::cosmos::distribution::v1beta1::{QueryDelegationRewardsRequest, QueryDelegationRewardsResponse};
-use cosmrs::proto::cosmos::staking::v1beta1::{QueryDelegationRequest, QueryDelegationResponse,
-                                              QueryDelegatorDelegationsRequest, QueryDelegatorDelegationsResponse,
-                                              QueryDelegatorUnbondingDelegationsRequest,
-                                              QueryDelegatorUnbondingDelegationsResponse, QueryValidatorsRequest,
-                                              QueryValidatorsResponse as QueryValidatorsResponseProto};
-use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, SimulateRequest, SimulateResponse, Tx, TxBody,
-                                         TxRaw};
+use cosmrs::proto::cosmos::staking::v1beta1::{
+    QueryDelegationRequest, QueryDelegationResponse, QueryDelegatorDelegationsRequest,
+    QueryDelegatorDelegationsResponse, QueryDelegatorUnbondingDelegationsRequest,
+    QueryDelegatorUnbondingDelegationsResponse, QueryValidatorsRequest,
+    QueryValidatorsResponse as QueryValidatorsResponseProto,
+};
+use cosmrs::proto::cosmos::tx::v1beta1::{
+    GetTxRequest, GetTxResponse, SimulateRequest, SimulateResponse, Tx, TxBody, TxRaw,
+};
 use cosmrs::proto::ibc;
 use cosmrs::proto::ibc::core::channel::v1::{QueryChannelRequest, QueryChannelResponse};
 use cosmrs::proto::prost::{DecodeError, Message};
@@ -90,7 +99,8 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
-#[cfg(test)] use mocktopus::macros::*;
+#[cfg(test)]
+use mocktopus::macros::*;
 
 // ABCI Request Paths
 const ABCI_GET_LATEST_BLOCK_PATH: &str = "/cosmos.base.tendermint.v1beta1.Service/GetLatestBlock";
@@ -265,7 +275,9 @@ impl TendermintActivationPolicy {
         Self::PrivateKey(private_key_policy)
     }
 
-    pub fn with_public_key(account_public_key: PublicKey) -> Self { Self::PublicKey(account_public_key) }
+    pub fn with_public_key(account_public_key: PublicKey) -> Self {
+        Self::PublicKey(account_public_key)
+    }
 
     fn generate_account_id(&self, account_prefix: &str) -> Result<AccountId, ErrorReport> {
         match self {
@@ -387,15 +399,17 @@ impl RpcCommonOps for TendermintCoin {
 
 #[derive(PartialEq)]
 pub enum TendermintWalletConnectionType {
-    Wc(String),
-    WcLedger(String),
+    Wc(kdf_walletconnect::WcTopic),
+    WcLedger(kdf_walletconnect::WcTopic),
     KeplrLedger,
     Keplr,
     Native,
 }
 
 impl Default for TendermintWalletConnectionType {
-    fn default() -> Self { Self::Native }
+    fn default() -> Self {
+        Self::Native
+    }
 }
 
 pub struct TendermintCoinImpl {
@@ -422,7 +436,9 @@ pub struct TendermintCoin(Arc<TendermintCoinImpl>);
 impl Deref for TendermintCoin {
     type Target = TendermintCoinImpl;
 
-    fn deref(&self) -> &Self::Target { &self.0 }
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -447,9 +463,9 @@ pub enum TendermintInitErrorKind {
     AccountIsNotSet,
     #[display(fmt = "'address_index' field is not found in config")]
     AddressIndexIsNotSet,
-    #[display(fmt = "Error deserializing 'derivation_path': {}", _0)]
+    #[display(fmt = "Error deserializing 'derivation_path': {_0}")]
     ErrorDeserializingDerivationPath(String),
-    #[display(fmt = "Error deserializing 'path_to_address': {}", _0)]
+    #[display(fmt = "Error deserializing 'path_to_address': {_0}")]
     ErrorDeserializingPathToAddress(String),
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     RpcError(String),
@@ -474,7 +490,7 @@ pub enum TendermintCoinRpcError {
     PerformError(String),
     RpcClientError(String),
     InternalError(String),
-    #[display(fmt = "Account type '{}' is not supported for HTLCs", prefix)]
+    #[display(fmt = "Account type '{prefix}' is not supported for HTLCs")]
     UnexpectedAccountType {
         prefix: String,
     },
@@ -484,16 +500,14 @@ pub enum TendermintCoinRpcError {
 #[derive(Clone, Debug, Display, PartialEq, Serialize)]
 pub enum IBCError {
     #[display(
-        fmt = "IBC channel could not be found in coins file for '{}' address prefix. Provide it manually by including `ibc_source_channel` in the request.",
-        address_prefix
+        fmt = "IBC channel could not be found in coins file for '{address_prefix}' address prefix. Provide it manually by including `ibc_source_channel` in the request."
     )]
     IBCChannelCouldNotBeFound { address_prefix: String },
     #[display(
-        fmt = "IBC channel '{}' is not healthy. Provide a healthy one manually by including `ibc_source_channel` in the request.",
-        channel_id
+        fmt = "IBC channel '{channel_id}' is not healthy. Provide a healthy one manually by including `ibc_source_channel` in the request."
     )]
     IBCChannelNotHealthy { channel_id: ChannelId },
-    #[display(fmt = "IBC channel '{}' is not present on the target node.", channel_id)]
+    #[display(fmt = "IBC channel '{channel_id}' is not present on the target node.")]
     IBCChannelMissingOnNode { channel_id: ChannelId },
     #[display(fmt = "Transport error: {reason}")]
     Transport { reason: String },
@@ -502,23 +516,33 @@ pub enum IBCError {
 }
 
 impl From<IBCError> for WithdrawError {
-    fn from(err: IBCError) -> Self { WithdrawError::IBCError(err) }
+    fn from(err: IBCError) -> Self {
+        WithdrawError::IBCError(err)
+    }
 }
 
 impl From<DecodeError> for TendermintCoinRpcError {
-    fn from(err: DecodeError) -> Self { TendermintCoinRpcError::Prost(err.to_string()) }
+    fn from(err: DecodeError) -> Self {
+        TendermintCoinRpcError::Prost(err.to_string())
+    }
 }
 
 impl From<PrivKeyPolicyNotAllowed> for TendermintCoinRpcError {
-    fn from(err: PrivKeyPolicyNotAllowed) -> Self { TendermintCoinRpcError::InternalError(err.to_string()) }
+    fn from(err: PrivKeyPolicyNotAllowed) -> Self {
+        TendermintCoinRpcError::InternalError(err.to_string())
+    }
 }
 
 impl From<TendermintCoinRpcError> for WithdrawError {
-    fn from(err: TendermintCoinRpcError) -> Self { WithdrawError::Transport(err.to_string()) }
+    fn from(err: TendermintCoinRpcError) -> Self {
+        WithdrawError::Transport(err.to_string())
+    }
 }
 
 impl From<TendermintCoinRpcError> for DelegationError {
-    fn from(err: TendermintCoinRpcError) -> Self { DelegationError::Transport(err.to_string()) }
+    fn from(err: TendermintCoinRpcError) -> Self {
+        DelegationError::Transport(err.to_string())
+    }
 }
 
 impl From<TendermintCoinRpcError> for BalanceError {
@@ -554,21 +578,29 @@ impl From<TendermintCoinRpcError> for ValidatePaymentError {
 }
 
 impl From<TendermintCoinRpcError> for TradePreimageError {
-    fn from(err: TendermintCoinRpcError) -> Self { TradePreimageError::Transport(err.to_string()) }
+    fn from(err: TendermintCoinRpcError) -> Self {
+        TradePreimageError::Transport(err.to_string())
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<tendermint_rpc::Error> for TendermintCoinRpcError {
-    fn from(err: tendermint_rpc::Error) -> Self { TendermintCoinRpcError::PerformError(err.to_string()) }
+    fn from(err: tendermint_rpc::Error) -> Self {
+        TendermintCoinRpcError::PerformError(err.to_string())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
 impl From<PerformError> for TendermintCoinRpcError {
-    fn from(err: PerformError) -> Self { TendermintCoinRpcError::PerformError(err.to_string()) }
+    fn from(err: PerformError) -> Self {
+        TendermintCoinRpcError::PerformError(err.to_string())
+    }
 }
 
 impl From<TendermintCoinRpcError> for RawTransactionError {
-    fn from(err: TendermintCoinRpcError) -> Self { RawTransactionError::Transport(err.to_string()) }
+    fn from(err: TendermintCoinRpcError) -> Self {
+        RawTransactionError::Transport(err.to_string())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -577,7 +609,9 @@ pub struct CosmosTransaction {
 }
 
 impl crate::Transaction for CosmosTransaction {
-    fn tx_hex(&self) -> Vec<u8> { self.data.encode_to_vec() }
+    fn tx_hex(&self) -> Vec<u8> {
+        self.data.encode_to_vec()
+    }
 
     fn tx_hash_as_bytes(&self) -> BytesJson {
         let bytes = self.data.encode_to_vec();
@@ -603,11 +637,15 @@ pub enum AccountIdFromPubkeyHexErr {
 }
 
 impl From<FromHexError> for AccountIdFromPubkeyHexErr {
-    fn from(err: FromHexError) -> Self { AccountIdFromPubkeyHexErr::InvalidHexString(err) }
+    fn from(err: FromHexError) -> Self {
+        AccountIdFromPubkeyHexErr::InvalidHexString(err)
+    }
 }
 
 impl From<ErrorReport> for AccountIdFromPubkeyHexErr {
-    fn from(err: ErrorReport) -> Self { AccountIdFromPubkeyHexErr::CouldNotCreateAccountId(err) }
+    fn from(err: ErrorReport) -> Self {
+        AccountIdFromPubkeyHexErr::CouldNotCreateAccountId(err)
+    }
 }
 
 pub fn account_id_from_pubkey_hex(prefix: &str, pubkey: &str) -> Result<AccountId, AccountIdFromPubkeyHexErr> {
@@ -633,7 +671,7 @@ enum SearchForSwapTxSpendErr {
     TxMessagesEmpty,
     ClaimHtlcTxNotFound,
     UnexpectedHtlcState(i32),
-    #[display(fmt = "Account type '{}' is not supported for HTLCs", prefix)]
+    #[display(fmt = "Account type '{prefix}' is not supported for HTLCs")]
     UnexpectedAccountType {
         prefix: String,
     },
@@ -641,20 +679,28 @@ enum SearchForSwapTxSpendErr {
 }
 
 impl From<ErrorReport> for SearchForSwapTxSpendErr {
-    fn from(e: ErrorReport) -> Self { SearchForSwapTxSpendErr::Cosmrs(e) }
+    fn from(e: ErrorReport) -> Self {
+        SearchForSwapTxSpendErr::Cosmrs(e)
+    }
 }
 
 impl From<TendermintCoinRpcError> for SearchForSwapTxSpendErr {
-    fn from(e: TendermintCoinRpcError) -> Self { SearchForSwapTxSpendErr::Rpc(e) }
+    fn from(e: TendermintCoinRpcError) -> Self {
+        SearchForSwapTxSpendErr::Rpc(e)
+    }
 }
 
 impl From<DecodeError> for SearchForSwapTxSpendErr {
-    fn from(e: DecodeError) -> Self { SearchForSwapTxSpendErr::Proto(e) }
+    fn from(e: DecodeError) -> Self {
+        SearchForSwapTxSpendErr::Proto(e)
+    }
 }
 
 #[async_trait]
 impl TendermintCommons for TendermintCoin {
-    fn platform_denom(&self) -> &Denom { &self.protocol_info.denom }
+    fn platform_denom(&self) -> &Denom {
+        &self.protocol_info.denom
+    }
 
     fn set_history_sync_state(&self, new_state: HistorySyncState) {
         *self.history_sync_state.lock().unwrap() = new_state;
@@ -861,7 +907,9 @@ impl TendermintCoin {
     }
 
     #[inline(always)]
-    fn gas_price(&self) -> f64 { self.protocol_info.gas_price.unwrap_or(DEFAULT_GAS_PRICE) }
+    fn gas_price(&self) -> f64 {
+        self.protocol_info.gas_price.unwrap_or(DEFAULT_GAS_PRICE)
+    }
 
     #[allow(unused)]
     async fn get_latest_block(&self) -> MmResult<GetLatestBlockResponse, TendermintCoinRpcError> {
@@ -1126,7 +1174,7 @@ impl TendermintCoin {
         let (response, raw_response) = loop {
             let tx_bytes = self
                 .gen_simulated_tx(&account_info, activated_priv_key, msg.clone(), timeout_height, memo)
-                .map_to_mm(|e| TendermintCoinRpcError::InternalError(format!("{}", e)))?;
+                .map_to_mm(|e| TendermintCoinRpcError::InternalError(format!("{e}")))?;
 
             let request = AbciRequest::new(
                 Some(ABCI_SIMULATE_TX_PATH.to_string()),
@@ -1162,8 +1210,7 @@ impl TendermintCoin {
 
         let gas = response.gas_info.as_ref().ok_or_else(|| {
             TendermintCoinRpcError::InvalidResponse(format!(
-                "Could not read gas_info. Invalid Response: {:?}",
-                raw_response
+                "Could not read gas_info. Invalid Response: {raw_response:?}"
             ))
         })?;
 
@@ -1200,7 +1247,7 @@ impl TendermintCoin {
         let (response, raw_response) = loop {
             let tx_bytes = self
                 .gen_simulated_tx(&account_info, &priv_key, msg.clone(), timeout_height, memo)
-                .map_to_mm(|e| TendermintCoinRpcError::InternalError(format!("{}", e)))?;
+                .map_to_mm(|e| TendermintCoinRpcError::InternalError(format!("{e}")))?;
 
             let request = AbciRequest::new(
                 Some(ABCI_SIMULATE_TX_PATH.to_string()),
@@ -1236,8 +1283,7 @@ impl TendermintCoin {
 
         let gas = response.gas_info.as_ref().ok_or_else(|| {
             TendermintCoinRpcError::InvalidResponse(format!(
-                "Could not read gas_info. Invalid Response: {:?}",
-                raw_response
+                "Could not read gas_info. Invalid Response: {raw_response:?}"
             ))
         })?;
 
@@ -1304,7 +1350,7 @@ impl TendermintCoin {
             .or_mm_err(|| TendermintCoinRpcError::InvalidResponse("balance is None".into()))?
             .amount
             .parse()
-            .map_to_mm(|e| TendermintCoinRpcError::InvalidResponse(format!("balance is not u64, err {}", e)))
+            .map_to_mm(|e| TendermintCoinRpcError::InvalidResponse(format!("balance is not u64, err {e}")))
     }
 
     pub(super) fn extract_account_id_and_private_key(
@@ -1600,7 +1646,7 @@ impl TendermintCoin {
             TendermintWalletConnectionType::WcLedger(_) => {
                 let signer_address = self
                     .my_address()
-                    .map_err(|e| ErrorReport::new(io::Error::new(io::ErrorKind::Other, e.to_string())))?;
+                    .map_err(|e| ErrorReport::new(io::Error::other(e.to_string())))?;
                 let body_bytes = tx::Body::new(vec![tx_payload], memo, timeout_height).into_bytes()?;
                 let json = serde_json::json!({
                     "signerAddress": signer_address,
@@ -1673,11 +1719,11 @@ impl TendermintCoin {
 
             match htlc_state {
                 HTLC_STATE_OPEN | HTLC_STATE_COMPLETED | HTLC_STATE_REFUNDED => {},
-                unexpected_state => return Err(format!("Unexpected state for HTLC {}", unexpected_state)),
+                unexpected_state => return Err(format!("Unexpected state for HTLC {unexpected_state}")),
             };
 
             let rpc_client = try_s!(coin.rpc_client().await);
-            let q = format!("create_htlc.id = '{}'", htlc_id);
+            let q = format!("create_htlc.id = '{htlc_id}'");
 
             let response = try_s!(
                 // Search single tx
@@ -1695,8 +1741,7 @@ impl TendermintCoin {
             if let Some(tx) = response.txs.first() {
                 if let cosmrs::tendermint::abci::Code::Err(err_code) = tx.tx_result.code {
                     return Err(format!(
-                        "Got {} error code. Broadcasted HTLC likely isn't valid.",
-                        err_code
+                        "Got {err_code} error code. Broadcasted HTLC likely isn't valid."
                     ));
                 }
 
@@ -1893,7 +1938,7 @@ impl TendermintCoin {
             TransactionEnum::CosmosTransaction(tx) => tx.clone(),
             invalid_variant => {
                 return Box::new(futures01::future::err(
-                    ValidatePaymentError::WrongPaymentTx(format!("Unexpected tx variant {:?}", invalid_variant)).into(),
+                    ValidatePaymentError::WrongPaymentTx(format!("Unexpected tx variant {invalid_variant:?}")).into(),
                 ))
             },
         };
@@ -2010,8 +2055,7 @@ impl TendermintCoin {
 
         if create_htlc_msg != expected_msg {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "Incorrect CreateHtlc message {:?}, expected {:?}",
-                create_htlc_msg, expected_msg
+                "Incorrect CreateHtlc message {create_htlc_msg:?}, expected {expected_msg:?}"
             )));
         }
 
@@ -2028,13 +2072,12 @@ impl TendermintCoin {
         let htlc_response = self.query_htlc(htlc_id.clone()).await.map_mm_err()?;
         let htlc_state = htlc_response
             .htlc_state()
-            .or_mm_err(|| ValidatePaymentError::InvalidRpcResponse(format!("No HTLC data for {}", htlc_id)))?;
+            .or_mm_err(|| ValidatePaymentError::InvalidRpcResponse(format!("No HTLC data for {htlc_id}")))?;
 
         match htlc_state {
             HTLC_STATE_OPEN => Ok(()),
             unexpected_state => MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
-                "{}",
-                unexpected_state
+                "{unexpected_state}"
             ))),
         }
     }
@@ -2214,8 +2257,7 @@ impl TendermintCoin {
 
         let current_block = self.current_block().compat().await.map_err(|e| {
             MmError::new(TradePreimageError::InternalError(format!(
-                "Could not get current_block. {}",
-                e
+                "Could not get current_block. {e}"
             )))
         })?;
 
@@ -2255,8 +2297,7 @@ impl TendermintCoin {
 
         let current_block = self.current_block().compat().await.map_err(|e| {
             MmError::new(TradePreimageError::InternalError(format!(
-                "Could not get current_block. {}",
-                e
+                "Could not get current_block. {e}"
             )))
         })?;
 
@@ -2417,7 +2458,7 @@ impl TendermintCoin {
         match htlc_state {
             HTLC_STATE_OPEN => Ok(None),
             HTLC_STATE_COMPLETED => {
-                let query = format!("claim_htlc.id='{}'", htlc_id);
+                let query = format!("claim_htlc.id='{htlc_id}'");
                 let request = TxSearchRequest {
                     query,
                     order_by: TendermintResultOrder::Ascending.into(),
@@ -3190,7 +3231,9 @@ fn clients_from_urls(ctx: &MmArc, nodes: Vec<RpcNode>) -> MmResult<Vec<HttpClien
 #[async_trait]
 #[allow(unused_variables)]
 impl MmCoin for TendermintCoin {
-    fn is_asset_chain(&self) -> bool { false }
+    fn is_asset_chain(&self) -> bool {
+        false
+    }
 
     #[cfg(feature = "ibc-routing-for-swaps")]
     fn wallet_only(&self, ctx: &MmArc) -> bool {
@@ -3230,7 +3273,9 @@ impl MmCoin for TendermintCoin {
         wallet_only_conf || self.is_ledger_connection()
     }
 
-    fn spawner(&self) -> WeakSpawner { self.abortable_system.weak_spawner() }
+    fn spawner(&self) -> WeakSpawner {
+        self.abortable_system.weak_spawner()
+    }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         let coin = self.clone();
@@ -3419,7 +3464,7 @@ impl MmCoin for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn get_raw_transaction(&self, mut req: RawTransactionRequest) -> RawTransactionFut {
+    fn get_raw_transaction(&self, mut req: RawTransactionRequest) -> RawTransactionFut<'_> {
         let coin = self.clone();
         let fut = async move {
             req.tx_hash.make_ascii_uppercase();
@@ -3431,12 +3476,12 @@ impl MmCoin for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut {
+    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut<'_> {
         let coin = self.clone();
         let fut = async move {
             let len = tx_hash.len();
             let hash: [u8; 32] = tx_hash.try_into().map_to_mm(|_| {
-                RawTransactionError::InvalidHashError(format!("Invalid hash length: expected 32, got {}", len))
+                RawTransactionError::InvalidHashError(format!("Invalid hash length: expected 32, got {len}"))
             })?;
             let hash = hex::encode_upper(H256::from(hash));
             let tx_from_rpc = coin.request_tx(hash).await.map_mm_err()?;
@@ -3447,7 +3492,9 @@ impl MmCoin for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn decimals(&self) -> u8 { self.protocol_info.decimals }
+    fn decimals(&self) -> u8 {
+        self.protocol_info.decimals
+    }
 
     fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> {
         // TODO
@@ -3472,7 +3519,9 @@ impl MmCoin for TendermintCoin {
         Box::new(futures01::future::err(()))
     }
 
-    fn history_sync_status(&self) -> HistorySyncState { self.history_sync_state.lock().unwrap().clone() }
+    fn history_sync_status(&self) -> HistorySyncState {
+        self.history_sync_state.lock().unwrap().clone()
+    }
 
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
         Box::new(futures01::future::err("Not implemented".into()))
@@ -3482,7 +3531,6 @@ impl MmCoin for TendermintCoin {
         &self,
         value: TradePreimageValue,
         _stage: FeeApproxStage,
-        _include_refund_fee: bool,
     ) -> TradePreimageResult<TradeFee> {
         let amount = match value {
             TradePreimageValue::Exact(decimal) | TradePreimageValue::UpperBound(decimal) => decimal,
@@ -3642,23 +3690,37 @@ impl MmCoin for TendermintCoin {
         .await
     }
 
-    fn required_confirmations(&self) -> u64 { 0 }
+    fn required_confirmations(&self) -> u64 {
+        0
+    }
 
-    fn requires_notarization(&self) -> bool { false }
+    fn requires_notarization(&self) -> bool {
+        false
+    }
 
     fn set_required_confirmations(&self, confirmations: u64) {
         warn!("set_required_confirmations is not supported for tendermint")
     }
 
-    fn set_requires_notarization(&self, requires_nota: bool) { warn!("TendermintCoin doesn't support notarization") }
+    fn set_requires_notarization(&self, requires_nota: bool) {
+        warn!("TendermintCoin doesn't support notarization")
+    }
 
-    fn swap_contract_address(&self) -> Option<BytesJson> { None }
+    fn swap_contract_address(&self) -> Option<BytesJson> {
+        None
+    }
 
-    fn fallback_swap_contract(&self) -> Option<BytesJson> { None }
+    fn fallback_swap_contract(&self) -> Option<BytesJson> {
+        None
+    }
 
-    fn mature_confirmations(&self) -> Option<u32> { None }
+    fn mature_confirmations(&self) -> Option<u32> {
+        None
+    }
 
-    fn coin_protocol_info(&self, _amount_to_receive: Option<MmNumber>) -> Vec<u8> { Vec::new() }
+    fn coin_protocol_info(&self, _amount_to_receive: Option<MmNumber>) -> Vec<u8> {
+        Vec::new()
+    }
 
     fn is_coin_protocol_supported(
         &self,
@@ -3670,16 +3732,22 @@ impl MmCoin for TendermintCoin {
         true
     }
 
-    fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.abortable_system) }
+    fn on_disabled(&self) -> Result<(), AbortedError> {
+        AbortableSystem::abort_all(&self.abortable_system)
+    }
 
     fn on_token_deactivated(&self, _ticker: &str) {}
 }
 
 #[async_trait]
 impl MarketCoinOps for TendermintCoin {
-    fn ticker(&self) -> &str { &self.ticker }
+    fn ticker(&self) -> &str {
+        &self.ticker
+    }
 
-    fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.account_id.to_string()) }
+    fn my_address(&self) -> MmResult<String, MyAddressError> {
+        Ok(self.account_id.to_string())
+    }
 
     fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
         let address = account_id_from_raw_pubkey(&self.protocol_info.account_prefix, &pubkey.0)
@@ -3723,11 +3791,13 @@ impl MarketCoinOps for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
+    fn platform_coin_balance(&self) -> BalanceFut<BigDecimal> {
         Box::new(self.my_balance().map(|coin_balance| coin_balance.spendable))
     }
 
-    fn platform_ticker(&self) -> &str { &self.ticker }
+    fn platform_ticker(&self) -> &str {
+        &self.ticker
+    }
 
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
         let tx_bytes = try_fus!(hex::decode(tx));
@@ -3798,8 +3868,7 @@ impl MarketCoinOps for TendermintCoin {
                     return match tx_status_code {
                         cosmrs::tendermint::abci::Code::Ok => Ok(()),
                         cosmrs::tendermint::abci::Code::Err(err_code) => Err(format!(
-                            "Got error code: '{}' for tx: '{}'. Broadcasted tx isn't valid.",
-                            err_code, tx_hash
+                            "Got error code: '{err_code}' for tx: '{tx_hash}'. Broadcasted tx isn't valid."
                         )),
                     };
                 };
@@ -3821,7 +3890,7 @@ impl MarketCoinOps for TendermintCoin {
         let htlc = try_tx_s!(CreateHtlcMsg::try_from(htlc_proto));
         let htlc_id = self.calculate_htlc_id(htlc.sender(), htlc.to(), htlc.amount(), args.secret_hash);
 
-        let query = format!("claim_htlc.id='{}'", htlc_id);
+        let query = format!("claim_htlc.id='{htlc_id}'");
         let request = TxSearchRequest {
             query,
             order_by: TendermintResultOrder::Ascending.into(),
@@ -3874,13 +3943,19 @@ impl MarketCoinOps for TendermintCoin {
     }
 
     #[inline]
-    fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat(MIN_TX_SATOSHIS, self.protocol_info.decimals) }
+    fn min_tx_amount(&self) -> BigDecimal {
+        big_decimal_from_sat(MIN_TX_SATOSHIS, self.protocol_info.decimals)
+    }
 
     #[inline]
-    fn min_trading_vol(&self) -> MmNumber { self.min_tx_amount().into() }
+    fn min_trading_vol(&self) -> MmNumber {
+        self.min_tx_amount().into()
+    }
 
     #[inline]
-    fn should_burn_dex_fee(&self) -> bool { false } // TODO: fix back to true when negotiation version added
+    fn should_burn_dex_fee(&self) -> bool {
+        false
+    } // TODO: fix back to true when negotiation version added
 
     fn is_trezor(&self) -> bool {
         match &self.activation_policy {
@@ -4226,6 +4301,15 @@ pub fn tendermint_priv_key_policy(
                 kind,
             })
         },
+        PrivKeyBuildPolicy::WalletConnect { .. } => {
+            let kind = TendermintInitErrorKind::PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed::UnsupportedMethod(
+                "Cannot use WalletConnect to get TendermintPrivKeyPolicy".to_string(),
+            ));
+            MmError::err(TendermintInitError {
+                ticker: ticker.to_string(),
+                kind,
+            })
+        },
     }
 }
 
@@ -4237,10 +4321,16 @@ pub(crate) async fn create_withdraw_msg_as_any(
     ibc_source_channel: Option<ChannelId>,
 ) -> Result<Any, MmError<WithdrawError>> {
     if let Some(channel_id) = ibc_source_channel {
-        MsgTransfer::new_with_default_timeout(channel_id.to_string(), sender, receiver, Coin {
-            denom: denom.clone(),
-            amount: amount.into(),
-        })
+        MsgTransfer::new_with_default_timeout(
+            channel_id.to_string(),
+            sender,
+            receiver,
+            Coin {
+                denom: denom.clone(),
+                amount: amount.into(),
+            },
+        )
+        .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?
         .to_any()
     } else {
         MsgSend {
@@ -4272,8 +4362,7 @@ fn parse_expected_sequence_number(e: &str) -> MmResult<u64, TendermintCoinRpcErr
     }
 
     MmError::err(TendermintCoinRpcError::InternalError(format!(
-        "Could not parse the expected sequence number from this error message: '{}'",
-        e
+        "Could not parse the expected sequence number from this error message: '{e}'"
     )))
 }
 
@@ -4506,7 +4595,7 @@ pub mod tendermint_falsecoin_tests {
 
         let (tx_id, _tx_raw) = block_on(async { send_tx_fut.await.unwrap() });
 
-        println!("Claim HTLC tx hash {}", tx_id);
+        println!("Claim HTLC tx hash {tx_id}");
         // >> END HTLC CLAIMING
     }
 
@@ -4549,13 +4638,13 @@ pub mod tendermint_falsecoin_tests {
             prove: false,
         };
         let response = block_on(block_on(coin.rpc_client()).unwrap().perform(request)).unwrap();
-        println!("{:?}", response);
+        println!("{response:?}");
 
         let tx = cosmrs::Tx::from_bytes(&response.txs.first().unwrap().tx).unwrap();
-        println!("{:?}", tx);
+        println!("{tx:?}");
 
         let first_msg = tx.body.messages.first().unwrap();
-        println!("{:?}", first_msg);
+        println!("{first_msg:?}");
 
         let claim_htlc = ClaimHtlcProto::decode(HtlcType::Iris, first_msg.value.as_slice()).unwrap();
         let expected_secret = [1; 32];
@@ -4608,12 +4697,12 @@ pub mod tendermint_falsecoin_tests {
             ABCI_REQUEST_PROVE,
         ))
         .unwrap();
-        println!("{:?}", response);
+        println!("{response:?}");
 
         let response = GetTxResponse::decode(response.value.as_slice()).unwrap();
         let tx = response.tx.unwrap();
 
-        println!("{:?}", tx);
+        println!("{tx:?}");
 
         let encoded_tx = tx.encode_to_vec();
 
@@ -4687,7 +4776,7 @@ pub mod tendermint_falsecoin_tests {
         }))
         .unwrap_err()
         .into_inner();
-        println!("{}", error);
+        println!("{error}");
         match error {
             ValidatePaymentError::TxDeserializationError(err) => {
                 assert!(err.contains("failed to decode Protobuf message: MsgSend.amount"))
@@ -4728,7 +4817,7 @@ pub mod tendermint_falsecoin_tests {
         }))
         .unwrap_err()
         .into_inner();
-        println!("{}", error);
+        println!("{error}");
         match error {
             ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("sent to wrong address")),
             _ => panic!("Expected `WrongPaymentTx` wrong address, found {:?}", error),
@@ -4758,7 +4847,7 @@ pub mod tendermint_falsecoin_tests {
         }))
         .unwrap_err()
         .into_inner();
-        println!("{}", error);
+        println!("{error}");
         match error {
             ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("Invalid amount")),
             _ => panic!("Expected `WrongPaymentTx` invalid amount, found {:?}", error),
@@ -4775,7 +4864,7 @@ pub mod tendermint_falsecoin_tests {
         }))
         .unwrap_err()
         .into_inner();
-        println!("{}", error);
+        println!("{error}");
         match error {
             ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("Invalid sender")),
             _ => panic!("Expected `WrongPaymentTx` invalid sender, found {:?}", error),
@@ -4791,7 +4880,7 @@ pub mod tendermint_falsecoin_tests {
         }))
         .unwrap_err()
         .into_inner();
-        println!("{}", error);
+        println!("{error}");
         match error {
             ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("Invalid memo")),
             _ => panic!("Expected `WrongPaymentTx` invalid memo, found {:?}", error),
@@ -5018,12 +5107,12 @@ pub mod tendermint_falsecoin_tests {
             ABCI_REQUEST_PROVE,
         ))
         .unwrap();
-        println!("{:?}", response);
+        println!("{response:?}");
 
         let response = GetTxResponse::decode(response.value.as_slice()).unwrap();
         let tx = response.tx.unwrap();
 
-        println!("{:?}", tx);
+        println!("{tx:?}");
 
         let encoded_tx = tx.encode_to_vec();
 
@@ -5094,12 +5183,12 @@ pub mod tendermint_falsecoin_tests {
             ABCI_REQUEST_PROVE,
         ))
         .unwrap();
-        println!("{:?}", response);
+        println!("{response:?}");
 
         let response = GetTxResponse::decode(response.value.as_slice()).unwrap();
         let tx = response.tx.unwrap();
 
-        println!("{:?}", tx);
+        println!("{tx:?}");
 
         let encoded_tx = tx.encode_to_vec();
 

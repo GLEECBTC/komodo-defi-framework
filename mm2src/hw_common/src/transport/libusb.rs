@@ -34,7 +34,9 @@ pub enum UsbError {
 }
 
 impl InternalError for UsbError {
-    fn internal(e: String) -> Self { UsbError::Internal(e) }
+    fn internal(e: String) -> Self {
+        UsbError::Internal(e)
+    }
 }
 
 #[derive(Clone)]
@@ -146,7 +148,9 @@ impl UsbAvailableDevice {
         })
     }
 
-    pub fn device_info(&self) -> &UsbDeviceInfo { &self.device_info }
+    pub fn device_info(&self) -> &UsbDeviceInfo {
+        &self.device_info
+    }
 
     fn event_loop(mut event_rx: DeviceEventReceiver, device_handle: rusb::DeviceHandle<rusb::Context>) {
         while let Some(event) = block_on(event_rx.next()) {
@@ -274,7 +278,9 @@ impl UsbDevice {
         send_event_recv_response(&self.event_tx, event, result_rx).await
     }
 
-    fn endpoint_number(&self) -> u8 { self.device_info.interface_info.endpoint_number }
+    fn endpoint_number(&self) -> u8 {
+        self.device_info.interface_info.endpoint_number
+    }
 }
 
 #[derive(Clone, Copy, Debug)]

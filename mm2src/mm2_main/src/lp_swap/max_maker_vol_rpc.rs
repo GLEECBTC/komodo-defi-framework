@@ -12,11 +12,7 @@ use ser_error_derive::SerializeErrorType;
 #[serde(tag = "error_type", content = "error_data")]
 pub enum MaxMakerVolRpcError {
     #[display(
-        fmt = "Not enough {} for swap: available {}, required at least {}, locked by swaps {:?}",
-        coin,
-        available,
-        required,
-        locked_by_swaps
+        fmt = "Not enough {coin} for swap: available {available}, required at least {required}, locked by swaps {locked_by_swaps:?}"
     )]
     NotSufficientBalance {
         coin: String,
@@ -26,11 +22,7 @@ pub enum MaxMakerVolRpcError {
         locked_by_swaps: Option<BigDecimal>,
     },
     #[display(
-        fmt = "Not enough base coin {} balance for swap: available {}, required at least {}, locked by swaps {:?}",
-        coin,
-        available,
-        required,
-        locked_by_swaps
+        fmt = "Not enough platform coin {coin} balance for swap: available {available}, required at least {required}, locked by swaps {locked_by_swaps:?}"
     )]
     NotSufficientBaseCoinBalance {
         coin: String,
@@ -39,22 +31,17 @@ pub enum MaxMakerVolRpcError {
         #[serde(skip_serializing_if = "Option::is_none")]
         locked_by_swaps: Option<BigDecimal>,
     },
-    #[display(
-        fmt = "The volume {} of the {} coin less than minimum transaction amount {}",
-        volume,
-        coin,
-        threshold
-    )]
+    #[display(fmt = "The volume {volume} of the {coin} coin less than minimum transaction amount {threshold}")]
     VolumeTooLow {
         coin: String,
         volume: BigDecimal,
         threshold: BigDecimal,
     },
-    #[display(fmt = "No such coin {}", coin)]
+    #[display(fmt = "No such coin {coin}")]
     NoSuchCoin { coin: String },
-    #[display(fmt = "Transport error: {}", _0)]
+    #[display(fmt = "Transport error: {_0}")]
     Transport(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     InternalError(String),
 }
 

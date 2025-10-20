@@ -24,7 +24,9 @@ pub struct LegacyAddressDisplayLayout(Vec<u8>);
 impl Deref for LegacyAddressDisplayLayout {
     type Target = [u8];
 
-    fn deref(&self) -> &Self::Target { &self.0 }
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl DisplayLayout for LegacyAddress {
@@ -87,7 +89,9 @@ impl FromStr for LegacyAddress {
 }
 
 impl From<&'static str> for LegacyAddress {
-    fn from(s: &'static str) -> Self { s.parse().unwrap_or_default() }
+    fn from(s: &'static str) -> Self {
+        s.parse().unwrap_or_default()
+    }
 }
 
 impl fmt::Display for LegacyAddress {

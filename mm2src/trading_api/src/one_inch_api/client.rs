@@ -1,16 +1,20 @@
 use super::errors::ApiClientError;
 use crate::one_inch_api::errors::NativeError;
 use common::{log, StatusCode};
-#[cfg(feature = "test-ext-api")] use lazy_static::lazy_static;
+#[cfg(feature = "test-ext-api")]
+use lazy_static::lazy_static;
 use mm2_core::mm_ctx::MmArc;
-use mm2_err_handle::{map_mm_error::MapMmError,
-                     map_to_mm::MapToMmResult,
-                     mm_error::{MmError, MmResult}};
+use mm2_err_handle::{
+    map_mm_error::MapMmError,
+    map_to_mm::MapToMmResult,
+    mm_error::{MmError, MmResult},
+};
 use mm2_net::transport::slurp_url_with_headers;
 use serde::de::DeserializeOwned;
 use url::Url;
 
-#[cfg(feature = "test-ext-api")] use common::executor::Timer;
+#[cfg(feature = "test-ext-api")]
+use common::executor::Timer;
 
 #[cfg(feature = "test-ext-api")]
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
@@ -79,7 +83,7 @@ impl UrlBuilder {
     pub fn build(&self) -> MmResult<Url, ApiClientError> {
         let url = self.base_url.join(self.endpoint)?;
         let url = if let Some(chain_id) = self.chain_id {
-            url.join(&format!("{}/", chain_id))?
+            url.join(&format!("{chain_id}/"))?
         } else {
             url
         };
@@ -170,7 +174,7 @@ impl PortfolioUrlBuilder {
 /// 1-inch API caller
 pub struct ApiClient;
 
-#[allow(clippy::swap_ptr_to_ref)] // need for moctopus
+#[allow(clippy::swap_ptr_to_ref)] // need for mocktopus
 #[cfg_attr(any(test, feature = "for-tests"), mockable)]
 impl ApiClient {
     #[allow(unused_variables)]
@@ -187,9 +191,13 @@ impl ApiClient {
         Ok(Url::parse(url_cfg)?)
     }
 
-    pub const fn eth_special_contract() -> &'static str { ONE_INCH_ETH_SPECIAL_CONTRACT }
+    pub const fn eth_special_contract() -> &'static str {
+        ONE_INCH_ETH_SPECIAL_CONTRACT
+    }
 
-    pub const fn classic_swap_contract() -> &'static str { ONE_INCH_AGGREGATION_ROUTER_CONTRACT_V6_0 }
+    pub const fn classic_swap_contract() -> &'static str {
+        ONE_INCH_AGGREGATION_ROUTER_CONTRACT_V6_0
+    }
 
     pub fn is_chain_supported(chain_id: u64) -> bool {
         ONE_INCH_V6_0_SUPPORTED_CHAINS.iter().any(|(_name, id)| *id == chain_id)
@@ -211,7 +219,7 @@ impl ApiClient {
         #[cfg(feature = "test-ext-api")]
         let _guard = ApiClient::one_req_per_sec().await;
 
-        log::debug!("1inch call url={}", api_url.to_string());
+        log::debug!("1inch call url={api_url}");
         let (status_code, _, body) = slurp_url_with_headers(api_url.as_str(), ApiClient::get_headers())
             .await
             .mm_err(ApiClientError::TransportError)?;

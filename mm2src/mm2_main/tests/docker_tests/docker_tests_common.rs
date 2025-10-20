@@ -22,8 +22,10 @@ use ethabi::Token;
 use ethereum_types::{H160 as H160Eth, U256};
 use futures::TryFutureExt;
 use http::StatusCode;
-use keys::{Address, AddressBuilder, AddressHashEnum, AddressPrefix, KeyPair, NetworkAddressPrefixes,
-           NetworkPrefix as CashAddrPrefix};
+use keys::{
+    Address, AddressBuilder, AddressHashEnum, AddressPrefix, KeyPair, NetworkAddressPrefixes,
+    NetworkPrefix as CashAddrPrefix,
+};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::BigDecimal;
 pub use mm2_number::MmNumber;
@@ -143,8 +145,10 @@ pub const IBC_RELAYER_IMAGE_WITH_TAG: &str = "docker.io/komodoofficial/ibc-relay
 pub const QTUM_ADDRESS_LABEL: &str = "MM2_ADDRESS_LABEL";
 
 /// ERC721_TEST_TOKEN has additional mint function
+/// https://github.com/KomodoPlatform/etomic-swap/blob/public-mint-nft-functions/contracts/Erc721Token.sol (see public-mint-nft-functions branch)
 pub const ERC721_TEST_ABI: &str = include_str!("../../../mm2_test_helpers/dummy_files/erc721_test_abi.json");
 /// ERC1155_TEST_TOKEN has additional mint function
+/// https://github.com/KomodoPlatform/etomic-swap/blob/public-mint-nft-functions/contracts/Erc1155Token.sol (see public-mint-nft-functions branch)
 pub const ERC1155_TEST_ABI: &str = include_str!("../../../mm2_test_helpers/dummy_files/erc1155_test_abi.json");
 
 /// Ticker of MYCOIN dockerized blockchain.
@@ -156,16 +160,18 @@ pub const ERC20_TOKEN_BYTES: &str = include_str!("../../../mm2_test_helpers/cont
 pub const SWAP_CONTRACT_BYTES: &str = include_str!("../../../mm2_test_helpers/contract_bytes/swap_contract_bytes");
 pub const WATCHERS_SWAP_CONTRACT_BYTES: &str =
     include_str!("../../../mm2_test_helpers/contract_bytes/watchers_swap_contract_bytes");
+/// https://github.com/KomodoPlatform/etomic-swap/blob/7d4eafd4a408188a95aee78a41f0bf5f9116ffa2/contracts/Erc721Token.sol
 pub const ERC721_TEST_TOKEN_BYTES: &str =
     include_str!("../../../mm2_test_helpers/contract_bytes/erc721_test_token_bytes");
+/// https://github.com/KomodoPlatform/etomic-swap/blob/7d4eafd4a408188a95aee78a41f0bf5f9116ffa2/contracts/Erc1155Token.sol
 pub const ERC1155_TEST_TOKEN_BYTES: &str =
     include_str!("../../../mm2_test_helpers/contract_bytes/erc1155_test_token_bytes");
-/// https://github.com/KomodoPlatform/etomic-swap/blob/5e15641cbf41766cd5b37b4d71842c270773f788/contracts/EtomicSwapMakerNftV2.sol
+/// https://github.com/KomodoPlatform/etomic-swap/blob/7d4eafd4a408188a95aee78a41f0bf5f9116ffa2/contracts/EtomicSwapMakerNftV2.sol
 pub const NFT_MAKER_SWAP_V2_BYTES: &str =
     include_str!("../../../mm2_test_helpers/contract_bytes/nft_maker_swap_v2_bytes");
-/// https://github.com/KomodoPlatform/etomic-swap/blob/5e15641cbf41766cd5b37b4d71842c270773f788/contracts/EtomicSwapMakerNftV2.sol
+/// https://github.com/KomodoPlatform/etomic-swap/blob/7d4eafd4a408188a95aee78a41f0bf5f9116ffa2/contracts/EtomicSwapMakerV2.sol
 pub const MAKER_SWAP_V2_BYTES: &str = include_str!("../../../mm2_test_helpers/contract_bytes/maker_swap_v2_bytes");
-/// https://github.com/KomodoPlatform/etomic-swap/blob/5e15641cbf41766cd5b37b4d71842c270773f788/contracts/EtomicSwapTakerV2.sol
+/// https://github.com/KomodoPlatform/etomic-swap/blob/7d4eafd4a408188a95aee78a41f0bf5f9116ffa2/contracts/EtomicSwapTakerV2.sol
 pub const TAKER_SWAP_V2_BYTES: &str = include_str!("../../../mm2_test_helpers/contract_bytes/taker_swap_v2_bytes");
 
 pub trait CoinDockerOps {
@@ -210,12 +216,14 @@ pub struct UtxoAssetDockerOps {
 }
 
 impl CoinDockerOps for UtxoAssetDockerOps {
-    fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
+    fn rpc_client(&self) -> &UtxoRpcClientEnum {
+        &self.coin.as_ref().rpc_client
+    }
 }
 
 impl UtxoAssetDockerOps {
     pub fn from_ticker(ticker: &str) -> UtxoAssetDockerOps {
-        let conf = json!({"asset": ticker, "txfee": 1000, "network": "regtest"});
+        let conf = json!({"coin": ticker, "asset": ticker, "txfee": 1000, "network": "regtest"});
         let req = json!({"method":"enable"});
         let priv_key = Secp256k1Secret::from("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f");
         let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -233,7 +241,9 @@ pub struct ZCoinAssetDockerOps {
 }
 
 impl CoinDockerOps for ZCoinAssetDockerOps {
-    fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
+    fn rpc_client(&self) -> &UtxoRpcClientEnum {
+        &self.coin.as_ref().rpc_client
+    }
 }
 
 impl ZCoinAssetDockerOps {
@@ -252,7 +262,8 @@ pub struct BchDockerOps {
 
 impl BchDockerOps {
     pub fn from_ticker(ticker: &str) -> BchDockerOps {
-        let conf = json!({"asset": ticker,"txfee":1000,"network": "regtest","txversion":4,"overwintered":1});
+        let conf =
+            json!({"coin": ticker,"asset": ticker,"txfee":1000,"network": "regtest","txversion":4,"overwintered":1});
         let req = json!({"method":"enable", "bchd_urls": [], "allow_slp_unsafe_conf": true});
         let priv_key = Secp256k1Secret::from("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f");
         let ctx = MmCtxBuilder::new().into_mm_arc();
@@ -353,7 +364,9 @@ impl BchDockerOps {
 }
 
 impl CoinDockerOps for BchDockerOps {
-    fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
+    fn rpc_client(&self) -> &UtxoRpcClientEnum {
+        &self.coin.as_ref().rpc_client
+    }
 }
 
 pub struct DockerNode {
@@ -392,7 +405,7 @@ pub fn utxo_asset_docker_node(ticker: &'static str, port: u16) -> DockerNode {
     let container = image.start().expect("Failed to start UTXO asset docker node");
     let mut conf_path = coin_daemon_data_dir(ticker, true);
     std::fs::create_dir_all(&conf_path).unwrap();
-    conf_path.push(format!("{}.conf", ticker));
+    conf_path.push(format!("{ticker}.conf"));
     Command::new("docker")
         .arg("cp")
         .arg(format!("{}:/data/node_0/{}.conf", container.id(), ticker))
@@ -512,7 +525,7 @@ pub fn zombie_asset_docker_node(port: u16) -> DockerNode {
     let mut conf_path = coin_daemon_data_dir(config_ticker, true);
 
     std::fs::create_dir_all(&conf_path).unwrap();
-    conf_path.push(format!("{}.conf", config_ticker));
+    conf_path.push(format!("{config_ticker}.conf"));
     Command::new("docker")
         .arg("cp")
         .arg(format!("{}:/data/node_0/{}.conf", container.id(), config_ticker))
@@ -538,9 +551,13 @@ pub fn rmd160_from_priv(privkey: Secp256k1Secret) -> H160 {
     dhash160(&public.serialize())
 }
 
-pub fn get_prefilled_slp_privkey() -> [u8; 32] { SLP_TOKEN_OWNERS.lock().unwrap().remove(0) }
+pub fn get_prefilled_slp_privkey() -> [u8; 32] {
+    SLP_TOKEN_OWNERS.lock().unwrap().remove(0)
+}
 
-pub fn get_slp_token_id() -> String { hex::encode(SLP_TOKEN_ID.lock().unwrap().as_slice()) }
+pub fn get_slp_token_id() -> String {
+    hex::encode(SLP_TOKEN_ID.lock().unwrap().as_slice())
+}
 
 pub fn import_address<T>(coin: &T)
 where
@@ -622,7 +639,7 @@ fn qrc20_coin_conf_item(ticker: &str) -> Json {
             _ => panic!("Expected either QICK or QORTY ticker, found {}", ticker),
         }
     };
-    let contract_address = format!("{:#02x}", contract_address);
+    let contract_address = format!("{contract_address:#02x}");
 
     let confpath = unsafe { QTUM_CONF_PATH.as_ref().expect("Qtum config is not set yet") };
     json!({
@@ -640,7 +657,7 @@ fn qrc20_coin_conf_item(ticker: &str) -> Json {
 /// Build asset `UtxoStandardCoin` from ticker and privkey without filling the balance.
 pub fn utxo_coin_from_privkey(ticker: &str, priv_key: Secp256k1Secret) -> (MmArc, UtxoStandardCoin) {
     let ctx = MmCtxBuilder::new().into_mm_arc();
-    let conf = json!({"asset":ticker,"txversion":4,"overwintered":1,"txfee":1000,"network":"regtest"});
+    let conf = json!({"coin":ticker,"asset":ticker,"txversion":4,"overwintered":1,"txfee":1000,"network":"regtest"});
     let req = json!({"method":"enable"});
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
     let coin = block_on(utxo_standard_coin_with_priv_key(&ctx, ticker, &conf, &params, priv_key)).unwrap();
@@ -766,7 +783,7 @@ pub fn generate_qtum_coin_with_random_privkey(
     let priv_key = random_secp256k1_secret();
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let coin = block_on(qtum_coin_with_priv_key(&ctx, "QTUM", &conf, &params, priv_key)).unwrap();
+    let coin = block_on(qtum_coin_with_priv_key(&ctx, ticker, &conf, &params, priv_key)).unwrap();
 
     let timeout = 30; // timeout if test takes more than 30 seconds to run
     let my_address = coin.my_address().expect("!my_address");
@@ -804,7 +821,7 @@ pub fn generate_segwit_qtum_coin_with_random_privkey(
     let priv_key = random_secp256k1_secret();
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let coin = block_on(qtum_coin_with_priv_key(&ctx, "QTUM", &conf, &params, priv_key)).unwrap();
+    let coin = block_on(qtum_coin_with_priv_key(&ctx, ticker, &conf, &params, priv_key)).unwrap();
 
     let timeout = 30; // timeout if test takes more than 30 seconds to run
     let my_address = coin.my_address().expect("!my_address");
@@ -1109,17 +1126,17 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
 
     // ensure the swaps are started
     block_on(mm_bob.wait_for_log(22., |log| {
-        log.contains(&format!("Entering the maker_swap_loop {}/{}", base, rel))
+        log.contains(&format!("Entering the maker_swap_loop {base}/{rel}"))
     }))
     .unwrap();
     block_on(mm_alice.wait_for_log(22., |log| {
-        log.contains(&format!("Entering the taker_swap_loop {}/{}", base, rel))
+        log.contains(&format!("Entering the taker_swap_loop {base}/{rel}"))
     }))
     .unwrap();
 
     // ensure the swaps are finished
-    block_on(mm_bob.wait_for_log(600., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))).unwrap();
-    block_on(mm_alice.wait_for_log(600., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))).unwrap();
+    block_on(mm_bob.wait_for_log(600., |log| log.contains(&format!("[swap uuid={uuid}] Finished")))).unwrap();
+    block_on(mm_alice.wait_for_log(600., |log| log.contains(&format!("[swap uuid={uuid}] Finished")))).unwrap();
 
     log!("Checking alice/taker status..");
     block_on(check_my_swap_status(

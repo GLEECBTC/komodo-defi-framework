@@ -191,15 +191,21 @@ pub enum SelectRecentOrdersUuidsErr {
 }
 
 impl std::fmt::Display for SelectRecentOrdersUuidsErr {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "{:?}", self) }
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
 }
 
 impl From<SqlError> for SelectRecentOrdersUuidsErr {
-    fn from(err: SqlError) -> Self { SelectRecentOrdersUuidsErr::Sql(err) }
+    fn from(err: SqlError) -> Self {
+        SelectRecentOrdersUuidsErr::Sql(err)
+    }
 }
 
 impl From<ParseError> for SelectRecentOrdersUuidsErr {
-    fn from(err: ParseError) -> Self { SelectRecentOrdersUuidsErr::Parse(err) }
+    fn from(err: ParseError) -> Self {
+        SelectRecentOrdersUuidsErr::Parse(err)
+    }
 }
 
 pub fn select_orders_by_filter(

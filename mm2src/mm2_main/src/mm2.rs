@@ -32,14 +32,21 @@
 #![cfg_attr(target_arch = "wasm32", allow(dead_code))]
 #![cfg_attr(target_arch = "wasm32", allow(unused_imports))]
 
-#[macro_use] extern crate common;
-#[macro_use] extern crate gstuff;
-#[macro_use] extern crate serde_json;
-#[macro_use] extern crate serde_derive;
-#[macro_use] extern crate ser_error_derive;
-#[cfg(test)] extern crate mm2_test_helpers;
+#[macro_use]
+extern crate common;
+#[macro_use]
+extern crate gstuff;
+#[macro_use]
+extern crate serde_json;
+#[macro_use]
+extern crate serde_derive;
+#[macro_use]
+extern crate ser_error_derive;
+#[cfg(test)]
+extern crate mm2_test_helpers;
 
-#[cfg(not(target_arch = "wasm32"))] use common::block_on;
+#[cfg(not(target_arch = "wasm32"))]
+use common::block_on;
 use common::crash_reports::init_crash_reports;
 use common::executor::Timer;
 use common::log;
@@ -64,7 +71,8 @@ pub use self::lp_native_dex::init_hw;
 pub use self::lp_native_dex::lp_init;
 use mm2_err_handle::prelude::*;
 
-#[cfg(not(target_arch = "wasm32"))] pub mod database;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod database;
 
 pub mod heartbeat_event;
 pub mod lp_dispatcher;
@@ -78,7 +86,8 @@ pub mod lp_swap;
 pub mod lp_wallet;
 pub mod rpc;
 mod swap_versioning;
-#[cfg(all(target_arch = "wasm32", test))] mod wasm_tests;
+#[cfg(all(target_arch = "wasm32", test))]
+mod wasm_tests;
 
 use clap::Parser;
 
@@ -128,7 +137,9 @@ pub struct LpMainParams {
 }
 
 impl LpMainParams {
-    pub fn with_conf(conf: Json) -> LpMainParams { LpMainParams { conf, filter: None } }
+    pub fn with_conf(conf: Json) -> LpMainParams {
+        LpMainParams { conf, filter: None }
+    }
 
     pub fn log_filter(mut self, filter: Option<LogLevel>) -> LpMainParams {
         self.filter = filter;
@@ -179,7 +190,7 @@ pub async fn lp_main(
         if !is_weak_password_accepted && cfg!(not(test)) {
             match password_policy(conf["rpc_password"].as_str().unwrap()) {
                 Ok(_) => {},
-                Err(err) => return Err(format!("{}", err)),
+                Err(err) => return Err(format!("{err}")),
             }
         }
     }
@@ -310,7 +321,7 @@ pub fn get_mm2config(json_config: Option<&str>) -> Result<Json, String> {
 /// Runs LP_main with result of `get_mm2config()`.
 ///
 /// * `ctx_cb` - Invoked with the MM context handle,
-///              allowing the `run_lp_main` caller to communicate with MM.
+///   allowing the `run_lp_main` caller to communicate with MM.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn run_lp_main(
     first_arg: Option<&str>,

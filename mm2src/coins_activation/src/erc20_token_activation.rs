@@ -1,12 +1,18 @@
-use crate::{prelude::{TryFromCoinProtocol, TryPlatformCoinFromMmCoinEnum},
-            token::{EnableTokenError, TokenActivationOps, TokenProtocolParams}};
+use crate::{
+    prelude::{TryFromCoinProtocol, TryPlatformCoinFromMmCoinEnum},
+    token::{EnableTokenError, TokenActivationOps, TokenProtocolParams},
+};
 use async_trait::async_trait;
 use coins::eth::v2_activation::{EthTokenActivationParams, EthTokenProtocol, NftProtocol, NftProviderEnum};
 use coins::hd_wallet::DisplayAddress;
 use coins::nft::nft_structs::NftInfo;
-use coins::{eth::{v2_activation::{Erc20Protocol, EthTokenActivationError},
-                  valid_addr_from_str, EthCoin},
-            CoinBalance, CoinProtocol, CoinWithDerivationMethod, MarketCoinOps, MmCoin, MmCoinEnum};
+use coins::{
+    eth::{
+        v2_activation::{Erc20Protocol, EthTokenActivationError},
+        valid_addr_from_str, EthCoin,
+    },
+    CoinBalance, CoinProtocol, CoinWithDerivationMethod, MarketCoinOps, MmCoin, MmCoinEnum,
+};
 use common::Future01CompatExt;
 use mm2_err_handle::prelude::*;
 use serde::Serialize;
@@ -45,6 +51,7 @@ impl From<EthTokenActivationError> for EnableTokenError {
             EthTokenActivationError::UnexpectedDerivationMethod(e) => EnableTokenError::UnexpectedDerivationMethod(e),
             EthTokenActivationError::PrivKeyPolicyNotAllowed(e) => EnableTokenError::PrivKeyPolicyNotAllowed(e),
             EthTokenActivationError::CustomTokenError(e) => EnableTokenError::CustomTokenError(e),
+            EthTokenActivationError::PlatformCoinMismatch => EnableTokenError::PlatformCoinMismatch,
         }
     }
 }
@@ -113,7 +120,9 @@ impl TryFromCoinProtocol for EthTokenProtocol {
 }
 
 impl TokenProtocolParams for Erc20Protocol {
-    fn platform_coin_ticker(&self) -> &str { &self.platform }
+    fn platform_coin_ticker(&self) -> &str {
+        &self.platform
+    }
 }
 
 impl TokenProtocolParams for EthTokenProtocol {
@@ -176,7 +185,7 @@ impl TokenActivationOps for EthCoin {
                         balances,
                         platform_coin: token.platform_ticker().to_owned(),
                         required_confirmations: token.required_confirmations(),
-                        token_contract_address: format!("{:#02x}", token_contract_address),
+                        token_contract_address: format!("{token_contract_address:#02x}"),
                     });
 
                     Ok((token, init_result))

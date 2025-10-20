@@ -1,5 +1,6 @@
-#![allow(clippy::assign_op_pattern)]
-#![allow(clippy::ptr_offset_with_cast)]
+#![expect(clippy::assign_op_pattern)]
+#![expect(clippy::ptr_offset_with_cast)]
+#![expect(clippy::manual_div_ceil)]
 
 extern crate bitcoin_hashes;
 extern crate byteorder;

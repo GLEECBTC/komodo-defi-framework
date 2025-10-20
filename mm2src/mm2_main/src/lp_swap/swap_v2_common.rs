@@ -20,8 +20,9 @@ use uuid::Uuid;
 
 cfg_native!(
     use common::async_blocking;
-    use crate::database::my_swaps::{does_swap_exist, get_swap_events, update_swap_events, select_unfinished_swaps_uuids,
-                                set_swap_is_finished};
+    use crate::database::my_swaps::{
+        does_swap_exist, get_swap_events, update_swap_events, select_unfinished_swaps_uuids, set_swap_is_finished,
+    };
 );
 
 cfg_wasm32!(
@@ -72,26 +73,36 @@ pub enum SwapStateMachineError {
 }
 
 impl From<SwapLockError> for SwapStateMachineError {
-    fn from(e: SwapLockError) -> Self { SwapStateMachineError::SwapLock(e) }
+    fn from(e: SwapLockError) -> Self {
+        SwapStateMachineError::SwapLock(e)
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<db_common::sqlite::rusqlite::Error> for SwapStateMachineError {
-    fn from(e: db_common::sqlite::rusqlite::Error) -> Self { SwapStateMachineError::StorageError(e.to_string()) }
+    fn from(e: db_common::sqlite::rusqlite::Error) -> Self {
+        SwapStateMachineError::StorageError(e.to_string())
+    }
 }
 
 impl From<serde_json::Error> for SwapStateMachineError {
-    fn from(e: Error) -> Self { SwapStateMachineError::SerdeError(e.to_string()) }
+    fn from(e: Error) -> Self {
+        SwapStateMachineError::SerdeError(e.to_string())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
 impl From<InitDbError> for SwapStateMachineError {
-    fn from(e: InitDbError) -> Self { SwapStateMachineError::StorageError(e.to_string()) }
+    fn from(e: InitDbError) -> Self {
+        SwapStateMachineError::StorageError(e.to_string())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
 impl From<DbTransactionError> for SwapStateMachineError {
-    fn from(e: DbTransactionError) -> Self { SwapStateMachineError::StorageError(e.to_string()) }
+    fn from(e: DbTransactionError) -> Self {
+        SwapStateMachineError::StorageError(e.to_string())
+    }
 }
 
 pub struct SwapRecreateCtx<MakerCoin, TakerCoin> {

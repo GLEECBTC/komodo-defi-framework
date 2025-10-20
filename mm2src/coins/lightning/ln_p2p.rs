@@ -25,17 +25,17 @@ pub type PeerManager =
 
 #[derive(Display)]
 pub enum ConnectToNodeRes {
-    #[display(fmt = "Already connected to node: {}@{}", pubkey, node_addr)]
+    #[display(fmt = "Already connected to node: {pubkey}@{node_addr}")]
     AlreadyConnected { pubkey: PublicKey, node_addr: SocketAddr },
-    #[display(fmt = "Connected successfully to node : {}@{}", pubkey, node_addr)]
+    #[display(fmt = "Connected successfully to node : {pubkey}@{node_addr}")]
     ConnectedSuccessfully { pubkey: PublicKey, node_addr: SocketAddr },
 }
 
 #[derive(Display)]
 pub enum ConnectionError {
-    #[display(fmt = "Handshake error: {}", _0)]
+    #[display(fmt = "Handshake error: {_0}")]
     HandshakeErr(String),
-    #[display(fmt = "Timeout error: {}", _0)]
+    #[display(fmt = "Timeout error: {_0}")]
     TimeOut(String),
 }
 
@@ -53,12 +53,7 @@ pub async fn connect_to_ln_node(
     let mut connection_closed_future =
         match lightning_net_tokio::connect_outbound(Arc::clone(&peer_manager), pubkey, node_addr).await {
             Some(fut) => Box::pin(fut),
-            None => {
-                return Err(ConnectionError::TimeOut(format!(
-                    "Failed to connect to node: {}",
-                    pubkey
-                )))
-            },
+            None => return Err(ConnectionError::TimeOut(format!("Failed to connect to node: {pubkey}"))),
         };
 
     loop {
@@ -66,8 +61,7 @@ pub async fn connect_to_ln_node(
         match futures::poll!(&mut connection_closed_future) {
             std::task::Poll::Ready(_) => {
                 return Err(ConnectionError::HandshakeErr(format!(
-                    "Node {} disconnected before finishing the handshake",
-                    pubkey
+                    "Node {pubkey} disconnected before finishing the handshake"
                 )));
             },
             std::task::Poll::Pending => {},
@@ -94,10 +88,10 @@ pub async fn connect_to_ln_nodes_loop(open_channels_nodes: NodesAddressesMapShar
             match connect_to_ln_node(pubkey, node_addr, peer_manager.clone()).await {
                 Ok(res) => {
                     if let ConnectToNodeRes::ConnectedSuccessfully { .. } = res {
-                        log::info!("{}", res.to_string());
+                        log::info!("{}", res);
                     }
                 },
-                Err(e) => log::error!("{}", e.to_string()),
+                Err(e) => log::error!("{}", e),
             }
         }
 
@@ -189,7 +183,7 @@ pub async fn init_peer_manager(
     // If the user wishes to preserve privacy, addresses should likely contain only Tor Onion addresses.
     let listening_addr = myipaddr(ctx).await.map_to_mm(EnableLightningError::InvalidAddress)?;
     // If the listening port is used start_lightning should return an error early
-    let listener = TcpListener::bind(format!("{}:{}", listening_addr, listening_port))
+    let listener = TcpListener::bind(format!("{listening_addr}:{listening_port}"))
         .await
         .map_to_mm(|e| EnableLightningError::IOError(e.to_string()))?;
 

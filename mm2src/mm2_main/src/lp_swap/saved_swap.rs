@@ -15,17 +15,17 @@ pub type SavedSwapResult<T> = Result<T, MmError<SavedSwapError>>;
 
 #[derive(Debug, Display, Deserialize, Serialize)]
 pub enum SavedSwapError {
-    #[display(fmt = "Error saving the a swap: {}", _0)]
+    #[display(fmt = "Error saving the a swap: {_0}")]
     ErrorSaving(String),
-    #[display(fmt = "Error loading a swap: {}", _0)]
+    #[display(fmt = "Error loading a swap: {_0}")]
     ErrorLoading(String),
-    #[display(fmt = "Error deserializing a swap: {}", _0)]
+    #[display(fmt = "Error deserializing a swap: {_0}")]
     ErrorDeserializing(String),
-    #[display(fmt = "Error serializing a swap: {}", _0)]
+    #[display(fmt = "Error serializing a swap: {_0}")]
     ErrorSerializing(String),
     CursorError(String),
     #[allow(dead_code)]
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     InternalError(String),
 }
 
@@ -37,11 +37,15 @@ pub enum SavedSwap {
 }
 
 impl From<MakerSavedSwap> for SavedSwap {
-    fn from(maker: MakerSavedSwap) -> Self { SavedSwap::Maker(maker) }
+    fn from(maker: MakerSavedSwap) -> Self {
+        SavedSwap::Maker(maker)
+    }
 }
 
 impl From<TakerSavedSwap> for SavedSwap {
-    fn from(taker: TakerSavedSwap) -> Self { SavedSwap::Taker(taker) }
+    fn from(taker: TakerSavedSwap) -> Self {
+        SavedSwap::Taker(taker)
+    }
 }
 
 impl SavedSwap {
@@ -52,7 +56,9 @@ impl SavedSwap {
         }
     }
 
-    pub fn is_finished_and_success(&self) -> bool { self.is_success().unwrap_or(false) }
+    pub fn is_finished_and_success(&self) -> bool {
+        self.is_success().unwrap_or(false)
+    }
 
     pub fn is_finished(&self) -> bool {
         match self {
@@ -297,8 +303,9 @@ mod native_impl {
 #[cfg(target_arch = "wasm32")]
 mod wasm_impl {
     use super::*;
-    use crate::lp_swap::swap_wasm_db::{DbTransactionError, InitDbError, MySwapsFiltersTable, SavedSwapTable,
-                                       SwapsMigrationTable};
+    use crate::lp_swap::swap_wasm_db::{
+        DbTransactionError, InitDbError, MySwapsFiltersTable, SavedSwapTable, SwapsMigrationTable,
+    };
     use crate::lp_swap::{SwapsContext, LEGACY_SWAP_TYPE};
     use bytes::Buf;
     use common::log::{info, warn};
@@ -369,8 +376,7 @@ mod wasm_impl {
                 1 => break,
                 unsupported => {
                     return MmError::err(SavedSwapError::InternalError(format!(
-                        "Unsupported migration {}",
-                        unsupported
+                        "Unsupported migration {unsupported}"
                     )))
                 },
             }
@@ -386,7 +392,9 @@ mod wasm_impl {
     }
 
     impl From<CursorError> for SavedSwapError {
-        fn from(e: CursorError) -> Self { SavedSwapError::CursorError(e.to_string()) }
+        fn from(e: CursorError) -> Self {
+            SavedSwapError::CursorError(e.to_string())
+        }
     }
 
     impl From<DbTransactionError> for SavedSwapError {
@@ -415,7 +423,9 @@ mod wasm_impl {
     }
 
     impl From<InitDbError> for SavedSwapError {
-        fn from(e: InitDbError) -> Self { SavedSwapError::InternalError(e.to_string()) }
+        fn from(e: InitDbError) -> Self {
+            SavedSwapError::InternalError(e.to_string())
+        }
     }
 
     #[async_trait]

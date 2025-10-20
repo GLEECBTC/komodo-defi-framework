@@ -1,26 +1,3 @@
-# Enable unstable features on stable and beta channels (unstable features are available by default on nightly).
-# https://github.com/rust-lang/rustfmt/blob/master/Configurations.md#unstable_features
-unstable_features = true
-
-# Put single-expression functions on a single line
-# Note: Unstable
-# https://github.com/rust-lang/rustfmt/blob/master/Configurations.md#fn_single_line
-fn_single_line = true
-
-# Force multiline closure and match arm bodies to be wrapped in a block
-# https://github.com/rust-lang/rustfmt/blob/master/Configurations.md#force_multiline_blocks
-force_multiline_blocks = false
-
-# Indent style of imports
-# Note: Unstable
-# https://github.com/rust-lang/rustfmt/blob/master/Configurations.md#imports_indent
-imports_indent = "Visual"
-
-# Write an item and its attribute on the same line if their combined width is below a threshold
-# Note: Unstable
-# https://github.com/rust-lang/rustfmt/blob/master/Configurations.md#inline_attribute_width
-inline_attribute_width = 65
-
 # Put a trailing comma after a block based match arm (non-block arms are not affected)
 # https://github.com/rust-lang/rustfmt/blob/master/Configurations.md#match_block_trailing_comma
 match_block_trailing_comma = true
@@ -33,12 +10,6 @@ max_width = 120
 # Unix or Windows line endings
 # https://github.com/rust-lang/rustfmt/blob/master/Configurations.md#newline_style
 newline_style = "Auto"
-
-# When structs, slices, arrays, and block/array-like macros are used as the last argument in an expression list,
-# allow them to overflow (like blocks/closures) instead of being indented on a new line.
-# Note: Unstable
-# https://github.com/rust-lang/rustfmt/blob/master/Configurations.md#overflow_delimited_expr
-overflow_delimited_expr = true
 
 # Number of spaces per tab
 # https://github.com/rust-lang/rustfmt/blob/master/Configurations.md#tab_spaces

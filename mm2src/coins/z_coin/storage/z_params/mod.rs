@@ -32,8 +32,7 @@ async fn fetch_params(name: &str, expected_hash: &str) -> MmResult<Vec<u8>, Zcas
 
     if status != 200 {
         return MmError::err(ZcashParamsError::Transport(format!(
-            "Expected status 200, got {} for {}",
-            status, name
+            "Expected status 200, got {status} for {name}"
         )));
     }
 
@@ -41,10 +40,7 @@ async fn fetch_params(name: &str, expected_hash: &str) -> MmResult<Vec<u8>, Zcas
     // Verify parameter file hash.
     if &hash != expected_hash {
         return Err(ZcashParamsError::ValidationError(format!(
-            "{} failed validation (expected: {}, actual: {}, fetched {} bytes)",
-            name,
-            expected_hash,
-            hash,
+            "{name} failed validation (expected: {expected_hash}, actual: {hash}, fetched {} bytes)",
             file.len()
         ))
         .into());

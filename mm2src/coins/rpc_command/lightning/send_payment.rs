@@ -16,15 +16,15 @@ type SendPaymentResult<T> = Result<T, MmError<SendPaymentError>>;
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum SendPaymentError {
-    #[display(fmt = "Lightning network is not supported for {}", _0)]
+    #[display(fmt = "Lightning network is not supported for {_0}")]
     UnsupportedCoin(String),
-    #[display(fmt = "No such coin {}", _0)]
+    #[display(fmt = "No such coin {_0}")]
     NoSuchCoin(String),
-    #[display(fmt = "Couldn't parse destination pubkey: {}", _0)]
+    #[display(fmt = "Couldn't parse destination pubkey: {_0}")]
     NoRouteFound(String),
-    #[display(fmt = "Payment error: {}", _0)]
+    #[display(fmt = "Payment error: {_0}")]
     PaymentError(String),
-    #[display(fmt = "DB error {}", _0)]
+    #[display(fmt = "DB error {_0}")]
     DbError(String),
 }
 
@@ -49,11 +49,15 @@ impl From<CoinFindError> for SendPaymentError {
 }
 
 impl From<SqlError> for SendPaymentError {
-    fn from(err: SqlError) -> SendPaymentError { SendPaymentError::DbError(err.to_string()) }
+    fn from(err: SqlError) -> SendPaymentError {
+        SendPaymentError::DbError(err.to_string())
+    }
 }
 
 impl From<PaymentError> for SendPaymentError {
-    fn from(err: PaymentError) -> SendPaymentError { SendPaymentError::PaymentError(err.to_string()) }
+    fn from(err: PaymentError) -> SendPaymentError {
+        SendPaymentError::PaymentError(err.to_string())
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -95,8 +99,7 @@ pub async fn send_payment(ctx: MmArc, req: SendPaymentReq) -> SendPaymentResult<
         connect_to_ln_node(node_pubkey, node_addr, ln_coin.peer_manager.clone())
             .await
             .error_log_with_msg(&format!(
-                "Channel with node: {} can't be used to route this payment due to connection error.",
-                node_pubkey
+                "Channel with node: {node_pubkey} can't be used to route this payment due to connection error."
             ));
     }
     let payment_info = match req.payment {

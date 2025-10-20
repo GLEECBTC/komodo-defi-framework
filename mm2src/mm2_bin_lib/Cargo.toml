@@ -5,8 +5,8 @@
 
 [package]
 name = "mm2_bin_lib"
-version = "2.5.0-beta"
-authors = ["James Lee", "Artem Pikulin", "Artem Grinblat", "Omar S.", "Onur Ozkan", "Alina Sharon", "Caglar Kaya", "Cipi", "Sergey Boiko", "Samuel Onoja", "Roman Sztergbaum", "Kadan Stadelmann <ca333@komodoplatform.com>", "Dimxy", "Omer Yacine", "DeckerSU"]
+version = "2.5.2-beta"
+authors = ["James Lee", "Artem Pikulin", "Artem Grinblat", "Omar S.", "Onur Ozkan", "Alina Sharon", "Caglar Kaya", "Cipi", "Sergey Boiko", "Samuel Onoja", "Roman Sztergbaum", "Kadan Stadelmann <ca333@komodoplatform.com>", "Dimxy", "Omer Yacine", "DeckerSU", "dragonhound <smk@komodoplatform>", "Devin AI"]
 edition = "2018"
 default-run = "kdf"
 
@@ -41,8 +41,13 @@ mm2_main = { path = "../mm2_main" }
 num-traits.workspace = true
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 
+[build-dependencies]
+chrono = { workspace = true, features = ["now"] }
+gstuff.workspace = true
+regex.workspace = true
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-gstuff.workspace = true 
+gstuff.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys.workspace = true
@@ -54,7 +59,8 @@ wasm-bindgen-futures.workspace = true
 [target.x86_64-unknown-linux-gnu.dependencies]
 jemallocator.workspace = true
 
-[build-dependencies]
-chrono.workspace = true 
-gstuff.workspace = true 
-regex.workspace = true
+[package.metadata.wasm-pack.profile.dev]
+wasm-opt = ['-O', '--enable-bulk-memory', '--enable-nontrapping-float-to-int']
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ['-O', '--enable-bulk-memory', '--enable-nontrapping-float-to-int']

@@ -32,6 +32,7 @@ new-db-arch = ["mm2_core/new-db-arch"] # A temporary feature to integrate the ne
 # once we consider it as stable.
 ibc-routing-for-swaps = []
 for-tests = []
+enable-solana = ["coins/enable-solana", "coins_activation/enable-solana"]
 
 [dependencies]
 async-std = { workspace = true, features = ["unstable"] }
@@ -83,8 +84,7 @@ mm2_rpc = { path = "../mm2_rpc", features = ["rpc_facilities"] }
 mm2_state_machine = { path = "../mm2_state_machine" }
 trading_api = { path = "../trading_api" }
 num-traits.workspace = true
-parity-util-mem.workspace = true
-parking_lot = { workspace = true, features = ["nightly"] }
+parking_lot = { workspace = true }
 primitives = { path = "../mm2_bitcoin/primitives" }
 primitive-types.workspace = true
 prost.workspace = true
@@ -113,7 +113,7 @@ uuid.workspace = true
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # TODO: Removing this causes `wasm-pack` to fail when starting a web session (even though we don't use this crate).
 # Investigate why.
-instant = { workspace = true, features = ["wasm-bindgen"] }
+instant = { version = "0.1.12", features = ["wasm-bindgen"] }
 js-sys.workspace = true
 mm2_db = { path = "../mm2_db" }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
@@ -124,7 +124,6 @@ wasm-bindgen-test.workspace = true
 web-sys = { workspace = true, features = ["console"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-dirs.workspace = true
 futures-rustls.workspace = true
 hyper = { workspace = true, features = ["client", "http2", "server", "tcp"] }
 rcgen.workspace = true

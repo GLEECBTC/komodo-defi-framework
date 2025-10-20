@@ -1,11 +1,15 @@
 use super::{utxo_standard::UtxoStandardCoin, UtxoArc};
 
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
-use crate::{utxo::{output_script,
-                   rpc_clients::electrum_script_hash,
-                   utxo_common::{address_balance, address_to_scripthash},
-                   ScripthashNotification, UtxoCoinFields},
-            CoinWithDerivationMethod, MarketCoinOps};
+use crate::{
+    utxo::{
+        output_script,
+        rpc_clients::electrum_script_hash,
+        utxo_common::{address_balance, address_to_scripthash},
+        ScripthashNotification, UtxoCoinFields,
+    },
+    CoinWithDerivationMethod, MarketCoinOps,
+};
 
 use async_trait::async_trait;
 use common::log;
@@ -43,7 +47,9 @@ impl<'a> DeriveStreamerId<'a> for UtxoBalanceEventStreamer {
         }
     }
 
-    fn derive_streamer_id(coin: Self::DeriveParam) -> StreamerId { StreamerId::Balance { coin: coin.to_string() } }
+    fn derive_streamer_id(coin: Self::DeriveParam) -> StreamerId {
+        StreamerId::Balance { coin: coin.to_string() }
+    }
 }
 
 #[async_trait]

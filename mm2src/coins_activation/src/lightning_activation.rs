@@ -1,6 +1,8 @@
 use crate::context::CoinsActivationContext;
-use crate::l2::{InitL2ActivationOps, InitL2Error, InitL2InitialStatus, InitL2TaskHandleShared,
-                InitL2TaskManagerShared, L2ProtocolParams};
+use crate::l2::{
+    InitL2ActivationOps, InitL2Error, InitL2InitialStatus, InitL2TaskHandleShared, InitL2TaskManagerShared,
+    L2ProtocolParams,
+};
 use crate::prelude::*;
 use async_trait::async_trait;
 use coins::coin_errors::MyAddressError;
@@ -10,8 +12,10 @@ use coins::lightning::ln_events::{init_abortable_events, LightningEventHandler};
 use coins::lightning::ln_p2p::{connect_to_ln_nodes_loop, init_peer_manager, ln_node_announcement_loop};
 use coins::lightning::ln_platform::Platform;
 use coins::lightning::ln_storage::LightningStorage;
-use coins::lightning::ln_utils::{get_open_channels_nodes_addresses, init_channel_manager, init_db, init_keys_manager,
-                                 init_persister, PAYMENT_RETRY_ATTEMPTS};
+use coins::lightning::ln_utils::{
+    get_open_channels_nodes_addresses, init_channel_manager, init_db, init_keys_manager, init_persister,
+    PAYMENT_RETRY_ATTEMPTS,
+};
 use coins::lightning::{InvoicePayer, LightningCoin};
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::utxo::UtxoCommonOps;
@@ -60,7 +64,9 @@ pub enum LightningInProgressStatus {
 }
 
 impl InitL2InitialStatus for LightningInProgressStatus {
-    fn initial_status() -> Self { LightningInProgressStatus::ActivatingCoin }
+    fn initial_status() -> Self {
+        LightningInProgressStatus::ActivatingCoin
+    }
 }
 
 impl TryPlatformCoinFromMmCoinEnum for UtxoStandardCoin {
@@ -96,7 +102,9 @@ impl TryFromCoinProtocol for LightningProtocolConf {
 }
 
 impl L2ProtocolParams for LightningProtocolConf {
-    fn platform_coin_ticker(&self) -> &str { &self.platform_coin_ticker }
+    fn platform_coin_ticker(&self) -> &str {
+        &self.platform_coin_ticker
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -132,13 +140,13 @@ pub struct LightningValidatedParams {
 #[derive(Clone, Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum LightningValidationErr {
-    #[display(fmt = "Platform coin {} activated in {} mode", _0, _1)]
+    #[display(fmt = "Platform coin {_0} activated in {_1} mode")]
     UnexpectedMethod(String, String),
-    #[display(fmt = "{} is only supported in {} mode", _0, _1)]
+    #[display(fmt = "{_0} is only supported in {_1} mode")]
     UnsupportedMode(String, String),
-    #[display(fmt = "Invalid request: {}", _0)]
+    #[display(fmt = "Invalid request: {_0}")]
     InvalidRequest(String),
-    #[display(fmt = "Invalid address: {}", _0)]
+    #[display(fmt = "Invalid address: {_0}")]
     InvalidAddress(String),
 }
 
@@ -156,7 +164,7 @@ pub enum LightningInitError {
         ticker: String,
     },
     InvalidConfiguration(String),
-    #[display(fmt = "Error while validating {} configuration: {}", platform_coin_ticker, err)]
+    #[display(fmt = "Error while validating {platform_coin_ticker} configuration: {err}")]
     InvalidPlatformConfiguration {
         platform_coin_ticker: String,
         err: String,
@@ -169,7 +177,9 @@ pub enum LightningInitError {
 }
 
 impl From<MyAddressError> for LightningInitError {
-    fn from(err: MyAddressError) -> Self { Self::MyAddressError(err.to_string()) }
+    fn from(err: MyAddressError) -> Self {
+        Self::MyAddressError(err.to_string())
+    }
 }
 
 impl From<LightningInitError> for InitL2Error {
@@ -200,11 +210,15 @@ impl From<LightningInitError> for InitL2Error {
 }
 
 impl From<EnableLightningError> for LightningInitError {
-    fn from(err: EnableLightningError) -> Self { LightningInitError::EnableLightningError(err) }
+    fn from(err: EnableLightningError) -> Self {
+        LightningInitError::EnableLightningError(err)
+    }
 }
 
 impl From<LightningValidationErr> for LightningInitError {
-    fn from(err: LightningValidationErr) -> Self { LightningInitError::LightningValidationErr(err) }
+    fn from(err: LightningValidationErr) -> Self {
+        LightningInitError::LightningValidationErr(err)
+    }
 }
 
 impl From<RegisterCoinError> for LightningInitError {
@@ -359,7 +373,7 @@ async fn start_lightning(
     let keys_manager = init_keys_manager(&platform)?;
     let node_id = keys_manager
         .get_node_secret(Recipient::Node)
-        .map_err(|e| EnableLightningError::Internal(format!("Error while getting node id: {:?}", e)))?
+        .map_err(|e| EnableLightningError::Internal(format!("Error while getting node id: {e:?}")))?
         .public_key(&Secp256k1::new());
     let node_id = node_id.to_string();
 

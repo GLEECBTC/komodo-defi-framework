@@ -42,6 +42,7 @@ cfg_native! {
     use futures::task::SpawnExt;
     use http::Request;
     use regex::Regex;
+    use serde::Deserialize;
     use std::fs;
     use std::io::Write;
     use std::net::Ipv4Addr;
@@ -533,9 +534,13 @@ pub enum Mm2InitPrivKeyPolicy {
     GlobalHDAccount,
 }
 
-pub fn zombie_conf() -> Json { zombie_conf_inner(None, 0) }
+pub fn zombie_conf() -> Json {
+    zombie_conf_inner(None, 0)
+}
 
-pub fn zombie_conf_for_docker() -> Json { zombie_conf_inner(Some(10), 1) }
+pub fn zombie_conf_for_docker() -> Json {
+    zombie_conf_inner(Some(10), 1)
+}
 
 pub fn zombie_conf_inner(custom_blocktime: Option<u8>, required_confirmations: u8) -> Json {
     json!({
@@ -896,9 +901,13 @@ pub fn eth_testnet_conf_trezor() -> Json {
 }
 
 /// ETH configuration used for dockerized Geth dev node
-pub fn eth_dev_conf() -> Json { eth_conf("ETH") }
+pub fn eth_dev_conf() -> Json {
+    eth_conf("ETH")
+}
 
-pub fn eth1_dev_conf() -> Json { eth_conf("ETH1") }
+pub fn eth1_dev_conf() -> Json {
+    eth_conf("ETH1")
+}
 
 fn eth_conf(coin: &str) -> Json {
     json!({
@@ -958,7 +967,9 @@ pub fn nft_dev_conf() -> Json {
     })
 }
 
-fn set_chain_id(conf: &mut Json, chain_id: u64) { conf["chain_id"] = json!(chain_id); }
+fn set_chain_id(conf: &mut Json, chain_id: u64) {
+    conf["chain_id"] = json!(chain_id);
+}
 
 pub fn eth_sepolia_conf() -> Json {
     json!({
@@ -1198,10 +1209,14 @@ pub fn mm_ctx_with_iguana(passphrase: Option<&str>) -> MmArc {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub fn mm_ctx_with_custom_db() -> MmArc { MmCtxBuilder::new().with_test_db_namespace().into_mm_arc() }
+pub fn mm_ctx_with_custom_db() -> MmArc {
+    MmCtxBuilder::new().with_test_db_namespace().into_mm_arc()
+}
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn mm_ctx_with_custom_db() -> MmArc { mm_ctx_with_custom_db_with_conf(None) }
+pub fn mm_ctx_with_custom_db() -> MmArc {
+    mm_ctx_with_custom_db_with_conf(None)
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn mm_ctx_with_custom_db_with_conf(conf: Option<Json>) -> MmArc {
@@ -1247,7 +1262,9 @@ pub async fn mm_ctx_with_custom_async_db() -> MmArc {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub async fn mm_ctx_with_custom_async_db() -> MmArc { MmCtxBuilder::new().with_test_db_namespace().into_mm_arc() }
+pub async fn mm_ctx_with_custom_async_db() -> MmArc {
+    MmCtxBuilder::new().with_test_db_namespace().into_mm_arc()
+}
 
 /// Automatically kill a wrapped process.
 pub struct RaiiKill {
@@ -1255,7 +1272,9 @@ pub struct RaiiKill {
     running: bool,
 }
 impl RaiiKill {
-    pub fn from_handle(handle: Child) -> RaiiKill { RaiiKill { handle, running: true } }
+    pub fn from_handle(handle: Child) -> RaiiKill {
+        RaiiKill { handle, running: true }
+    }
     pub fn running(&mut self) -> bool {
         if !self.running {
             return false;
@@ -1608,8 +1627,7 @@ impl MarketMakerIt {
         .with_timeout_secs(timeout_sec)
         .await
         .map_err(|e| ERRL!("{:?}", e))
-        // Convert `Result<Result<(), String>, String>` to `Result<(), String>`
-        .flatten()
+        .and_then(|inner_result| inner_result)
     }
 
     /// Busy-wait on the instance in-memory log until the `pred` returns `true` or `timeout_sec` expires.
@@ -1705,13 +1723,19 @@ impl MarketMakerIt {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn mm_dump(&self) -> (RaiiDump, RaiiDump) { mm_dump(&self.log_path) }
+    pub fn mm_dump(&self) -> (RaiiDump, RaiiDump) {
+        mm_dump(&self.log_path)
+    }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn mm_dump(&self) -> (RaiiDump, RaiiDump) { (RaiiDump {}, RaiiDump {}) }
+    pub fn mm_dump(&self) -> (RaiiDump, RaiiDump) {
+        (RaiiDump {}, RaiiDump {})
+    }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn my_seed_addr(&self) -> String { format!("{}", self.ip) }
+    pub fn my_seed_addr(&self) -> String {
+        format!("{}", self.ip)
+    }
 
     /// # Panic
     ///
@@ -1908,6 +1932,7 @@ where
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Serialize, Deserialize, Debug)]
 struct ToWaitForLogRe {
     ctx: u32,
@@ -2179,14 +2204,16 @@ pub struct TestNode {
     pub url: String,
 }
 
-pub async fn enable_eth_coin_v2(
+pub async fn enable_eth_coin_with_tokens_v2(
     mm: &MarketMakerIt,
     ticker: &str,
+    tokens: &[&str],
     swap_contract_address: &str,
     swap_v2_contracts: SwapV2TestContracts,
     fallback_swap_contract: Option<&str>,
     nodes: &[TestNode],
 ) -> Json {
+    let erc20_tokens_requests: Vec<_> = tokens.iter().map(|ticker| json!({ "ticker": ticker })).collect();
     let enable = mm
         .rpc(&json!({
             "userpass": mm.userpass,
@@ -2203,7 +2230,7 @@ pub async fn enable_eth_coin_v2(
                 },
                 "fallback_swap_contract": fallback_swap_contract,
                 "nodes": nodes.iter().map(|node| json!({ "url": node.url })).collect::<Vec<_>>(),
-                "erc20_tokens_requests": []
+                "erc20_tokens_requests": erc20_tokens_requests
             }
         }))
         .await
@@ -3147,8 +3174,8 @@ pub async fn delete_wallet(mm: &MarketMakerIt, wallet_name: &str, password: &str
             "password": password,
         }
     }))
-        .await
-        .unwrap()
+    .await
+    .unwrap()
 }
 
 pub async fn max_maker_vol(mm: &MarketMakerIt, coin: &str) -> RpcResponse {
@@ -3579,7 +3606,7 @@ pub async fn enable_utxo_v2_electrum(
     }
 }
 
-pub async fn init_eth_with_tokens(
+async fn task_enable_eth_with_tokens_init(
     mm: &MarketMakerIt,
     platform_coin: &str,
     tokens: &[&str],
@@ -3615,7 +3642,7 @@ pub async fn init_eth_with_tokens(
     json::from_str(&response.1).unwrap()
 }
 
-pub async fn init_eth_with_tokens_status(mm: &MarketMakerIt, task_id: u64) -> Json {
+async fn task_eth_with_tokens_status(mm: &MarketMakerIt, task_id: u64) -> Json {
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
@@ -3636,7 +3663,7 @@ pub async fn init_eth_with_tokens_status(mm: &MarketMakerIt, task_id: u64) -> Js
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn enable_eth_with_tokens_v2(
+pub async fn task_enable_eth_with_tokens(
     mm: &MarketMakerIt,
     platform_coin: &str,
     tokens: &[&str],
@@ -3645,7 +3672,7 @@ pub async fn enable_eth_with_tokens_v2(
     timeout: u64,
     path_to_address: Option<HDAccountAddressId>,
 ) -> EthWithTokensActivationResult {
-    let init = init_eth_with_tokens(mm, platform_coin, tokens, swap_contract_address, nodes, path_to_address).await;
+    let init = task_enable_eth_with_tokens_init(mm, platform_coin, tokens, swap_contract_address, nodes, path_to_address).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
     let timeout = wait_until_ms(timeout * 1000);
 
@@ -3654,7 +3681,7 @@ pub async fn enable_eth_with_tokens_v2(
             panic!("{} initialization timed out", platform_coin);
         }
 
-        let status = init_eth_with_tokens_status(mm, init.result.task_id).await;
+        let status = task_eth_with_tokens_status(mm, init.result.task_id).await;
         let status: RpcV2Response<InitEthWithTokensStatus> = json::from_value(status).unwrap();
         match status.result {
             InitEthWithTokensStatus::Ok(result) => break result,
@@ -3785,9 +3812,9 @@ pub async fn set_price(
 }
 
 pub async fn start_swaps(
-    maker: &MarketMakerIt,
-    taker: &MarketMakerIt,
-    pairs: &[(&'static str, &'static str)],
+    maker: &mut MarketMakerIt,
+    taker: &mut MarketMakerIt,
+    pairs: &[(&str, &str)],
     maker_price: f64,
     taker_price: f64,
     volume: f64,

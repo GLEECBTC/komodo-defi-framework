@@ -11,9 +11,13 @@ impl DeriveStreamerId<'_> for OrderStatusStreamer {
     type InitParam = ();
     type DeriveParam = ();
 
-    fn new(_: Self::InitParam) -> Self { Self }
+    fn new(_: Self::InitParam) -> Self {
+        Self
+    }
 
-    fn derive_streamer_id(_: Self::DeriveParam) -> StreamerId { StreamerId::OrderStatus }
+    fn derive_streamer_id(_: Self::DeriveParam) -> StreamerId {
+        StreamerId::OrderStatus
+    }
 }
 
 #[derive(Serialize)]
@@ -29,7 +33,9 @@ pub enum OrderStatusEvent {
 impl EventStreamer for OrderStatusStreamer {
     type DataInType = OrderStatusEvent;
 
-    fn streamer_id(&self) -> StreamerId { Self::derive_streamer_id(()) }
+    fn streamer_id(&self) -> StreamerId {
+        Self::derive_streamer_id(())
+    }
 
     async fn handle(
         self,

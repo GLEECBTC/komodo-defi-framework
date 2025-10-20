@@ -161,15 +161,21 @@ pub enum SelectSwapsUuidsErr {
 }
 
 impl std::fmt::Display for SelectSwapsUuidsErr {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "{:?}", self) }
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
 }
 
 impl From<SqlError> for SelectSwapsUuidsErr {
-    fn from(err: SqlError) -> Self { SelectSwapsUuidsErr::Sql(err) }
+    fn from(err: SqlError) -> Self {
+        SelectSwapsUuidsErr::Sql(err)
+    }
 }
 
 impl From<UuidError> for SelectSwapsUuidsErr {
-    fn from(err: UuidError) -> Self { SelectSwapsUuidsErr::Parse(err) }
+    fn from(err: UuidError) -> Self {
+        SelectSwapsUuidsErr::Parse(err)
+    }
 }
 
 /// Adds where clauses determined by MySwapsFilter

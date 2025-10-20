@@ -6,7 +6,7 @@ pub mod simple;
 use ethereum_types::U256;
 use url::Url;
 
-const FEE_PER_GAS_LEVELS: usize = 3;
+pub(crate) const FEE_PRIORITY_LEVEL_N: usize = 3;
 
 /// Indicates which provider was used to get fee per gas estimations
 #[derive(Clone, Debug)]
@@ -31,7 +31,9 @@ impl std::fmt::Display for EstimationSource {
 }
 
 impl Default for EstimationSource {
-    fn default() -> Self { Self::Empty }
+    fn default() -> Self {
+        Self::Empty
+    }
 }
 
 enum PriorityLevelId {

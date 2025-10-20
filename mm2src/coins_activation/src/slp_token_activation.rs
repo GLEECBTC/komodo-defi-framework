@@ -50,7 +50,9 @@ impl TryFromCoinProtocol for SlpProtocolConf {
 }
 
 impl TokenProtocolParams for SlpProtocolConf {
-    fn platform_coin_ticker(&self) -> &str { &self.platform_coin_ticker }
+    fn platform_coin_ticker(&self) -> &str {
+        &self.platform_coin_ticker
+    }
 }
 
 impl From<EnableSlpError> for EnableTokenError {
@@ -60,6 +62,7 @@ impl From<EnableSlpError> for EnableTokenError {
             EnableSlpError::UnexpectedDerivationMethod(e) | EnableSlpError::Internal(e) => {
                 EnableTokenError::Internal(e)
             },
+            EnableSlpError::PlatformCoinMismatch => EnableTokenError::PlatformCoinMismatch,
         }
     }
 }

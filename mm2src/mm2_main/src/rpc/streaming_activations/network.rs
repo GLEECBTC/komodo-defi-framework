@@ -20,7 +20,9 @@ pub enum NetworkStreamingRequestError {
 }
 
 impl HttpStatusCode for NetworkStreamingRequestError {
-    fn status_code(&self) -> StatusCode { StatusCode::BAD_REQUEST }
+    fn status_code(&self) -> StatusCode {
+        StatusCode::BAD_REQUEST
+    }
 }
 
 pub async fn enable_network(

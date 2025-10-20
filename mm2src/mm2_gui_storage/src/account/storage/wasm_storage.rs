@@ -1,11 +1,14 @@
 use crate::account::storage::{AccountStorage, AccountStorageError, AccountStorageResult};
-use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId,
-                     EnabledAccountType, HwPubkey};
+use crate::account::{
+    AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId,
+    EnabledAccountType, HwPubkey,
+};
 use async_trait::async_trait;
 use mm2_core::mm_ctx::MmArc;
-use mm2_db::indexed_db::{ConstructibleDb, DbIdentifier, DbInstance, DbLocked, DbTransaction, DbTransactionError,
-                         DbUpgrader, IndexedDb, IndexedDbBuilder, InitDbError, InitDbResult, MultiIndex,
-                         OnUpgradeResult, SharedDb, TableSignature};
+use mm2_db::indexed_db::{
+    ConstructibleDb, DbIdentifier, DbInstance, DbLocked, DbTransaction, DbTransactionError, DbUpgrader, IndexedDb,
+    IndexedDbBuilder, InitDbError, InitDbResult, MultiIndex, OnUpgradeResult, SharedDb, TableSignature,
+};
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
@@ -41,7 +44,9 @@ impl From<DbTransactionError> for AccountStorageError {
 }
 
 impl From<InitDbError> for AccountStorageError {
-    fn from(e: InitDbError) -> Self { AccountStorageError::Internal(e.to_string()) }
+    fn from(e: InitDbError) -> Self {
+        AccountStorageError::Internal(e.to_string())
+    }
 }
 
 impl AccountId {
@@ -190,7 +195,9 @@ impl WasmAccountStorage {
 #[async_trait]
 impl AccountStorage for WasmAccountStorage {
     /// [`WasmAccountStorage::lock_db_mutex`] initializes the database on the first call.
-    async fn init(&self) -> AccountStorageResult<()> { self.lock_db_mutex().await.map(|_locked_db| ()) }
+    async fn init(&self) -> AccountStorageResult<()> {
+        self.lock_db_mutex().await.map(|_locked_db| ())
+    }
 
     async fn load_account_coins(&self, account_id: AccountId) -> AccountStorageResult<BTreeSet<String>> {
         let locked_db = self.lock_db_mutex().await?;

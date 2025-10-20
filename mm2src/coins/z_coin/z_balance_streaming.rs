@@ -16,10 +16,14 @@ impl<'a> DeriveStreamerId<'a> for ZCoinBalanceEventStreamer {
     type InitParam = ZCoin;
     type DeriveParam = &'a str;
 
-    fn new(coin: Self::InitParam) -> Self { Self { coin } }
+    fn new(coin: Self::InitParam) -> Self {
+        Self { coin }
+    }
 
     #[inline(always)]
-    fn derive_streamer_id(coin: Self::DeriveParam) -> StreamerId { StreamerId::Balance { coin: coin.to_string() } }
+    fn derive_streamer_id(coin: Self::DeriveParam) -> StreamerId {
+        StreamerId::Balance { coin: coin.to_string() }
+    }
 }
 
 #[async_trait]

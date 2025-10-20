@@ -10,8 +10,10 @@ use mm2_rpc::data::legacy::{AggregatedOrderbookEntry, OrderbookRequest, Orderboo
 use num_traits::Zero;
 use serde_json::{self as json, Value as Json};
 
-use super::{addr_format_from_protocol_info, is_my_order, mm2_internal_pubkey_hex, orderbook_address,
-            subscribe_to_orderbook_topic, OrdermatchContext, RpcOrderbookEntryV2};
+use super::{
+    addr_format_from_protocol_info, is_my_order, mm2_internal_pubkey_hex, orderbook_address,
+    subscribe_to_orderbook_topic, OrdermatchContext, RpcOrderbookEntryV2,
+};
 
 #[derive(Debug, Serialize)]
 pub struct AggregatedOrderbookEntryV2 {

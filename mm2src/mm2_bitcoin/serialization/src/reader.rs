@@ -2,6 +2,11 @@ use compact_integer::CompactInteger;
 use derive_more::Display;
 use std::{io, marker};
 
+const BTC_FORKS: &[&str] = &["BTC", "BCH", "NAV", "RIC"];
+const PIVX_FORKS: &[&str] = &["PIVX", "DOGEC"];
+const QTUM_FORKS: &[&str] = &["QTUM", "RUNES"];
+const RVN_FORKS: &[&str] = &["RVN", "AIPG", "XNA", "EVR", "MEWC", "AVN"];
+
 pub fn deserialize<R, T>(buffer: R) -> Result<T, Error>
 where
     R: io::Read,
@@ -39,7 +44,9 @@ pub enum Error {
 impl std::error::Error for Error {}
 
 impl From<io::Error> for Error {
-    fn from(_: io::Error) -> Self { Error::UnexpectedEnd }
+    fn from(_: io::Error) -> Self {
+        Error::UnexpectedEnd
+    }
 }
 
 pub trait Deserializable {
@@ -62,14 +69,33 @@ pub enum CoinVariant {
     RICK,
     /// Same reason as RICK.
     MORTY,
+    RVN,
+    PIVX,
 }
 
 impl CoinVariant {
-    pub fn is_btc(&self) -> bool { matches!(self, CoinVariant::BTC) }
-    pub fn is_qtum(&self) -> bool { matches!(self, CoinVariant::Qtum) }
-    pub fn is_lbc(&self) -> bool { matches!(self, CoinVariant::LBC) }
-    pub fn is_ppc(&self) -> bool { matches!(self, CoinVariant::PPC) }
-    pub fn is_kmd_assetchain(&self) -> bool { matches!(self, CoinVariant::RICK | CoinVariant::MORTY) }
+    pub fn is_btc(&self) -> bool {
+        matches!(self, CoinVariant::BTC)
+    }
+    pub fn is_qtum(&self) -> bool {
+        matches!(self, CoinVariant::Qtum)
+    }
+    pub fn is_lbc(&self) -> bool {
+        matches!(self, CoinVariant::LBC)
+    }
+    pub fn is_ppc(&self) -> bool {
+        matches!(self, CoinVariant::PPC)
+    }
+    pub fn is_kmd_assetchain(&self) -> bool {
+        matches!(self, CoinVariant::RICK | CoinVariant::MORTY)
+    }
+    pub fn is_rvn(&self) -> bool {
+        matches!(self, CoinVariant::RVN)
+    }
+
+    pub fn is_pivx(&self) -> bool {
+        matches!(self, CoinVariant::PIVX)
+    }
 }
 
 fn ticker_matches(ticker: &str, with: &str) -> bool {
@@ -79,20 +105,22 @@ fn ticker_matches(ticker: &str, with: &str) -> bool {
 impl From<&str> for CoinVariant {
     fn from(ticker: &str) -> Self {
         match ticker {
-            // "BTC", "BTC-segwit", "tBTC", "tBTC-segwit", etc..
-            t if ticker_matches(t, "BTC") => CoinVariant::BTC,
-            // "BCH", "tBCH", etc..
-            t if ticker_matches(t, "BCH") => CoinVariant::BTC,
+            // "BTC", "BTC-segwit", "tBTC", "tBTC-segwit", "BCH", "tBCH", etc..
+            t if BTC_FORKS.iter().any(|ticker| ticker_matches(t, ticker)) => CoinVariant::BTC,
             // "QTUM", "QTUM-segwit", "tQTUM", "tQTUM-segwit", etc..
-            t if ticker_matches(t, "QTUM") => CoinVariant::Qtum,
+            t if QTUM_FORKS.iter().any(|ticker| ticker_matches(t, ticker)) => CoinVariant::Qtum,
             // "LBC", "LBC-segwit", etc..
             t if ticker_matches(t, "LBC") => CoinVariant::LBC,
             // "PPC", "PPC-segwit", etc..
             t if ticker_matches(t, "PPC") => CoinVariant::PPC,
             // "RICK"
             t if ticker_matches(t, "RICK") => CoinVariant::RICK,
-            // "MORTY
+            // "MORTY"
             t if ticker_matches(t, "MORTY") => CoinVariant::MORTY,
+            // `RVN`, `AIPG`, etc..
+            t if RVN_FORKS.iter().any(|ticker| ticker_matches(t, ticker)) => CoinVariant::RVN,
+            // PIVX family ("PIVX", "DOGEC", …)
+            t if PIVX_FORKS.iter().any(|ticker| ticker_matches(t, ticker)) => CoinVariant::PIVX,
             _ => CoinVariant::Standard,
         }
     }
@@ -227,7 +255,9 @@ where
         }
     }
 
-    pub fn coin_variant(&self) -> &CoinVariant { &self.coin_variant }
+    pub fn coin_variant(&self) -> &CoinVariant {
+        &self.coin_variant
+    }
 }
 
 /// Should be used to iterate over structures of the same type
@@ -258,7 +288,9 @@ struct Proxy<F, T> {
 }
 
 impl<F, T> Proxy<F, T> {
-    fn new(from: F, to: T) -> Self { Proxy { from, to } }
+    fn new(from: F, to: T) -> Self {
+        Proxy { from, to }
+    }
 }
 
 impl<F, T> io::Read for Proxy<F, T>

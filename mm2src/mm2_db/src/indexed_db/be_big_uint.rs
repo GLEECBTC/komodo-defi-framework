@@ -58,9 +58,9 @@ use std::ops::Add;
 pub enum BigUintError {
     #[display(fmt = "Expected at least one digit")]
     NoDigits,
-    #[display(fmt = "Unexpected number of digits: expected '{}', found '{}'", expected, found)]
+    #[display(fmt = "Unexpected number of digits: expected '{expected}', found '{found}'")]
     InvalidNumberOfDigits { expected: u32, found: usize },
-    #[display(fmt = "The number is too large: {}", _0)]
+    #[display(fmt = "The number is too large: {_0}")]
     NumberIsTooLarge(BigUint),
 }
 
@@ -116,19 +116,27 @@ impl BeBigUint {
 }
 
 impl fmt::Debug for BeBigUint {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self.0) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
 
 impl fmt::Display for BeBigUint {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self.0) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
 
 impl From<BigUint> for BeBigUint {
-    fn from(int: BigUint) -> Self { BeBigUint(int) }
+    fn from(int: BigUint) -> Self {
+        BeBigUint(int)
+    }
 }
 
 impl From<BeBigUint> for BigUint {
-    fn from(int: BeBigUint) -> Self { int.0 }
+    fn from(int: BeBigUint) -> Self {
+        int.0
+    }
 }
 
 ifrom_inner!(BeBigUint, BigUint, u8 u16 u32 u64 usize u128);
@@ -139,21 +147,31 @@ where
 {
     type Output = BeBigUint;
 
-    fn add(self, rhs: T) -> Self::Output { BeBigUint::from(self.0 + BigUint::from(rhs)) }
+    fn add(self, rhs: T) -> Self::Output {
+        BeBigUint::from(self.0 + BigUint::from(rhs))
+    }
 }
 
 impl ToPrimitive for BeBigUint {
     #[inline]
-    fn to_i64(&self) -> Option<i64> { self.0.to_i64() }
+    fn to_i64(&self) -> Option<i64> {
+        self.0.to_i64()
+    }
 
     #[inline]
-    fn to_i128(&self) -> Option<i128> { self.0.to_i128() }
+    fn to_i128(&self) -> Option<i128> {
+        self.0.to_i128()
+    }
 
     #[inline]
-    fn to_u64(&self) -> Option<u64> { self.0.to_u64() }
+    fn to_u64(&self) -> Option<u64> {
+        self.0.to_u64()
+    }
 
     #[inline]
-    fn to_u128(&self) -> Option<u128> { self.0.to_u128() }
+    fn to_u128(&self) -> Option<u128> {
+        self.0.to_u128()
+    }
 }
 
 impl Serialize for BeBigUint {
@@ -210,7 +228,7 @@ mod tests {
     #[wasm_bindgen_test]
     fn test_be_big_uint_debug_display() {
         let num = BeBigUint::from(1023u32);
-        assert_eq!("1023", format!("{:?}", num));
+        assert_eq!("1023", format!("{num:?}"));
         assert_eq!("1023", num.to_string());
     }
 }

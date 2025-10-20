@@ -1,4 +1,5 @@
-#[cfg(feature = "log")] use log::{log, Level};
+#[cfg(feature = "log")]
+use log::{log, Level};
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::panic::Location;
@@ -21,7 +22,9 @@ unsafe impl<T> Sync for SharedRc<T> {}
 impl<T> Deref for SharedRc<T> {
     type Target = T;
 
-    fn deref(&self) -> &Self::Target { &self.inner }
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
 }
 
 impl<T> Drop for SharedRc<T> {
@@ -86,7 +89,7 @@ impl<T> SharedRc<T> {
     /// This behavior is considered acceptable since the `enable` feature is expected to be used for **debug** purposes only.
     pub fn existing_pointers(&self) -> Vec<&'static Location<'static>> {
         let existing_pointers = self.existing_pointers.read().expect(LOCKING_ERROR);
-        let locations: Vec<_> = existing_pointers.iter().map(|(_index, location)| *location).collect();
+        let locations: Vec<_> = existing_pointers.values().copied().collect();
         locations
     }
 
@@ -153,7 +156,9 @@ impl<T> WeakRc<T> {
         })
     }
 
-    pub fn strong_count(&self) -> usize { self.inner.strong_count() }
+    pub fn strong_count(&self) -> usize {
+        self.inner.strong_count()
+    }
 }
 
 #[cfg(feature = "log")]

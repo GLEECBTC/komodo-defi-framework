@@ -14,7 +14,9 @@ const CONFIGURATION_ID: u8 = 1;
 const DEBUG_ENDPOINT_ID: u8 = 2;
 
 impl From<TrezorDevice> for DeviceFilter {
-    fn from(d: TrezorDevice) -> Self { DeviceFilter::with_product_id(d.vendor_id, d.product_id) }
+    fn from(d: TrezorDevice) -> Self {
+        DeviceFilter::with_product_id(d.vendor_id, d.product_id)
+    }
 }
 
 pub struct WebUsbTransport {
@@ -23,15 +25,25 @@ pub struct WebUsbTransport {
 
 #[async_trait]
 impl Transport for WebUsbTransport {
-    async fn session_begin(&mut self) -> TrezorResult<()> { self.protocol.session_begin().await }
+    async fn session_begin(&mut self) -> TrezorResult<()> {
+        self.protocol.session_begin().await
+    }
 
-    async fn session_end(&mut self) -> TrezorResult<()> { self.protocol.session_end().await }
+    async fn session_end(&mut self) -> TrezorResult<()> {
+        self.protocol.session_end().await
+    }
 
-    async fn write_message(&mut self, message: ProtoMessage) -> TrezorResult<()> { self.protocol.write(message).await }
+    async fn write_message(&mut self, message: ProtoMessage) -> TrezorResult<()> {
+        self.protocol.write(message).await
+    }
 
-    async fn read_message(&mut self) -> TrezorResult<ProtoMessage> { self.protocol.read().await }
+    async fn read_message(&mut self) -> TrezorResult<ProtoMessage> {
+        self.protocol.read().await
+    }
 
-    async fn is_connected(&mut self) -> TrezorResult<bool> { self.protocol.link().is_connected().await }
+    async fn is_connected(&mut self) -> TrezorResult<bool> {
+        self.protocol.link().is_connected().await
+    }
 }
 
 struct WebUsbLink {
@@ -65,9 +77,13 @@ impl Link for WebUsbLink {
 
 impl WebUsbLink {
     #[allow(dead_code)]
-    pub fn is_debug(&self) -> bool { self.debug }
+    pub fn is_debug(&self) -> bool {
+        self.debug
+    }
 
-    pub async fn is_connected(&self) -> TrezorResult<bool> { self.device.is_open().await.mm_err(TrezorError::from) }
+    pub async fn is_connected(&self) -> TrezorResult<bool> {
+        self.device.is_open().await.mm_err(TrezorError::from)
+    }
 
     /// Configure the WebUSB device.
     async fn establish_connection(&self, first: bool) -> TrezorResult<()> {
@@ -154,4 +170,6 @@ fn is_trezor(device: &WebUsbDevice) -> bool {
         .any(|expected| vendor_id == expected.vendor_id && product_id == expected.product_id)
 }
 
-fn is_hid(device: &WebUsbDevice) -> bool { device.device_info.vendor_id == T1HID_VENDOR }
+fn is_hid(device: &WebUsbDevice) -> bool {
+    device.device_info.vendor_id == T1HID_VENDOR
+}

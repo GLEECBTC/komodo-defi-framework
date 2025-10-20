@@ -21,8 +21,9 @@ use num_traits::CheckedDiv;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use trading_api::one_inch_api::classic_swap_types::{ClassicSwapData, ClassicSwapQuoteParams};
-use trading_api::one_inch_api::client::{ApiClient, PortfolioApiMethods, PortfolioUrlBuilder, SwapApiMethods,
-                                        SwapUrlBuilder};
+use trading_api::one_inch_api::client::{
+    ApiClient, PortfolioApiMethods, PortfolioUrlBuilder, SwapApiMethods, SwapUrlBuilder,
+};
 use trading_api::one_inch_api::portfolio_types::{CrossPriceParams, CrossPricesSeries, DataGranularity};
 
 /// To estimate src/dst price query price history for last 5 min

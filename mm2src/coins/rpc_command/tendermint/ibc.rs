@@ -4,9 +4,13 @@ use std::fmt;
 pub struct ChannelId(u16);
 
 impl fmt::Display for ChannelId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "channel-{}", self.0) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "channel-{}", self.0)
+    }
 }
 
 impl ChannelId {
-    pub fn new(id: u16) -> Self { Self(id) }
+    pub fn new(id: u16) -> Self {
+        Self(id)
+    }
 }

@@ -15,15 +15,15 @@ type ConnectToNodeResult<T> = Result<T, MmError<ConnectToNodeError>>;
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum ConnectToNodeError {
-    #[display(fmt = "Parse error: {}", _0)]
+    #[display(fmt = "Parse error: {_0}")]
     ParseError(String),
-    #[display(fmt = "Error connecting to node: {}", _0)]
+    #[display(fmt = "Error connecting to node: {_0}")]
     ConnectionError(String),
-    #[display(fmt = "I/O error {}", _0)]
+    #[display(fmt = "I/O error {_0}")]
     IOError(String),
-    #[display(fmt = "Lightning network is not supported for {}", _0)]
+    #[display(fmt = "Lightning network is not supported for {_0}")]
     UnsupportedCoin(String),
-    #[display(fmt = "No such coin {}", _0)]
+    #[display(fmt = "No such coin {_0}")]
     NoSuchCoin(String),
 }
 
@@ -54,11 +54,15 @@ impl From<CoinFindError> for ConnectToNodeError {
 }
 
 impl From<std::io::Error> for ConnectToNodeError {
-    fn from(err: std::io::Error) -> ConnectToNodeError { ConnectToNodeError::IOError(err.to_string()) }
+    fn from(err: std::io::Error) -> ConnectToNodeError {
+        ConnectToNodeError::IOError(err.to_string())
+    }
 }
 
 impl From<ConnectionError> for ConnectToNodeError {
-    fn from(err: ConnectionError) -> ConnectToNodeError { ConnectToNodeError::ConnectionError(err.to_string()) }
+    fn from(err: ConnectionError) -> ConnectToNodeError {
+        ConnectToNodeError::ConnectionError(err.to_string())
+    }
 }
 
 #[derive(Deserialize)]

@@ -2,11 +2,14 @@ use common::custom_futures::repeatable::{Ready, Retry};
 use common::{block_on, log, repeatable};
 use http::StatusCode;
 use itertools::Itertools;
-use mm2_test_helpers::for_tests::{electrum_servers_rpc, enable_bch_with_tokens, enable_slp, my_tx_history_v2,
-                                  sign_message, tbch_for_slp_conf, tbch_usdf_conf, verify_message, MarketMakerIt,
-                                  Mm2TestConf, UtxoRpcMode, T_BCH_ELECTRUMS};
-use mm2_test_helpers::structs::{Bip44Chain, EnableBchWithTokensResponse, HDAccountAddressId, RpcV2Response,
-                                SignatureResponse, StandardHistoryV2Res, UtxoFeeDetails, VerificationResponse};
+use mm2_test_helpers::for_tests::{
+    electrum_servers_rpc, enable_bch_with_tokens, enable_slp, my_tx_history_v2, sign_message, tbch_for_slp_conf,
+    tbch_usdf_conf, verify_message, MarketMakerIt, Mm2TestConf, UtxoRpcMode, T_BCH_ELECTRUMS,
+};
+use mm2_test_helpers::structs::{
+    Bip44Chain, EnableBchWithTokensResponse, HDAccountAddressId, RpcV2Response, SignatureResponse,
+    StandardHistoryV2Res, UtxoFeeDetails, VerificationResponse,
+};
 use serde_json::{self as json, json, Value as Json};
 use std::env;
 
@@ -476,7 +479,9 @@ async fn test_bch_and_slp_testnet_history_impl() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
-fn test_bch_and_slp_testnet_history() { block_on(test_bch_and_slp_testnet_history_impl()); }
+fn test_bch_and_slp_testnet_history() {
+    block_on(test_bch_and_slp_testnet_history_impl());
+}
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen_test]

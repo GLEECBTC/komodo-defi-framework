@@ -16,7 +16,9 @@ pub type InnerWeak<Inner> = Weak<PaMutex<Inner>>;
 pub struct AbortedError;
 
 impl fmt::Display for AbortedError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "Abortable system has been aborted already") }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Abortable system has been aborted already")
+    }
 }
 
 pub trait AbortableSystem: From<InnerShared<Self::Inner>> {
@@ -24,7 +26,9 @@ pub trait AbortableSystem: From<InnerShared<Self::Inner>> {
 
     /// Aborts all spawned futures and subsystems if they present.
     /// The abortable system is considered not to be
-    fn abort_all(&self) -> Result<(), AbortedError> { self.__inner().lock().abort_all() }
+    fn abort_all(&self) -> Result<(), AbortedError> {
+        self.__inner().lock().abort_all()
+    }
 
     /// Aborts all the spawned futures & subsystems if present, and resets the system
     /// to the initial state for further use.
@@ -87,6 +91,8 @@ pub trait SystemInner: Default + Send + 'static {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
     use super::*;
     use crate::block_on;
     use crate::executor::{SpawnFuture, Timer};
@@ -94,19 +100,19 @@ mod tests {
 
     #[test]
     fn test_abort_subsystem() {
-        static mut SUPER_FINISHED: bool = false;
-        static mut SUB_FINISHED: bool = false;
+        static SUPER_FINISHED: AtomicBool = AtomicBool::new(false);
+        static SUB_FINISHED: AtomicBool = AtomicBool::new(false);
 
         let super_system = AbortableQueue::default();
         super_system.weak_spawner().spawn(async move {
             Timer::sleep(0.5).await;
-            unsafe { SUPER_FINISHED = true };
+            SUPER_FINISHED.store(true, Ordering::Relaxed);
         });
 
         let sub_system: AbortableQueue = super_system.create_subsystem().unwrap();
         sub_system.weak_spawner().spawn(async move {
             Timer::sleep(0.5).await;
-            unsafe { SUB_FINISHED = true };
+            SUB_FINISHED.store(true, Ordering::Relaxed);
         });
 
         block_on(Timer::sleep(0.1));
@@ -114,27 +120,25 @@ mod tests {
         block_on(Timer::sleep(0.8));
 
         // Only the super system should finish as the sub system has been aborted.
-        unsafe {
-            assert!(SUPER_FINISHED);
-            assert!(!SUB_FINISHED);
-        }
+        assert!(SUPER_FINISHED.load(Ordering::Relaxed));
+        assert!(!SUB_FINISHED.load(Ordering::Relaxed));
     }
 
     #[test]
     fn test_abort_supersystem() {
-        static mut SUPER_FINISHED: bool = false;
-        static mut SUB_FINISHED: bool = false;
+        static SUPER_FINISHED: AtomicBool = AtomicBool::new(false);
+        static SUB_FINISHED: AtomicBool = AtomicBool::new(false);
 
         let super_system = AbortableQueue::default();
         super_system.weak_spawner().spawn(async move {
             Timer::sleep(0.5).await;
-            unsafe { SUPER_FINISHED = true };
+            SUPER_FINISHED.store(true, Ordering::Relaxed);
         });
 
         let sub_system: AbortableQueue = super_system.create_subsystem().unwrap();
         sub_system.weak_spawner().spawn(async move {
             Timer::sleep(0.5).await;
-            unsafe { SUB_FINISHED = true };
+            SUB_FINISHED.store(true, Ordering::Relaxed);
         });
 
         block_on(Timer::sleep(0.1));
@@ -145,9 +149,7 @@ mod tests {
         sub_system.abort_all().unwrap_err();
 
         // Nothing should finish as the super system has been aborted.
-        unsafe {
-            assert!(!SUPER_FINISHED);
-            assert!(!SUB_FINISHED);
-        }
+        assert!(!SUPER_FINISHED.load(Ordering::Relaxed));
+        assert!(!SUB_FINISHED.load(Ordering::Relaxed));
     }
 }

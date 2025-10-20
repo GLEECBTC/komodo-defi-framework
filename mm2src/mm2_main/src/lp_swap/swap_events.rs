@@ -15,9 +15,13 @@ impl DeriveStreamerId<'_> for SwapStatusStreamer {
     type InitParam = ();
     type DeriveParam = ();
 
-    fn new(_: Self::InitParam) -> Self { Self }
+    fn new(_: Self::InitParam) -> Self {
+        Self
+    }
 
-    fn derive_streamer_id(_: Self::DeriveParam) -> StreamerId { StreamerId::SwapStatus }
+    fn derive_streamer_id(_: Self::DeriveParam) -> StreamerId {
+        StreamerId::SwapStatus
+    }
 }
 
 #[derive(Serialize)]
@@ -33,7 +37,9 @@ pub enum SwapStatusEvent {
 impl EventStreamer for SwapStatusStreamer {
     type DataInType = SwapStatusEvent;
 
-    fn streamer_id(&self) -> StreamerId { Self::derive_streamer_id(()) }
+    fn streamer_id(&self) -> StreamerId {
+        Self::derive_streamer_id(())
+    }
 
     async fn handle(
         self,

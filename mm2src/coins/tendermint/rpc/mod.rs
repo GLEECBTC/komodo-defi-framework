@@ -1,8 +1,10 @@
-#[cfg(not(target_arch = "wasm32"))] mod tendermint_native_rpc;
+#[cfg(not(target_arch = "wasm32"))]
+mod tendermint_native_rpc;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) use tendermint_native_rpc::*;
 
-#[cfg(target_arch = "wasm32")] mod tendermint_wasm_rpc;
+#[cfg(target_arch = "wasm32")]
+mod tendermint_wasm_rpc;
 #[cfg(target_arch = "wasm32")]
 pub(crate) use tendermint_wasm_rpc::*;
 

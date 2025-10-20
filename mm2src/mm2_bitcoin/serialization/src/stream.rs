@@ -107,7 +107,9 @@ impl Stream {
     }
 
     /// Are transactions written to this stream with witness data?
-    pub fn include_transaction_witness(&self) -> bool { (self.flags & SERIALIZE_TRANSACTION_WITNESS) != 0 }
+    pub fn include_transaction_witness(&self) -> bool {
+        (self.flags & SERIALIZE_TRANSACTION_WITNESS) != 0
+    }
 
     /// Serializes the struct and appends it to the end of stream.
     pub fn append<T>(&mut self, t: &T) -> &mut Self
@@ -139,13 +141,19 @@ impl Stream {
     }
 
     /// Full stream.
-    pub fn out(self) -> Bytes { self.buffer.into() }
+    pub fn out(self) -> Bytes {
+        self.buffer.into()
+    }
 }
 
 impl Write for Stream {
     #[inline]
-    fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> { self.buffer.write(buf) }
+    fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
+        self.buffer.write(buf)
+    }
 
     #[inline]
-    fn flush(&mut self) -> Result<(), io::Error> { self.buffer.flush() }
+    fn flush(&mut self) -> Result<(), io::Error> {
+        self.buffer.flush()
+    }
 }

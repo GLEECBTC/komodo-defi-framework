@@ -4,7 +4,8 @@ extern crate bitcrypto as crypto;
 extern crate primitives;
 extern crate rustc_hex as hex;
 extern crate serialization as ser;
-#[macro_use] extern crate serialization_derive;
+#[macro_use]
+extern crate serialization_derive;
 
 pub mod constants;
 
@@ -27,8 +28,9 @@ pub use primitives::{bytes, compact, hash, U256};
 pub use block::Block;
 pub use block_header::{BlockHeader, BlockHeaderBits, BlockHeaderNonce};
 pub use merkle_root::{merkle_node_hash, merkle_root};
-pub use transaction::{JoinSplit, OutPoint, ShieldedOutput, ShieldedSpend, Transaction, TransactionInput,
-                      TransactionOutput, TxHashAlgo};
+pub use transaction::{
+    JoinSplit, OutPoint, ShieldedOutput, ShieldedSpend, Transaction, TransactionInput, TransactionOutput, TxHashAlgo,
+};
 
 pub use read_and_hash::{HashedData, ReadAndHash};
 

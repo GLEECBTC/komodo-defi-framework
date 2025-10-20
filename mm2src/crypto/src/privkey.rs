@@ -135,7 +135,9 @@ pub struct SerializableSecp256k1Keypair {
 }
 
 impl PartialEq for SerializableSecp256k1Keypair {
-    fn eq(&self, other: &Self) -> bool { self.inner.public() == other.inner.public() }
+    fn eq(&self, other: &Self) -> bool {
+        self.inner.public() == other.inner.public()
+    }
 }
 
 impl Eq for SerializableSecp256k1Keypair {}
@@ -147,11 +149,17 @@ impl SerializableSecp256k1Keypair {
         })
     }
 
-    pub fn key_pair(&self) -> &KeyPair { &self.inner }
+    pub fn key_pair(&self) -> &KeyPair {
+        &self.inner
+    }
 
-    pub fn public_slice(&self) -> &[u8] { self.inner.public_slice() }
+    pub fn public_slice(&self) -> &[u8] {
+        self.inner.public_slice()
+    }
 
-    pub fn priv_key(&self) -> [u8; 32] { self.inner.private().secret.take() }
+    pub fn priv_key(&self) -> [u8; 32] {
+        self.inner.private().secret.take()
+    }
 
     pub fn random() -> Self {
         SerializableSecp256k1Keypair {
@@ -159,11 +167,15 @@ impl SerializableSecp256k1Keypair {
         }
     }
 
-    pub fn into_inner(self) -> KeyPair { self.inner }
+    pub fn into_inner(self) -> KeyPair {
+        self.inner
+    }
 }
 
 impl From<KeyPair> for SerializableSecp256k1Keypair {
-    fn from(inner: KeyPair) -> Self { SerializableSecp256k1Keypair { inner } }
+    fn from(inner: KeyPair) -> Self {
+        SerializableSecp256k1Keypair { inner }
+    }
 }
 
 impl Serialize for SerializableSecp256k1Keypair {
@@ -192,7 +204,7 @@ fn serializable_secp256k1_keypair_test() {
     let key_pair = KeyPair::random_compressed();
     let serializable = SerializableSecp256k1Keypair { inner: key_pair };
     let serialized = json::to_string(&serializable).unwrap();
-    println!("{}", serialized);
+    println!("{serialized}");
     let deserialized = json::from_str(&serialized).unwrap();
     assert_eq!(serializable, deserialized);
 
@@ -202,5 +214,5 @@ fn serializable_secp256k1_keypair_test() {
     ];
     let invalid_privkey_serialized = json::to_string(&invalid_privkey).unwrap();
     let err = json::from_str::<SerializableSecp256k1Keypair>(&invalid_privkey_serialized).unwrap_err();
-    println!("{}", err);
+    println!("{err}");
 }

@@ -31,9 +31,9 @@ pub enum InitMetamaskError {
     MetamaskInitializingAlready,
     #[from_trait(WithMetamaskRpcError::metamask_rpc_error)]
     MetamaskError(MetamaskRpcError),
-    #[display(fmt = "RPC timed out {:?}", _0)]
+    #[display(fmt = "RPC timed out {_0:?}")]
     Timeout(Duration),
-    #[display(fmt = "Internal: {}", _0)]
+    #[display(fmt = "Internal: {_0}")]
     #[from_trait(WithInternal::internal)]
     Internal(String),
 }

@@ -27,10 +27,10 @@ where
         W: fmt::Write,
     {
         if let Some(item) = self.next() {
-            write!(writer, "{}", item)?;
+            write!(writer, "{item}")?;
         }
         for item in self {
-            write!(writer, "{}{}", sep, item)?;
+            write!(writer, "{sep}{item}")?;
         }
         Ok(())
     }

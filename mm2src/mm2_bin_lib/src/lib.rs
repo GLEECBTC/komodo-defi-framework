@@ -2,10 +2,13 @@ use enum_primitive_derive::Primitive;
 use mm2_core::mm_ctx::MmArc;
 use mm2_main::lp_dispatcher::{dispatch_lp_event, StopCtxEvent};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-#[cfg(target_arch = "wasm32")] use wasm_bindgen::prelude::*;
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
 
-#[cfg(not(target_arch = "wasm32"))] mod mm2_native_lib;
-#[cfg(target_arch = "wasm32")] mod mm2_wasm_lib;
+#[cfg(not(target_arch = "wasm32"))]
+mod mm2_native_lib;
+#[cfg(target_arch = "wasm32")]
+mod mm2_wasm_lib;
 
 const KDF_VERSION: &str = env!("KDF_VERSION");
 const KDF_DATETIME: &str = env!("KDF_DATETIME");

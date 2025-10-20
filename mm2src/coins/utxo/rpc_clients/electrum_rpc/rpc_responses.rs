@@ -104,7 +104,9 @@ pub struct ElectrumBlockHeaderV14 {
 }
 
 impl ElectrumBlockHeaderV14 {
-    pub fn hash(&self) -> H256Json { dhash256(&self.hex.clone().into_vec()).into() }
+    pub fn hash(&self) -> H256Json {
+        dhash256(&self.hex.clone().into_vec()).into()
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]

@@ -16,8 +16,10 @@ use relay_rpc::domain::Topic;
 use relay_rpc::rpc::params::session::Namespace;
 use relay_rpc::rpc::params::session_propose::Proposer;
 use relay_rpc::rpc::params::IrnMetadata;
-use relay_rpc::{domain::SubscriptionId,
-                rpc::params::{session::ProposeNamespaces, session_settle::Controller, Metadata, Relay}};
+use relay_rpc::{
+    domain::SubscriptionId,
+    rpc::params::{session::ProposeNamespaces, session_settle::Controller, Metadata, Relay},
+};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
@@ -170,10 +172,13 @@ impl Session {
                 },
                 Controller::default(),
             ),
-            SessionType::Controller => (Proposer::default(), Controller {
-                public_key: hex::encode(session_key.diffie_public_key()),
-                metadata,
-            }),
+            SessionType::Controller => (
+                Proposer::default(),
+                Controller {
+                    public_key: hex::encode(session_key.diffie_public_key()),
+                    metadata,
+                },
+            ),
         };
 
         Self {
@@ -194,13 +199,19 @@ impl Session {
         }
     }
 
-    pub(crate) fn extend(&mut self, till: u64) { self.expiry = till; }
+    pub(crate) fn extend(&mut self, till: u64) {
+        self.expiry = till;
+    }
 
     /// Get the active chain ID for the current session.
-    pub fn get_active_chain_id(&self) -> &Option<WcChainId> { &self.active_chain_id }
+    pub fn get_active_chain_id(&self) -> &Option<WcChainId> {
+        &self.active_chain_id
+    }
 
     /// Sets the active chain ID for the current session.
-    pub fn set_active_chain_id(&mut self, chain_id: WcChainId) { self.active_chain_id = Some(chain_id); }
+    pub fn set_active_chain_id(&mut self, chain_id: WcChainId) {
+        self.active_chain_id = Some(chain_id);
+    }
 }
 
 /// Internal implementation of session management.
@@ -236,15 +247,17 @@ impl SessionManager {
         )
     }
 
-    pub(crate) fn read(&self) -> RwLockReadGuard<HashMap<Topic, Session>> {
+    pub(crate) fn read(&self) -> RwLockReadGuard<'_, HashMap<Topic, Session>> {
         self.0.sessions.read().expect("read shouldn't fail")
     }
 
-    pub(crate) fn write(&self) -> RwLockWriteGuard<HashMap<Topic, Session>> {
+    pub(crate) fn write(&self) -> RwLockWriteGuard<'_, HashMap<Topic, Session>> {
         self.0.sessions.write().expect("read shouldn't fail")
     }
 
-    pub(crate) fn storage(&self) -> &SessionStorageDb { &self.0.storage }
+    pub(crate) fn storage(&self) -> &SessionStorageDb {
+        &self.0.storage
+    }
 
     /// Inserts `Session` into the session store, associated with the specified topic.
     /// If a session with the same topic already exists, it will be overwritten.
@@ -262,9 +275,11 @@ impl SessionManager {
     }
 
     /// Retrieves a cloned session associated with a given topic.
-    pub fn get_session(&self, topic: &Topic) -> Option<Session> { self.read().get(topic).cloned() }
+    pub fn get_session(&self, topic: &Topic) -> Option<Session> {
+        self.read().get(topic).cloned()
+    }
 
-    /// Retrieves a cloned session associated with a given sessionn or pairing topic.
+    /// Retrieves a cloned session associated with a given session or pairing topic.
     pub fn get_session_with_any_topic(&self, topic: &Topic, with_pairing_topic: bool) -> Option<Session> {
         if with_pairing_topic {
             return self.read().values().find(|s| &s.pairing_topic == topic).cloned();

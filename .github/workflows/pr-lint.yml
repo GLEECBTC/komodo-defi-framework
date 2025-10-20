@@ -44,13 +44,3 @@ jobs:
             echo "PR title is too long (greater than 85 characters)"
             exit 1
           fi
-
-      - name: Check PR labels
-        env:
-          LABEL_NAMES: ${{ toJson(github.event.pull_request.labels.*.name) }}
-        if: "!((contains(env.LABEL_NAMES, 'pending review') && !contains(env.LABEL_NAMES, 'in progress') && !contains(env.LABEL_NAMES, 'blocked'))
-          || (!contains(env.LABEL_NAMES, 'pending review') && contains(env.LABEL_NAMES, 'in progress') && !contains(env.LABEL_NAMES, 'blocked'))
-          || (!contains(env.LABEL_NAMES, 'pending review') && !contains(env.LABEL_NAMES, 'in progress') && contains(env.LABEL_NAMES, 'blocked')))"
-        run: |
-          echo "PR must have "exactly one" of these labels: ['status: pending review', 'status: in progress', 'status: blocked']."
-          exit 1

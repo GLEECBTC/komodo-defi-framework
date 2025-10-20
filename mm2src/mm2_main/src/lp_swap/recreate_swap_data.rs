@@ -1,9 +1,13 @@
-use crate::lp_swap::maker_swap::{MakerSwapData, MakerSwapEvent, TakerNegotiationData, MAKER_ERROR_EVENTS,
-                                 MAKER_SUCCESS_EVENTS};
-use crate::lp_swap::taker_swap::{MakerNegotiationData, TakerPaymentSpentData, TakerSavedEvent, TakerSwapData,
-                                 TakerSwapEvent, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
-use crate::lp_swap::{wait_for_maker_payment_conf_until, MakerSavedEvent, MakerSavedSwap, SavedSwap, SwapError,
-                     TakerSavedSwap};
+use crate::lp_swap::maker_swap::{
+    MakerSwapData, MakerSwapEvent, TakerNegotiationData, MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS,
+};
+use crate::lp_swap::taker_swap::{
+    MakerNegotiationData, TakerPaymentSpentData, TakerSavedEvent, TakerSwapData, TakerSwapEvent, TAKER_ERROR_EVENTS,
+    TAKER_SUCCESS_EVENTS,
+};
+use crate::lp_swap::{
+    wait_for_maker_payment_conf_until, MakerSavedEvent, MakerSavedSwap, SavedSwap, SwapError, TakerSavedSwap,
+};
 use coins::{lp_coinfind, MmCoinEnum};
 use common::{HttpStatusCode, StatusCode};
 use derive_more::Display;
@@ -20,18 +24,20 @@ pub enum RecreateSwapError {
     SwapIsNotStarted,
     #[display(fmt = "Swap hasn't been negotiated. Swap not recoverable")]
     SwapIsNotNegotiated,
-    #[display(fmt = "Expected '{}' event, found '{}'", expected, found)]
+    #[display(fmt = "Expected '{expected}' event, found '{found}'")]
     UnexpectedEvent { expected: String, found: String },
-    #[display(fmt = "No such coin {}", coin)]
+    #[display(fmt = "No such coin {coin}")]
     NoSuchCoin { coin: String },
     #[display(fmt = "'secret_hash' not found in swap data")]
     NoSecretHash,
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
 impl HttpStatusCode for RecreateSwapError {
-    fn status_code(&self) -> StatusCode { StatusCode::BAD_REQUEST }
+    fn status_code(&self) -> StatusCode {
+        StatusCode::BAD_REQUEST
+    }
 }
 
 impl RecreateSwapError {
@@ -221,7 +227,7 @@ fn convert_taker_to_maker_events(
 
         // This is used only if an error occurs.
         let swap_error = SwapError {
-            error: format!("Origin Taker error event: {:?}", event),
+            error: format!("Origin Taker error event: {event:?}"),
         };
         match event {
             // Even if we considered Taker fee as invalid, then we shouldn't have sent Maker payment.
@@ -446,7 +452,7 @@ async fn convert_maker_to_taker_events(
 
         // This is used only if an error occurs.
         let swap_error = SwapError {
-            error: format!("Origin Maker error event: {:?}", event),
+            error: format!("Origin Maker error event: {event:?}"),
         };
         match event {
             MakerSwapEvent::TakerFeeValidated(tx_ident) => push_event!(TakerSwapEvent::TakerFeeSent(tx_ident)),

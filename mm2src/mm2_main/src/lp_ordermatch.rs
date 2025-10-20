@@ -24,10 +24,13 @@ use async_trait::async_trait;
 use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType, UtxoAddressFormat};
-use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, CoinProtocol, CoinsContext,
-            FeeApproxStage, MakerCoinSwapOpsV2, MmCoin, MmCoinEnum, TakerCoinSwapOpsV2};
-use common::executor::{simple_map::AbortableSimpleMap, AbortSettings, AbortableSystem, AbortedError, SpawnAbortable,
-                       SpawnFuture, Timer};
+use coins::{
+    coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, CoinProtocol, CoinsContext, FeeApproxStage,
+    MakerCoinSwapOpsV2, MmCoin, MmCoinEnum, TakerCoinSwapOpsV2,
+};
+use common::executor::{
+    simple_map::AbortableSimpleMap, AbortSettings, AbortableSystem, AbortedError, SpawnAbortable, SpawnFuture, Timer,
+};
 use common::log::{error, warn, LogOnError};
 use common::{bits256, log, new_uuid, now_ms, now_sec};
 use crypto::privkey::SerializableSecp256k1Keypair;
@@ -43,17 +46,22 @@ use mm2_err_handle::prelude::*;
 use mm2_event_stream::{DeriveStreamerId, StreamingManager};
 use mm2_libp2p::application::request_response::ordermatch::OrdermatchRequest;
 use mm2_libp2p::application::request_response::P2PRequest;
-use mm2_libp2p::{decode_signed, encode_and_sign, encode_message, pub_sub_topic, PublicKey, TopicHash, TopicPrefix,
-                 TOPIC_SEPARATOR};
+use mm2_libp2p::{
+    decode_signed, encode_and_sign, encode_message, pub_sub_topic, PublicKey, TopicHash, TopicPrefix, TOPIC_SEPARATOR,
+};
 use mm2_metrics::mm_gauge;
 use mm2_number::{BigDecimal, BigRational, MmNumber, MmNumberMultiRepr};
-use mm2_rpc::data::legacy::{MatchBy, Mm2RpcResult, OrderConfirmationsSettings, OrderType, RpcOrderbookEntry,
-                            SellBuyRequest, SellBuyResponse, TakerAction, TakerRequestForRpc};
+use mm2_rpc::data::legacy::{
+    MatchBy, Mm2RpcResult, OrderConfirmationsSettings, OrderType, RpcOrderbookEntry, SellBuyRequest, SellBuyResponse,
+    TakerAction, TakerRequestForRpc,
+};
 use mm2_state_machine::prelude::*;
-#[cfg(test)] use mocktopus::macros::*;
-use my_orders_storage::{delete_my_maker_order, delete_my_taker_order, save_maker_order_on_update,
-                        save_my_new_maker_order, save_my_new_taker_order, MyActiveOrders, MyOrdersFilteringHistory,
-                        MyOrdersHistory, MyOrdersStorage};
+#[cfg(test)]
+use mocktopus::macros::*;
+use my_orders_storage::{
+    delete_my_maker_order, delete_my_taker_order, save_maker_order_on_update, save_my_new_maker_order,
+    save_my_new_taker_order, MyActiveOrders, MyOrdersFilteringHistory, MyOrdersHistory, MyOrdersStorage,
+};
 use num_traits::identities::Zero;
 use order_events::{OrderStatusEvent, OrderStatusStreamer};
 use orderbook_events::{OrderbookItemChangeEvent, OrderbookStreamer};
@@ -77,13 +85,13 @@ use uuid::Uuid;
 use crate::lp_network::{broadcast_p2p_msg, request_any_relay, request_one_peer, subscribe_to_topic, P2PRequestError};
 use crate::lp_swap::maker_swap_v2::{self, MakerSwapStateMachine, MakerSwapStorage};
 use crate::lp_swap::taker_swap_v2::{self, TakerSwapStateMachine, TakerSwapStorage};
-use crate::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, check_balance_for_taker_swap,
-                     check_other_coin_balance_for_swap, detect_secret_hash_algo_v2, generate_secret,
-                     get_max_maker_vol, insert_new_swap_to_db, is_pubkey_banned, lp_atomic_locktime,
-                     p2p_keypair_and_peer_id_to_broadcast, p2p_private_and_peer_id_to_broadcast, run_maker_swap,
-                     run_taker_swap, swap_v2_topic, AtomicLocktimeVersion, CheckBalanceError, CheckBalanceResult,
-                     CoinVolumeInfo, MakerSwap, RunMakerSwapInput, RunTakerSwapInput, SwapConfirmationsSettings,
-                     TakerSwap, LEGACY_SWAP_TYPE};
+use crate::lp_swap::{
+    calc_max_maker_vol, check_balance_for_maker_swap, check_balance_for_taker_swap, check_other_coin_balance_for_swap,
+    detect_secret_hash_algo_v2, generate_secret, get_max_maker_vol, insert_new_swap_to_db, is_pubkey_banned,
+    lp_atomic_locktime, p2p_keypair_and_peer_id_to_broadcast, p2p_private_and_peer_id_to_broadcast, run_maker_swap,
+    run_taker_swap, swap_v2_topic, AtomicLocktimeVersion, CheckBalanceError, CheckBalanceResult, CoinVolumeInfo,
+    MakerSwap, RunMakerSwapInput, RunTakerSwapInput, SwapConfirmationsSettings, TakerSwap, LEGACY_SWAP_TYPE,
+};
 use crate::swap_versioning::{legacy_swap_version, SwapVersion};
 
 #[cfg(any(test, feature = "run-docker-tests"))]
@@ -106,8 +114,9 @@ cfg_wasm32! {
 
 mod best_orders;
 mod lp_bot;
-pub use lp_bot::{start_simple_market_maker_bot, stop_simple_market_maker_bot, StartSimpleMakerBotRequest,
-                 TradingBotEvent};
+pub use lp_bot::{
+    start_simple_market_maker_bot, stop_simple_market_maker_bot, StartSimpleMakerBotRequest, TradingBotEvent,
+};
 use primitives::hash::{H256, H264};
 
 mod my_orders_storage;
@@ -121,7 +130,8 @@ mod orderbook_rpc;
 #[path = "ordermatch_tests.rs"]
 pub mod ordermatch_tests;
 
-#[cfg(target_arch = "wasm32")] mod ordermatch_wasm_db;
+#[cfg(target_arch = "wasm32")]
+mod ordermatch_wasm_db;
 
 pub const ORDERBOOK_PREFIX: TopicPrefix = "orbk";
 #[cfg(not(test))]
@@ -150,33 +160,34 @@ pub type OrderbookP2PHandlerResult = Result<(), MmError<OrderbookP2PHandlerError
 
 #[derive(Display)]
 pub enum OrderbookP2PHandlerError {
-    #[display(fmt = "'{}' is an invalid topic for the orderbook handler.", _0)]
+    #[display(fmt = "'{_0}' is an invalid topic for the orderbook handler.")]
     InvalidTopic(String),
 
-    #[display(fmt = "Message decoding was failed. Error: {}", _0)]
+    #[display(fmt = "Message decoding was failed. Error: {_0}")]
     DecodeError(String),
 
-    #[display(fmt = "Pubkey '{}' is not allowed.", _0)]
+    #[display(fmt = "Pubkey '{_0}' is not allowed.")]
     PubkeyNotAllowed(String),
 
-    #[display(fmt = "P2P request error: {}", _0)]
+    #[display(fmt = "P2P request error: {_0}")]
     P2PRequestError(String),
 
-    #[display(
-        fmt = "Couldn't find an order {}, ignoring, it will be synced upon pubkey keep alive",
-        _0
-    )]
+    #[display(fmt = "Couldn't find an order {_0}, ignoring, it will be synced upon pubkey keep alive")]
     OrderNotFound(Uuid),
 
     Internal(String),
 }
 
 impl OrderbookP2PHandlerError {
-    pub(crate) fn is_warning(&self) -> bool { matches!(self, OrderbookP2PHandlerError::OrderNotFound(_)) }
+    pub(crate) fn is_warning(&self) -> bool {
+        matches!(self, OrderbookP2PHandlerError::OrderNotFound(_))
+    }
 }
 
 impl From<P2PRequestError> for OrderbookP2PHandlerError {
-    fn from(e: P2PRequestError) -> Self { OrderbookP2PHandlerError::P2PRequestError(e.to_string()) }
+    fn from(e: P2PRequestError) -> Self {
+        OrderbookP2PHandlerError::P2PRequestError(e.to_string())
+    }
 }
 
 /// Alphabetically ordered orderbook pair
@@ -187,7 +198,7 @@ pub type OrdermatchInitResult<T> = Result<T, MmError<OrdermatchInitError>>;
 
 #[derive(Debug, Deserialize, Display, Serialize)]
 pub enum OrdermatchInitError {
-    #[display(fmt = "Error deserializing '{}' config field: {}", field, error)]
+    #[display(fmt = "Error deserializing '{field}' config field: {error}")]
     ErrorDeserializingConfig {
         field: String,
         error: String,
@@ -196,7 +207,9 @@ pub enum OrdermatchInitError {
 }
 
 impl From<AbortedError> for OrdermatchInitError {
-    fn from(e: AbortedError) -> Self { OrdermatchInitError::Internal(e.to_string()) }
+    fn from(e: AbortedError) -> Self {
+        OrdermatchInitError::Internal(e.to_string())
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -325,8 +338,7 @@ async fn process_orders_keep_alive(
     .map_mm_err()?
     .ok_or_else(|| {
         MmError::new(OrderbookP2PHandlerError::P2PRequestError(format!(
-            "No response was received from peer {} for SyncPubkeyOrderbookState request!",
-            propagated_from_peer
+            "No response was received from peer {propagated_from_peer} for SyncPubkeyOrderbookState request!"
         )))
     })?;
 
@@ -638,7 +650,9 @@ pub async fn process_msg(ctx: MmArc, from_peer: String, msg: &[u8], i_am_relay: 
 struct TryFromBytesError(String);
 
 impl From<String> for TryFromBytesError {
-    fn from(string: String) -> Self { TryFromBytesError(string) }
+    fn from(string: String) -> Self {
+        TryFromBytesError(string)
+    }
 }
 
 trait TryFromBytes {
@@ -840,11 +854,15 @@ enum TrieDiffHistoryError {
 }
 
 impl std::fmt::Display for TrieDiffHistoryError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "({:?})", self) }
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "({self:?})")
+    }
 }
 
 impl From<TryFromBytesError> for TrieDiffHistoryError {
-    fn from(error: TryFromBytesError) -> TrieDiffHistoryError { TrieDiffHistoryError::TryFromBytesError(error) }
+    fn from(error: TryFromBytesError) -> TrieDiffHistoryError {
+        TrieDiffHistoryError::TryFromBytesError(error)
+    }
 }
 
 impl From<Box<trie_db::TrieError<H64, sp_trie::Error>>> for TrieDiffHistoryError {
@@ -957,10 +975,13 @@ fn process_sync_pubkey_orderbook_state(
         .map(|(pair, trie)| {
             let new_trie = trie.map_to(|uuid, order| match order {
                 Some(o) => {
-                    protocol_infos.insert(o.uuid, BaseRelProtocolInfo {
-                        base: o.base_protocol_info.clone(),
-                        rel: o.rel_protocol_info.clone(),
-                    });
+                    protocol_infos.insert(
+                        o.uuid,
+                        BaseRelProtocolInfo {
+                            base: o.base_protocol_info.clone(),
+                            rel: o.rel_protocol_info.clone(),
+                        },
+                    );
                     if let Some(ref info) = o.conf_settings {
                         conf_infos.insert(o.uuid, info.clone());
                     }
@@ -995,7 +1016,9 @@ fn orderbook_topic_from_base_rel(base: &str, rel: &str) -> String {
     pub_sub_topic(ORDERBOOK_PREFIX, &alb_ordered_pair(base, rel))
 }
 
-fn orderbook_topic_from_ordered_pair(pair: &str) -> String { pub_sub_topic(ORDERBOOK_PREFIX, pair) }
+fn orderbook_topic_from_ordered_pair(pair: &str) -> String {
+    pub_sub_topic(ORDERBOOK_PREFIX, pair)
+}
 
 #[test]
 fn test_alb_ordered_pair() {
@@ -1117,7 +1140,9 @@ pub struct BalanceUpdateOrdermatchHandler {
 }
 
 impl BalanceUpdateOrdermatchHandler {
-    pub fn new(ctx: MmArc) -> Self { BalanceUpdateOrdermatchHandler { ctx: ctx.weak() } }
+    pub fn new(ctx: MmArc) -> Self {
+        BalanceUpdateOrdermatchHandler { ctx: ctx.weak() }
+    }
 }
 
 #[async_trait]
@@ -1136,7 +1161,7 @@ impl BalanceTradeFeeUpdatedHandler for BalanceUpdateOrdermatchHandler {
         }
         // Get the max maker available volume to check if the wallet balances are sufficient for the issued maker orders.
         // Note although the maker orders are issued already, but they are not matched yet, so pass the `OrderIssue` stage.
-        let new_volume = match calc_max_maker_vol(&ctx, coin, new_balance, FeeApproxStage::OrderIssue).await {
+        let new_volume = match calc_max_maker_vol(&ctx, coin, new_balance, FeeApproxStage::OrderIssueMax).await {
             Ok(vol_info) => vol_info.volume,
             Err(e) if e.get_inner().not_sufficient_balance() => MmNumber::from(0),
             Err(e) => {
@@ -1278,9 +1303,13 @@ impl From<TakerOrder> for new_protocol::OrdermatchMessage {
 }
 
 impl TakerRequest {
-    fn get_base_amount(&self) -> &MmNumber { &self.base_amount }
+    fn get_base_amount(&self) -> &MmNumber {
+        &self.base_amount
+    }
 
-    fn get_rel_amount(&self) -> &MmNumber { &self.rel_amount }
+    fn get_rel_amount(&self) -> &MmNumber {
+        &self.rel_amount
+    }
 }
 
 pub struct TakerOrderBuilder<'a> {
@@ -1450,7 +1479,9 @@ impl<'a> TakerOrderBuilder<'a> {
     /// However, if user has not specified in the config to use TPU V2,
     /// the TakerOrderBuilder's swap_version is changed to legacy.
     /// In the future alls users will be using TPU V2 by default without "use_trading_proto_v2" configuration.
-    pub fn set_legacy_swap_v(&mut self) { self.swap_version = legacy_swap_version() }
+    pub fn set_legacy_swap_v(&mut self) {
+        self.swap_version = legacy_swap_version()
+    }
 
     /// Validate fields and build
     #[allow(clippy::result_large_err)]
@@ -1628,7 +1659,9 @@ enum MatchReservedResult {
 }
 
 impl TakerOrder {
-    fn is_cancellable(&self) -> bool { self.matches.is_empty() }
+    fn is_cancellable(&self) -> bool {
+        self.matches.is_empty()
+    }
 
     fn match_reserved(&self, reserved: &MakerReserved) -> MatchReservedResult {
         match &self.request.match_by {
@@ -1691,9 +1724,13 @@ impl TakerOrder {
         }
     }
 
-    fn base_orderbook_ticker(&self) -> &str { self.base_orderbook_ticker.as_deref().unwrap_or(&self.request.base) }
+    fn base_orderbook_ticker(&self) -> &str {
+        self.base_orderbook_ticker.as_deref().unwrap_or(&self.request.base)
+    }
 
-    fn rel_orderbook_ticker(&self) -> &str { self.rel_orderbook_ticker.as_deref().unwrap_or(&self.request.rel) }
+    fn rel_orderbook_ticker(&self) -> &str {
+        self.rel_orderbook_ticker.as_deref().unwrap_or(&self.request.rel)
+    }
 
     /// Returns the orderbook ticker of the taker coin
     fn taker_orderbook_ticker(&self) -> &str {
@@ -1715,7 +1752,9 @@ impl TakerOrder {
         orderbook_topic_from_base_rel(self.base_orderbook_ticker(), self.rel_orderbook_ticker())
     }
 
-    fn p2p_keypair(&self) -> Option<&KeyPair> { self.p2p_privkey.as_ref().map(|key| key.key_pair()) }
+    fn p2p_keypair(&self) -> Option<&KeyPair> {
+        self.p2p_privkey.as_ref().map(|key| key.key_pair())
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1971,13 +2010,17 @@ impl<'a> MakerOrderBuilder<'a> {
         self
     }
 
-    pub fn set_timeout(&mut self, timeout_in_minutes: u16) { self.timeout_in_minutes = Some(timeout_in_minutes); }
+    pub fn set_timeout(&mut self, timeout_in_minutes: u16) {
+        self.timeout_in_minutes = Some(timeout_in_minutes);
+    }
 
     /// When a new [MakerOrderBuilder::new] is created, it sets [SWAP_VERSION_DEFAULT].
     /// However, if user has not specified in the config to use TPU V2,
     /// the MakerOrderBuilder's swap_version is changed to legacy.
     /// In the future alls users will be using TPU V2 by default without "use_trading_proto_v2" configuration.
-    pub fn set_legacy_swap_v(&mut self) { self.swap_version = legacy_swap_version() }
+    pub fn set_legacy_swap_v(&mut self) {
+        self.swap_version = legacy_swap_version()
+    }
 
     /// Build MakerOrder
     #[allow(clippy::result_large_err)]
@@ -2072,10 +2115,14 @@ impl<'a> MakerOrderBuilder<'a> {
 }
 
 #[allow(dead_code)]
-fn zero_rat() -> BigRational { BigRational::zero() }
+fn zero_rat() -> BigRational {
+    BigRational::zero()
+}
 
 impl MakerOrder {
-    fn available_amount(&self) -> MmNumber { &self.max_base_vol - &self.reserved_amount() }
+    fn available_amount(&self) -> MmNumber {
+        &self.max_base_vol - &self.reserved_amount()
+    }
 
     fn reserved_amount(&self) -> MmNumber {
         self.matches.iter().fold(
@@ -2084,7 +2131,9 @@ impl MakerOrder {
         )
     }
 
-    fn is_cancellable(&self) -> bool { !self.has_ongoing_matches() }
+    fn is_cancellable(&self) -> bool {
+        !self.has_ongoing_matches()
+    }
 
     fn has_ongoing_matches(&self) -> bool {
         for (_, order_match) in self.matches.iter() {
@@ -2163,17 +2212,25 @@ impl MakerOrder {
         self.updated_at = Some(now_ms());
     }
 
-    fn base_orderbook_ticker(&self) -> &str { self.base_orderbook_ticker.as_deref().unwrap_or(&self.base) }
+    fn base_orderbook_ticker(&self) -> &str {
+        self.base_orderbook_ticker.as_deref().unwrap_or(&self.base)
+    }
 
-    fn rel_orderbook_ticker(&self) -> &str { self.rel_orderbook_ticker.as_deref().unwrap_or(&self.rel) }
+    fn rel_orderbook_ticker(&self) -> &str {
+        self.rel_orderbook_ticker.as_deref().unwrap_or(&self.rel)
+    }
 
     fn orderbook_topic(&self) -> String {
         orderbook_topic_from_base_rel(self.base_orderbook_ticker(), self.rel_orderbook_ticker())
     }
 
-    fn was_updated(&self) -> bool { self.updated_at != Some(self.created_at) }
+    fn was_updated(&self) -> bool {
+        self.updated_at != Some(self.created_at)
+    }
 
-    fn p2p_keypair(&self) -> Option<&KeyPair> { self.p2p_privkey.as_ref().map(|key| key.key_pair()) }
+    fn p2p_keypair(&self) -> Option<&KeyPair> {
+        self.p2p_privkey.as_ref().map(|key| key.key_pair())
+    }
 }
 
 impl From<TakerOrder> for MakerOrder {
@@ -2286,11 +2343,17 @@ pub struct MakerReserved {
 }
 
 impl MakerReserved {
-    fn get_base_amount(&self) -> &MmNumber { &self.base_amount }
+    fn get_base_amount(&self) -> &MmNumber {
+        &self.base_amount
+    }
 
-    fn get_rel_amount(&self) -> &MmNumber { &self.rel_amount }
+    fn get_rel_amount(&self) -> &MmNumber {
+        &self.rel_amount
+    }
 
-    fn price(&self) -> MmNumber { &self.rel_amount / &self.base_amount }
+    fn price(&self) -> MmNumber {
+        &self.rel_amount / &self.base_amount
+    }
 }
 
 impl MakerReserved {
@@ -2488,15 +2551,23 @@ impl<Key, Value> TrieDiffHistory<Key, Value> {
     }
 
     #[allow(dead_code)]
-    fn remove_key(&mut self, key: H64) { self.inner.remove(&key); }
+    fn remove_key(&mut self, key: H64) {
+        self.inner.remove(&key);
+    }
 
     #[allow(dead_code)]
-    fn contains_key(&self, key: &H64) -> bool { self.inner.get(key).is_some() }
+    fn contains_key(&self, key: &H64) -> bool {
+        self.inner.get(key).is_some()
+    }
 
-    fn get(&self, key: &H64) -> Option<&TrieDiff<Key, Value>> { self.inner.get(key) }
+    fn get(&self, key: &H64) -> Option<&TrieDiff<Key, Value>> {
+        self.inner.get(key)
+    }
 
     #[allow(dead_code)]
-    fn len(&self) -> usize { self.inner.len_unchecked() }
+    fn len(&self) -> usize {
+        self.inner.len_unchecked()
+    }
 }
 
 type TrieOrderHistory = TrieDiffHistory<Uuid, OrderbookItem>;
@@ -2549,17 +2620,8 @@ fn order_pair_root_mut<'a>(state: &'a mut HashMap<AlbOrderedOrderbookPair, H64>,
     state.entry(pair.to_owned()).or_insert_with(Default::default)
 }
 
-/// `parity_util_mem::malloc_size` crushes for some reason on wasm32
-#[cfg(target_arch = "wasm32")]
-fn collect_orderbook_metrics(_ctx: &MmArc, _orderbook: &Orderbook) {}
-
-#[cfg(not(target_arch = "wasm32"))]
 fn collect_orderbook_metrics(ctx: &MmArc, orderbook: &Orderbook) {
-    use parity_util_mem::malloc_size;
-
-    let memory_db_size = malloc_size(&orderbook.memory_db);
     mm_gauge!(ctx.metrics, "orderbook.len", orderbook.order_set.len() as f64);
-    mm_gauge!(ctx.metrics, "orderbook.memory_db", memory_db_size as f64);
 }
 
 struct Orderbook {
@@ -2605,7 +2667,9 @@ impl Default for Orderbook {
     }
 }
 
-fn hashed_null_node<T: TrieConfiguration>() -> TrieHash<T> { <T::Codec as NodeCodecT>::hashed_null_node() }
+fn hashed_null_node<T: TrieConfiguration>() -> TrieHash<T> {
+    <T::Codec as NodeCodecT>::hashed_null_node()
+}
 
 impl Orderbook {
     fn new(streaming_manager: StreamingManager) -> Orderbook {
@@ -2625,7 +2689,9 @@ impl Orderbook {
         })
     }
 
-    fn find_order_by_uuid(&self, uuid: &Uuid) -> Option<OrderbookItem> { self.order_set.get(uuid).cloned() }
+    fn find_order_by_uuid(&self, uuid: &Uuid) -> Option<OrderbookItem> {
+        self.order_set.get(uuid).cloned()
+    }
 
     fn insert_or_update_order_update_trie(&mut self, order: OrderbookItem) {
         // Ignore the order if it was recently cancelled
@@ -2694,10 +2760,13 @@ impl Orderbook {
                 },
             };
 
-            history.insert_new_diff(prev_root, TrieDiff {
-                delta: vec![(order.uuid, Some(order.clone()))],
-                next_root: *pair_root,
-            });
+            history.insert_new_diff(
+                prev_root,
+                TrieDiff {
+                    delta: vec![(order.uuid, Some(order.clone()))],
+                    next_root: *pair_root,
+                },
+            );
         }
     }
 
@@ -2781,10 +2850,11 @@ impl Orderbook {
         let to_remove = &(uuid, alb_ordered.clone());
         pubkey_state.orders_uuids.remove(to_remove);
 
-        *pair_state = match delta_trie_root::<Layout, _, _, _, _, _>(&mut self.memory_db, *pair_state, vec![(
-            *order.uuid.as_bytes(),
-            None::<Vec<u8>>,
-        )]) {
+        *pair_state = match delta_trie_root::<Layout, _, _, _, _, _>(
+            &mut self.memory_db,
+            *pair_state,
+            vec![(*order.uuid.as_bytes(), None::<Vec<u8>>)],
+        ) {
             Ok(root) => root,
             Err(_) => {
                 error!("Failed to get existing trie with root {:?}", pair_state);
@@ -2800,10 +2870,13 @@ impl Orderbook {
             .order_pairs_trie_state_history
             .get_mut_unchecked(&alb_ordered)
         {
-            history.insert_new_diff(old_state, TrieDiff {
-                delta: vec![(uuid, None)],
-                next_root: *pair_state,
-            });
+            history.insert_new_diff(
+                old_state,
+                TrieDiff {
+                    delta: vec![(uuid, None)],
+                    next_root: *pair_state,
+                },
+            );
         }
 
         self.streaming_manager
@@ -2815,7 +2888,9 @@ impl Orderbook {
         Some(order)
     }
 
-    fn is_subscribed_to(&self, topic: &str) -> bool { self.topics_subscribed_to.contains_key(topic) }
+    fn is_subscribed_to(&self, topic: &str) -> bool {
+        self.topics_subscribed_to.contains_key(topic)
+    }
 
     fn process_keep_alive(
         &mut self,
@@ -2953,7 +3028,9 @@ impl OrdermatchContext {
         })))
     }
 
-    fn orderbook_ticker(&self, ticker: &str) -> Option<String> { self.orderbook_tickers.get(ticker).cloned() }
+    fn orderbook_ticker(&self, ticker: &str) -> Option<String> {
+        self.orderbook_tickers.get(ticker).cloned()
+    }
 
     fn orderbook_ticker_bypass(&self, ticker: &str) -> String {
         self.orderbook_ticker(ticker).unwrap_or_else(|| ticker.to_owned())
@@ -3016,7 +3093,9 @@ impl MakerOrdersContext {
         }
     }
 
-    fn get_order(&self, uuid: &Uuid) -> Option<&Arc<AsyncMutex<MakerOrder>>> { self.orders.get(uuid) }
+    fn get_order(&self, uuid: &Uuid) -> Option<&Arc<AsyncMutex<MakerOrder>>> {
+        self.orders.get(uuid)
+    }
 
     fn remove_order(&mut self, uuid: &Uuid) -> Option<Arc<AsyncMutex<MakerOrder>>> {
         let order = self.orders.remove(uuid)?;
@@ -3048,10 +3127,14 @@ impl MakerOrdersContext {
         balance_loops.spawn_or_ignore(order_base, fut).warn_log();
     }
 
-    fn stop_balance_loop(&mut self, ticker: &str) { self.balance_loops.lock().abort_future(ticker).warn_log(); }
+    fn stop_balance_loop(&mut self, ticker: &str) {
+        self.balance_loops.lock().abort_future(ticker).warn_log();
+    }
 
     #[cfg(test)]
-    fn balance_loop_exists(&mut self, ticker: &str) -> bool { self.balance_loops.lock().contains(ticker).unwrap() }
+    fn balance_loop_exists(&mut self, ticker: &str) -> bool {
+        self.balance_loops.lock().contains(ticker).unwrap()
+    }
 }
 
 struct LegacySwapParams<'a> {
@@ -3606,7 +3689,9 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
             let mut uuids_to_remove = vec![];
             let mut pubkeys_to_remove = vec![];
             for (pubkey, state) in orderbook.pubkeys_state.iter() {
-                let to_keep = pubkey == &my_pubsecp || state.last_keep_alive + maker_order_timeout > now_sec();
+                let is_ours = orderbook.my_p2p_pubkeys.contains(pubkey);
+                let to_keep =
+                    pubkey == &my_pubsecp || is_ours || state.last_keep_alive + maker_order_timeout > now_sec();
                 if !to_keep {
                     for (uuid, _) in &state.orders_uuids {
                         uuids_to_remove.push(*uuid);
@@ -3656,15 +3741,15 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                         continue;
                     },
                 };
-                let max_vol = match calc_max_maker_vol(&ctx, &base, &current_balance, FeeApproxStage::OrderIssue).await
-                {
-                    Ok(vol_info) => vol_info.volume,
-                    Err(e) => {
-                        log::info!("Error {} on balance check to kickstart order {}, cancelling", e, uuid);
-                        to_cancel.push(uuid);
-                        continue;
-                    },
-                };
+                let max_vol =
+                    match calc_max_maker_vol(&ctx, &base, &current_balance, FeeApproxStage::OrderIssueMax).await {
+                        Ok(vol_info) => vol_info.volume,
+                        Err(e) => {
+                            log::info!("Error {} on balance check to kickstart order {}, cancelling", e, uuid);
+                            to_cancel.push(uuid);
+                            continue;
+                        },
+                    };
                 if max_vol < order.available_amount() {
                     order.max_base_vol = order.reserved_amount() + max_vol;
                 }
@@ -3678,8 +3763,31 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
 
                 // notify other nodes only if maker order is still there keeping maker_orders locked during the operation
                 if maker_orders.contains_key(&uuid) {
-                    let topic = order.orderbook_topic();
-                    subscribe_to_topic(&ctx, topic);
+                    if let Err(err) = subscribe_to_orderbook_topic(
+                        &ctx,
+                        order.base_orderbook_ticker(),
+                        order.rel_orderbook_ticker(),
+                        false,
+                    )
+                    .await
+                    {
+                        // TODO: centralized-P2P-failure-policy
+                        // Introduce a single, centralized handler for P2P/network failures that affect a specific (base, rel) pair.
+                        // The handler should, on critical/persistent failures, cancel local maker orders for that pair and clear
+                        // in-memory pair state to avoid stale/half-synced state. Apply this consistently across all call sites,
+                        // including but not limited to:
+                        // - subscribe_to_orderbook_topic
+                        // - maker_order_created_p2p_notify
+                        // - re-subscribe on reconnect if needed
+                        // - keep-alive initiated sync requests
+                        // - background refresh / re-announce paths
+                        warn!(
+                            "Failed to subscribe to orderbook topic {}:{}: {}",
+                            order.base_orderbook_ticker(),
+                            order.rel_orderbook_ticker(),
+                            err
+                        );
+                    }
                     maker_order_created_p2p_notify(
                         ctx.clone(),
                         &order,
@@ -4813,7 +4921,9 @@ impl OrderbookItem {
     }
 }
 
-fn get_true() -> bool { true }
+fn get_true() -> bool {
+    true
+}
 
 #[derive(Deserialize)]
 pub struct SetPriceReq {
@@ -5555,9 +5665,9 @@ pub struct CancelOrderReq {
 pub enum CancelOrderError {
     #[display(fmt = "Cannot retrieve order match context.")]
     CannotRetrieveOrderMatchContext,
-    #[display(fmt = "Order {} is being matched now, can't cancel", uuid)]
+    #[display(fmt = "Order {uuid} is being matched now, can't cancel")]
     OrderBeingMatched { uuid: Uuid },
-    #[display(fmt = "Order {} not found", uuid)]
+    #[display(fmt = "Order {uuid} not found")]
     UUIDNotFound { uuid: Uuid },
 }
 
@@ -5777,27 +5887,33 @@ pub async fn my_orders(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn my_maker_orders_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("ORDERS").join("MY").join("MAKER") }
+pub fn my_maker_orders_dir(ctx: &MmArc) -> PathBuf {
+    ctx.dbdir().join("ORDERS").join("MY").join("MAKER")
+}
 
 #[cfg(not(target_arch = "wasm32"))]
-fn my_taker_orders_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("ORDERS").join("MY").join("TAKER") }
+fn my_taker_orders_dir(ctx: &MmArc) -> PathBuf {
+    ctx.dbdir().join("ORDERS").join("MY").join("TAKER")
+}
 
 #[cfg(not(target_arch = "wasm32"))]
-fn my_orders_history_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("ORDERS").join("MY").join("HISTORY") }
+fn my_orders_history_dir(ctx: &MmArc) -> PathBuf {
+    ctx.dbdir().join("ORDERS").join("MY").join("HISTORY")
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn my_maker_order_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
-    my_maker_orders_dir(ctx).join(format!("{}.json", uuid))
+    my_maker_orders_dir(ctx).join(format!("{uuid}.json"))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 fn my_taker_order_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
-    my_taker_orders_dir(ctx).join(format!("{}.json", uuid))
+    my_taker_orders_dir(ctx).join(format!("{uuid}.json"))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 fn my_order_history_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
-    my_orders_history_dir(ctx).join(format!("{}.json", uuid))
+    my_orders_history_dir(ctx).join(format!("{uuid}.json"))
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -6215,7 +6331,9 @@ enum OrderbookAddrErr {
 }
 
 impl From<json::Error> for OrderbookAddrErr {
-    fn from(err: json::Error) -> Self { OrderbookAddrErr::DeserializationError(err) }
+    fn from(err: json::Error) -> Self {
+        OrderbookAddrErr::DeserializationError(err)
+    }
 }
 
 impl From<coins::tendermint::AccountIdFromPubkeyHexErr> for OrderbookAddrErr {
@@ -6240,7 +6358,7 @@ fn orderbook_address(
         },
         // Todo: implement TRX address generation
         CoinProtocol::TRX { .. } => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
-        CoinProtocol::UTXO | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
+        CoinProtocol::UTXO { .. } | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
             coins::utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format)
                 .map(OrderbookAddress::Transparent)
                 .map_to_mm(OrderbookAddrErr::AddrFromPubkeyError)
@@ -6278,8 +6396,7 @@ fn orderbook_address(
                 )
                 .map(|id| OrderbookAddress::Transparent(id.to_string()))?),
                 _ => MmError::err(OrderbookAddrErr::InvalidPlatformCoinProtocol(format!(
-                    "Platform protocol {:?} is not TENDERMINT",
-                    platform_protocol
+                    "Platform protocol {platform_protocol:?} is not TENDERMINT"
                 ))),
             }
         },
@@ -6292,10 +6409,10 @@ fn orderbook_address(
         // Todo: similar to how it's done for zcoin.
         CoinProtocol::LIGHTNING { .. } => Ok(OrderbookAddress::Shielded),
         #[cfg(feature = "enable-sia")]
-        CoinProtocol::SIA => {
-            // TODO Alright - deprecated "orderbook address" feature. The "pubkey" provided here is secp256k1, so we can't create a sia address from it.
-            // This requires discussion on how to handle this as we cannot create a sia address from the current scope. Should we hack what we have to allow providing an address here or wait until OrderbookP2PItem is replaced with a sensible type?
-            Ok(OrderbookAddress::Shielded)
-        },
+        CoinProtocol::SIA => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
+        #[cfg(feature = "enable-solana")]
+        CoinProtocol::SOLANA(_) => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
+        #[cfg(feature = "enable-solana")]
+        CoinProtocol::SOLANATOKEN(_) => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
     }
 }

@@ -1,13 +1,16 @@
-use super::{broadcast_p2p_tx_msg, get_payment_locktime, lp_coinfind, taker_payment_spend_deadline, tx_helper_topic,
-            H256Json, SwapsContext, TAKER_FEE_VALIDATION_ATTEMPTS, TAKER_FEE_VALIDATION_RETRY_DELAY_SECS,
-            WAIT_CONFIRM_INTERVAL_SEC};
+use super::{
+    broadcast_p2p_tx_msg, get_payment_locktime, lp_coinfind, taker_payment_spend_deadline, tx_helper_topic, H256Json,
+    SwapsContext, TAKER_FEE_VALIDATION_ATTEMPTS, TAKER_FEE_VALIDATION_RETRY_DELAY_SECS, WAIT_CONFIRM_INTERVAL_SEC,
+};
 use crate::lp_network::{P2PRequestError, P2PRequestResult};
 
 use crate::MmError;
 use async_trait::async_trait;
-use coins::{CanRefundHtlc, ConfirmPaymentInput, FoundSwapTxSpend, MmCoinEnum, RefundPaymentArgs,
-            SendMakerPaymentSpendPreimageInput, SwapTxTypeWithSecretHash, WaitForHTLCTxSpendArgs,
-            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput};
+use coins::{
+    CanRefundHtlc, ConfirmPaymentInput, FoundSwapTxSpend, MmCoinEnum, RefundPaymentArgs,
+    SendMakerPaymentSpendPreimageInput, SwapTxTypeWithSecretHash, WaitForHTLCTxSpendArgs,
+    WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
+};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{debug, error, info};
 use common::now_sec;
@@ -51,7 +54,9 @@ impl StateMachineTrait for WatcherStateMachine {
 impl StandardStateMachine for WatcherStateMachine {}
 
 impl WatcherStateMachine {
-    fn taker_locktime(&self) -> u64 { self.data.swap_started_at + self.data.lock_duration }
+    fn taker_locktime(&self) -> u64 {
+        self.data.swap_started_at + self.data.lock_duration
+    }
 
     fn wait_for_maker_payment_spend_deadline(&self) -> u64 {
         let factor = self.conf.wait_maker_payment_spend_factor;
@@ -87,9 +92,13 @@ impl Default for WatcherConf {
     }
 }
 
-pub fn default_watcher_maker_payment_spend_factor() -> f64 { common::one_f64() }
+pub fn default_watcher_maker_payment_spend_factor() -> f64 {
+    common::one_f64()
+}
 
-pub fn default_watcher_refund_factor() -> f64 { common::one_and_half_f64() }
+pub fn default_watcher_refund_factor() -> f64 {
+    common::one_and_half_f64()
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum SwapWatcherMsg {
@@ -136,7 +145,9 @@ struct SpendMakerPayment {
 }
 
 impl SpendMakerPayment {
-    fn new(secret: H256Json) -> Self { SpendMakerPayment { secret } }
+    fn new(secret: H256Json) -> Self {
+        SpendMakerPayment { secret }
+    }
 }
 
 struct Stopped {
@@ -171,7 +182,9 @@ enum WatcherError {
 }
 
 impl Stopped {
-    fn from_reason(stop_reason: StopReason) -> Stopped { Stopped { stop_reason } }
+    fn from_reason(stop_reason: StopReason) -> Stopped {
+        Stopped { stop_reason }
+    }
 }
 
 impl TransitionFrom<ValidateTakerFee> for ValidateTakerPayment {}
@@ -692,4 +705,6 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, veri
     spawner.spawn_with_settings(fut, settings);
 }
 
-pub fn watcher_topic(ticker: &str) -> String { pub_sub_topic(WATCHER_PREFIX, ticker) }
+pub fn watcher_topic(ticker: &str) -> String {
+    pub_sub_topic(WATCHER_PREFIX, ticker)
+}

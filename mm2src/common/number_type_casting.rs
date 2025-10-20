@@ -20,8 +20,12 @@ pub trait SafeTypeCastingNumbers<T>: Sized {
 macro_rules! impl_safe_number_type_cast {
     ($from: ident, $to: ident) => {
         impl SafeTypeCastingNumbers<$to> for $from {
-            fn into_or(self, or: $to) -> $to { std::convert::TryFrom::try_from(self).unwrap_or(or) }
-            fn into_or_max(self) -> $to { std::convert::TryFrom::try_from(self).unwrap_or($to::MAX) }
+            fn into_or(self, or: $to) -> $to {
+                std::convert::TryFrom::try_from(self).unwrap_or(or)
+            }
+            fn into_or_max(self) -> $to {
+                std::convert::TryFrom::try_from(self).unwrap_or($to::MAX)
+            }
         }
     };
 }

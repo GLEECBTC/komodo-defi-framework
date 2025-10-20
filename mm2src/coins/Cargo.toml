@@ -7,7 +7,16 @@ edition = "2018"
 zhtlc-native-tests = []
 enable-sia = [
 	"dep:sia-rust",
-	"dep:ed25519-dalek-bip32"
+	"dep:ed25519-dalek-bip32",
+    "dep:blake2b_simd",
+]
+enable-solana = [
+    "dep:solana-keypair",
+    "dep:solana-pubkey",
+    "dep:solana-rpc-client-types",
+    "dep:solana-rpc-client",
+    "dep:solana-signer",
+    "dep:spl-associated-token-account-client",
 ]
 default = []
 run-docker-tests = []
@@ -78,14 +87,13 @@ mm2_rpc = { path = "../mm2_rpc" }
 mm2_state_machine = { path = "../mm2_state_machine" }
 mocktopus = { workspace =  true, optional = true }
 num-traits.workspace = true
-parking_lot = { workspace = true, features = ["nightly"] }
+parking_lot = { workspace = true }
 primitives = { path = "../mm2_bitcoin/primitives" }
 prost.workspace = true
 protobuf.workspace = true
 proxy_signature = { path = "../proxy_signature" }
 rand = { workspace = true, features = ["std", "small_rng"] }
 regex.workspace = true
-reqwest = { workspace = true, optional = true }
 rlp.workspace = true
 rmp-serde.workspace = true
 rpc = { path = "../mm2_bitcoin/rpc" }
@@ -119,6 +127,14 @@ zcash_client_backend.workspace = true
 zcash_extras.workspace = true
 zcash_primitives.workspace = true
 
+# Solana
+solana-keypair = { version = "2.2", default-features = false, optional = true }
+solana-pubkey = { version = "2.4", default-features = false, optional = true }
+solana-rpc-client = { version = "2.3", default-features = false, optional = true }
+solana-rpc-client-types= { version = "2.3", default-features = false, optional = true }
+solana-signer = { version = "2.2", default-features = false, optional = true }
+spl-associated-token-account-client = { version = "2.0", default-features = false, optional = true }
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 blake2b_simd.workspace = true
 ff.workspace = true
@@ -139,7 +155,6 @@ web-sys = { workspace = true, features = ["console", "Headers", "Request", "Requ
 zcash_proofs = { workspace = true, features = ["local-prover"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-dirs.workspace = true
 bitcoin.workspace = true
 hyper = { workspace = true, features = ["client", "http2", "server", "tcp"] }
 hyper-rustls = { workspace = true, default-features = false, features = ["http1", "http2", "webpki-tokio"] }
@@ -167,7 +182,6 @@ mocktopus.workspace = true
 mm2_p2p = { path = "../mm2_p2p", features = ["application"] }
 ff.workspace = true
 jubjub.workspace = true
-reqwest.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wagyu-zcash-parameters.workspace = true

@@ -20,18 +20,20 @@ type HmacSha512 = Hmac<Sha512>;
 
 #[derive(Debug, Display, PartialEq)]
 pub enum KeyDerivationError {
-    #[display(fmt = "Error hashing password: {}", _0)]
+    #[display(fmt = "Error hashing password: {_0}")]
     PasswordHashingFailed(String),
     #[display(fmt = "Error initializing HMAC")]
     HmacInitialization,
     #[display(fmt = "Invalid key length")]
     InvalidKeyLength,
-    #[display(fmt = "Not supported: {}", _0)]
+    #[display(fmt = "Not supported: {_0}")]
     NotSupported(String),
 }
 
 impl From<argon2::password_hash::Error> for KeyDerivationError {
-    fn from(e: argon2::password_hash::Error) -> Self { KeyDerivationError::PasswordHashingFailed(e.to_string()) }
+    fn from(e: argon2::password_hash::Error) -> Self {
+        KeyDerivationError::PasswordHashingFailed(e.to_string())
+    }
 }
 
 /// Parameters for the Argon2 key derivation function.
@@ -104,13 +106,13 @@ pub enum KeyDerivationDetails {
 
 fn build_argon2_instance(params: &Argon2Params) -> Result<Argon2<'_>, KeyDerivationError> {
     let argon2_params = argon2::Params::new(params.m_cost, params.t_cost, params.p_cost, Some(params.output_len))
-        .map_err(|e| KeyDerivationError::PasswordHashingFailed(format!("Invalid Argon2 parameters: {}", e)))?;
+        .map_err(|e| KeyDerivationError::PasswordHashingFailed(format!("Invalid Argon2 parameters: {e}")))?;
 
     let algorithm = argon2::Algorithm::new(&params.algorithm)
-        .map_err(|e| KeyDerivationError::PasswordHashingFailed(format!("Unknown Argon2 algorithm: {}", e)))?;
+        .map_err(|e| KeyDerivationError::PasswordHashingFailed(format!("Unknown Argon2 algorithm: {e}")))?;
 
     let version = argon2::Version::try_from(params.version)
-        .map_err(|e| KeyDerivationError::PasswordHashingFailed(format!("Unknown Argon2 version: {}", e)))?;
+        .map_err(|e| KeyDerivationError::PasswordHashingFailed(format!("Unknown Argon2 version: {e}")))?;
 
     Ok(Argon2::new(algorithm, version, argon2_params))
 }
@@ -132,9 +134,9 @@ pub(crate) fn derive_keys_for_mnemonic(
             let argon2 = build_argon2_instance(params)?;
 
             let salt_aes = SaltString::from_b64(salt_aes)
-                .map_err(|e| KeyDerivationError::PasswordHashingFailed(format!("Invalid AES salt: {}", e)))?;
+                .map_err(|e| KeyDerivationError::PasswordHashingFailed(format!("Invalid AES salt: {e}")))?;
             let salt_hmac = SaltString::from_b64(salt_hmac)
-                .map_err(|e| KeyDerivationError::PasswordHashingFailed(format!("Invalid HMAC salt: {}", e)))?;
+                .map_err(|e| KeyDerivationError::PasswordHashingFailed(format!("Invalid HMAC salt: {e}")))?;
 
             // Derive AES Key
             let aes_password_hash = argon2.hash_password(password.as_bytes(), &salt_aes)?;
