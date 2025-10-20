@@ -422,10 +422,7 @@ fn update_optional_info(swap: &TPUSwapStatusForStats) -> (String, OwnedSqlNamedP
         params.push((":taker_version", taker_version.clone().into()));
     }
 
-    let update_query = format!(
-        "UPDATE stats_swaps set swap_version = :swap_version{} WHERE uuid = :uuid;",
-        extra_args
-    );
+    let update_query = format!("UPDATE stats_swaps set swap_version = :swap_version{extra_args} WHERE uuid = :uuid;",);
 
     // Swap version is actually mandatory and will always be set.
     params.push((":uuid", swap.uuid.to_string().into()));

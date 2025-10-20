@@ -462,9 +462,9 @@ pub(super) async fn swap_kickstart_handler_for_taker(
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
 /// The structure represents the swap information to be sent for statistics purposes.
 // NOTE: This is a big struct. Better not add Clone derive to it unless absolutely necessary.
+#[derive(Debug, Deserialize, Serialize)]
 pub struct TPUSwapStatusForStats {
     /// The swap unique identifier
     pub uuid: Uuid,
@@ -528,7 +528,7 @@ pub struct TPUSwapStatusForStats {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-/// Represents either a batch of maker or taker swap events. This could be used to know whether a TPUSwapStatusForStats
+/// Represents either a batch of maker or taker swap events. This could be used to know whether a [`TPUSwapStatusForStats`]
 /// is maker-originating or taker-originating.
 pub enum TPUSwapEvents {
     FromMaker(Vec<MakerSwapEvent>),
@@ -589,10 +589,7 @@ impl TPUSwapStatusForStats {
         // TODO: A proper check would be to open the market maker bot and check whether is is running and that the
         //       swap we just performed is found within its SimpleMakerBotRegistry. The problem at the moment is that
         //       we can't import TradingBotContext since that's part of lp_ordermatch and that would create a cyclic dependency.
-        let mut is_maker_bot = Some(false);
-        if machine.ctx.simple_market_maker_bot_ctx.lock().unwrap().is_some() {
-            is_maker_bot = Some(true);
-        }
+        let is_maker_bot = Some(machine.ctx.simple_market_maker_bot_ctx.lock().unwrap().is_some());
 
         // Get the maker's p2p pubkey
         let (p2p_private_key, _) = p2p_private_and_peer_id_to_broadcast(&machine.ctx, machine.p2p_keypair.as_ref());
