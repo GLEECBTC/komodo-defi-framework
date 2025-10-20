@@ -133,7 +133,7 @@ pub async fn fix_maker_and_taker_pubkeys_in_stats_db(ctx: &MmArc) -> Vec<(&'stat
                 ]));
             },
             Err(e) => {
-                error!("Error {} on getting maker_pubkey for swap {}", e, maker_swap.uuid);
+                covered_error!("Error {} on getting maker_pubkey for swap {}", e, maker_swap.uuid);
                 result.push((UPDATE_MAKER_PUBKEY, vec![
                     SqlValue::Null,
                     maker_swap.uuid.to_string().into(),
@@ -152,7 +152,7 @@ pub async fn fix_maker_and_taker_pubkeys_in_stats_db(ctx: &MmArc) -> Vec<(&'stat
                 ]));
             },
             Err(e) => {
-                error!("Error {} on getting taker_pubkey for swap {}", e, taker_swap.uuid);
+                covered_error!("Error {} on getting taker_pubkey for swap {}", e, taker_swap.uuid);
                 result.push((UPDATE_TAKER_PUBKEY, vec![
                     SqlValue::Null,
                     taker_swap.uuid.to_string().into(),
@@ -338,7 +338,7 @@ fn update_optional_info(swap: &SavedSwap) -> Option<(String, OwnedSqlNamedParams
                 params.push((":maker_pubkey", maker_pubkey.into()));
             },
             Err(e) => {
-                error!("[{}] Error on getting maker_pubkey for stats: {}", swap.uuid(), e);
+                covered_error!("[{}] Error on getting maker_pubkey for stats: {}", swap.uuid(), e);
             },
         }
     }
@@ -349,7 +349,7 @@ fn update_optional_info(swap: &SavedSwap) -> Option<(String, OwnedSqlNamedParams
                 params.push((":taker_pubkey", taker_pubkey.into()));
             },
             Err(e) => {
-                error!("[{}] Error on getting taker_pubkey for stats: {}", swap.uuid(), e);
+                covered_error!("[{}] Error on getting taker_pubkey for stats: {}", swap.uuid(), e);
             },
         }
     }

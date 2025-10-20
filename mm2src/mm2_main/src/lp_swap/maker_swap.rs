@@ -2206,7 +2206,7 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
                         }
 
                         if let Err(e) = broadcast_my_swap_status(&ctx, uuid).await {
-                            error!("!broadcast_my_swap_status({}): {}", uuid, e);
+                            covered_error!("!broadcast_my_swap_status({}): {}", uuid, e);
                         }
                         break;
                     },

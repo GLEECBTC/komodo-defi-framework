@@ -507,7 +507,7 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
                         }
 
                         if let Err(e) = broadcast_my_swap_status(&ctx, running_swap.uuid).await {
-                            error!("!broadcast_my_swap_status({}): {}", uuid_str, e);
+                            covered_error!("!broadcast_my_swap_status({}): {}", uuid_str, e);
                         }
                         break;
                     },
