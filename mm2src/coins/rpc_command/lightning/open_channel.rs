@@ -5,12 +5,15 @@ use crate::lightning::ln_serialization::NodeAddress;
 use crate::lightning::ln_storage::LightningStorage;
 use crate::utxo::utxo_common::UtxoTxBuilder;
 use crate::utxo::{sat_from_big_decimal, FeePolicy, GetUtxoListOps, UtxoTxGenerationOps};
-use crate::{lp_coinfind_or_err, BalanceError, CoinFindError, GenerateTxError, MmCoinEnum, NumConversError,
-            UnexpectedDerivationMethod, UtxoRpcError};
+use crate::{
+    lp_coinfind_or_err, BalanceError, CoinFindError, GenerateTxError, MmCoinEnum, NumConversError,
+    UnexpectedDerivationMethod, UtxoRpcError,
+};
 use chain::TransactionOutput;
 use common::log::error;
 use common::{async_blocking, new_uuid, HttpStatusCode};
 use db_common::sqlite::rusqlite::Error as SqlError;
+use derive_more::Display;
 use http::StatusCode;
 use keys::AddressHashEnum;
 use lightning::util::config::UserConfig;
@@ -25,26 +28,26 @@ type OpenChannelResult<T> = Result<T, MmError<OpenChannelError>>;
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum OpenChannelError {
-    #[display(fmt = "Lightning network is not supported for {}", _0)]
+    #[display(fmt = "Lightning network is not supported for {_0}")]
     UnsupportedCoin(String),
-    #[display(fmt = "Balance Error {}", _0)]
+    #[display(fmt = "Balance Error {_0}")]
     BalanceError(String),
-    #[display(fmt = "Invalid path: {}", _0)]
+    #[display(fmt = "Invalid path: {_0}")]
     InvalidPath(String),
-    #[display(fmt = "Failure to open channel with node {}: {}", _0, _1)]
+    #[display(fmt = "Failure to open channel with node {_0}: {_1}")]
     FailureToOpenChannel(String, String),
-    #[display(fmt = "RPC error {}", _0)]
+    #[display(fmt = "RPC error {_0}")]
     RpcError(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     InternalError(String),
-    #[display(fmt = "I/O error {}", _0)]
+    #[display(fmt = "I/O error {_0}")]
     IOError(String),
-    #[display(fmt = "DB error {}", _0)]
+    #[display(fmt = "DB error {_0}")]
     DbError(String),
     ConnectToNodeError(String),
-    #[display(fmt = "No such coin {}", _0)]
+    #[display(fmt = "No such coin {_0}")]
     NoSuchCoin(String),
-    #[display(fmt = "Generate Tx Error {}", _0)]
+    #[display(fmt = "Generate Tx Error {_0}")]
     GenerateTxErr(String),
 }
 
@@ -66,7 +69,9 @@ impl HttpStatusCode for OpenChannelError {
 }
 
 impl From<ConnectionError> for OpenChannelError {
-    fn from(err: ConnectionError) -> OpenChannelError { OpenChannelError::ConnectToNodeError(err.to_string()) }
+    fn from(err: ConnectionError) -> OpenChannelError {
+        OpenChannelError::ConnectToNodeError(err.to_string())
+    }
 }
 
 impl From<CoinFindError> for OpenChannelError {
@@ -78,31 +83,45 @@ impl From<CoinFindError> for OpenChannelError {
 }
 
 impl From<BalanceError> for OpenChannelError {
-    fn from(e: BalanceError) -> Self { OpenChannelError::BalanceError(e.to_string()) }
+    fn from(e: BalanceError) -> Self {
+        OpenChannelError::BalanceError(e.to_string())
+    }
 }
 
 impl From<NumConversError> for OpenChannelError {
-    fn from(e: NumConversError) -> Self { OpenChannelError::InternalError(e.to_string()) }
+    fn from(e: NumConversError) -> Self {
+        OpenChannelError::InternalError(e.to_string())
+    }
 }
 
 impl From<GenerateTxError> for OpenChannelError {
-    fn from(e: GenerateTxError) -> Self { OpenChannelError::GenerateTxErr(e.to_string()) }
+    fn from(e: GenerateTxError) -> Self {
+        OpenChannelError::GenerateTxErr(e.to_string())
+    }
 }
 
 impl From<UtxoRpcError> for OpenChannelError {
-    fn from(e: UtxoRpcError) -> Self { OpenChannelError::RpcError(e.to_string()) }
+    fn from(e: UtxoRpcError) -> Self {
+        OpenChannelError::RpcError(e.to_string())
+    }
 }
 
 impl From<UnexpectedDerivationMethod> for OpenChannelError {
-    fn from(e: UnexpectedDerivationMethod) -> Self { OpenChannelError::InternalError(e.to_string()) }
+    fn from(e: UnexpectedDerivationMethod) -> Self {
+        OpenChannelError::InternalError(e.to_string())
+    }
 }
 
 impl From<std::io::Error> for OpenChannelError {
-    fn from(err: std::io::Error) -> OpenChannelError { OpenChannelError::IOError(err.to_string()) }
+    fn from(err: std::io::Error) -> OpenChannelError {
+        OpenChannelError::IOError(err.to_string())
+    }
 }
 
 impl From<SqlError> for OpenChannelError {
-    fn from(err: SqlError) -> OpenChannelError { OpenChannelError::DbError(err.to_string()) }
+    fn from(err: SqlError) -> OpenChannelError {
+        OpenChannelError::DbError(err.to_string())
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -134,7 +153,7 @@ pub struct OpenChannelResponse {
 
 /// Opens a channel on the lightning network.
 pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelResult<OpenChannelResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
+    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
         MmCoinEnum::LightningCoin(c) => c,
         e => return MmError::err(OpenChannelError::UnsupportedCoin(e.ticker().to_string())),
     };
@@ -146,15 +165,20 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
 
     let platform_coin = ln_coin.platform_coin().clone();
     let decimals = platform_coin.as_ref().decimals;
-    let my_address = platform_coin.as_ref().derivation_method.single_addr_or_err().await?;
-    let (unspents, _) = platform_coin.get_unspent_ordered_list(&my_address).await?;
+    let my_address = platform_coin
+        .as_ref()
+        .derivation_method
+        .single_addr_or_err()
+        .await
+        .map_mm_err()?;
+    let (unspents, _) = platform_coin.get_unspent_ordered_list(&my_address).await.map_mm_err()?;
     let (value, fee_policy) = match req.amount.clone() {
         ChannelOpenAmount::Max => (
             unspents.iter().fold(0, |sum, unspent| sum + unspent.value),
             FeePolicy::DeductFromOutput(0),
         ),
         ChannelOpenAmount::Exact(v) => {
-            let value = sat_from_big_decimal(&v, decimals)?;
+            let value = sat_from_big_decimal(&v, decimals).map_mm_err()?;
             (value, FeePolicy::SendExact)
         },
     };
@@ -179,7 +203,7 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
         .map_err(|e| OpenChannelError::RpcError(e.to_string()))?;
     tx_builder = tx_builder.with_fee(fee);
 
-    let (unsigned, _) = tx_builder.build().await?;
+    let (unsigned, _) = tx_builder.build().await.map_mm_err()?;
 
     let amount_in_sat = unsigned.outputs[0].value;
     let push_msat = req.push_msat;
@@ -205,7 +229,7 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
     let temp_channel_id = async_blocking(move || {
         channel_manager
             .create_channel(node_pubkey, amount_in_sat, push_msat, uuid.as_u128(), Some(user_config))
-            .map_to_mm(|e| OpenChannelError::FailureToOpenChannel(node_pubkey.to_string(), format!("{:?}", e)))
+            .map_to_mm(|e| OpenChannelError::FailureToOpenChannel(node_pubkey.to_string(), format!("{e:?}")))
     })
     .await?;
 

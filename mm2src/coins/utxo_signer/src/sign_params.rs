@@ -41,7 +41,9 @@ pub enum OutputDestination {
 }
 
 impl OutputDestination {
-    pub fn plain(address: String) -> OutputDestination { OutputDestination::Plain { address } }
+    pub fn plain(address: String) -> OutputDestination {
+        OutputDestination::Plain { address }
+    }
 
     #[inline]
     pub fn change(derivation_path: DerivationPath, addr_format: AddressFormat) -> OutputDestination {
@@ -80,7 +82,9 @@ pub struct UtxoSignTxParamsBuilder {
 }
 
 impl Default for UtxoSignTxParamsBuilder {
-    fn default() -> Self { UtxoSignTxParamsBuilder::new() }
+    fn default() -> Self {
+        UtxoSignTxParamsBuilder::new()
+    }
 }
 
 impl UtxoSignTxParamsBuilder {
@@ -166,7 +170,9 @@ pub struct UtxoSignTxParams {
 }
 
 impl UtxoSignTxParams {
-    pub fn inputs_count(&self) -> usize { self.unsigned_tx.inputs.len() }
+    pub fn inputs_count(&self) -> usize {
+        self.unsigned_tx.inputs.len()
+    }
 
     /// We are sure that the number of `unsigned_tx.inputs.len()` is the same as `inputs_infos.len()`.
     /// Please see [`UtxoSignTxParamsBuilder::build`].

@@ -25,5 +25,7 @@ where
     ///   Err("Not found") => return Ok(None),
     /// }
     /// ```
-    fn discard_mm_trace(self) -> Result<T, E> { self.map_err(MmError::into_inner) }
+    fn discard_mm_trace(self) -> Result<T, E> {
+        self.map_err(MmError::into_inner)
+    }
 }

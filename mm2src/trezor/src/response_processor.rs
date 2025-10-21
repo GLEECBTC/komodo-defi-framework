@@ -14,11 +14,10 @@ pub enum TrezorProcessingError<E> {
 }
 
 impl<E> From<TrezorError> for TrezorProcessingError<E> {
-    fn from(e: TrezorError) -> Self { TrezorProcessingError::TrezorError(e) }
+    fn from(e: TrezorError) -> Self {
+        TrezorProcessingError::TrezorError(e)
+    }
 }
-
-/// This is required for implementing `MmError<TrezorProcessingError<E>>: From<MmError<TrezorError>>`.
-impl<E> NotEqual for TrezorProcessingError<E> {}
 
 #[async_trait]
 pub trait TrezorRequestProcessor

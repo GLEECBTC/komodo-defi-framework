@@ -1,18 +1,22 @@
 use super::{utxo_standard::UtxoStandardCoin, UtxoArc};
 
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
-use crate::{utxo::{output_script,
-                   rpc_clients::electrum_script_hash,
-                   utxo_common::{address_balance, address_to_scripthash},
-                   ScripthashNotification, UtxoCoinFields},
-            CoinWithDerivationMethod, MarketCoinOps};
+use crate::{
+    utxo::{
+        output_script,
+        rpc_clients::electrum_script_hash,
+        utxo_common::{address_balance, address_to_scripthash},
+        ScripthashNotification, UtxoCoinFields,
+    },
+    CoinWithDerivationMethod, MarketCoinOps,
+};
 
 use async_trait::async_trait;
 use common::log;
 use futures::channel::oneshot;
 use futures::StreamExt;
 use keys::Address;
-use mm2_event_stream::{Broadcaster, Event, EventStreamer, StreamHandlerInput, StreamerId};
+use mm2_event_stream::{Broadcaster, DeriveStreamerId, Event, EventStreamer, StreamHandlerInput, StreamerId};
 use std::collections::{HashMap, HashSet};
 
 macro_rules! try_or_continue {
@@ -31,8 +35,11 @@ pub struct UtxoBalanceEventStreamer {
     coin: UtxoStandardCoin,
 }
 
-impl UtxoBalanceEventStreamer {
-    pub fn new(utxo_arc: UtxoArc) -> Self {
+impl<'a> DeriveStreamerId<'a> for UtxoBalanceEventStreamer {
+    type InitParam = UtxoArc;
+    type DeriveParam = &'a str;
+
+    fn new(utxo_arc: Self::InitParam) -> Self {
         Self {
             // We wrap the UtxoArc in a UtxoStandardCoin for easier method accessibility.
             // The UtxoArc might belong to a different coin type though.
@@ -40,7 +47,9 @@ impl UtxoBalanceEventStreamer {
         }
     }
 
-    pub fn derive_streamer_id(coin: &str) -> StreamerId { StreamerId::Balance { coin: coin.to_string() } }
+    fn derive_streamer_id(coin: Self::DeriveParam) -> StreamerId {
+        StreamerId::Balance { coin: coin.to_string() }
+    }
 }
 
 #[async_trait]

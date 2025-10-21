@@ -10,8 +10,8 @@ pub struct BlockHeaderStorageTable {
 }
 
 impl BlockHeaderStorageTable {
-    pub const TICKER_HEIGHT_INDEX: &str = "block_height_ticker_index";
-    pub const HASH_TICKER_INDEX: &str = "block_hash_ticker_index";
+    pub const TICKER_HEIGHT_INDEX: &'static str = "block_height_ticker_index";
+    pub const HASH_TICKER_INDEX: &'static str = "block_hash_ticker_index";
 }
 
 impl TableSignature for BlockHeaderStorageTable {

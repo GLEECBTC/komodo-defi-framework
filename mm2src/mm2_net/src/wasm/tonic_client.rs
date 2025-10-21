@@ -6,7 +6,7 @@ use common::{APPLICATION_GRPC_WEB_PROTO, X_GRPC_WEB};
 use futures_util::Future;
 use http::header::{ACCEPT, CONTENT_TYPE};
 use http::{Request, Response};
-use mm2_err_handle::prelude::{MmError, MmResult};
+use mm2_err_handle::prelude::*;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tonic::body::BoxBody;
@@ -17,7 +17,9 @@ use tower_service::Service;
 pub struct TonicClient(String);
 
 impl TonicClient {
-    pub fn new(url: String) -> Self { Self(url) }
+    pub fn new(url: String) -> Self {
+        Self(url)
+    }
 }
 
 impl Service<Request<BoxBody>> for TonicClient {
@@ -27,9 +29,13 @@ impl Service<Request<BoxBody>> for TonicClient {
 
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
 
-    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> { Poll::Ready(Ok(())) }
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
 
-    fn call(&mut self, request: Request<BoxBody>) -> Self::Future { Box::pin(call(self.0.clone(), request)) }
+    fn call(&mut self, request: Request<BoxBody>) -> Self::Future {
+        Box::pin(call(self.0.clone(), request))
+    }
 }
 
 async fn call(base_url: String, request: Request<BoxBody>) -> MmResult<Response<ResponseBody>, PostGrpcWebErr> {
@@ -48,6 +54,7 @@ async fn call(base_url: String, request: Request<BoxBody>) -> MmResult<Response<
         .header(ACCEPT.as_str(), APPLICATION_GRPC_WEB_PROTO)
         .header(X_GRPC_WEB, "1")
         .fetch_stream_response()
-        .await?
+        .await
+        .map_mm_err()?
         .1)
 }

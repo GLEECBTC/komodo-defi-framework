@@ -30,5 +30,7 @@ impl SpawnFuture for SwarmRuntime {
 }
 
 impl Executor for SwarmRuntime {
-    fn exec(&self, future: Pin<Box<dyn Future<Output = ()> + Send>>) { self.inner.spawn_boxed(Box::new(future)) }
+    fn exec(&self, future: Pin<Box<dyn Future<Output = ()> + Send>>) {
+        self.inner.spawn_boxed(Box::new(future))
+    }
 }

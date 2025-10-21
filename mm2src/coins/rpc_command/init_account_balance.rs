@@ -5,10 +5,12 @@ use async_trait::async_trait;
 use common::{SerdeInfallible, SuccessResponse};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
-                           RpcTaskStatusRequest};
-use rpc_task::{RpcInitReq, RpcTask, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus,
-               RpcTaskTypes};
+use rpc_task::rpc_common::{
+    CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError, RpcTaskStatusRequest,
+};
+use rpc_task::{
+    RpcInitReq, RpcTask, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes,
+};
 
 pub type AccountBalanceUserAction = SerdeInfallible;
 pub type AccountBalanceAwaitingStatus = SerdeInfallible;
@@ -64,7 +66,9 @@ impl RpcTaskTypes for InitAccountBalanceTask {
 
 #[async_trait]
 impl RpcTask for InitAccountBalanceTask {
-    fn initial_status(&self) -> Self::InProgressStatus { AccountBalanceInProgressStatus::RequestingAccountBalance }
+    fn initial_status(&self) -> Self::InProgressStatus {
+        AccountBalanceInProgressStatus::RequestingAccountBalance
+    }
 
     // Do nothing if the task has been cancelled.
     async fn cancel(self) {}
@@ -93,12 +97,13 @@ pub async fn init_account_balance(
     req: RpcInitReq<InitAccountBalanceRequest>,
 ) -> MmResult<InitRpcTaskResponse, HDAccountBalanceRpcError> {
     let (client_id, req) = (req.client_id, req.inner);
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     let spawner = coin.spawner();
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(HDAccountBalanceRpcError::Internal)?;
     let task = InitAccountBalanceTask { coin, req };
     let task_id =
-        AccountBalanceTaskManager::spawn_rpc_task(&coins_ctx.account_balance_task_manager, &spawner, task, client_id)?;
+        AccountBalanceTaskManager::spawn_rpc_task(&coins_ctx.account_balance_task_manager, &spawner, task, client_id)
+            .map_mm_err()?;
     Ok(InitRpcTaskResponse { task_id })
 }
 
@@ -125,7 +130,7 @@ pub async fn cancel_account_balance(
         .account_balance_task_manager
         .lock()
         .map_to_mm(|e| CancelRpcTaskError::Internal(e.to_string()))?;
-    task_manager.cancel_task(req.task_id)?;
+    task_manager.cancel_task(req.task_id).map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -148,12 +153,13 @@ pub mod common_impl {
         let account_id = params.account_index;
         let hd_account = coin
             .derivation_method()
-            .hd_wallet_or_err()?
+            .hd_wallet_or_err()
+            .map_mm_err()?
             .get_account(account_id)
             .await
             .or_mm_err(|| HDAccountBalanceRpcError::UnknownAccount { account_id })?;
 
-        let addresses = coin.all_known_addresses_balances(&hd_account).await?;
+        let addresses = coin.all_known_addresses_balances(&hd_account).await.map_mm_err()?;
 
         let total_balance = addresses
             .iter()

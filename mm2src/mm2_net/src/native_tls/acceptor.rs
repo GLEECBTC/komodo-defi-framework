@@ -1,8 +1,10 @@
 use crate::native_tls::builder::{AcceptorBuilder, WantsTlsConfig};
 use core::task::{Context, Poll};
 use futures_util::ready;
-use hyper::server::{accept::Accept,
-                    conn::{AddrIncoming, AddrStream}};
+use hyper::server::{
+    accept::Accept,
+    conn::{AddrIncoming, AddrStream},
+};
 use rustls::ServerConfig;
 use std::future::Future;
 use std::io;
@@ -35,7 +37,9 @@ impl TlsStream {
     }
 
     #[inline]
-    pub fn remote_addr(&self) -> SocketAddr { self.remote_addr }
+    pub fn remote_addr(&self) -> SocketAddr {
+        self.remote_addr
+    }
 }
 
 impl AsyncRead for TlsStream {
@@ -95,9 +99,13 @@ pub struct TlsAcceptor {
 /// An Acceptor for the `https` scheme.
 impl TlsAcceptor {
     /// Provides a builder for a `TlsAcceptor`.
-    pub fn builder() -> AcceptorBuilder<WantsTlsConfig> { AcceptorBuilder::new() }
+    pub fn builder() -> AcceptorBuilder<WantsTlsConfig> {
+        AcceptorBuilder::new()
+    }
     /// Creates a new `TlsAcceptor` from a `ServerConfig` and an `AddrIncoming`.
-    pub fn new(config: Arc<ServerConfig>, incoming: AddrIncoming) -> TlsAcceptor { TlsAcceptor { config, incoming } }
+    pub fn new(config: Arc<ServerConfig>, incoming: AddrIncoming) -> TlsAcceptor {
+        TlsAcceptor { config, incoming }
+    }
 }
 
 impl<C, I> From<(C, I)> for TlsAcceptor
@@ -105,7 +113,9 @@ where
     C: Into<Arc<ServerConfig>>,
     I: Into<AddrIncoming>,
 {
-    fn from((config, incoming): (C, I)) -> TlsAcceptor { TlsAcceptor::new(config.into(), incoming.into()) }
+    fn from((config, incoming): (C, I)) -> TlsAcceptor {
+        TlsAcceptor::new(config.into(), incoming.into())
+    }
 }
 
 impl Accept for TlsAcceptor {

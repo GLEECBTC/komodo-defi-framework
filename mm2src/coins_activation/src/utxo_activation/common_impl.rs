@@ -1,7 +1,8 @@
 use crate::standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoinTaskHandleShared};
 use crate::utxo_activation::init_utxo_standard_activation_error::InitUtxoStandardError;
-use crate::utxo_activation::init_utxo_standard_statuses::{UtxoStandardAwaitingStatus, UtxoStandardInProgressStatus,
-                                                          UtxoStandardUserAction};
+use crate::utxo_activation::init_utxo_standard_statuses::{
+    UtxoStandardAwaitingStatus, UtxoStandardInProgressStatus, UtxoStandardUserAction,
+};
 use crate::utxo_activation::utxo_standard_activation_result::UtxoStandardActivationResult;
 use coins::coin_balance::EnableCoinBalanceOps;
 use coins::hd_wallet::RpcTaskXPubExtractor;
@@ -48,14 +49,17 @@ where
                 ctx,
                 task_handle.clone(),
                 xpub_extractor_rpc_statuses(),
-                coins::CoinProtocol::UTXO,
+                // Note that the actual UtxoProtocolInfo isn't needed by trezor XPUB extractor.
+                coins::CoinProtocol::UTXO(Default::default()),
             )
             .mm_err(|_| InitUtxoStandardError::HwError(HwRpcError::NotInitialized))?,
         )
     } else {
         None
     };
-    task_handle.update_in_progress_status(UtxoStandardInProgressStatus::RequestingWalletBalance)?;
+    task_handle
+        .update_in_progress_status(UtxoStandardInProgressStatus::RequestingWalletBalance)
+        .map_mm_err()?;
     let wallet_balance = coin
         .enable_coin_balance(
             xpub_extractor,
@@ -64,7 +68,9 @@ where
         )
         .await
         .mm_err(|enable_err| InitUtxoStandardError::from_enable_coin_balance_err(enable_err, ticker.clone()))?;
-    task_handle.update_in_progress_status(UtxoStandardInProgressStatus::ActivatingCoin)?;
+    task_handle
+        .update_in_progress_status(UtxoStandardInProgressStatus::ActivatingCoin)
+        .map_mm_err()?;
 
     let result = UtxoStandardActivationResult {
         ticker,
@@ -88,11 +94,14 @@ fn xpub_extractor_rpc_statuses() -> HwConnectStatuses<UtxoStandardInProgressStat
 
 pub(crate) fn priv_key_build_policy(
     ctx: &MmArc,
-    activation_policy: PrivKeyActivationPolicy,
+    activation_policy: &PrivKeyActivationPolicy,
 ) -> MmResult<PrivKeyBuildPolicy, CryptoCtxError> {
     match activation_policy {
         PrivKeyActivationPolicy::ContextPrivKey => PrivKeyBuildPolicy::detect_priv_key_policy(ctx),
         PrivKeyActivationPolicy::Trezor => Ok(PrivKeyBuildPolicy::Trezor),
+        PrivKeyActivationPolicy::WalletConnect { session_topic } => Ok(PrivKeyBuildPolicy::WalletConnect {
+            session_topic: session_topic.clone(),
+        }),
     }
 }
 

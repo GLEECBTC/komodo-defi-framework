@@ -95,11 +95,15 @@ pub enum WalletConnectError {
 }
 
 impl From<Error<PublishError>> for WalletConnectError {
-    fn from(error: Error<PublishError>) -> Self { WalletConnectError::PublishError(format!("{error:?}")) }
+    fn from(error: Error<PublishError>) -> Self {
+        WalletConnectError::PublishError(format!("{error:?}"))
+    }
 }
 
 impl From<Error<SubscriptionError>> for WalletConnectError {
-    fn from(error: Error<SubscriptionError>) -> Self { WalletConnectError::SubscriptionError(format!("{error:?}")) }
+    fn from(error: Error<SubscriptionError>) -> Self {
+        WalletConnectError::SubscriptionError(format!("{error:?}"))
+    }
 }
 
 /// Session key and topic derivation errors.

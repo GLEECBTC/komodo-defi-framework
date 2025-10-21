@@ -7,6 +7,7 @@ use coins::{lp_coinfind, MakerCoinSwapOpsV2, MmCoin, MmCoinEnum, TakerCoinSwapOp
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{SpawnFuture, Timer};
 use common::log::{error, info, warn};
+use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_state_machine::storable_state_machine::{StateMachineDbRepr, StateMachineStorage, StorableStateMachine};
@@ -19,8 +20,9 @@ use uuid::Uuid;
 
 cfg_native!(
     use common::async_blocking;
-    use crate::database::my_swaps::{does_swap_exist, get_swap_events, update_swap_events, select_unfinished_swaps_uuids,
-                                set_swap_is_finished};
+    use crate::database::my_swaps::{
+        does_swap_exist, get_swap_events, update_swap_events, select_unfinished_swaps_uuids, set_swap_is_finished,
+    };
 );
 
 cfg_wasm32!(
@@ -71,26 +73,36 @@ pub enum SwapStateMachineError {
 }
 
 impl From<SwapLockError> for SwapStateMachineError {
-    fn from(e: SwapLockError) -> Self { SwapStateMachineError::SwapLock(e) }
+    fn from(e: SwapLockError) -> Self {
+        SwapStateMachineError::SwapLock(e)
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<db_common::sqlite::rusqlite::Error> for SwapStateMachineError {
-    fn from(e: db_common::sqlite::rusqlite::Error) -> Self { SwapStateMachineError::StorageError(e.to_string()) }
+    fn from(e: db_common::sqlite::rusqlite::Error) -> Self {
+        SwapStateMachineError::StorageError(e.to_string())
+    }
 }
 
 impl From<serde_json::Error> for SwapStateMachineError {
-    fn from(e: Error) -> Self { SwapStateMachineError::SerdeError(e.to_string()) }
+    fn from(e: Error) -> Self {
+        SwapStateMachineError::SerdeError(e.to_string())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
 impl From<InitDbError> for SwapStateMachineError {
-    fn from(e: InitDbError) -> Self { SwapStateMachineError::StorageError(e.to_string()) }
+    fn from(e: InitDbError) -> Self {
+        SwapStateMachineError::StorageError(e.to_string())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
 impl From<DbTransactionError> for SwapStateMachineError {
-    fn from(e: DbTransactionError) -> Self { SwapStateMachineError::StorageError(e.to_string()) }
+    fn from(e: DbTransactionError) -> Self {
+        SwapStateMachineError::StorageError(e.to_string())
+    }
 }
 
 pub struct SwapRecreateCtx<MakerCoin, TakerCoin> {
@@ -107,10 +119,10 @@ pub(super) async fn has_db_record_for(ctx: MmArc, id: &Uuid) -> MmResult<bool, S
 #[cfg(target_arch = "wasm32")]
 pub(super) async fn has_db_record_for(ctx: MmArc, id: &Uuid) -> MmResult<bool, SwapStateMachineError> {
     let swaps_ctx = SwapsContext::from_ctx(&ctx).expect("SwapsContext::from_ctx should not fail");
-    let db = swaps_ctx.swap_db().await?;
-    let transaction = db.transaction().await?;
-    let table = transaction.table::<MySwapsFiltersTable>().await?;
-    let maybe_item = table.get_item_by_unique_index("uuid", id).await?;
+    let db = swaps_ctx.swap_db().await.map_mm_err()?;
+    let transaction = db.transaction().await.map_mm_err()?;
+    let table = transaction.table::<MySwapsFiltersTable>().await.map_mm_err()?;
+    let maybe_item = table.get_item_by_unique_index("uuid", id).await.map_mm_err()?;
     Ok(maybe_item.is_some())
 }
 
@@ -143,11 +155,11 @@ pub(super) async fn store_swap_event<T: StateMachineDbRepr + DeserializeOwned + 
     event: T::Event,
 ) -> MmResult<(), SwapStateMachineError> {
     let swaps_ctx = SwapsContext::from_ctx(&ctx).expect("SwapsContext::from_ctx should not fail");
-    let db = swaps_ctx.swap_db().await?;
-    let transaction = db.transaction().await?;
-    let table = transaction.table::<SavedSwapTable>().await?;
+    let db = swaps_ctx.swap_db().await.map_mm_err()?;
+    let transaction = db.transaction().await.map_mm_err()?;
+    let table = transaction.table::<SavedSwapTable>().await.map_mm_err()?;
 
-    let saved_swap_json = match table.get_item_by_unique_index("uuid", id).await? {
+    let saved_swap_json = match table.get_item_by_unique_index("uuid", id).await.map_mm_err()? {
         Some((_item_id, SavedSwapTable { saved_swap, .. })) => saved_swap,
         None => return MmError::err(SwapStateMachineError::NoSwapWithUuid(id)),
     };
@@ -159,18 +171,21 @@ pub(super) async fn store_swap_event<T: StateMachineDbRepr + DeserializeOwned + 
         uuid: id,
         saved_swap: serde_json::to_value(swap_repr)?,
     };
-    table.replace_item_by_unique_index("uuid", id, &new_item).await?;
+    table
+        .replace_item_by_unique_index("uuid", id, &new_item)
+        .await
+        .map_mm_err()?;
     Ok(())
 }
 
 #[cfg(target_arch = "wasm32")]
 pub(super) async fn get_swap_repr<T: DeserializeOwned>(ctx: &MmArc, id: Uuid) -> MmResult<T, SwapStateMachineError> {
     let swaps_ctx = SwapsContext::from_ctx(ctx).expect("SwapsContext::from_ctx should not fail");
-    let db = swaps_ctx.swap_db().await?;
-    let transaction = db.transaction().await?;
+    let db = swaps_ctx.swap_db().await.map_mm_err()?;
+    let transaction = db.transaction().await.map_mm_err()?;
 
-    let table = transaction.table::<SavedSwapTable>().await?;
-    let saved_swap_json = match table.get_item_by_unique_index("uuid", id).await? {
+    let table = transaction.table::<SavedSwapTable>().await.map_mm_err()?;
+    let saved_swap_json = match table.get_item_by_unique_index("uuid", id).await.map_mm_err()? {
         Some((_item_id, SavedSwapTable { saved_swap, .. })) => saved_swap,
         None => return MmError::err(SwapStateMachineError::NoSwapWithUuid(id)),
     };
@@ -197,14 +212,16 @@ pub(super) async fn get_unfinished_swaps_uuids(
     swap_type: u8,
 ) -> MmResult<Vec<Uuid>, SwapStateMachineError> {
     let index = MultiIndex::new(IS_FINISHED_SWAP_TYPE_INDEX)
-        .with_value(BoolAsInt::new(false))?
-        .with_value(swap_type)?;
+        .with_value(BoolAsInt::new(false))
+        .map_mm_err()?
+        .with_value(swap_type)
+        .map_mm_err()?;
 
     let swaps_ctx = SwapsContext::from_ctx(&ctx).expect("SwapsContext::from_ctx should not fail");
-    let db = swaps_ctx.swap_db().await?;
-    let transaction = db.transaction().await?;
-    let table = transaction.table::<MySwapsFiltersTable>().await?;
-    let table_items = table.get_items_by_multi_index(index).await?;
+    let db = swaps_ctx.swap_db().await.map_mm_err()?;
+    let transaction = db.transaction().await.map_mm_err()?;
+    let table = transaction.table::<MySwapsFiltersTable>().await.map_mm_err()?;
+    let table_items = table.get_items_by_multi_index(index).await.map_mm_err()?;
 
     Ok(table_items.into_iter().map(|(_item_id, item)| item.uuid).collect())
 }
@@ -217,15 +234,18 @@ pub(super) async fn mark_swap_as_finished(ctx: MmArc, id: Uuid) -> MmResult<(), 
 #[cfg(target_arch = "wasm32")]
 pub(super) async fn mark_swap_as_finished(ctx: MmArc, id: Uuid) -> MmResult<(), SwapStateMachineError> {
     let swaps_ctx = SwapsContext::from_ctx(&ctx).expect("SwapsContext::from_ctx should not fail");
-    let db = swaps_ctx.swap_db().await?;
-    let transaction = db.transaction().await?;
-    let table = transaction.table::<MySwapsFiltersTable>().await?;
-    let mut item = match table.get_item_by_unique_index("uuid", id).await? {
+    let db = swaps_ctx.swap_db().await.map_mm_err()?;
+    let transaction = db.transaction().await.map_mm_err()?;
+    let table = transaction.table::<MySwapsFiltersTable>().await.map_mm_err()?;
+    let mut item = match table.get_item_by_unique_index("uuid", id).await.map_mm_err()? {
         Some((_item_id, item)) => item,
         None => return MmError::err(SwapStateMachineError::NoSwapWithUuid(id)),
     };
     item.is_finished = true.into();
-    table.replace_item_by_unique_index("uuid", id, &item).await?;
+    table
+        .replace_item_by_unique_index("uuid", id, &item)
+        .await
+        .map_mm_err()?;
     Ok(())
 }
 
@@ -259,7 +279,7 @@ pub(super) fn clean_up_context_impl(ctx: &MmArc, uuid: &Uuid, maker_coin: &str, 
 pub(super) async fn acquire_reentrancy_lock_impl(ctx: &MmArc, uuid: Uuid) -> MmResult<SwapLock, SwapStateMachineError> {
     let mut attempts = 0;
     loop {
-        match SwapLock::lock(ctx, uuid, 40.).await? {
+        match SwapLock::lock(ctx, uuid, 40.).await.map_mm_err()? {
             Some(l) => break Ok(l),
             None => {
                 if attempts >= 1 {

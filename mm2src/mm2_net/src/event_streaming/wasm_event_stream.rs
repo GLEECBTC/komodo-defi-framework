@@ -15,10 +15,9 @@ pub async fn handle_worker_stream(ctx: MmArc, worker_path: String) {
     let worker = SendableSharedWorker(
         SharedWorker::new(&worker_path).unwrap_or_else(|_| {
             panic!(
-                "Failed to create a new SharedWorker with path '{}'.\n\
+                "Failed to create a new SharedWorker with path '{worker_path}'.\n\
                 This could be due to the file missing or the browser being incompatible.\n\
-                For more details, please refer to https://developer.mozilla.org/en-US/docs/Web/API/SharedWorker#browser_compatibility",
-                worker_path
+                For more details, please refer to https://developer.mozilla.org/en-US/docs/Web/API/SharedWorker#browser_compatibility"
             )
         }),
     );

@@ -1,13 +1,15 @@
-use crate::hd_wallet::{HDAccountStorageItem, HDWalletId, HDWalletStorageError, HDWalletStorageInternalOps,
-                       HDWalletStorageResult};
+use crate::hd_wallet::{
+    HDAccountStorageItem, HDWalletId, HDWalletStorageError, HDWalletStorageInternalOps, HDWalletStorageResult,
+};
 use crate::CoinsContext;
 use async_trait::async_trait;
 use crypto::XPub;
 use mm2_core::mm_ctx::MmArc;
 use mm2_db::indexed_db::cursor_prelude::*;
-use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbLocked, DbTable, DbTransactionError, DbUpgrader, IndexedDb,
-                         IndexedDbBuilder, InitDbError, InitDbResult, ItemId, MultiIndex, OnUpgradeResult, SharedDb,
-                         TableSignature, WeakDb};
+use mm2_db::indexed_db::{
+    DbIdentifier, DbInstance, DbLocked, DbTable, DbTransactionError, DbUpgrader, IndexedDb, IndexedDbBuilder,
+    InitDbError, InitDbResult, ItemId, MultiIndex, OnUpgradeResult, SharedDb, TableSignature, WeakDb,
+};
 use mm2_err_handle::prelude::*;
 
 const DB_VERSION: u32 = 1;
@@ -69,7 +71,9 @@ impl From<CursorError> for HDWalletStorageError {
 }
 
 impl From<InitDbError> for HDWalletStorageError {
-    fn from(e: InitDbError) -> Self { HDWalletStorageError::Internal(e.to_string()) }
+    fn from(e: InitDbError) -> Self {
+        HDWalletStorageError::Internal(e.to_string())
+    }
 }
 
 /// The table has the following individually non-unique indexes: `coin`, `hd_wallet_rmd160`, `account_id`,
@@ -173,15 +177,18 @@ impl HDWalletStorageInternalOps for HDWalletIndexedDbStorage {
         let shared_db = self.get_shared_db()?;
         let locked_db = Self::lock_db_mutex(&shared_db).await?;
 
-        let transaction = locked_db.inner.transaction().await?;
-        let table = transaction.table::<HDAccountTable>().await?;
+        let transaction = locked_db.inner.transaction().await.map_mm_err()?;
+        let table = transaction.table::<HDAccountTable>().await.map_mm_err()?;
 
         let index_keys = MultiIndex::new(WALLET_ID_INDEX)
-            .with_value(wallet_id.coin)?
-            .with_value(wallet_id.hd_wallet_rmd160)?;
+            .with_value(wallet_id.coin)
+            .map_mm_err()?
+            .with_value(wallet_id.hd_wallet_rmd160)
+            .map_mm_err()?;
         Ok(table
             .get_items_by_multi_index(index_keys)
-            .await?
+            .await
+            .map_mm_err()?
             .into_iter()
             .map(|(_item_id, item)| HDAccountStorageItem::from(item))
             .collect())
@@ -195,8 +202,8 @@ impl HDWalletStorageInternalOps for HDWalletIndexedDbStorage {
         let shared_db = self.get_shared_db()?;
         let locked_db = Self::lock_db_mutex(&shared_db).await?;
 
-        let transaction = locked_db.inner.transaction().await?;
-        let table = transaction.table::<HDAccountTable>().await?;
+        let transaction = locked_db.inner.transaction().await.map_mm_err()?;
+        let table = transaction.table::<HDAccountTable>().await.map_mm_err()?;
 
         let maybe_account = Self::find_account(&table, wallet_id, account_id).await?;
         match maybe_account {
@@ -237,8 +244,8 @@ impl HDWalletStorageInternalOps for HDWalletIndexedDbStorage {
         let shared_db = self.get_shared_db()?;
         let locked_db = Self::lock_db_mutex(&shared_db).await?;
 
-        let transaction = locked_db.inner.transaction().await?;
-        let table = transaction.table::<HDAccountTable>().await?;
+        let transaction = locked_db.inner.transaction().await.map_mm_err()?;
+        let table = transaction.table::<HDAccountTable>().await.map_mm_err()?;
 
         let new_account = HDAccountTable::new(wallet_id, account);
         table
@@ -252,13 +259,15 @@ impl HDWalletStorageInternalOps for HDWalletIndexedDbStorage {
         let shared_db = self.get_shared_db()?;
         let locked_db = Self::lock_db_mutex(&shared_db).await?;
 
-        let transaction = locked_db.inner.transaction().await?;
-        let table = transaction.table::<HDAccountTable>().await?;
+        let transaction = locked_db.inner.transaction().await.map_mm_err()?;
+        let table = transaction.table::<HDAccountTable>().await.map_mm_err()?;
 
         let index_keys = MultiIndex::new(WALLET_ID_INDEX)
-            .with_value(wallet_id.coin)?
-            .with_value(wallet_id.hd_wallet_rmd160)?;
-        table.delete_items_by_multi_index(index_keys).await?;
+            .with_value(wallet_id.coin)
+            .map_mm_err()?
+            .with_value(wallet_id.hd_wallet_rmd160)
+            .map_mm_err()?;
+        table.delete_items_by_multi_index(index_keys).await.map_mm_err()?;
         Ok(())
     }
 }
@@ -280,9 +289,12 @@ impl HDWalletIndexedDbStorage {
         account_id: u32,
     ) -> HDWalletStorageResult<Option<(ItemId, HDAccountTable)>> {
         let index_keys = MultiIndex::new(WALLET_ACCOUNT_ID_INDEX)
-            .with_value(wallet_id.coin)?
-            .with_value(wallet_id.hd_wallet_rmd160)?
-            .with_value(account_id)?;
+            .with_value(wallet_id.coin)
+            .map_mm_err()?
+            .with_value(wallet_id.hd_wallet_rmd160)
+            .map_mm_err()?
+            .with_value(account_id)
+            .map_mm_err()?;
         table
             .get_item_by_unique_multi_index(index_keys)
             .await
@@ -296,8 +308,8 @@ impl HDWalletIndexedDbStorage {
         let shared_db = self.get_shared_db()?;
         let locked_db = Self::lock_db_mutex(&shared_db).await?;
 
-        let transaction = locked_db.inner.transaction().await?;
-        let table = transaction.table::<HDAccountTable>().await?;
+        let transaction = locked_db.inner.transaction().await.map_mm_err()?;
+        let table = transaction.table::<HDAccountTable>().await.map_mm_err()?;
 
         let (account_item_id, mut account) = Self::find_account(&table, wallet_id.clone(), account_id)
             .await?

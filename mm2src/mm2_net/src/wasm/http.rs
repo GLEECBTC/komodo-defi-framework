@@ -220,12 +220,15 @@ impl FetchRequest {
     async fn fetch(request: Self) -> FetchResult<JsResponse> {
         let uri = request.uri;
 
-        let mut req_init = RequestInit::new();
-        req_init.method(request.method.as_str());
-        req_init.body(request.body.map(RequestBody::into_js_value).as_ref());
+        let req_init = RequestInit::new();
+        req_init.set_method(request.method.as_str());
+
+        if let Some(body) = request.body {
+            req_init.set_body(&RequestBody::into_js_value(body));
+        }
 
         if let Some(mode) = request.mode {
-            req_init.mode(mode);
+            req_init.set_mode(mode);
         }
 
         let js_request = JsRequest::new_with_str_and_init(&uri, &req_init)
@@ -247,7 +250,7 @@ impl FetchRequest {
         let js_response: JsResponse = match resp_value.dyn_into() {
             Ok(res) => res,
             Err(origin_val) => {
-                let error = format!("Error casting {:?} to 'JsResponse'", origin_val);
+                let error = format!("Error casting {origin_val:?} to 'JsResponse'");
                 return MmError::err(SlurpError::Internal(error));
             },
         };
@@ -256,7 +259,7 @@ impl FetchRequest {
         let status_code = match StatusCode::from_u16(status_code) {
             Ok(code) => code,
             Err(e) => {
-                let error = format!("Unexpected HTTP status code, found {}: {}", status_code, e);
+                let error = format!("Unexpected HTTP status code, found {status_code}: {e}");
                 return MmError::err(SlurpError::ErrorDeserializing { uri, error });
             },
         };
@@ -286,7 +289,7 @@ impl FetchRequest {
         let resp_str = match resp_txt.as_string() {
             Some(string) => string,
             None => {
-                let error = format!("Expected a UTF-8 string JSON, found {:?}", resp_txt);
+                let error = format!("Expected a UTF-8 string JSON, found {resp_txt:?}");
                 return MmError::err(SlurpError::ErrorDeserializing { uri, error });
             },
         };
@@ -328,7 +331,7 @@ impl FetchRequest {
             None => {
                 return MmError::err(SlurpError::ErrorDeserializing {
                     uri,
-                    error: format!("Expected readable stream, found {:?}:", js_response),
+                    error: format!("Expected readable stream, found {js_response:?}:"),
                 });
             },
         };
@@ -430,7 +433,7 @@ mod tests {
 
         let expected = "02000000017059c44c764ce06c22b1144d05a19b72358e75708836fc9472490a6f68862b79010000004847304402204ecc54f493c5c75efdbad0771f76173b3314ee7836c469f97a4659e1eef9de4a02200dfe70294e0aa0c6795ae349ddc858212c3293b8affd8c44a6bf6699abaef9d701ffffffff0300000000000000000016c3e748040000002321037d86ede18754defcd4759cf7fda52bff47703701a7feb66e2045e8b6c6aac236ace8b9df05000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88ac00000000".to_string();
 
-        assert!(status.is_success(), "{:?} {:?}", status, body);
+        assert!(status.is_success(), "{status:?} {body:?}");
         assert_eq!(body, expected);
     }
 }

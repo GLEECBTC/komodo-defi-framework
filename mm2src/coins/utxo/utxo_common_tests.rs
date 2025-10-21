@@ -1,7 +1,9 @@
 use super::*;
 use crate::hd_wallet::{HDAccountsMap, HDAccountsMutex, HDAddressesCache, HDWallet, HDWalletCoinStorage};
-use crate::my_tx_history_v2::{my_tx_history_v2_impl, CoinWithTxHistoryV2, MyTxHistoryDetails, MyTxHistoryRequestV2,
-                              MyTxHistoryResponseV2, MyTxHistoryTarget};
+use crate::my_tx_history_v2::{
+    my_tx_history_v2_impl, CoinWithTxHistoryV2, MyTxHistoryDetails, MyTxHistoryRequestV2, MyTxHistoryResponseV2,
+    MyTxHistoryTarget,
+};
 use crate::tx_history_storage::TxHistoryStorageBuilder;
 use crate::utxo::rpc_clients::{ElectrumClient, UtxoRpcClientOps};
 use crate::utxo::tx_cache::dummy_tx_cache::DummyVerboseCache;
@@ -35,7 +37,9 @@ lazy_static! {
     static ref DOC_HD_TX_HISTORY_MAP: HashMap<String, TransactionDetails> = parse_tx_history_map(DOC_HD_TX_HISTORY_STR);
 }
 
-fn parse_tx_history(history_str: &'static str) -> Vec<TransactionDetails> { json::from_str(history_str).unwrap() }
+fn parse_tx_history(history_str: &'static str) -> Vec<TransactionDetails> {
+    json::from_str(history_str).unwrap()
+}
 
 fn parse_tx_history_map(history_str: &'static str) -> HashMap<String, TransactionDetails> {
     parse_tx_history(history_str)

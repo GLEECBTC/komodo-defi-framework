@@ -1,5 +1,7 @@
-use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId,
-                     EnabledAccountType, HwPubkey};
+use crate::account::{
+    AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId,
+    EnabledAccountType, HwPubkey,
+};
 use async_trait::async_trait;
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
@@ -10,8 +12,10 @@ use std::error::Error as StdError;
 
 #[cfg(any(test, target_arch = "wasm32"))]
 mod account_storage_tests;
-#[cfg(not(target_arch = "wasm32"))] mod sqlite_storage;
-#[cfg(target_arch = "wasm32")] mod wasm_storage;
+#[cfg(not(target_arch = "wasm32"))]
+mod sqlite_storage;
+#[cfg(target_arch = "wasm32")]
+mod wasm_storage;
 
 const DEFAULT_ACCOUNT_IDX: u32 = 0;
 const DEFAULT_DEVICE_PUB: HwPubkey = HwPubkey::const_default();
@@ -21,21 +25,21 @@ pub type AccountStorageResult<T> = MmResult<T, AccountStorageError>;
 
 #[derive(Debug, Display)]
 pub enum AccountStorageError {
-    #[display(fmt = "No such account {:?}", _0)]
+    #[display(fmt = "No such account {_0:?}")]
     NoSuchAccount(AccountId),
     #[display(fmt = "No enabled account yet")]
     NoEnabledAccount,
-    #[display(fmt = "Account {:?} exists already", _0)]
+    #[display(fmt = "Account {_0:?} exists already")]
     AccountExistsAlready(AccountId),
-    #[display(fmt = "Error saving changes in accounts storage: {}", _0)]
+    #[display(fmt = "Error saving changes in accounts storage: {_0}")]
     ErrorSaving(String),
-    #[display(fmt = "Error loading account: {}", _0)]
+    #[display(fmt = "Error loading account: {_0}")]
     ErrorLoading(String),
-    #[display(fmt = "Error deserializing an account: {}", _0)]
+    #[display(fmt = "Error deserializing an account: {_0}")]
     ErrorDeserializing(String),
-    #[display(fmt = "Error serializing an account: {}", _0)]
+    #[display(fmt = "Error serializing an account: {_0}")]
     ErrorSerializing(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
@@ -43,10 +47,7 @@ impl StdError for AccountStorageError {}
 
 impl AccountStorageError {
     pub(crate) fn unknown_account_in_enabled_table(account_id: AccountId) -> AccountStorageError {
-        let error = format!(
-            "'EnabledAccountTable' contains an account {:?} that is not in 'AccountTable'",
-            account_id
-        );
+        let error = format!("'EnabledAccountTable' contains an account {account_id:?} that is not in 'AccountTable'");
         AccountStorageError::Internal(error)
     }
 }
@@ -82,10 +83,7 @@ impl AccountId {
             (AccountType::HD, account_idx) if device_pubkey == DEFAULT_DEVICE_PUB => Ok(AccountId::HD { account_idx }),
             (AccountType::HW, DEFAULT_ACCOUNT_IDX) => Ok(AccountId::HW { device_pubkey }),
             (_, _) => {
-                let error = format!(
-                    "An invalid AccountId tuple: {:?}/{:?}/{:?}",
-                    account_type, account_idx, device_pubkey
-                );
+                let error = format!("An invalid AccountId tuple: {account_type:?}/{account_idx:?}/{device_pubkey:?}");
                 MmError::err(AccountStorageError::ErrorDeserializing(error))
             },
         }
@@ -112,7 +110,7 @@ impl EnabledAccountId {
             (EnabledAccountType::Iguana, DEFAULT_ACCOUNT_IDX) => Ok(EnabledAccountId::Iguana),
             (EnabledAccountType::HD, account_idx) => Ok(EnabledAccountId::HD { account_idx }),
             (_, _) => {
-                let error = format!("An invalid AccountId tuple: {:?}/{:?}", account_type, account_idx);
+                let error = format!("An invalid AccountId tuple: {account_type:?}/{account_idx:?}");
                 MmError::err(AccountStorageError::ErrorDeserializing(error))
             },
         }
@@ -126,7 +124,9 @@ pub(crate) struct AccountStorageBuilder<'a> {
 }
 
 impl<'a> AccountStorageBuilder<'a> {
-    pub fn new(ctx: &'a MmArc) -> Self { AccountStorageBuilder { ctx } }
+    pub fn new(ctx: &'a MmArc) -> Self {
+        AccountStorageBuilder { ctx }
+    }
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn build(self) -> AccountStorageResult<AccountStorageBoxed> {
@@ -149,6 +149,7 @@ pub(crate) trait AccountStorage: Send + Sync {
     async fn load_account_coins(&self, account_id: AccountId) -> AccountStorageResult<BTreeSet<String>>;
 
     /// Loads accounts from the storage.
+    #[allow(dead_code)]
     async fn load_accounts(&self) -> AccountStorageResult<BTreeMap<AccountId, AccountInfo>>;
 
     /// Loads accounts from the storage and marks **only** one account as enabled.
@@ -157,6 +158,7 @@ pub(crate) trait AccountStorage: Send + Sync {
     ) -> AccountStorageResult<BTreeMap<AccountId, AccountWithEnabledFlag>>;
 
     /// Loads an enabled account ID, or returns an error if there is no enabled account yet.
+    #[allow(dead_code)]
     async fn load_enabled_account_id(&self) -> AccountStorageResult<EnabledAccountId>;
 
     /// Loads an enabled account with activated coins, or returns an error if there is no enabled account yet.

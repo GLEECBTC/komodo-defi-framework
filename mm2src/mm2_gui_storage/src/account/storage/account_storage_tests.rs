@@ -32,8 +32,8 @@ fn accounts_for_test() -> Vec<AccountInfo> {
         .enumerate()
         .map(|(i, account_id)| AccountInfo {
             account_id: account_id.clone(),
-            name: format!("Account {}", i),
-            description: format!("Description {}", i),
+            name: format!("Account {i}"),
+            description: format!("Description {i}"),
             balance_usd: BigDecimal::from(i as u64),
         })
         .collect()
@@ -53,10 +53,13 @@ fn tag_with_enabled_flag(
     accounts
         .into_iter()
         .map(|(account_id, account_info)| {
-            (account_id.clone(), AccountWithEnabledFlag {
-                account_info,
-                enabled: account_id == enabled,
-            })
+            (
+                account_id.clone(),
+                AccountWithEnabledFlag {
+                    account_info,
+                    enabled: account_id == enabled,
+                },
+            )
         })
         .collect()
 }
@@ -87,12 +90,11 @@ async fn test_upload_account_impl() {
 
         let account_id = account.account_id.clone();
         let error = storage.upload_account(account).await.expect_err(&format!(
-            "Uploading should have since the account {:?} has been uploaded already",
-            account_id
+            "Uploading should have since the account {account_id:?} has been uploaded already"
         ));
         match error.into_inner() {
             AccountStorageError::AccountExistsAlready(found) if found == account_id => (),
-            other => panic!("Expected 'AccountExistsAlready({:?})' found {:?}", account_id, other),
+            other => panic!("Expected 'AccountExistsAlready({account_id:?})' found {other:?}"),
         }
     }
 }
@@ -108,7 +110,7 @@ async fn test_enable_account_impl() {
         .expect_err("'enable_account' should have failed due to the selected account is not present in the storage");
     match error.into_inner() {
         AccountStorageError::NoSuchAccount(AccountId::Iguana) => (),
-        other => panic!("Expected 'NoSuchAccount(Iguana)', found {:?}", other),
+        other => panic!("Expected 'NoSuchAccount(Iguana)', found {other:?}"),
     }
 
     let accounts = accounts_to_map(accounts_for_test());
@@ -124,7 +126,7 @@ async fn test_enable_account_impl() {
         .expect_err("'enable_account' should have failed due to the selected account is not present in the storage");
     match error.into_inner() {
         AccountStorageError::NoSuchAccount(HD_3_ACCOUNT) => (),
-        other => panic!("Expected 'NoSuchAccount(HD)', found {:?}", other),
+        other => panic!("Expected 'NoSuchAccount(HD)', found {other:?}"),
     }
     let actual_enabled = storage.load_enabled_account_id().await.unwrap();
     assert_eq!(actual_enabled, EnabledAccountId::Iguana);
@@ -189,7 +191,7 @@ async fn test_set_name_desc_balance_impl() {
 
     match error.into_inner() {
         AccountStorageError::NoSuchAccount(HD_2_ACCOUNT) => (),
-        other => panic!("Expected 'NoSuchAccount(HD)' error, found: {}", other),
+        other => panic!("Expected 'NoSuchAccount(HD)' error, found: {other}"),
     }
 }
 
@@ -205,7 +207,7 @@ async fn test_activate_deactivate_coins_impl() {
     );
     match error.into_inner() {
         AccountStorageError::NoSuchAccount(AccountId::Iguana) => (),
-        other => panic!("Expected 'NoSuchAccount(Iguana)' error, found: {}", other),
+        other => panic!("Expected 'NoSuchAccount(Iguana)' error, found: {other}"),
     }
 
     fill_storage(storage.as_ref(), accounts).await.unwrap();
@@ -227,11 +229,10 @@ async fn test_activate_deactivate_coins_impl() {
         .await
         .unwrap();
     storage
-        .activate_coins(HD_0_ACCOUNT, vec![
-            "MORTY".to_string(),
-            "QTUM".to_string(),
-            "KMD".to_string(),
-        ])
+        .activate_coins(
+            HD_0_ACCOUNT,
+            vec!["MORTY".to_string(), "QTUM".to_string(), "KMD".to_string()],
+        )
         .await
         .unwrap();
 
@@ -271,7 +272,7 @@ async fn test_activate_deactivate_coins_impl() {
         .expect_err("'AccountStorage::activate_coins' should have failed due to an unknown account_id");
     match error.into_inner() {
         AccountStorageError::NoSuchAccount(HD_2_ACCOUNT) => (),
-        other => panic!("Expected 'NoSuchAccount(HD)' error, found: {}", other),
+        other => panic!("Expected 'NoSuchAccount(HD)' error, found: {other}"),
     }
 
     // Try to deactivate a coin for an unknown `HD{3}` account.
@@ -281,7 +282,7 @@ async fn test_activate_deactivate_coins_impl() {
         .expect_err("'AccountStorage::deactivate_coins' should have failed due to an unknown account_id");
     match error.into_inner() {
         AccountStorageError::NoSuchAccount(HD_3_ACCOUNT) => (),
-        other => panic!("Expected 'NoSuchAccount(HD)' error, found: {}", other),
+        other => panic!("Expected 'NoSuchAccount(HD)' error, found: {other}"),
     }
 }
 
@@ -299,7 +300,7 @@ async fn test_load_enabled_account_with_coins_impl() {
     );
     match error.into_inner() {
         AccountStorageError::NoEnabledAccount => (),
-        other => panic!("Expected 'NoEnabledAccount' error, found: {}", other),
+        other => panic!("Expected 'NoEnabledAccount' error, found: {other}"),
     }
 
     storage.enable_account(EnabledAccountId::Iguana).await.unwrap();
@@ -309,11 +310,10 @@ async fn test_load_enabled_account_with_coins_impl() {
         .await
         .unwrap();
     storage
-        .activate_coins(HD_0_ACCOUNT, vec![
-            "MORTY".to_string(),
-            "QTUM".to_string(),
-            "KMD".to_string(),
-        ])
+        .activate_coins(
+            HD_0_ACCOUNT,
+            vec!["MORTY".to_string(), "QTUM".to_string(), "KMD".to_string()],
+        )
         .await
         .unwrap();
 
@@ -340,11 +340,10 @@ async fn test_load_enabled_account_with_coins_impl() {
 
     // Deactivate all `HD{0}` account's coins.
     storage
-        .deactivate_coins(HD_0_ACCOUNT, vec![
-            "MORTY".to_string(),
-            "QTUM".to_string(),
-            "KMD".to_string(),
-        ])
+        .deactivate_coins(
+            HD_0_ACCOUNT,
+            vec!["MORTY".to_string(), "QTUM".to_string(), "KMD".to_string()],
+        )
         .await
         .unwrap();
     let actual = storage.load_enabled_account_with_coins().await.unwrap();
@@ -370,7 +369,7 @@ async fn test_load_accounts_with_enabled_flag_impl() {
     );
     match error.into_inner() {
         AccountStorageError::NoEnabledAccount => (),
-        other => panic!("Expected 'NoEnabledAccount' error, found: {}", other),
+        other => panic!("Expected 'NoEnabledAccount' error, found: {other}"),
     }
 
     storage
@@ -430,7 +429,7 @@ async fn test_delete_account_impl() {
         .expect_err("'AccountStorage::delete_account' should have failed due to unknown account");
     match error.into_inner() {
         AccountStorageError::NoSuchAccount(AccountId::HW { .. }) => (),
-        other => panic!("Expected 'NoSuchAccount' error, found: {}", other),
+        other => panic!("Expected 'NoSuchAccount' error, found: {other}"),
     }
 
     // Enable `HD{1}` account and try to remove `HD{0}` to check if `HD{1}` will stay enabled.
@@ -458,7 +457,7 @@ async fn test_delete_account_impl() {
         .expect_err("'AccountStorage::load_enabled_account_with_coins' should have failed since no enabled account");
     match error.into_inner() {
         AccountStorageError::NoEnabledAccount => (),
-        other => panic!("Expected 'NoEnabledAccount' error, found: {}", other),
+        other => panic!("Expected 'NoEnabledAccount' error, found: {other}"),
     }
 }
 
@@ -519,31 +518,49 @@ mod native_tests {
     use common::block_on;
 
     #[test]
-    fn test_init_collection() { block_on(super::test_init_collection_impl()) }
+    fn test_init_collection() {
+        block_on(super::test_init_collection_impl())
+    }
 
     #[test]
-    fn test_upload_account() { block_on(super::test_upload_account_impl()) }
+    fn test_upload_account() {
+        block_on(super::test_upload_account_impl())
+    }
 
     #[test]
-    fn test_enable_account() { block_on(super::test_enable_account_impl()) }
+    fn test_enable_account() {
+        block_on(super::test_enable_account_impl())
+    }
 
     #[test]
-    fn test_set_name_desc_balance() { block_on(super::test_set_name_desc_balance_impl()) }
+    fn test_set_name_desc_balance() {
+        block_on(super::test_set_name_desc_balance_impl())
+    }
 
     #[test]
-    fn test_activate_deactivate_coins() { block_on(super::test_activate_deactivate_coins_impl()) }
+    fn test_activate_deactivate_coins() {
+        block_on(super::test_activate_deactivate_coins_impl())
+    }
 
     #[test]
-    fn test_load_enabled_account_with_coins() { block_on(super::test_load_enabled_account_with_coins_impl()) }
+    fn test_load_enabled_account_with_coins() {
+        block_on(super::test_load_enabled_account_with_coins_impl())
+    }
 
     #[test]
-    fn test_load_accounts_with_enabled_flag() { block_on(super::test_load_accounts_with_enabled_flag_impl()) }
+    fn test_load_accounts_with_enabled_flag() {
+        block_on(super::test_load_accounts_with_enabled_flag_impl())
+    }
 
     #[test]
-    fn test_delete_account() { block_on(super::test_delete_account_impl()) }
+    fn test_delete_account() {
+        block_on(super::test_delete_account_impl())
+    }
 
     #[test]
-    fn test_delete_account_clears_coins() { block_on(super::test_delete_account_clears_coins_impl()) }
+    fn test_delete_account_clears_coins() {
+        block_on(super::test_delete_account_clears_coins_impl())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -553,29 +570,47 @@ mod wasm_tests {
     wasm_bindgen_test_configure!(run_in_browser);
 
     #[wasm_bindgen_test]
-    async fn test_init_collection() { super::test_init_collection_impl().await }
+    async fn test_init_collection() {
+        super::test_init_collection_impl().await
+    }
 
     #[wasm_bindgen_test]
-    async fn test_upload_account() { super::test_upload_account_impl().await }
+    async fn test_upload_account() {
+        super::test_upload_account_impl().await
+    }
 
     #[wasm_bindgen_test]
-    async fn test_enable_account() { super::test_enable_account_impl().await }
+    async fn test_enable_account() {
+        super::test_enable_account_impl().await
+    }
 
     #[wasm_bindgen_test]
-    async fn test_set_name_desc_balance() { super::test_set_name_desc_balance_impl().await }
+    async fn test_set_name_desc_balance() {
+        super::test_set_name_desc_balance_impl().await
+    }
 
     #[wasm_bindgen_test]
-    async fn test_activate_deactivate_coins() { super::test_activate_deactivate_coins_impl().await }
+    async fn test_activate_deactivate_coins() {
+        super::test_activate_deactivate_coins_impl().await
+    }
 
     #[wasm_bindgen_test]
-    async fn test_load_enabled_account_with_coins() { super::test_load_enabled_account_with_coins_impl().await }
+    async fn test_load_enabled_account_with_coins() {
+        super::test_load_enabled_account_with_coins_impl().await
+    }
 
     #[wasm_bindgen_test]
-    async fn test_load_accounts_with_enabled_flag() { super::test_load_accounts_with_enabled_flag_impl().await }
+    async fn test_load_accounts_with_enabled_flag() {
+        super::test_load_accounts_with_enabled_flag_impl().await
+    }
 
     #[wasm_bindgen_test]
-    async fn test_delete_account() { super::test_delete_account_impl().await }
+    async fn test_delete_account() {
+        super::test_delete_account_impl().await
+    }
 
     #[wasm_bindgen_test]
-    async fn test_delete_account_clears_coins() { super::test_delete_account_clears_coins_impl().await }
+    async fn test_delete_account_clears_coins() {
+        super::test_delete_account_clears_coins_impl().await
+    }
 }

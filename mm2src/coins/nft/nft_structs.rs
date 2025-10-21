@@ -1,4 +1,5 @@
 use common::ten;
+use derive_more::Display;
 use enum_derives::EnumVariantList;
 use ethereum_types::Address;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
@@ -415,7 +416,9 @@ where
 
 impl<T> std::ops::Deref for SerdeStringWrap<T> {
     type Target = T;
-    fn deref(&self) -> &T { &self.0 }
+    fn deref(&self) -> &T {
+        &self.0
+    }
 }
 
 /// Represents a detailed list of NFTs, including the total number of NFTs and the number of skipped NFTs.

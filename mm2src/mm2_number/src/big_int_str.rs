@@ -7,19 +7,27 @@ use std::fmt;
 pub struct BigIntStr(BigInt);
 
 impl fmt::Debug for BigIntStr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str(&self.0.to_string()) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0.to_string())
+    }
 }
 
 impl BigIntStr {
-    pub fn inner(&self) -> &BigInt { &self.0 }
+    pub fn inner(&self) -> &BigInt {
+        &self.0
+    }
 }
 
 impl From<BigInt> for BigIntStr {
-    fn from(num: BigInt) -> BigIntStr { BigIntStr(num) }
+    fn from(num: BigInt) -> BigIntStr {
+        BigIntStr(num)
+    }
 }
 
 impl From<BigIntStr> for BigInt {
-    fn from(other: BigIntStr) -> Self { other.0 }
+    fn from(other: BigIntStr) -> Self {
+        other.0
+    }
 }
 
 impl Serialize for BigIntStr {
@@ -32,7 +40,7 @@ impl<'de> Deserialize<'de> for BigIntStr {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct BigIntStrVisitor;
 
-        impl<'de> de::Visitor<'de> for BigIntStrVisitor {
+        impl de::Visitor<'_> for BigIntStrVisitor {
             type Value = BigIntStr;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -41,7 +49,7 @@ impl<'de> Deserialize<'de> for BigIntStr {
 
             fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
                 let num: BigInt = v.parse().map_err(|e| {
-                    let err = format!("Could not parse BigInt from str {}, err {}", v, e);
+                    let err = format!("Could not parse BigInt from str {v}, err {e}");
                     de::Error::custom(err)
                 })?;
                 Ok(BigIntStr(num))
@@ -81,6 +89,6 @@ mod big_int_str_tests {
     fn check_big_int_str_debug() {
         let num: BigInt = 1023.into();
         let num: BigIntStr = num.into();
-        assert_eq!("1023", format!("{:?}", num));
+        assert_eq!("1023", format!("{num:?}"));
     }
 }

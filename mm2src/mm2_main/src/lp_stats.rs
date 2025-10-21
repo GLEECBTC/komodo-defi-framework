@@ -11,11 +11,13 @@ use mm2_libp2p::application::request_response::network_info::NetworkInfoRequest;
 use mm2_libp2p::{encode_message, NetworkInfo, PeerId, RelayAddress, RelayAddressError};
 use mm2_net::ip_addr::ParseAddressError;
 use serde_json::{self as json, Value as Json};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::convert::TryInto;
 use std::sync::Arc;
 
-use crate::lp_network::{add_reserved_peer_addresses, lp_network_ports, request_peers, NetIdError, PeerDecodedResponse};
+use crate::lp_network::{
+    add_reserved_peer_addresses, lp_network_ports, request_peers, NetIdError, PeerDecodedResponse,
+};
 use std::str::FromStr;
 
 pub type NodeVersionResult<T> = Result<T, MmError<NodeVersionError>>;
@@ -23,15 +25,15 @@ pub type NodeVersionResult<T> = Result<T, MmError<NodeVersionError>>;
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum NodeVersionError {
-    #[display(fmt = "Invalid request: {}", _0)]
+    #[display(fmt = "Invalid request: {_0}")]
     InvalidRequest(String),
-    #[display(fmt = "Database error: {}", _0)]
+    #[display(fmt = "Database error: {_0}")]
     DatabaseError(String),
-    #[display(fmt = "Invalid address: {}", _0)]
+    #[display(fmt = "Invalid address: {_0}")]
     InvalidAddress(String),
-    #[display(fmt = "Error on parse peer id {}: {}", _0, _1)]
+    #[display(fmt = "Error on parse peer id {_0}: {_1}")]
     PeerIdParseError(String, String),
-    #[display(fmt = "{} is only supported in native mode", _0)]
+    #[display(fmt = "{_0} is only supported in native mode")]
     UnsupportedMode(String),
     #[display(fmt = "start_version_stat_collection is already running")]
     AlreadyRunning,
@@ -57,19 +59,27 @@ impl HttpStatusCode for NodeVersionError {
 }
 
 impl From<serde_json::Error> for NodeVersionError {
-    fn from(e: serde_json::Error) -> Self { NodeVersionError::InvalidRequest(e.to_string()) }
+    fn from(e: serde_json::Error) -> Self {
+        NodeVersionError::InvalidRequest(e.to_string())
+    }
 }
 
 impl From<NetIdError> for NodeVersionError {
-    fn from(e: NetIdError) -> Self { NodeVersionError::InvalidAddress(e.to_string()) }
+    fn from(e: NetIdError) -> Self {
+        NodeVersionError::InvalidAddress(e.to_string())
+    }
 }
 
 impl From<ParseAddressError> for NodeVersionError {
-    fn from(e: ParseAddressError) -> Self { NodeVersionError::InvalidAddress(e.to_string()) }
+    fn from(e: ParseAddressError) -> Self {
+        NodeVersionError::InvalidAddress(e.to_string())
+    }
 }
 
 impl From<RelayAddressError> for NodeVersionError {
-    fn from(e: RelayAddressError) -> Self { NodeVersionError::InvalidAddress(e.to_string()) }
+    fn from(e: RelayAddressError) -> Self {
+        NodeVersionError::InvalidAddress(e.to_string())
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -88,7 +98,9 @@ pub struct NodeVersionStat {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn insert_node_info_to_db(_ctx: &MmArc, _node_info: &NodeInfo) -> Result<(), String> { Ok(()) }
+fn insert_node_info_to_db(_ctx: &MmArc, _node_info: &NodeInfo) -> Result<(), String> {
+    Ok(())
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 fn insert_node_info_to_db(ctx: &MmArc, node_info: &NodeInfo) -> Result<(), String> {
@@ -96,7 +108,9 @@ fn insert_node_info_to_db(ctx: &MmArc, node_info: &NodeInfo) -> Result<(), Strin
 }
 
 #[cfg(target_arch = "wasm32")]
-fn insert_node_version_stat_to_db(_ctx: &MmArc, _node_version_stat: NodeVersionStat) -> Result<(), String> { Ok(()) }
+fn insert_node_version_stat_to_db(_ctx: &MmArc, _node_version_stat: NodeVersionStat) -> Result<(), String> {
+    Ok(())
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 fn insert_node_version_stat_to_db(ctx: &MmArc, node_version_stat: NodeVersionStat) -> Result<(), String> {
@@ -104,7 +118,9 @@ fn insert_node_version_stat_to_db(ctx: &MmArc, node_version_stat: NodeVersionSta
 }
 
 #[cfg(target_arch = "wasm32")]
-fn delete_node_info_from_db(_ctx: &MmArc, _name: String) -> Result<(), String> { Ok(()) }
+fn delete_node_info_from_db(_ctx: &MmArc, _name: String) -> Result<(), String> {
+    Ok(())
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 fn delete_node_info_from_db(ctx: &MmArc, name: String) -> Result<(), String> {
@@ -112,7 +128,9 @@ fn delete_node_info_from_db(ctx: &MmArc, name: String) -> Result<(), String> {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn select_peers_addresses_from_db(_ctx: &MmArc) -> Result<Vec<(String, String)>, String> { Ok(Vec::new()) }
+fn select_peers_addresses_from_db(_ctx: &MmArc) -> Result<Vec<(String, String)>, String> {
+    Ok(Vec::new())
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 fn select_peers_addresses_from_db(ctx: &MmArc) -> Result<Vec<(String, String)>, String> {
@@ -135,7 +153,7 @@ pub async fn add_node_to_version_stat(ctx: MmArc, req: Json) -> NodeVersionResul
         .parse::<PeerId>()
         .map_to_mm(|e| NodeVersionError::PeerIdParseError(node_info.peer_id.clone(), e.to_string()))?;
 
-    let ipv4_addr = mm2_net::ip_addr::addr_to_ipv4_string(&node_info.address)?;
+    let ipv4_addr = mm2_net::ip_addr::addr_to_ipv4_string(&node_info.address).map_mm_err()?;
     let node_info_with_ipv4_addr = NodeInfo {
         name: node_info.name,
         address: ipv4_addr,
@@ -162,11 +180,6 @@ pub async fn remove_node_from_version_stat(ctx: MmArc, req: Json) -> NodeVersion
     delete_node_info_from_db(&ctx, node_name).map_to_mm(NodeVersionError::DatabaseError)?;
 
     Ok("success".into())
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct Mm2VersionRes {
-    nodes: HashMap<String, String>,
 }
 
 fn process_get_version_request(ctx: MmArc) -> Result<Vec<u8>, String> {
@@ -241,7 +254,7 @@ pub async fn start_version_stat_collection(ctx: MmArc, req: Json) -> NodeVersion
     let network_info = if ctx.p2p_in_memory() {
         NetworkInfo::InMemory
     } else {
-        let network_ports = lp_network_ports(netid)?;
+        let network_ports = lp_network_ports(netid).map_mm_err()?;
         NetworkInfo::Distributed { network_ports }
     };
 

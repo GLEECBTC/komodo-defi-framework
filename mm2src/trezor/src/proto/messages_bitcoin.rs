@@ -1,3 +1,5 @@
+// Generated protocol messages; many types are not instantiated in our build.
+#![allow(dead_code)]
 ///*
 /// Type of redeem script used in input
 /// @embed
@@ -531,7 +533,7 @@ pub struct TxInput {
     pub decred_staking_spend: ::core::option::Option<i32>,
 }
 ///* Data type for transaction output to be signed.
-/// @embed
+///  @embed
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TxOutput {
     /// destination address in Base58 encoding; script_type must be PAYTOADDRESS
@@ -560,7 +562,7 @@ pub struct TxOutput {
     pub orig_index: ::core::option::Option<u32>,
 }
 ///* Data type for metadata about previous transaction which contains the UTXO being spent.
-/// @embed
+///  @embed
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PrevTx {
     #[prost(uint32, required, tag = "1")]
@@ -610,7 +612,7 @@ pub struct PrevInput {
     pub decred_tree: ::core::option::Option<u32>,
 }
 ///* Data type for outputs of previous transactions.
-/// @embed
+///  @embed
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PrevOutput {
     /// amount sent to this output

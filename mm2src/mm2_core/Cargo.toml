@@ -8,6 +8,7 @@ doctest = false
 
 [features]
 new-db-arch = []
+track-ctx-pointer = []
 
 [dependencies]
 arrayref.workspace = true

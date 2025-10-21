@@ -10,8 +10,10 @@ use mm2_rpc::data::legacy::{AggregatedOrderbookEntry, OrderbookRequest, Orderboo
 use num_traits::Zero;
 use serde_json::{self as json, Value as Json};
 
-use super::{addr_format_from_protocol_info, is_my_order, mm2_internal_pubkey_hex, orderbook_address,
-            subscribe_to_orderbook_topic, OrdermatchContext, RpcOrderbookEntryV2};
+use super::{
+    addr_format_from_protocol_info, is_my_order, mm2_internal_pubkey_hex, orderbook_address,
+    subscribe_to_orderbook_topic, OrdermatchContext, RpcOrderbookEntryV2,
+};
 
 #[derive(Debug, Serialize)]
 pub struct AggregatedOrderbookEntryV2 {
@@ -239,9 +241,9 @@ pub async fn orderbook_rpc_v2(
     if req.base == req.rel {
         return MmError::err(OrderbookRpcError::BaseRelSame);
     }
-    let base_coin_conf = get_tradeable_coin_conf(&ctx, &req.base)?;
+    let base_coin_conf = get_tradeable_coin_conf(&ctx, &req.base).map_mm_err()?;
 
-    let rel_coin_conf = get_tradeable_coin_conf(&ctx, &req.rel)?;
+    let rel_coin_conf = get_tradeable_coin_conf(&ctx, &req.rel).map_mm_err()?;
 
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("ctx is available");
     let base_ticker = ordermatch_ctx.orderbook_ticker_bypass(&req.base);

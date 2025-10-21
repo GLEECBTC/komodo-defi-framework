@@ -4,6 +4,8 @@ use crate::init_erc20_token_activation::Erc20TokenTaskManagerShared;
 use crate::lightning_activation::LightningTaskManagerShared;
 #[cfg(feature = "enable-sia")]
 use crate::sia_coin_activation::SiaCoinTaskManagerShared;
+#[cfg(feature = "enable-solana")]
+use crate::solana_with_assets::SolanaCoinTaskManagerShared;
 use crate::tendermint_with_assets_activation::TendermintCoinTaskManagerShared;
 use crate::utxo_activation::{BchTaskManagerShared, QtumTaskManagerShared, UtxoStandardTaskManagerShared};
 use crate::z_coin_activation::ZcoinTaskManagerShared;
@@ -23,6 +25,8 @@ pub struct CoinsActivationContext {
     pub(crate) init_tendermint_coin_task_manager: TendermintCoinTaskManagerShared,
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) init_lightning_task_manager: LightningTaskManagerShared,
+    #[cfg(feature = "enable-solana")]
+    pub(crate) init_solana_coin_task_manager: SolanaCoinTaskManagerShared,
 }
 
 impl CoinsActivationContext {
@@ -41,6 +45,8 @@ impl CoinsActivationContext {
                 init_tendermint_coin_task_manager: RpcTaskManager::new_shared(ctx.event_stream_manager.clone()),
                 #[cfg(not(target_arch = "wasm32"))]
                 init_lightning_task_manager: RpcTaskManager::new_shared(ctx.event_stream_manager.clone()),
+                #[cfg(feature = "enable-solana")]
+                init_solana_coin_task_manager: RpcTaskManager::new_shared(ctx.event_stream_manager.clone()),
             })
         })
     }

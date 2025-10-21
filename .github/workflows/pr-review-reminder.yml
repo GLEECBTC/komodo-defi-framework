@@ -1,0 +1,28 @@
+name: PR Review Reminder
+
+on:
+  schedule:
+    # Run at 12:00 PM everyday.
+    - cron: '0 12 * * *'
+
+jobs:
+  pr-review-reminder:
+    permissions:
+      contents: read
+      pull-requests: write
+
+    runs-on: ubuntu-latest
+    name: PR Review Reminder
+
+    steps:
+      - name: Run PR Review Reminder
+        uses: thundermiracle/review-reminder-action@224d83b90c76ac597776c79ba1f63539f0bc2795
+        with:
+          stale-days: 2
+          ignore-draft: true
+          # Don't ping people at weekends.
+          only-business-days: true
+          # 2 approvals are enough.
+          skip-approve-count: 2
+          token: "${{ secrets.GITHUB_TOKEN }}"
+          send-reminder-comment: true

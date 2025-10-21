@@ -1,7 +1,8 @@
 use ethereum_types::U256;
 use futures::future::BoxFuture;
 use jsonrpc_core::Call;
-#[cfg(target_arch = "wasm32")] use mm2_metamask::MetamaskResult;
+#[cfg(target_arch = "wasm32")]
+use mm2_metamask::MetamaskResult;
 use serde_json::Value as Json;
 use serde_json::Value;
 use std::sync::atomic::Ordering;
@@ -10,7 +11,8 @@ use web3::{Error, RequestId, Transport};
 use crate::RpcTransportEventHandlerShared;
 
 pub(crate) mod http_transport;
-#[cfg(target_arch = "wasm32")] pub(crate) mod metamask_transport;
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod metamask_transport;
 pub(crate) mod websocket_transport;
 
 pub(crate) type Web3SendOut = BoxFuture<'static, Result<Json, Error>>;
@@ -97,24 +99,32 @@ impl Transport for Web3Transport {
 }
 
 impl From<http_transport::HttpTransport> for Web3Transport {
-    fn from(http: http_transport::HttpTransport) -> Self { Web3Transport::Http(http) }
+    fn from(http: http_transport::HttpTransport) -> Self {
+        Web3Transport::Http(http)
+    }
 }
 
 impl From<websocket_transport::WebsocketTransport> for Web3Transport {
-    fn from(websocket: websocket_transport::WebsocketTransport) -> Self { Web3Transport::Websocket(websocket) }
+    fn from(websocket: websocket_transport::WebsocketTransport) -> Self {
+        Web3Transport::Websocket(websocket)
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
 impl From<metamask_transport::MetamaskTransport> for Web3Transport {
-    fn from(metamask: metamask_transport::MetamaskTransport) -> Self { Web3Transport::Metamask(metamask) }
+    fn from(metamask: metamask_transport::MetamaskTransport) -> Self {
+        Web3Transport::Metamask(metamask)
+    }
 }
 
 #[derive(Debug, Deserialize)]
 pub struct FeeHistoryResult {
+    #[expect(dead_code)]
     #[serde(rename = "oldestBlock")]
     pub oldest_block: U256,
     #[serde(rename = "baseFeePerGas")]
     pub base_fee_per_gas: Vec<U256>,
+    #[expect(dead_code)]
     #[serde(rename = "gasUsedRatio")]
     pub gas_used_ratio: Vec<f64>,
     #[serde(rename = "reward")]

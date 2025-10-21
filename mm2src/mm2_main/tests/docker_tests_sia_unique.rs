@@ -1,13 +1,9 @@
-#![allow(unused_imports, dead_code)]
-#![cfg(feature = "enable-sia")]
-#![feature(async_closure)]
 #![feature(custom_test_frameworks)]
 #![feature(test)]
-#![test_runner(docker_tests_runner)]
-#![feature(drain_filter)]
-#![feature(hash_raw_entry)]
+#![cfg(feature = "enable-sia")]
 #![cfg(not(target_arch = "wasm32"))]
-#![feature(local_key_cell_methods)]
+#![allow(unused_imports, dead_code)]
+#![test_runner(docker_tests_runner)]
 
 #[cfg(test)]
 #[macro_use]
@@ -21,8 +17,10 @@ extern crate lazy_static;
 #[cfg(test)]
 #[macro_use]
 extern crate serde_json;
-#[cfg(test)] extern crate ser_error_derive;
-#[cfg(test)] extern crate test;
+#[cfg(test)]
+extern crate ser_error_derive;
+#[cfg(test)]
+extern crate test;
 
 use std::env;
 use std::io::{BufRead, BufReader};
@@ -34,7 +32,8 @@ use testcontainers::clients::Cli;
 mod docker_tests;
 use docker_tests::docker_tests_common::*;
 
-#[allow(dead_code)] mod integration_tests_common;
+#[allow(dead_code)]
+mod integration_tests_common;
 
 /// Custom test runner intended to initialize the SIA coin daemon in a Docker container.
 pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
@@ -89,7 +88,7 @@ fn remove_docker_containers(name: &str) {
     let stdout = Command::new("docker")
         .arg("ps")
         .arg("-f")
-        .arg(format!("ancestor={}", name))
+        .arg(format!("ancestor={name}"))
         .arg("-q")
         .output()
         .expect("Failed to execute docker command");

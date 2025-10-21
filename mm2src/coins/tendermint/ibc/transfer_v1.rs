@@ -31,10 +31,10 @@ impl MsgTransfer {
         sender: AccountId,
         receiver: AccountId,
         token: Coin,
-    ) -> Self {
-        let timestamp_as_nanos = common::get_utc_timestamp_nanos() as u64;
+    ) -> Result<Self, String> {
+        let timestamp_as_nanos = common::get_utc_timestamp_nanos()? as u64;
 
-        Self {
+        Ok(Self {
             source_port: IBC_OUT_SOURCE_PORT.to_owned(),
             source_channel,
             sender,
@@ -43,7 +43,7 @@ impl MsgTransfer {
             timeout_height: None,
             timeout_timestamp: timestamp_as_nanos + IBC_OUT_TIMEOUT_IN_NANOS,
             // memo: Some(memo.clone()),
-        }
+        })
     }
 }
 
@@ -55,7 +55,9 @@ impl TryFrom<IBCTransferV1Proto> for MsgTransfer {
     type Error = ErrorReport;
 
     #[inline(always)]
-    fn try_from(proto: IBCTransferV1Proto) -> Result<MsgTransfer, Self::Error> { MsgTransfer::try_from(&proto) }
+    fn try_from(proto: IBCTransferV1Proto) -> Result<MsgTransfer, Self::Error> {
+        MsgTransfer::try_from(&proto)
+    }
 }
 
 impl TryFrom<&IBCTransferV1Proto> for MsgTransfer {
@@ -80,7 +82,9 @@ impl TryFrom<&IBCTransferV1Proto> for MsgTransfer {
 }
 
 impl From<MsgTransfer> for IBCTransferV1Proto {
-    fn from(coin: MsgTransfer) -> IBCTransferV1Proto { IBCTransferV1Proto::from(&coin) }
+    fn from(coin: MsgTransfer) -> IBCTransferV1Proto {
+        IBCTransferV1Proto::from(&coin)
+    }
 }
 
 impl From<&MsgTransfer> for IBCTransferV1Proto {

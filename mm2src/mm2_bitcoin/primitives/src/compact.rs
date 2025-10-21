@@ -7,15 +7,21 @@ use crate::U256;
 pub struct Compact(u32);
 
 impl From<u32> for Compact {
-    fn from(u: u32) -> Self { Compact(u) }
+    fn from(u: u32) -> Self {
+        Compact(u)
+    }
 }
 
 impl From<Compact> for u32 {
-    fn from(c: Compact) -> Self { c.0 }
+    fn from(c: Compact) -> Self {
+        c.0
+    }
 }
 
 impl From<U256> for Compact {
-    fn from(u: U256) -> Self { Compact::from_u256(u) }
+    fn from(u: U256) -> Self {
+        Compact::from_u256(u)
+    }
 }
 
 impl From<Compact> for U256 {
@@ -26,9 +32,13 @@ impl From<Compact> for U256 {
 }
 
 impl Compact {
-    pub fn new(u: u32) -> Self { Compact(u) }
+    pub fn new(u: u32) -> Self {
+        Compact(u)
+    }
 
-    pub fn max_value() -> Self { U256::max_value().into() }
+    pub fn max_value() -> Self {
+        U256::max_value().into()
+    }
 
     #[allow(clippy::wrong_self_convention)]
     /// Computes the target [0, T] that a blockhash must land in to be valid
@@ -55,7 +65,7 @@ impl Compact {
     }
 
     pub fn from_u256(val: U256) -> Self {
-        let mut size = (val.bits() + 7) / 8;
+        let mut size = val.bits().div_ceil(8);
         let mut compact = if size <= 3 {
             (val.low_u64() << (8 * (3 - size))) as u32
         } else {

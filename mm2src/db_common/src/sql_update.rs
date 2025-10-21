@@ -81,7 +81,9 @@ impl<'a> SqlUpdate<'a> {
 
     /// Returns the reference to the specified SQL parameters.
     #[inline]
-    pub fn params(&self) -> &OwnedSqlParams { self.params.params() }
+    pub fn params(&self) -> &OwnedSqlParams {
+        self.params.params()
+    }
 
     /// Convenience method to execute the `UPDATE` request.
     /// Returns a number of updated records.
@@ -106,10 +108,14 @@ impl<'a> SqlUpdate<'a> {
 /// - [`SqlUpdate::or_where_in`]
 /// - [`SqlUpdate::or_where_in_quoted`]
 /// - [`SqlUpdate::or_where_in_params`]
-impl<'a> SqlCondition for SqlUpdate<'a> {
-    fn sql_builder(&mut self) -> &mut SqlBuilder { &mut self.sql_builder }
+impl SqlCondition for SqlUpdate<'_> {
+    fn sql_builder(&mut self) -> &mut SqlBuilder {
+        &mut self.sql_builder
+    }
 
-    fn sql_params(&mut self) -> &mut SqlParamsBuilder { &mut self.params }
+    fn sql_params(&mut self) -> &mut SqlParamsBuilder {
+        &mut self.params
+    }
 }
 
 #[cfg(test)]
@@ -123,7 +129,9 @@ mod tests {
         kmd_rewards REAL
     );";
 
-    fn init_table_for_test(conn: &Connection) { conn.execute(CREATE_TX_HISTORY_TABLE, []).unwrap(); }
+    fn init_table_for_test(conn: &Connection) {
+        conn.execute(CREATE_TX_HISTORY_TABLE, []).unwrap();
+    }
 
     #[test]
     fn test_update_all_records() {

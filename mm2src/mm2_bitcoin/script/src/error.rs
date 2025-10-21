@@ -93,7 +93,7 @@ impl fmt::Display for Error {
 
             // Logical/Format/Canonical errors.
             Error::BadOpcode => "Bad Opcode".fmt(f),
-            Error::DisabledOpcode(ref opcode) => writeln!(f, "Disabled Opcode: {:?}", opcode),
+            Error::DisabledOpcode(ref opcode) => writeln!(f, "Disabled Opcode: {opcode:?}"),
             Error::InvalidStackOperation => "Invalid stack operation".fmt(f),
             Error::InvalidAltstackOperation => "Invalid altstack operation".fmt(f),
             Error::UnbalancedConditional => "Unbalanced conditional".fmt(f),

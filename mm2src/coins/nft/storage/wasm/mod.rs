@@ -1,4 +1,5 @@
 use crate::nft::storage::NftStorageError;
+use derive_more::Display;
 use mm2_db::indexed_db::{DbTransactionError, InitDbError};
 use mm2_err_handle::prelude::*;
 

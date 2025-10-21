@@ -10,6 +10,7 @@ pub(crate) const SUPPORTED_PROTOCOL: &str = "irn";
 pub enum WcChain {
     Eip155,
     Cosmos,
+    Bip122,
 }
 
 impl FromStr for WcChain {
@@ -18,6 +19,7 @@ impl FromStr for WcChain {
         match s {
             "eip155" => Ok(WcChain::Eip155),
             "cosmos" => Ok(WcChain::Cosmos),
+            "bip122" => Ok(WcChain::Bip122),
             _ => MmError::err(WalletConnectError::InvalidChainId(format!(
                 "chain_id not supported: {s}"
             ))),
@@ -30,6 +32,7 @@ impl AsRef<str> for WcChain {
         match self {
             Self::Eip155 => "eip155",
             Self::Cosmos => "cosmos",
+            Self::Bip122 => "bip122",
         }
     }
 }
@@ -90,7 +93,17 @@ pub enum WcRequestMethods {
     CosmosGetAccounts,
     EthSignTransaction,
     EthSendTransaction,
-    PersonalSign,
+    EthPersonalSign,
+    // TODO: (remove these notes later)
+    // - This method will return the pubkey of each address :D
+    // - Wallets will return ALL addresses found in every purpose' derivation (44, 49, 84, 86), you need to filter for the ones the coin enabled with (or enable mixture of legacy and segwits?).
+    // - You want to listen to `bip122_addressesChanged` event (which has the same format as `getAccountAddresses` response)
+    //   but we can keep this a todo for later since we probably can manage without it for now.
+    // ref. https://docs.reown.com/advanced/multichain/rpc-reference/bitcoin-rpc
+    UtxoGetAccountAddresses,
+    UtxoSendTransfer,
+    UtxoSignPsbt,
+    UtxoPersonalSign,
 }
 
 impl AsRef<str> for WcRequestMethods {
@@ -101,7 +114,11 @@ impl AsRef<str> for WcRequestMethods {
             Self::CosmosGetAccounts => "cosmos_getAccounts",
             Self::EthSignTransaction => "eth_signTransaction",
             Self::EthSendTransaction => "eth_sendTransaction",
-            Self::PersonalSign => "personal_sign",
+            Self::EthPersonalSign => "personal_sign",
+            Self::UtxoGetAccountAddresses => "getAccountAddresses",
+            Self::UtxoSendTransfer => "sendTransfer",
+            Self::UtxoSignPsbt => "signPsbt",
+            Self::UtxoPersonalSign => "signMessage",
         }
     }
 }

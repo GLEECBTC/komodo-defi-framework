@@ -1,8 +1,10 @@
 use crate::my_tx_history_v2::{GetHistoryResult, RemoveTxResult, TxHistoryStorage};
 use crate::tx_history_storage::wasm::tx_history_db::{TxHistoryDb, TxHistoryDbLocked};
 use crate::tx_history_storage::wasm::{WasmTxHistoryError, WasmTxHistoryResult};
-use crate::tx_history_storage::{token_id_from_tx_type, ConfirmationStatus, CreateTxHistoryStorageError,
-                                FilteringAddresses, GetTxHistoryFilters, WalletId};
+use crate::tx_history_storage::{
+    token_id_from_tx_type, ConfirmationStatus, CreateTxHistoryStorageError, FilteringAddresses, GetTxHistoryFilters,
+    WalletId,
+};
 use crate::{compare_transaction_details, CoinsContext, TransactionDetails};
 use async_trait::async_trait;
 use common::PagingOptionsEnum;
@@ -42,9 +44,13 @@ impl IndexedDbTxHistoryStorage {
 impl TxHistoryStorage for IndexedDbTxHistoryStorage {
     type Error = WasmTxHistoryError;
 
-    async fn init(&self, _wallet_id: &WalletId) -> MmResult<(), Self::Error> { Ok(()) }
+    async fn init(&self, _wallet_id: &WalletId) -> MmResult<(), Self::Error> {
+        Ok(())
+    }
 
-    async fn is_initialized_for(&self, _wallet_id: &WalletId) -> MmResult<bool, Self::Error> { Ok(true) }
+    async fn is_initialized_for(&self, _wallet_id: &WalletId) -> MmResult<bool, Self::Error> {
+        Ok(true)
+    }
 
     /// Adds multiple transactions to the selected coin's history
     /// Also consider adding tx_hex to the cache during this operation
@@ -54,26 +60,29 @@ impl TxHistoryStorage for IndexedDbTxHistoryStorage {
         I::IntoIter: Send,
     {
         let locked_db = self.lock_db().await?;
-        let db_transaction = locked_db.get_inner().transaction().await?;
-        let history_table = db_transaction.table::<TxHistoryTableV2>().await?;
-        let cache_table = db_transaction.table::<TxCacheTableV2>().await?;
+        let db_transaction = locked_db.get_inner().transaction().await.map_mm_err()?;
+        let history_table = db_transaction.table::<TxHistoryTableV2>().await.map_mm_err()?;
+        let cache_table = db_transaction.table::<TxCacheTableV2>().await.map_mm_err()?;
 
         for tx in transactions {
             let Some(tx_hash) = tx.tx.tx_hash() else { continue };
 
             let history_item = TxHistoryTableV2::from_tx_details(wallet_id.clone(), &tx)?;
-            history_table.add_item(&history_item).await?;
+            history_table.add_item(&history_item).await.map_mm_err()?;
 
             let cache_item = TxCacheTableV2::from_tx_details(wallet_id.clone(), &tx)?;
             let index_keys = MultiIndex::new(TxCacheTableV2::COIN_TX_HASH_INDEX)
-                .with_value(&wallet_id.ticker)?
-                .with_value(tx_hash)?;
+                .with_value(&wallet_id.ticker)
+                .map_mm_err()?
+                .with_value(tx_hash)
+                .map_mm_err()?;
             // `TxHistoryTableV2::tx_hash` is not a unique field, but `TxCacheTableV2::tx_hash` is unique.
             // So we use `DbTable::add_item_or_ignore_by_unique_multi_index` instead of `DbTable::add_item`
             // since `transactions` may contain txs with same `tx_hash` but different `internal_id`.
             cache_table
                 .add_item_or_ignore_by_unique_multi_index(index_keys, &cache_item)
-                .await?;
+                .await
+                .map_mm_err()?;
         }
         Ok(())
     }
@@ -84,15 +93,23 @@ impl TxHistoryStorage for IndexedDbTxHistoryStorage {
         internal_id: &BytesJson,
     ) -> MmResult<RemoveTxResult, Self::Error> {
         let locked_db = self.lock_db().await?;
-        let db_transaction = locked_db.get_inner().transaction().await?;
-        let table = db_transaction.table::<TxHistoryTableV2>().await?;
+        let db_transaction = locked_db.get_inner().transaction().await.map_mm_err()?;
+        let table = db_transaction.table::<TxHistoryTableV2>().await.map_mm_err()?;
 
         let index_keys = MultiIndex::new(TxHistoryTableV2::WALLET_ID_INTERNAL_ID_INDEX)
-            .with_value(&wallet_id.ticker)?
-            .with_value(wallet_id.hd_wallet_rmd160_or_exclude())?
-            .with_value(internal_id)?;
+            .with_value(&wallet_id.ticker)
+            .map_mm_err()?
+            .with_value(wallet_id.hd_wallet_rmd160_or_exclude())
+            .map_mm_err()?
+            .with_value(internal_id)
+            .map_mm_err()?;
 
-        if table.delete_item_by_unique_multi_index(index_keys).await?.is_some() {
+        if table
+            .delete_item_by_unique_multi_index(index_keys)
+            .await
+            .map_mm_err()?
+            .is_some()
+        {
             Ok(RemoveTxResult::TxRemoved)
         } else {
             Ok(RemoveTxResult::TxDidNotExist)
@@ -105,15 +122,18 @@ impl TxHistoryStorage for IndexedDbTxHistoryStorage {
         internal_id: &BytesJson,
     ) -> MmResult<Option<TransactionDetails>, Self::Error> {
         let locked_db = self.lock_db().await?;
-        let db_transaction = locked_db.get_inner().transaction().await?;
-        let table = db_transaction.table::<TxHistoryTableV2>().await?;
+        let db_transaction = locked_db.get_inner().transaction().await.map_mm_err()?;
+        let table = db_transaction.table::<TxHistoryTableV2>().await.map_mm_err()?;
 
         let index_keys = MultiIndex::new(TxHistoryTableV2::WALLET_ID_INTERNAL_ID_INDEX)
-            .with_value(&wallet_id.ticker)?
-            .with_value(wallet_id.hd_wallet_rmd160_or_exclude())?
-            .with_value(internal_id)?;
+            .with_value(&wallet_id.ticker)
+            .map_mm_err()?
+            .with_value(wallet_id.hd_wallet_rmd160_or_exclude())
+            .map_mm_err()?
+            .with_value(internal_id)
+            .map_mm_err()?;
 
-        let details_json = match table.get_item_by_unique_multi_index(index_keys).await? {
+        let details_json = match table.get_item_by_unique_multi_index(index_keys).await.map_mm_err()? {
             Some((_item_id, item)) => item.details_json,
             None => return Ok(None),
         };
@@ -133,7 +153,10 @@ impl TxHistoryStorage for IndexedDbTxHistoryStorage {
         wallet_id: &WalletId,
         for_addresses: FilteringAddresses,
     ) -> Result<bool, MmError<Self::Error>> {
-        let txs = self.get_unconfirmed_txes_from_history(wallet_id, for_addresses).await?;
+        let txs = self
+            .get_unconfirmed_txes_from_history(wallet_id, for_addresses)
+            .await
+            .map_mm_err()?;
         Ok(!txs.is_empty())
     }
 
@@ -144,17 +167,21 @@ impl TxHistoryStorage for IndexedDbTxHistoryStorage {
         for_addresses: FilteringAddresses,
     ) -> MmResult<Vec<TransactionDetails>, Self::Error> {
         let locked_db = self.lock_db().await?;
-        let db_transaction = locked_db.get_inner().transaction().await?;
-        let table = db_transaction.table::<TxHistoryTableV2>().await?;
+        let db_transaction = locked_db.get_inner().transaction().await.map_mm_err()?;
+        let table = db_transaction.table::<TxHistoryTableV2>().await.map_mm_err()?;
 
         let index_keys = MultiIndex::new(TxHistoryTableV2::WALLET_ID_CONFIRMATION_STATUS_INDEX)
-            .with_value(&wallet_id.ticker)?
-            .with_value(wallet_id.hd_wallet_rmd160_or_exclude())?
-            .with_value(ConfirmationStatus::Unconfirmed)?;
+            .with_value(&wallet_id.ticker)
+            .map_mm_err()?
+            .with_value(wallet_id.hd_wallet_rmd160_or_exclude())
+            .map_mm_err()?
+            .with_value(ConfirmationStatus::Unconfirmed)
+            .map_mm_err()?;
 
         let transactions = table
             .get_items_by_multi_index(index_keys)
-            .await?
+            .await
+            .map_mm_err()?
             .into_iter()
             .map(|(_item_id, item)| item);
 
@@ -164,28 +191,37 @@ impl TxHistoryStorage for IndexedDbTxHistoryStorage {
     /// Updates transaction in the selected coin's history
     async fn update_tx_in_history(&self, wallet_id: &WalletId, tx: &TransactionDetails) -> MmResult<(), Self::Error> {
         let locked_db = self.lock_db().await?;
-        let db_transaction = locked_db.get_inner().transaction().await?;
-        let table = db_transaction.table::<TxHistoryTableV2>().await?;
+        let db_transaction = locked_db.get_inner().transaction().await.map_mm_err()?;
+        let table = db_transaction.table::<TxHistoryTableV2>().await.map_mm_err()?;
 
         let index_keys = MultiIndex::new(TxHistoryTableV2::WALLET_ID_INTERNAL_ID_INDEX)
-            .with_value(&wallet_id.ticker)?
-            .with_value(wallet_id.hd_wallet_rmd160_or_exclude())?
-            .with_value(&tx.internal_id)?;
+            .with_value(&wallet_id.ticker)
+            .map_mm_err()?
+            .with_value(wallet_id.hd_wallet_rmd160_or_exclude())
+            .map_mm_err()?
+            .with_value(&tx.internal_id)
+            .map_mm_err()?;
         let item = TxHistoryTableV2::from_tx_details(wallet_id.clone(), tx)?;
-        table.replace_item_by_unique_multi_index(index_keys, &item).await?;
+        table
+            .replace_item_by_unique_multi_index(index_keys, &item)
+            .await
+            .map_mm_err()?;
         Ok(())
     }
 
     async fn history_has_tx_hash(&self, wallet_id: &WalletId, tx_hash: &str) -> Result<bool, MmError<Self::Error>> {
         let locked_db = self.lock_db().await?;
-        let db_transaction = locked_db.get_inner().transaction().await?;
-        let table = db_transaction.table::<TxHistoryTableV2>().await?;
+        let db_transaction = locked_db.get_inner().transaction().await.map_mm_err()?;
+        let table = db_transaction.table::<TxHistoryTableV2>().await.map_mm_err()?;
 
         let index_keys = MultiIndex::new(TxHistoryTableV2::WALLET_ID_TX_HASH_INDEX)
-            .with_value(&wallet_id.ticker)?
-            .with_value(wallet_id.hd_wallet_rmd160_or_exclude())?
-            .with_value(tx_hash)?;
-        let count_txs = table.count_by_multi_index(index_keys).await?;
+            .with_value(&wallet_id.ticker)
+            .map_mm_err()?
+            .with_value(wallet_id.hd_wallet_rmd160_or_exclude())
+            .map_mm_err()?
+            .with_value(tx_hash)
+            .map_mm_err()?;
+        let count_txs = table.count_by_multi_index(index_keys).await.map_mm_err()?;
         Ok(count_txs > 0)
     }
 
@@ -196,18 +232,21 @@ impl TxHistoryStorage for IndexedDbTxHistoryStorage {
         for_addresses: FilteringAddresses,
     ) -> Result<usize, MmError<Self::Error>> {
         let locked_db = self.lock_db().await?;
-        let db_transaction = locked_db.get_inner().transaction().await?;
-        let table = db_transaction.table::<TxHistoryTableV2>().await?;
+        let db_transaction = locked_db.get_inner().transaction().await.map_mm_err()?;
+        let table = db_transaction.table::<TxHistoryTableV2>().await.map_mm_err()?;
 
         let index_keys = MultiIndex::new(TxHistoryTableV2::WALLET_ID_INDEX)
-            .with_value(&wallet_id.ticker)?
-            .with_value(wallet_id.hd_wallet_rmd160_or_exclude())?;
+            .with_value(&wallet_id.ticker)
+            .map_mm_err()?
+            .with_value(wallet_id.hd_wallet_rmd160_or_exclude())
+            .map_mm_err()?;
 
         // `IndexedDb` doesn't provide an elegant way to count records applying custom filters to index properties like `tx_hash`,
         // so currently fetch all records with `coin,hd_wallet_rmd160=wallet_id` and apply the `unique_by(|tx| tx.tx_hash)` to them.
         let transactions = table
             .get_items_by_multi_index(index_keys)
-            .await?
+            .await
+            .map_mm_err()?
             .into_iter()
             .map(|(_item_id, tx)| tx)
             .unique_by(|tx| tx.tx_hash.clone());
@@ -223,8 +262,8 @@ impl TxHistoryStorage for IndexedDbTxHistoryStorage {
         tx_hex: &BytesJson,
     ) -> Result<(), MmError<Self::Error>> {
         let locked_db = self.lock_db().await?;
-        let db_transaction = locked_db.get_inner().transaction().await?;
-        let table = db_transaction.table::<TxCacheTableV2>().await?;
+        let db_transaction = locked_db.get_inner().transaction().await.map_mm_err()?;
+        let table = db_transaction.table::<TxCacheTableV2>().await.map_mm_err()?;
 
         table
             .add_item(&TxCacheTableV2 {
@@ -232,7 +271,8 @@ impl TxHistoryStorage for IndexedDbTxHistoryStorage {
                 tx_hash: tx_hash.to_owned(),
                 tx_hex: tx_hex.clone(),
             })
-            .await?;
+            .await
+            .map_mm_err()?;
         Ok(())
     }
 
@@ -242,13 +282,15 @@ impl TxHistoryStorage for IndexedDbTxHistoryStorage {
         tx_hash: &str,
     ) -> MmResult<Option<BytesJson>, Self::Error> {
         let locked_db = self.lock_db().await?;
-        let db_transaction = locked_db.get_inner().transaction().await?;
-        let table = db_transaction.table::<TxCacheTableV2>().await?;
+        let db_transaction = locked_db.get_inner().transaction().await.map_mm_err()?;
+        let table = db_transaction.table::<TxCacheTableV2>().await.map_mm_err()?;
 
         let index_keys = MultiIndex::new(TxCacheTableV2::COIN_TX_HASH_INDEX)
-            .with_value(&wallet_id.ticker)?
-            .with_value(tx_hash)?;
-        match table.get_item_by_unique_multi_index(index_keys).await? {
+            .with_value(&wallet_id.ticker)
+            .map_mm_err()?
+            .with_value(tx_hash)
+            .map_mm_err()?;
+        match table.get_item_by_unique_multi_index(index_keys).await.map_mm_err()? {
             Some((_item_id, item)) => Ok(Some(item.tx_hex)),
             None => Ok(None),
         }
@@ -283,17 +325,21 @@ impl TxHistoryStorage for IndexedDbTxHistoryStorage {
         }
 
         let locked_db = self.lock_db().await?;
-        let db_transaction = locked_db.get_inner().transaction().await?;
-        let table = db_transaction.table::<TxHistoryTableV2>().await?;
+        let db_transaction = locked_db.get_inner().transaction().await.map_mm_err()?;
+        let table = db_transaction.table::<TxHistoryTableV2>().await.map_mm_err()?;
 
         let index_keys = MultiIndex::new(TxHistoryTableV2::WALLET_ID_TOKEN_ID_INDEX)
-            .with_value(&wallet_id.ticker)?
-            .with_value(wallet_id.hd_wallet_rmd160_or_exclude())?
-            .with_value(filters.token_id_or_exclude())?;
+            .with_value(&wallet_id.ticker)
+            .map_mm_err()?
+            .with_value(wallet_id.hd_wallet_rmd160_or_exclude())
+            .map_mm_err()?
+            .with_value(filters.token_id_or_exclude())
+            .map_mm_err()?;
 
         let transactions = table
             .get_items_by_multi_index(index_keys)
-            .await?
+            .await
+            .map_mm_err()?
             .into_iter()
             .map(|(_item_id, tx)| tx);
 

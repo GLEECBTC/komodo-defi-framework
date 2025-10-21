@@ -103,7 +103,9 @@ pub mod proxy_signature_tests {
         identity::Keypair::from(keypair)
     }
 
-    fn os_rng(dest: &mut [u8]) -> Result<(), rand::Error> { rand::rngs::OsRng.try_fill_bytes(dest) }
+    fn os_rng(dest: &mut [u8]) -> Result<(), rand::Error> {
+        rand::rngs::OsRng.try_fill_bytes(dest)
+    }
 
     fn random_keypair() -> Keypair {
         let mut p2p_key = [0u8; 32];

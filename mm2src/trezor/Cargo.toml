@@ -14,7 +14,7 @@ derive_more.workspace = true
 futures = { workspace = true, features = ["compat", "async-await"] }
 hw_common = { path = "../hw_common" }
 mm2_err_handle = { path = "../mm2_err_handle" }
-prost.workspace = true
+prost = "0.14.1"
 rand = { workspace = true, features = ["std", "wasm-bindgen"] }
 rpc_task = { path = "../rpc_task" }
 serde.workspace = true

@@ -4,10 +4,14 @@ use futures::future::AbortHandle;
 pub struct AbortOnDropHandle(AbortHandle);
 
 impl From<AbortHandle> for AbortOnDropHandle {
-    fn from(handle: AbortHandle) -> Self { AbortOnDropHandle(handle) }
+    fn from(handle: AbortHandle) -> Self {
+        AbortOnDropHandle(handle)
+    }
 }
 
 impl Drop for AbortOnDropHandle {
     #[inline(always)]
-    fn drop(&mut self) { self.0.abort(); }
+    fn drop(&mut self) {
+        self.0.abort();
+    }
 }

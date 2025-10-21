@@ -35,7 +35,7 @@ where
     {
         match self {
             Ok(x) => Ok(x),
-            Err(e1) => MmError::err(f(e1)),
+            Err(e1) => Err(MmError::new(f(e1))),
         }
     }
 }

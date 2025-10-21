@@ -1,7 +1,7 @@
 use super::{orderbook_topic_from_base_rel, subscribe_to_orderbook_topic, OrderbookP2PItem};
 use coins::{is_wallet_only_ticker, lp_coinfind};
 use mm2_core::mm_ctx::MmArc;
-use mm2_event_stream::{Broadcaster, Event, EventStreamer, StreamHandlerInput, StreamerId};
+use mm2_event_stream::{Broadcaster, DeriveStreamerId, Event, EventStreamer, StreamHandlerInput, StreamerId};
 
 use async_trait::async_trait;
 use futures::channel::oneshot;
@@ -14,10 +14,16 @@ pub struct OrderbookStreamer {
     rel: String,
 }
 
-impl OrderbookStreamer {
-    pub fn new(ctx: MmArc, base: String, rel: String) -> Self { Self { ctx, base, rel } }
+type BaseAndRel<'a> = (&'a str, &'a str);
+impl<'a> DeriveStreamerId<'a> for OrderbookStreamer {
+    type InitParam = (MmArc, String, String);
+    type DeriveParam = BaseAndRel<'a>;
 
-    pub fn derive_streamer_id(base: &str, rel: &str) -> StreamerId {
+    fn new((ctx, base, rel): Self::InitParam) -> Self {
+        Self { ctx, base, rel }
+    }
+
+    fn derive_streamer_id((base, rel): Self::DeriveParam) -> StreamerId {
         StreamerId::OrderbookUpdate {
             topic: orderbook_topic_from_base_rel(base, rel),
         }
@@ -38,7 +44,9 @@ pub enum OrderbookItemChangeEvent {
 impl EventStreamer for OrderbookStreamer {
     type DataInType = OrderbookItemChangeEvent;
 
-    fn streamer_id(&self) -> StreamerId { Self::derive_streamer_id(&self.base, &self.rel) }
+    fn streamer_id(&self) -> StreamerId {
+        Self::derive_streamer_id((&self.base, &self.rel))
+    }
 
     async fn handle(
         self,

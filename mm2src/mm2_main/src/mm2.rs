@@ -21,7 +21,6 @@
 //  Copyright © 2023 Pampex LTD and TillyHK LTD. All rights reserved.
 //
 
-#![feature(hash_raw_entry)]
 // `mockable` implementation uses these
 #![allow(
     forgetting_references,
@@ -33,14 +32,21 @@
 #![cfg_attr(target_arch = "wasm32", allow(dead_code))]
 #![cfg_attr(target_arch = "wasm32", allow(unused_imports))]
 
-#[macro_use] extern crate common;
-#[macro_use] extern crate gstuff;
-#[macro_use] extern crate serde_json;
-#[macro_use] extern crate serde_derive;
-#[macro_use] extern crate ser_error_derive;
-#[cfg(test)] extern crate mm2_test_helpers;
+#[macro_use]
+extern crate common;
+#[macro_use]
+extern crate gstuff;
+#[macro_use]
+extern crate serde_json;
+#[macro_use]
+extern crate serde_derive;
+#[macro_use]
+extern crate ser_error_derive;
+#[cfg(test)]
+extern crate mm2_test_helpers;
 
-#[cfg(not(target_arch = "wasm32"))] use common::block_on;
+#[cfg(not(target_arch = "wasm32"))]
+use common::block_on;
 use common::crash_reports::init_crash_reports;
 use common::executor::Timer;
 use common::log;
@@ -58,17 +64,15 @@ use std::sync::atomic::Ordering;
 use gstuff::slurp;
 use serde_json::{self as json, Value as Json};
 
-use std::env;
-use std::ffi::OsString;
 use std::process::exit;
-use std::ptr::null;
 use std::str;
 
 pub use self::lp_native_dex::init_hw;
 pub use self::lp_native_dex::lp_init;
 use mm2_err_handle::prelude::*;
 
-#[cfg(not(target_arch = "wasm32"))] pub mod database;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod database;
 
 pub mod heartbeat_event;
 pub mod lp_dispatcher;
@@ -82,12 +86,42 @@ pub mod lp_swap;
 pub mod lp_wallet;
 pub mod rpc;
 mod swap_versioning;
-#[cfg(all(target_arch = "wasm32", test))] mod wasm_tests;
+#[cfg(all(target_arch = "wasm32", test))]
+mod wasm_tests;
+
+use clap::Parser;
 
 pub const PASSWORD_MAXIMUM_CONSECUTIVE_CHARACTERS: usize = 3;
 
 #[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
 const CUSTOM_PAYMENT_LOCKTIME_DEFAULT: u64 = 900;
+
+const EXTRA_HELP_MESSAGE: &str = r#"
+Environment variables:
+
+  MM_CONF_PATH   ..  File path. MM2 will try to load the JSON configuration from this file.
+                     File must contain valid json with structure mentioned above.
+                     Defaults to `MM2.json`
+  MM_COINS_PATH  ..  File path. MM2 will try to load coins data from this file.
+                     File must contain valid json.
+                     Recommended: https://github.com/komodoplatform/coins/blob/master/coins.
+                     Defaults to `coins`.
+  MM_LOG         ..  File path. Must end with '.log'. MM will log to this file.
+
+See also the online documentation at
+https://komodoplatform.com/en/docs
+"#;
+
+#[derive(Parser, Debug)]
+#[command(about="Komodo DeFi Framework Daemon", long_about=None, after_help=EXTRA_HELP_MESSAGE)]
+pub struct Cli {
+    /// JSON configuration string - will be used instead of the json config file
+    pub config: Option<String>,
+
+    /// Print version
+    #[clap(short, long)]
+    pub version: bool,
+}
 
 pub struct LpMainParams {
     conf: Json,
@@ -95,7 +129,9 @@ pub struct LpMainParams {
 }
 
 impl LpMainParams {
-    pub fn with_conf(conf: Json) -> LpMainParams { LpMainParams { conf, filter: None } }
+    pub fn with_conf(conf: Json) -> LpMainParams {
+        LpMainParams { conf, filter: None }
+    }
 
     pub fn log_filter(mut self, filter: Option<LogLevel>) -> LpMainParams {
         self.filter = filter;
@@ -146,7 +182,7 @@ pub async fn lp_main(
         if !is_weak_password_accepted && cfg!(not(test)) {
             match password_policy(conf["rpc_password"].as_str().unwrap()) {
                 Ok(_) => {},
-                Err(err) => return Err(format!("{}", err)),
+                Err(err) => return Err(format!("{err}")),
             }
         }
     }
@@ -201,115 +237,32 @@ fn spawn_ctrl_c_handler(ctx: MmArc) {
     });
 }
 
-fn help() {
-    const HELP_MSG: &str = r#"Command-line options.
-The first command-line argument is special and designates the mode.
-
-  help                       ..  Display this message.
-  btc2kmd {WIF or BTC}       ..  Convert a BTC WIF into a KMD WIF.
-  events                     ..  Listen to a feed coming from a separate MM daemon and print it to stdout.
-  vanity {substring}         ..  Tries to find an address with the given substring.
-  update_config {SRC} {DST}  ..  Update the configuration of coins from the SRC config and save it to DST file.
-  {JSON configuration}       ..  Run the MarketMaker daemon.
-
-Some (but not all) of the JSON configuration parameters (* - required):
-
-                     NB: The 'coins' command-line configuration must have the lowercased coin names in the 'name' field,
-                     {"coins": [{"name": "dash", "coin": "DASH", ...}, ...], ...}.
-  coins          ..  Information about the currencies: their ticker symbols, names, ports, addresses, etc.
-                     If the field isn't present on the command line then we try loading it from the 'coins' file.
-  dbdir          ..  MM database path. 'DB' by default.
-  gui            ..  The information about GUI app using KDF instance. Included in swap statuses shared with network.
-                 ..  It's recommended to put essential info to this field (application name, OS, version, etc).
-                 ..  e.g. AtomicDEX iOS 1.0.1000.
-  myipaddr       ..  IP address to bind to for P2P networking.
-  netid          ..  Subnetwork. Affects ports and keys.
-  passphrase *   ..  Wallet seed.
-                     Compressed WIFs and hexadecimal ECDSA keys (prefixed with 0x) are also accepted.
-  rpccors        ..  Access-Control-Allow-Origin header value to be used in all the RPC responses.
-                     Default is currently 'http://localhost:3000'
-  rpcip          ..  IP address to bind to for RPC server. Overrides the 127.0.0.1 default
-  rpc_password   ..  RPC password used to authorize non-public RPC calls
-                     MM generates password from passphrase if this field is not set
-  rpc_local_only ..  MM forbids some RPC requests from not loopback (localhost) IPs as additional security measure.
-                     Defaults to `true`, set `false` to disable. `Use with caution`.
-  rpcport        ..  If > 1000 overrides the 7783 default.
-  i_am_seed      ..  Activate the seed node mode (acting as a relay for kdf clients).
-                     Defaults to `false`.
-  seednodes      ..  Seednode IPs that node will use.
-                     At least one seed IP must be present if the node is not a seed itself.
-  wif            ..  `1` to add WIFs to the information we provide about a coin.
-
-Environment variables:
-
-  MM_CONF_PATH   ..  File path. MM2 will try to load the JSON configuration from this file.
-                     File must contain valid json with structure mentioned above.
-                     Defaults to `MM2.json`
-  MM_COINS_PATH  ..  File path. MM2 will try to load coins data from this file.
-                     File must contain valid json.
-                     Recommended: https://github.com/komodoplatform/coins/blob/master/coins.
-                     Defaults to `coins`.
-  MM_LOG         ..  File path. Must end with '.log'. MM will log to this file.
-
-See also the online documentation at
-https://komodoplatform.com/en/docs
-"#;
-
-    println!("{}", HELP_MSG);
-}
-
 #[cfg(not(target_arch = "wasm32"))]
 #[allow(dead_code)] // Not used by mm2_lib.
 pub fn mm2_main(version: String, datetime: String) {
-    use libc::c_char;
-
     init_crash_reports();
 
-    // Temporarily simulate `argv[]` for the C version of the main method.
-    let args: Vec<String> = env::args()
-        .map(|mut arg| {
-            arg.push('\0');
-            arg
-        })
-        .collect();
-    let mut args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr() as *const c_char).collect();
-    args.push(null());
-
-    let args_os: Vec<OsString> = env::args_os().collect();
-
-    // NB: The first argument is special, being used as the mode switcher.
-    // The other arguments might be used to pass the data to the various MM modes,
-    // we're not checking them for the mode switches in order not to risk [untrusted] data being mistaken for a mode switch.
-    let first_arg = args_os.get(1).and_then(|arg| arg.to_str());
-
-    if first_arg == Some("--version") || first_arg == Some("-v") || first_arg == Some("version") {
+    let cli = Cli::parse();
+    if cli.version {
         println!("Komodo DeFi Framework: {version}");
         return;
     }
 
-    if first_arg == Some("--help") || first_arg == Some("-h") || first_arg == Some("help") {
-        help();
-        return;
-    }
-
-    if cfg!(windows) && first_arg == Some("/?") {
-        help();
-        return;
-    }
+    let json_config = cli.config.as_deref();
 
     log!("Komodo DeFi Framework {} DT {}", version, datetime);
 
-    if let Err(err) = run_lp_main(first_arg, &|_| (), version, datetime) {
+    if let Err(err) = run_lp_main(json_config, &|_| (), version, datetime) {
         log!("{}", err);
         exit(1);
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-/// Parses and returns the `first_arg` as JSON.
-/// Attempts to load the config from `MM2.json` file if `first_arg` is None
-pub fn get_mm2config(first_arg: Option<&str>) -> Result<Json, String> {
-    let conf = match first_arg {
+/// Parses and returns the `json_config` as JSON.
+/// Attempts to load the config from `MM2.json` file if `json_config` is None
+pub fn get_mm2config(json_config: Option<&str>) -> Result<Json, String> {
+    let conf = match json_config {
         Some(s) => s.to_owned(),
         None => {
             let conf_path = common::kdf_config_file().map_err(|e| e.to_string())?;
@@ -360,7 +313,7 @@ pub fn get_mm2config(first_arg: Option<&str>) -> Result<Json, String> {
 /// Runs LP_main with result of `get_mm2config()`.
 ///
 /// * `ctx_cb` - Invoked with the MM context handle,
-///              allowing the `run_lp_main` caller to communicate with MM.
+///   allowing the `run_lp_main` caller to communicate with MM.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn run_lp_main(
     first_arg: Option<&str>,

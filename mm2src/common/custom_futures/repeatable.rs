@@ -134,9 +134,13 @@ impl<E> RepeatError<E> {
         }
     }
 
-    fn timeout(until_ms: u64, error: E) -> Self { RepeatError::TimeoutExpired { until_ms, error } }
+    fn timeout(until_ms: u64, error: E) -> Self {
+        RepeatError::TimeoutExpired { until_ms, error }
+    }
 
-    fn attempts(attempts: usize, error: E) -> Self { RepeatError::AttemptsExceed { attempts, error } }
+    fn attempts(attempts: usize, error: E) -> Self {
+        RepeatError::AttemptsExceed { attempts, error }
+    }
 }
 
 impl<E: fmt::Display> fmt::Display for RepeatError<E> {
@@ -229,7 +233,9 @@ where
     }
 
     #[inline]
-    pub fn repeat_every_ms(self, repeat_every: u64) -> Self { self.repeat_every(Duration::from_millis(repeat_every)) }
+    pub fn repeat_every_ms(self, repeat_every: u64) -> Self {
+        self.repeat_every(Duration::from_millis(repeat_every))
+    }
 
     #[inline]
     pub fn repeat_every_secs(self, repeat_every: f64) -> Self {
@@ -283,7 +289,9 @@ where
     /// Specifies a timeout in milliseconds before that we may try to repeat the future.
     /// Note this method name should differ from [`FutureTimerExt::timeout_ms`].
     #[inline]
-    pub fn with_timeout_ms(self, timeout_ms: u64) -> Self { self.until_ms(wait_until_ms(timeout_ms)) }
+    pub fn with_timeout_ms(self, timeout_ms: u64) -> Self {
+        self.until_ms(wait_until_ms(timeout_ms))
+    }
 
     /// Specifies a timeout in seconds before that we may try to repeat the future.
     /// Note this method name should differ from [`FutureTimerExt::timeout_secs`].
@@ -373,7 +381,9 @@ enum RepeatUntil {
 }
 
 impl Default for RepeatUntil {
-    fn default() -> Self { RepeatUntil::AttemptsExceed(AttemptsState::new(1)) }
+    fn default() -> Self {
+        RepeatUntil::AttemptsExceed(AttemptsState::new(1))
+    }
 }
 
 /// Returns `Poll::Ready(())` if there is no need to wait for the timeout.

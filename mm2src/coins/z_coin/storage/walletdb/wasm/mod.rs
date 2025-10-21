@@ -847,7 +847,9 @@ mod wasm_test {
         assert_eq!(walletdb.get_balance(AccountId(0)).await.unwrap(), value - value2);
     }
 
-    fn network() -> Network { Network::TestNetwork }
+    fn network() -> Network {
+        Network::TestNetwork
+    }
 
     // Todo: Uncomment after improving tx creation time
     // https://github.com/KomodoPlatform/komodo-defi-framework/issues/2000

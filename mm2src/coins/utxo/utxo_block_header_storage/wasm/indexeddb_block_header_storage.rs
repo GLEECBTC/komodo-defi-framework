@@ -4,8 +4,10 @@ use async_trait::async_trait;
 use chain::BlockHeader;
 use mm2_core::mm_ctx::MmArc;
 use mm2_db::indexed_db::cursor_prelude::CursorError;
-use mm2_db::indexed_db::{BeBigUint, ConstructibleDb, DbIdentifier, DbInstance, DbLocked, IndexedDb, IndexedDbBuilder,
-                         InitDbResult, MultiIndex, SharedDb};
+use mm2_db::indexed_db::{
+    BeBigUint, ConstructibleDb, DbIdentifier, DbInstance, DbLocked, IndexedDb, IndexedDbBuilder, InitDbResult,
+    MultiIndex, SharedDb,
+};
 use mm2_err_handle::prelude::*;
 use num_traits::ToPrimitive;
 use primitives::hash::H256;
@@ -38,7 +40,9 @@ impl DbInstance for IDBBlockHeadersInner {
 }
 
 impl IDBBlockHeadersInner {
-    pub fn get_inner(&self) -> &IndexedDb { &self.inner }
+    pub fn get_inner(&self) -> &IndexedDb {
+        &self.inner
+    }
 }
 
 pub struct IDBBlockHeadersStorage {
@@ -64,9 +68,13 @@ impl IDBBlockHeadersStorage {
 
 #[async_trait]
 impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
-    async fn init(&self) -> Result<(), BlockHeaderStorageError> { Ok(()) }
+    async fn init(&self) -> Result<(), BlockHeaderStorageError> {
+        Ok(())
+    }
 
-    async fn is_initialized_for(&self) -> Result<bool, BlockHeaderStorageError> { Ok(true) }
+    async fn is_initialized_for(&self) -> Result<bool, BlockHeaderStorageError> {
+        Ok(true)
+    }
 
     async fn add_block_headers_to_storage(
         &self,

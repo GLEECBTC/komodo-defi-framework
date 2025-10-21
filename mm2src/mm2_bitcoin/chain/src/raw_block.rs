@@ -27,7 +27,9 @@ impl RawBlockHeader {
     }
 
     /// Calculate the LE header digest
-    pub fn digest(&self) -> H256 { dhash256(self.0.as_slice()) }
+    pub fn digest(&self) -> H256 {
+        dhash256(self.0.as_slice())
+    }
 
     /// Extract the LE tx merkle root from the header
     pub fn extract_merkle_root(&self) -> H256 {

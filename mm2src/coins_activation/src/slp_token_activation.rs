@@ -50,7 +50,9 @@ impl TryFromCoinProtocol for SlpProtocolConf {
 }
 
 impl TokenProtocolParams for SlpProtocolConf {
-    fn platform_coin_ticker(&self) -> &str { &self.platform_coin_ticker }
+    fn platform_coin_ticker(&self) -> &str {
+        &self.platform_coin_ticker
+    }
 }
 
 impl From<EnableSlpError> for EnableTokenError {
@@ -60,6 +62,7 @@ impl From<EnableSlpError> for EnableTokenError {
             EnableSlpError::UnexpectedDerivationMethod(e) | EnableSlpError::Internal(e) => {
                 EnableTokenError::Internal(e)
             },
+            EnableSlpError::PlatformCoinMismatch => EnableTokenError::PlatformCoinMismatch,
         }
     }
 }
@@ -102,7 +105,7 @@ impl TokenActivationOps for SlpToken {
             required_confirmations,
         )?;
         let balance = token.my_coin_balance().await.mm_err(EnableSlpError::GetBalanceError)?;
-        let my_address = token.my_address()?;
+        let my_address = token.my_address().map_mm_err()?;
         let balances = HashMap::from([(my_address, balance)]);
         let init_result = SlpInitResult {
             balances,

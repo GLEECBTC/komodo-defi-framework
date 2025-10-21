@@ -2,6 +2,7 @@ use super::eth_fee_events::EstimatorType;
 use super::ser::FeePerGasEstimated;
 use crate::{lp_coinfind, MmCoinEnum};
 use common::HttpStatusCode;
+use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::mm_error::{MmError, MmResult};
 

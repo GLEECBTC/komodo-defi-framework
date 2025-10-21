@@ -2,6 +2,7 @@
 name = "serialization_derive"
 version = "0.1.0"
 authors = ["debris <marek.kotewicz@gmail.com>"]
+edition = "2015"
 
 [lib]
 name = "serialization_derive"

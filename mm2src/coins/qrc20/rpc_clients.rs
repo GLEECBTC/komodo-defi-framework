@@ -254,7 +254,9 @@ pub enum TopicFilter {
 }
 
 impl From<&str> for TopicFilter {
-    fn from(topic: &str) -> Self { TopicFilter::Match(topic.to_string()) }
+    fn from(topic: &str) -> Self {
+        TopicFilter::Match(topic.to_string())
+    }
 }
 
 /// Qrc20 specific RPC ops
@@ -421,7 +423,7 @@ impl Qrc20RpcOps for UtxoRpcClientEnum {
                     Some(_) => return ERR!(r#"Expected Uint as "decimals" result but got {:?}"#, tokens),
                     None => return ERR!(r#"Expected Uint as "decimals" result but got nothing"#),
                 };
-                if decimals <= (std::u8::MAX as u64) {
+                if decimals <= (u8::MAX as u64) {
                     Ok(decimals as u8)
                 } else {
                     ERR!("decimals {} is not u8", decimals)

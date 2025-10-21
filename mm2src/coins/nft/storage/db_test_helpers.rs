@@ -1,5 +1,6 @@
-use crate::nft::nft_structs::{Chain, ContractType, Nft, NftCommon, NftCtx, NftTransferCommon, NftTransferHistory,
-                              TransferStatus, UriMeta};
+use crate::nft::nft_structs::{
+    Chain, ContractType, Nft, NftCommon, NftCtx, NftTransferCommon, NftTransferHistory, TransferStatus, UriMeta,
+};
 use ethereum_types::Address;
 use mm2_number::{BigDecimal, BigUint};
 #[cfg(not(target_arch = "wasm32"))]

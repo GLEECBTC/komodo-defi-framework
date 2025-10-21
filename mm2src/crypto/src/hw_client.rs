@@ -25,11 +25,15 @@ pub enum HwProcessingError<E> {
 }
 
 impl<E> From<HwError> for HwProcessingError<E> {
-    fn from(e: HwError) -> Self { HwProcessingError::HwError(e) }
+    fn from(e: HwError) -> Self {
+        HwProcessingError::HwError(e)
+    }
 }
 
 impl<E> From<TrezorError> for HwProcessingError<E> {
-    fn from(e: TrezorError) -> Self { HwProcessingError::HwError(HwError::from(e)) }
+    fn from(e: TrezorError) -> Self {
+        HwProcessingError::HwError(HwError::from(e))
+    }
 }
 
 impl<E> From<TrezorProcessingError<E>> for HwProcessingError<E> {
@@ -40,9 +44,6 @@ impl<E> From<TrezorProcessingError<E>> for HwProcessingError<E> {
         }
     }
 }
-
-/// This is required for converting `MmError<HwError>` into `MmError<HwProcessingError<E>>`.
-impl<E> NotEqual for HwProcessingError<E> {}
 
 #[derive(Clone, Copy, Deserialize)]
 pub enum HwWalletType {
@@ -81,7 +82,9 @@ pub enum HwClient {
 }
 
 impl From<TrezorClient> for HwClient {
-    fn from(trezor: TrezorClient) -> Self { HwClient::Trezor(trezor) }
+    fn from(trezor: TrezorClient) -> Self {
+        HwClient::Trezor(trezor)
+    }
 }
 
 impl HwClient {
@@ -95,7 +98,7 @@ impl HwClient {
     pub(crate) async fn trezor(
         processor: Arc<dyn TrezorConnectProcessor<Error = RpcTaskError>>,
     ) -> MmResult<TrezorClient, HwProcessingError<RpcTaskError>> {
-        let timeout = processor.on_connect().await?;
+        let timeout = processor.on_connect().await.map_mm_err()?;
 
         let fut = async move {
             // `find_devices` in a browser leads to a popup that asks the user which device he wants to connect.
@@ -104,21 +107,23 @@ impl HwClient {
                 .boxed()
                 .timeout(timeout)
                 .await
-                .map_to_mm(|_| HwError::ConnectionTimedOut { timeout })??;
+                .map_to_mm(|_| HwError::ConnectionTimedOut { timeout })
+                .map_mm_err()?
+                .map_mm_err()?;
             if devices.available.is_empty() {
                 return MmError::err(HwProcessingError::HwError(HwError::NoTrezorDeviceAvailable));
             }
             let device = devices.available.remove(0);
-            Ok(device.connect().await?)
+            device.connect().await.map_mm_err()
         };
 
         match fut.await {
             Ok(transport) => {
-                processor.on_connected().await?;
+                processor.on_connected().await.map_mm_err()?;
                 Ok(TrezorClient::from_transport(transport))
             },
             Err(e) => {
-                processor.on_connection_failed().await?;
+                processor.on_connection_failed().await.map_mm_err()?;
                 Err(e)
             },
         }
@@ -136,7 +141,7 @@ impl HwClient {
         where
             C: ConnectableDeviceWrapper + 'static,
         {
-            let mut devices = C::find_devices().await?;
+            let mut devices = C::find_devices().await.map_mm_err()?;
             if devices.is_empty() {
                 return Ok(None);
             }
@@ -144,7 +149,7 @@ impl HwClient {
                 return MmError::err(HwError::CannotChooseDevice { count: devices.len() });
             }
             let device = devices.remove(0);
-            let transport = device.connect().await?;
+            let transport = device.connect().await.map_mm_err()?;
             let trezor = TrezorClient::from_transport(transport);
             Ok(Some(trezor))
         }
@@ -165,19 +170,19 @@ impl HwClient {
             }
         };
 
-        let timeout = processor.on_connect().await?;
+        let timeout = processor.on_connect().await.map_mm_err()?;
         let result: Result<HwResult<TrezorClient>, TimeoutError> = fut.boxed().timeout(timeout).await;
         match result {
             Ok(Ok(trezor)) => {
-                processor.on_connected().await?;
+                processor.on_connected().await.map_mm_err()?;
                 Ok(trezor)
             },
             Ok(Err(hw_err)) => {
-                processor.on_connection_failed().await?;
+                processor.on_connection_failed().await.map_mm_err()?;
                 Err(hw_err.map(HwProcessingError::from))
             },
             Err(_timed_out) => {
-                processor.on_connection_failed().await?;
+                processor.on_connection_failed().await.map_mm_err()?;
                 MmError::err(HwProcessingError::HwError(HwError::ConnectionTimedOut { timeout }))
             },
         }

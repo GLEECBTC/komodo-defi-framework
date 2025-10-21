@@ -2,6 +2,7 @@
 use super::{EnableStreamingRequest, EnableStreamingResponse};
 
 use common::HttpStatusCode;
+use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::{map_to_mm::MapToMmResult, mm_error::MmResult};
@@ -19,7 +20,9 @@ pub enum NetworkStreamingRequestError {
 }
 
 impl HttpStatusCode for NetworkStreamingRequestError {
-    fn status_code(&self) -> StatusCode { StatusCode::BAD_REQUEST }
+    fn status_code(&self) -> StatusCode {
+        StatusCode::BAD_REQUEST
+    }
 }
 
 pub async fn enable_network(

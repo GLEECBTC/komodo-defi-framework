@@ -7,8 +7,9 @@ use serde::Serialize;
 use std::convert::TryFrom;
 use std::sync::Arc;
 use std::time::Duration;
-use trezor::trezor_rpc_task::{RpcTask, RpcTaskError, RpcTaskHandleShared, TrezorRequestStatuses,
-                              TrezorRpcTaskProcessor, TryIntoUserAction};
+use trezor::trezor_rpc_task::{
+    RpcTask, RpcTaskError, RpcTaskHandleShared, TrezorRequestStatuses, TrezorRpcTaskProcessor, TryIntoUserAction,
+};
 use trezor::user_interaction::TrezorPassphraseResponse;
 use trezor::{TrezorProcessingError, TrezorRequestProcessor};
 
@@ -125,20 +126,23 @@ where
 {
     async fn on_connect(&self) -> MmResult<Duration, HwProcessingError<RpcTaskError>> {
         self.request_processor
-            .update_in_progress_status(self.on_connect.clone())?;
+            .update_in_progress_status(self.on_connect.clone())
+            .map_mm_err()?;
         Ok(self.connect_timeout)
     }
 
     async fn on_connected(&self) -> MmResult<(), HwProcessingError<RpcTaskError>> {
         Ok(self
             .request_processor
-            .update_in_progress_status(self.on_connected.clone())?)
+            .update_in_progress_status(self.on_connected.clone())
+            .map_mm_err()?)
     }
 
     async fn on_connection_failed(&self) -> MmResult<(), HwProcessingError<RpcTaskError>> {
         Ok(self
             .request_processor
-            .update_in_progress_status(self.on_connection_failed.clone())?)
+            .update_in_progress_status(self.on_connection_failed.clone())
+            .map_mm_err()?)
     }
 
     fn as_base_shared(&self) -> Arc<dyn TrezorRequestProcessor<Error = RpcTaskError>> {

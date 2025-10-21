@@ -4,6 +4,7 @@ use crate::lightning::OpenChannelsFilter;
 use crate::{lp_coinfind_or_err, CoinFindError, MmCoinEnum};
 use common::{calc_total_pages, ten, HttpStatusCode, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::Error as SqlError;
+use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -14,11 +15,11 @@ type ListChannelsResult<T> = Result<T, MmError<ListChannelsError>>;
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum ListChannelsError {
-    #[display(fmt = "Lightning network is not supported for {}", _0)]
+    #[display(fmt = "Lightning network is not supported for {_0}")]
     UnsupportedCoin(String),
-    #[display(fmt = "No such coin {}", _0)]
+    #[display(fmt = "No such coin {_0}")]
     NoSuchCoin(String),
-    #[display(fmt = "DB error {}", _0)]
+    #[display(fmt = "DB error {_0}")]
     DbError(String),
 }
 
@@ -41,7 +42,9 @@ impl From<CoinFindError> for ListChannelsError {
 }
 
 impl From<SqlError> for ListChannelsError {
-    fn from(err: SqlError) -> ListChannelsError { ListChannelsError::DbError(err.to_string()) }
+    fn from(err: SqlError) -> ListChannelsError {
+        ListChannelsError::DbError(err.to_string())
+    }
 }
 
 #[derive(Deserialize)]
@@ -68,7 +71,7 @@ pub async fn list_open_channels_by_filter(
     ctx: MmArc,
     req: ListOpenChannelsRequest,
 ) -> ListChannelsResult<ListOpenChannelsResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
+    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
         MmCoinEnum::LightningCoin(c) => c,
         e => return MmError::err(ListChannelsError::UnsupportedCoin(e.ticker().to_string())),
     };
@@ -111,7 +114,7 @@ pub async fn list_closed_channels_by_filter(
     ctx: MmArc,
     req: ListClosedChannelsRequest,
 ) -> ListChannelsResult<ListClosedChannelsResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
+    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
         MmCoinEnum::LightningCoin(c) => c,
         e => return MmError::err(ListChannelsError::UnsupportedCoin(e.ticker().to_string())),
     };

@@ -7,11 +7,12 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::OrderbookResponse;
 use mm2_test_helpers::electrums::{doc_electrums, marty_electrums};
-use mm2_test_helpers::for_tests::{check_recent_swaps, delete_wallet, enable_electrum_json, enable_utxo_v2_electrum,
-                                  enable_z_coin_light, get_wallet_names, morty_conf, pirate_conf, rick_conf,
-                                  start_swaps, test_qrc20_history_impl, wait_for_swaps_finish_and_check_status,
-                                  MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, ARRR, MORTY,
-                                  PIRATE_ELECTRUMS, PIRATE_LIGHTWALLETD_URLS, RICK};
+use mm2_test_helpers::for_tests::{
+    check_recent_swaps, delete_wallet, enable_electrum_json, enable_utxo_v2_electrum, enable_z_coin_light,
+    get_wallet_names, morty_conf, pirate_conf, rick_conf, start_swaps, test_qrc20_history_impl,
+    wait_for_swaps_finish_and_check_status, MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, ARRR,
+    MORTY, PIRATE_ELECTRUMS, PIRATE_LIGHTWALLETD_URLS, RICK,
+};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::{Bip44Chain, EnableCoinBalance, HDAccountAddressId};
 use serde_json::{json, Value as Json};
@@ -200,10 +201,11 @@ async fn trade_v2_test_rick_and_morty() {
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     Timer::sleep(1.).await;
 
-    let alice_conf =
-        Mm2TestConf::light_node_with_hd_account_trade_v2(Mm2TestConfForSwap::ALICE_HD_PASSPHRASE, &coins, &[
-            &mm_bob.my_seed_addr()
-        ]);
+    let alice_conf = Mm2TestConf::light_node_with_hd_account_trade_v2(
+        Mm2TestConfForSwap::ALICE_HD_PASSPHRASE,
+        &coins,
+        &[&mm_bob.my_seed_addr()],
+    );
     let mm_alice = MarketMakerIt::start_async(alice_conf.conf, alice_conf.rpc_password, Some(wasm_start))
         .await
         .unwrap();

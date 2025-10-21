@@ -6,10 +6,12 @@ use common::{SerdeInfallible, SuccessResponse};
 use crypto::RpcDerivationPath;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
-                           RpcTaskStatusRequest};
-use rpc_task::{RpcInitReq, RpcTask, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus,
-               RpcTaskTypes};
+use rpc_task::rpc_common::{
+    CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError, RpcTaskStatusRequest,
+};
+use rpc_task::{
+    RpcInitReq, RpcTask, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes,
+};
 
 pub type ScanAddressesUserAction = SerdeInfallible;
 pub type ScanAddressesAwaitingStatus = SerdeInfallible;
@@ -86,7 +88,9 @@ impl RpcTaskTypes for InitScanAddressesTask {
 #[async_trait]
 impl RpcTask for InitScanAddressesTask {
     #[inline]
-    fn initial_status(&self) -> Self::InProgressStatus { ScanAddressesInProgressStatus::InProgress }
+    fn initial_status(&self) -> Self::InProgressStatus {
+        ScanAddressesInProgressStatus::InProgress
+    }
 
     // Do nothing if the task has been cancelled.
     async fn cancel(self) {}
@@ -112,12 +116,13 @@ pub async fn init_scan_for_new_addresses(
     req: RpcInitReq<ScanAddressesRequest>,
 ) -> MmResult<InitRpcTaskResponse, HDAccountBalanceRpcError> {
     let (client_id, req) = (req.client_id, req.inner);
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     let spawner = coin.spawner();
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(HDAccountBalanceRpcError::Internal)?;
     let task = InitScanAddressesTask { req, coin };
     let task_id =
-        ScanAddressesTaskManager::spawn_rpc_task(&coins_ctx.scan_addresses_manager, &spawner, task, client_id)?;
+        ScanAddressesTaskManager::spawn_rpc_task(&coins_ctx.scan_addresses_manager, &spawner, task, client_id)
+            .map_mm_err()?;
     Ok(InitRpcTaskResponse { task_id })
 }
 
@@ -144,7 +149,7 @@ pub async fn cancel_scan_for_new_addresses(
         .scan_addresses_manager
         .lock()
         .map_to_mm(|e| CancelRpcTaskError::Internal(e.to_string()))?;
-    task_manager.cancel_task(req.task_id)?;
+    task_manager.cancel_task(req.task_id).map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -163,7 +168,7 @@ pub mod common_impl {
     where
         Coin: CoinWithDerivationMethod + HDWalletBalanceOps + Sync,
     {
-        let hd_wallet = coin.derivation_method().hd_wallet_or_err()?;
+        let hd_wallet = coin.derivation_method().hd_wallet_or_err().map_mm_err()?;
 
         let account_id = params.account_index;
         let mut hd_account = hd_wallet
@@ -171,12 +176,13 @@ pub mod common_impl {
             .await
             .or_mm_err(|| HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet)?;
         let account_derivation_path = hd_account.account_derivation_path();
-        let address_scanner = coin.produce_hd_address_scanner().await?;
+        let address_scanner = coin.produce_hd_address_scanner().await.map_mm_err()?;
         let gap_limit = params.gap_limit.unwrap_or_else(|| hd_wallet.gap_limit());
 
         let new_addresses = coin
             .scan_for_new_addresses(hd_wallet, hd_account.deref_mut(), &address_scanner, gap_limit)
-            .await?;
+            .await
+            .map_mm_err()?;
 
         let addresses: HashSet<_> = new_addresses
             .iter()

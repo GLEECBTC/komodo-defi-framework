@@ -40,8 +40,13 @@ mm2_main = { path = "../mm2_main" }
 num-traits.workspace = true
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 
+[build-dependencies]
+chrono = { workspace = true, features = ["now"] }
+gstuff.workspace = true
+regex.workspace = true
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-gstuff.workspace = true 
+gstuff.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys.workspace = true
@@ -53,7 +58,8 @@ wasm-bindgen-futures.workspace = true
 [target.x86_64-unknown-linux-gnu.dependencies]
 jemallocator.workspace = true
 
-[build-dependencies]
-chrono.workspace = true 
-gstuff.workspace = true 
-regex.workspace = true
+[package.metadata.wasm-pack.profile.dev]
+wasm-opt = ['-O', '--enable-bulk-memory', '--enable-nontrapping-float-to-int']
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ['-O', '--enable-bulk-memory', '--enable-nontrapping-float-to-int']

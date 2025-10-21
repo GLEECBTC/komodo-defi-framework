@@ -1,4 +1,5 @@
-#[macro_use] extern crate serde_derive;
+#[macro_use]
+extern crate serde_derive;
 
 mod bip32_child;
 mod crypto_ctx;
@@ -18,24 +19,29 @@ mod slip21;
 mod standard_hd_path;
 mod xpub;
 
-#[cfg(target_arch = "wasm32")] mod metamask_ctx;
+#[cfg(target_arch = "wasm32")]
+mod metamask_ctx;
 // Uncomment this to finish MetaMask login.
-#[cfg(target_arch = "wasm32")] mod metamask_login;
+#[cfg(target_arch = "wasm32")]
+mod metamask_login;
 
 pub use bip32_child::{Bip32Child, Bip32DerPathError, Bip32DerPathOps, Bip44Tail};
 pub use crypto_ctx::{CryptoCtx, CryptoCtxError, CryptoInitError, CryptoInitResult, HwCtxInitError, KeyPairPolicy};
 pub use encrypt::EncryptedData;
 pub use global_hd_ctx::{derive_secp256k1_secret, GlobalHDAccountArc};
-pub use hw_client::{HwClient, HwConnectionStatus, HwDeviceInfo, HwProcessingError, HwPubkey, HwWalletType,
-                    TrezorConnectProcessor};
-pub use hw_common::primitives::{Bip32Error, ChildNumber, DerivationPath, EcdsaCurve, ExtendedPublicKey,
-                                Secp256k1ExtendedPublicKey, XPub};
+pub use hw_client::{
+    HwClient, HwConnectionStatus, HwDeviceInfo, HwProcessingError, HwPubkey, HwWalletType, TrezorConnectProcessor,
+};
+pub use hw_common::primitives::{
+    Bip32Error, ChildNumber, DerivationPath, EcdsaCurve, ExtendedPublicKey, Secp256k1ExtendedPublicKey, XPub,
+};
 pub use hw_ctx::{HardwareWalletArc, HardwareWalletCtx};
 pub use hw_error::{from_hw_error, HwError, HwResult, HwRpcError, WithHwRpcError};
 pub use keys::Secret as Secp256k1Secret;
 pub use mnemonic::{decrypt_mnemonic, encrypt_mnemonic, generate_mnemonic, MnemonicError};
-pub use standard_hd_path::{Bip44Chain, HDPathToAccount, HDPathToCoin, StandardHDPath, StandardHDPathError,
-                           UnknownChainError};
+pub use standard_hd_path::{
+    Bip44Chain, HDPathToAccount, HDPathToCoin, StandardHDPath, StandardHDPathError, UnknownChainError,
+};
 pub use trezor;
 pub use xpub::{XPubConverter, XpubError};
 
@@ -43,7 +49,8 @@ pub use xpub::{XPubConverter, XpubError};
 pub use crypto_ctx::MetamaskCtxInitError;
 #[cfg(target_arch = "wasm32")]
 pub use metamask_ctx::{MetamaskArc, MetamaskError, MetamaskResult, MetamaskWeak};
-#[cfg(target_arch = "wasm32")] pub use mm2_metamask as metamask;
+#[cfg(target_arch = "wasm32")]
+pub use mm2_metamask as metamask;
 
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -65,11 +72,15 @@ pub(crate) fn mm2_internal_der_path() -> DerivationPath {
 pub struct RpcDerivationPath(pub DerivationPath);
 
 impl From<DerivationPath> for RpcDerivationPath {
-    fn from(der: DerivationPath) -> Self { RpcDerivationPath(der) }
+    fn from(der: DerivationPath) -> Self {
+        RpcDerivationPath(der)
+    }
 }
 
 impl From<RpcDerivationPath> for DerivationPath {
-    fn from(der: RpcDerivationPath) -> Self { der.0 }
+    fn from(der: RpcDerivationPath) -> Self {
+        der.0
+    }
 }
 
 impl Serialize for RpcDerivationPath {
@@ -87,7 +98,7 @@ impl<'de> Deserialize<'de> for RpcDerivationPath {
         D: Deserializer<'de>,
     {
         let path = String::deserialize(deserializer)?;
-        let inner = DerivationPath::from_str(&path).map_err(|e| D::Error::custom(format!("{}", e)))?;
+        let inner = DerivationPath::from_str(&path).map_err(|e| D::Error::custom(format!("{e}")))?;
         Ok(RpcDerivationPath(inner))
     }
 }

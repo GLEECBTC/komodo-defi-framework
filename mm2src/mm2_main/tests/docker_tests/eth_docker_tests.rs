@@ -1,45 +1,54 @@
-use super::docker_tests_common::{random_secp256k1_secret, ERC1155_TEST_ABI, ERC721_TEST_ABI, GETH_ACCOUNT,
-                                 GETH_ERC1155_CONTRACT, GETH_ERC20_CONTRACT, GETH_ERC721_CONTRACT, GETH_MAKER_SWAP_V2,
-                                 GETH_NFT_MAKER_SWAP_V2, GETH_NONCE_LOCK, GETH_RPC_URL, GETH_SWAP_CONTRACT,
-                                 GETH_TAKER_SWAP_V2, GETH_WATCHERS_SWAP_CONTRACT, GETH_WEB3, MM_CTX, MM_CTX1};
+use super::docker_tests_common::{
+    random_secp256k1_secret, ERC1155_TEST_ABI, ERC721_TEST_ABI, GETH_ACCOUNT, GETH_ERC1155_CONTRACT,
+    GETH_ERC20_CONTRACT, GETH_ERC721_CONTRACT, GETH_MAKER_SWAP_V2, GETH_NFT_MAKER_SWAP_V2, GETH_NONCE_LOCK,
+    GETH_RPC_URL, GETH_SWAP_CONTRACT, GETH_TAKER_SWAP_V2, GETH_WATCHERS_SWAP_CONTRACT, GETH_WEB3, MM_CTX, MM_CTX1,
+};
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
-use super::docker_tests_common::{SEPOLIA_ERC20_CONTRACT, SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2, SEPOLIA_MAKER_SWAP_V2,
-                                 SEPOLIA_NONCE_LOCK, SEPOLIA_RPC_URL, SEPOLIA_TAKER_SWAP_V2, SEPOLIA_TESTS_LOCK,
-                                 SEPOLIA_WEB3};
+use super::docker_tests_common::{
+    SEPOLIA_ERC20_CONTRACT, SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2, SEPOLIA_MAKER_SWAP_V2, SEPOLIA_NONCE_LOCK,
+    SEPOLIA_RPC_URL, SEPOLIA_TAKER_SWAP_V2, SEPOLIA_TESTS_LOCK, SEPOLIA_WEB3,
+};
 use crate::common::Future01CompatExt;
 use bitcrypto::{dhash160, sha256};
 use coins::eth::gas_limit::ETH_MAX_TRADE_GAS;
 use coins::eth::v2_activation::{eth_coin_from_conf_and_request_v2, EthActivationV2Request, EthNode};
-use coins::eth::{checksum_address, eth_coin_from_conf_and_request, ChainSpec, EthCoin, EthCoinType,
-                 EthPrivKeyBuildPolicy, SignedEthTx, SwapV2Contracts, ERC20_ABI};
+use coins::eth::{
+    checksum_address, eth_coin_from_conf_and_request, ChainSpec, EthCoin, EthCoinType, EthPrivKeyBuildPolicy,
+    SignedEthTx, SwapV2Contracts, ERC20_ABI,
+};
 use coins::hd_wallet::AddrToString;
 use coins::nft::nft_structs::{Chain, ContractType, NftInfo};
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
-use coins::{lp_coinfind, CoinsContext, DexFee, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
-            MakerCoinSwapOpsV2, MmCoinEnum, MmCoinStruct, RefundFundingSecretArgs, RefundMakerPaymentSecretArgs,
-            RefundMakerPaymentTimelockArgs, RefundTakerPaymentArgs, SendMakerPaymentArgs, SendTakerFundingArgs,
-            SpendMakerPaymentArgs, TakerCoinSwapOpsV2, TxPreimageWithSig, ValidateMakerPaymentArgs,
-            ValidateTakerFundingArgs};
-use coins::{CoinProtocol, CoinWithDerivationMethod, CommonSwapOpsV2, ConfirmPaymentInput, DerivationMethod,
-            Eip1559Ops, FoundSwapTxSpend, MakerNftSwapOpsV2, MarketCoinOps, NftSwapInfo, ParseCoinAssocTypes,
-            ParseNftAssocTypes, PrivKeyBuildPolicy, RefundNftMakerPaymentArgs, RefundPaymentArgs,
-            SearchForSwapTxSpendInput, SendNftMakerPaymentArgs, SendPaymentArgs, SpendNftMakerPaymentArgs,
-            SpendPaymentArgs, SwapOps, SwapTxFeePolicy, SwapTxTypeWithSecretHash, ToBytes, Transaction,
-            ValidateNftMakerPaymentArgs};
+use coins::{
+    lp_coinfind, CoinsContext, DexFee, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
+    MakerCoinSwapOpsV2, MmCoinStruct, RefundFundingSecretArgs, RefundMakerPaymentSecretArgs,
+    RefundMakerPaymentTimelockArgs, RefundTakerPaymentArgs, SendMakerPaymentArgs, SendTakerFundingArgs,
+    SpendMakerPaymentArgs, TakerCoinSwapOpsV2, TxPreimageWithSig, ValidateMakerPaymentArgs, ValidateTakerFundingArgs,
+};
+use coins::{
+    lp_register_coin, CoinProtocol, CoinWithDerivationMethod, CommonSwapOpsV2, ConfirmPaymentInput, DerivationMethod,
+    Eip1559Ops, FoundSwapTxSpend, MakerNftSwapOpsV2, MarketCoinOps, MmCoinEnum, NftSwapInfo, ParseCoinAssocTypes,
+    ParseNftAssocTypes, PrivKeyBuildPolicy, RefundNftMakerPaymentArgs, RefundPaymentArgs, RegisterCoinParams,
+    SearchForSwapTxSpendInput, SendNftMakerPaymentArgs, SendPaymentArgs, SpendNftMakerPaymentArgs, SpendPaymentArgs,
+    SwapGasFeePolicy, SwapOps, SwapTxTypeWithSecretHash, ToBytes, Transaction, ValidateNftMakerPaymentArgs,
+};
 use common::{block_on, block_on_f01, now_sec};
 use crypto::Secp256k1Secret;
 use ethereum_types::U256;
-use mm2_core::mm_ctx::MmArc;
+use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::{BigDecimal, BigUint};
-use mm2_test_helpers::for_tests::{account_balance, active_swaps, coins_needed_for_kickstart, disable_coin,
-                                  enable_erc20_token_v2, enable_eth_coin_v2, enable_eth_with_tokens_v2,
-                                  erc20_dev_conf, eth1_dev_conf, eth_dev_conf, get_locked_amount, get_new_address,
-                                  get_token_info, mm_dump, my_swap_status, nft_dev_conf, start_swaps, MarketMakerIt,
-                                  Mm2TestConf, SwapV2TestContracts, TestNode, ETH_SEPOLIA_CHAIN_ID};
+use mm2_test_helpers::for_tests::{
+    account_balance, active_swaps, check_recent_swaps, coins_needed_for_kickstart, disable_coin, enable_erc20_token_v2,
+    enable_eth_coin_with_tokens_v2, erc20_dev_conf, eth_dev_conf, get_locked_amount, get_new_address, get_token_info,
+    mm_dump, my_balance, my_swap_status, nft_dev_conf, start_swaps, task_enable_eth_with_tokens,
+    wait_for_swap_finished, MarketMakerIt, Mm2TestConf, SwapV2TestContracts, TestNode, ETH_SEPOLIA_CHAIN_ID,
+};
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use mm2_test_helpers::for_tests::{eth_sepolia_conf, sepolia_erc20_dev_conf};
-use mm2_test_helpers::structs::{Bip44Chain, EnableCoinBalanceMap, EthWithTokensActivationResult, HDAccountAddressId,
-                                TokenInfo};
+use mm2_test_helpers::structs::{
+    Bip44Chain, EnableCoinBalanceMap, EthWithTokensActivationResult, HDAccountAddressId, TokenInfo,
+};
+use num_traits::FromPrimitive;
 use serde_json::Value as Json;
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use std::str::FromStr;
@@ -58,7 +67,6 @@ const SEPOLIA_MAKER_PRIV: &str = "6e2f3a6223b928a05a3a3622b0c3f3573d03663b704a61
 const SEPOLIA_TAKER_PRIV: &str = "e0be82dca60ff7e4c6d6db339ac9e1ae249af081dba2110bddd281e711608f16";
 const NFT_ETH: &str = "NFT_ETH";
 const ETH: &str = "ETH";
-const ETH1: &str = "ETH1";
 const GETH_DEV_CHAIN_ID: u64 = 1337;
 
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
@@ -67,54 +75,84 @@ const ERC20: &str = "ERC20DEV";
 /// # Safety
 ///
 /// GETH_ACCOUNT is set once during initialization before tests start
-pub fn geth_account() -> Address { unsafe { GETH_ACCOUNT } }
+pub fn geth_account() -> Address {
+    unsafe { GETH_ACCOUNT }
+}
 /// # Safety
 ///
 /// GETH_SWAP_CONTRACT is set once during initialization before tests start
-pub fn swap_contract() -> Address { unsafe { GETH_SWAP_CONTRACT } }
+pub fn swap_contract() -> Address {
+    unsafe { GETH_SWAP_CONTRACT }
+}
 /// # Safety
 ///
 /// GETH_MAKER_SWAP_V2 is set once during initialization before tests start
-pub fn maker_swap_v2() -> Address { unsafe { GETH_MAKER_SWAP_V2 } }
+pub fn maker_swap_v2() -> Address {
+    unsafe { GETH_MAKER_SWAP_V2 }
+}
 /// # Safety
 ///
 /// GETH_TAKER_SWAP_V2 is set once during initialization before tests start
-pub fn taker_swap_v2() -> Address { unsafe { GETH_TAKER_SWAP_V2 } }
+pub fn taker_swap_v2() -> Address {
+    unsafe { GETH_TAKER_SWAP_V2 }
+}
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
-pub fn sepolia_taker_swap_v2() -> Address { unsafe { SEPOLIA_TAKER_SWAP_V2 } }
+pub fn sepolia_taker_swap_v2() -> Address {
+    unsafe { SEPOLIA_TAKER_SWAP_V2 }
+}
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
-pub fn sepolia_maker_swap_v2() -> Address { unsafe { SEPOLIA_MAKER_SWAP_V2 } }
+pub fn sepolia_maker_swap_v2() -> Address {
+    unsafe { SEPOLIA_MAKER_SWAP_V2 }
+}
 /// # Safety
 ///
 /// GETH_NFT_MAKER_SWAP_V2 is set once during initialization before tests start
-pub fn geth_nft_maker_swap_v2() -> Address { unsafe { GETH_NFT_MAKER_SWAP_V2 } }
+pub fn geth_nft_maker_swap_v2() -> Address {
+    unsafe { GETH_NFT_MAKER_SWAP_V2 }
+}
 /// # Safety
 ///
 /// GETH_WATCHERS_SWAP_CONTRACT is set once during initialization before tests start
-pub fn watchers_swap_contract() -> Address { unsafe { GETH_WATCHERS_SWAP_CONTRACT } }
+pub fn watchers_swap_contract() -> Address {
+    unsafe { GETH_WATCHERS_SWAP_CONTRACT }
+}
 /// # Safety
 ///
 /// GETH_ERC20_CONTRACT is set once during initialization before tests start
-pub fn erc20_contract() -> Address { unsafe { GETH_ERC20_CONTRACT } }
+pub fn erc20_contract() -> Address {
+    unsafe { GETH_ERC20_CONTRACT }
+}
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
-pub fn sepolia_erc20_contract() -> Address { unsafe { SEPOLIA_ERC20_CONTRACT } }
+pub fn sepolia_erc20_contract() -> Address {
+    unsafe { SEPOLIA_ERC20_CONTRACT }
+}
 /// Return ERC20 dev token contract address in checksum format
-pub fn erc20_contract_checksum() -> String { checksum_address(&format!("{:02x}", erc20_contract())) }
+pub fn erc20_contract_checksum() -> String {
+    checksum_address(&format!("{:02x}", erc20_contract()))
+}
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
-pub fn sepolia_erc20_contract_checksum() -> String { checksum_address(&format!("{:02x}", sepolia_erc20_contract())) }
+pub fn sepolia_erc20_contract_checksum() -> String {
+    checksum_address(&format!("{:02x}", sepolia_erc20_contract()))
+}
 /// # Safety
 ///
 /// GETH_ERC721_CONTRACT is set once during initialization before tests start
-pub fn geth_erc721_contract() -> Address { unsafe { GETH_ERC721_CONTRACT } }
+pub fn geth_erc721_contract() -> Address {
+    unsafe { GETH_ERC721_CONTRACT }
+}
 /// # Safety
 ///
 /// GETH_ERC1155_CONTRACT is set once during initialization before tests start
-pub fn geth_erc1155_contract() -> Address { unsafe { GETH_ERC1155_CONTRACT } }
+pub fn geth_erc1155_contract() -> Address {
+    unsafe { GETH_ERC1155_CONTRACT }
+}
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 /// # Safety
 ///
 /// SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2 address is set once during initialization before tests start
-pub fn sepolia_etomic_maker_nft() -> Address { unsafe { SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2 } }
+pub fn sepolia_etomic_maker_nft() -> Address {
+    unsafe { SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2 }
+}
 
 fn wait_for_confirmation(tx_hash: H256) {
     thread::sleep(Duration::from_millis(2000));
@@ -189,8 +227,7 @@ fn mint_erc721(to_addr: Address, token_id: U256) {
 
     assert_eq!(
         owner, to_addr,
-        "The ownership of the tokenID {:?} does not match the expected address {:?}.",
-        token_id, to_addr
+        "The ownership of the tokenID {token_id:?} does not match the expected address {to_addr:?}."
     );
 }
 
@@ -235,10 +272,7 @@ fn mint_erc1155(to_addr: Address, token_id: U256, amount: u32) {
     assert_eq!(
         balance_dec,
         BigDecimal::from(amount),
-        "The balance of tokenId {:?} for address {:?} does not match the expected amount {:?}.",
-        token_id,
-        to_addr,
-        amount
+        "The balance of tokenId {token_id:?} for address {to_addr:?} does not match the expected amount {amount:?}."
     );
 }
 
@@ -268,7 +302,7 @@ pub(crate) async fn fill_erc1155_info(eth_coin: &EthCoin, token_address: Address
         amount: BigDecimal::from(amount),
     };
     let erc1155_address_str = token_address.addr_to_string();
-    let erc1155_key = format!("{},{}", erc1155_address_str, token_id);
+    let erc1155_key = format!("{erc1155_address_str},{token_id}");
     nft_infos.insert(erc1155_key, erc1155_nft_info);
 }
 
@@ -284,7 +318,7 @@ pub(crate) async fn fill_erc721_info(eth_coin: &EthCoin, token_address: Address,
         amount: BigDecimal::from(1),
     };
     let erc721_address_str = token_address.addr_to_string();
-    let erc721_key = format!("{},{}", erc721_address_str, token_id);
+    let erc721_key = format!("{erc721_address_str},{token_id}");
     nft_infos.insert(erc721_key, erc721_nft_info);
 }
 
@@ -398,6 +432,7 @@ fn global_nft_with_random_privkey(
         enable_params: Default::default(),
         path_to_address: Default::default(),
         gap_limit: None,
+        swap_gas_fee_policy: None,
     };
     let coin = block_on(eth_coin_from_conf_and_request_v2(
         &MM_CTX1,
@@ -472,6 +507,7 @@ fn sepolia_coin_from_privkey(ctx: &MmArc, secret: &'static str, ticker: &str, co
         enable_params: Default::default(),
         path_to_address: Default::default(),
         gap_limit: None,
+        swap_gas_fee_policy: None,
     };
     let coin = block_on(eth_coin_from_conf_and_request_v2(
         ctx,
@@ -564,10 +600,10 @@ pub fn fill_eth_erc20_with_private_key(priv_key: Secp256k1Secret) {
     fill_erc20(my_address, U256::from(10000000000u64));
 }
 
-fn send_and_refund_eth_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) {
+fn send_and_refund_eth_maker_payment_impl(swap_txfee_policy: SwapGasFeePolicy) {
     thread::sleep(Duration::from_secs(3));
     let eth_coin = eth_coin_with_random_privkey(swap_contract());
-    eth_coin.set_swap_transaction_fee_policy(swap_txfee_policy);
+    assert!(block_on(eth_coin.set_swap_gas_fee_policy(swap_txfee_policy)).is_ok());
 
     let time_lock = now_sec() - 100;
     let other_pubkey = &[
@@ -641,18 +677,20 @@ fn send_and_refund_eth_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) {
 
 #[test]
 fn send_and_refund_eth_maker_payment_internal_gas_policy() {
-    send_and_refund_eth_maker_payment_impl(SwapTxFeePolicy::Internal);
+    send_and_refund_eth_maker_payment_impl(SwapGasFeePolicy::Legacy);
 }
 
 #[test]
-fn send_and_refund_eth_maker_payment_priority_fee() { send_and_refund_eth_maker_payment_impl(SwapTxFeePolicy::Medium); }
+fn send_and_refund_eth_maker_payment_priority_fee() {
+    send_and_refund_eth_maker_payment_impl(SwapGasFeePolicy::Medium);
+}
 
-fn send_and_spend_eth_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) {
+fn send_and_spend_eth_maker_payment_impl(swap_txfee_policy: SwapGasFeePolicy) {
     let maker_eth_coin = eth_coin_with_random_privkey(swap_contract());
     let taker_eth_coin = eth_coin_with_random_privkey(swap_contract());
 
-    maker_eth_coin.set_swap_transaction_fee_policy(swap_txfee_policy.clone());
-    taker_eth_coin.set_swap_transaction_fee_policy(swap_txfee_policy);
+    assert!(block_on(maker_eth_coin.set_swap_gas_fee_policy(swap_txfee_policy.clone())).is_ok());
+    assert!(block_on(taker_eth_coin.set_swap_gas_fee_policy(swap_txfee_policy)).is_ok());
 
     let time_lock = now_sec() + 1000;
     let maker_pubkey = maker_eth_coin.derive_htlc_pubkey(&[]);
@@ -726,16 +764,18 @@ fn send_and_spend_eth_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) {
 
 #[test]
 fn send_and_spend_eth_maker_payment_internal_gas_policy() {
-    send_and_spend_eth_maker_payment_impl(SwapTxFeePolicy::Internal);
+    send_and_spend_eth_maker_payment_impl(SwapGasFeePolicy::Legacy);
 }
 
 #[test]
-fn send_and_spend_eth_maker_payment_priority_fee() { send_and_spend_eth_maker_payment_impl(SwapTxFeePolicy::Medium); }
+fn send_and_spend_eth_maker_payment_priority_fee() {
+    send_and_spend_eth_maker_payment_impl(SwapGasFeePolicy::Medium);
+}
 
-fn send_and_refund_erc20_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) {
+fn send_and_refund_erc20_maker_payment_impl(swap_txfee_policy: SwapGasFeePolicy) {
     thread::sleep(Duration::from_secs(10));
     let erc20_coin = erc20_coin_with_random_privkey(swap_contract());
-    erc20_coin.set_swap_transaction_fee_policy(swap_txfee_policy);
+    assert!(block_on(erc20_coin.set_swap_gas_fee_policy(swap_txfee_policy)).is_ok());
 
     let time_lock = now_sec() - 100;
     let other_pubkey = &[
@@ -810,21 +850,21 @@ fn send_and_refund_erc20_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) 
 
 #[test]
 fn send_and_refund_erc20_maker_payment_internal_gas_policy() {
-    send_and_refund_erc20_maker_payment_impl(SwapTxFeePolicy::Internal);
+    send_and_refund_erc20_maker_payment_impl(SwapGasFeePolicy::Legacy);
 }
 
 #[test]
 fn send_and_refund_erc20_maker_payment_priority_fee() {
-    send_and_refund_erc20_maker_payment_impl(SwapTxFeePolicy::Medium);
+    send_and_refund_erc20_maker_payment_impl(SwapGasFeePolicy::Medium);
 }
 
-fn send_and_spend_erc20_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) {
+fn send_and_spend_erc20_maker_payment_impl(swap_txfee_policy: SwapGasFeePolicy) {
     thread::sleep(Duration::from_secs(7));
     let maker_erc20_coin = erc20_coin_with_random_privkey(swap_contract());
     let taker_erc20_coin = erc20_coin_with_random_privkey(swap_contract());
 
-    maker_erc20_coin.set_swap_transaction_fee_policy(swap_txfee_policy.clone());
-    taker_erc20_coin.set_swap_transaction_fee_policy(swap_txfee_policy);
+    assert!(block_on(maker_erc20_coin.set_swap_gas_fee_policy(swap_txfee_policy.clone())).is_ok());
+    assert!(block_on(taker_erc20_coin.set_swap_gas_fee_policy(swap_txfee_policy)).is_ok());
 
     let time_lock = now_sec() + 1000;
     let maker_pubkey = maker_erc20_coin.derive_htlc_pubkey(&[]);
@@ -898,12 +938,12 @@ fn send_and_spend_erc20_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) {
 
 #[test]
 fn send_and_spend_erc20_maker_payment_internal_gas_policy() {
-    send_and_spend_erc20_maker_payment_impl(SwapTxFeePolicy::Internal);
+    send_and_spend_erc20_maker_payment_impl(SwapGasFeePolicy::Legacy);
 }
 
 #[test]
 fn send_and_spend_erc20_maker_payment_priority_fee() {
-    send_and_spend_erc20_maker_payment_impl(SwapTxFeePolicy::Medium);
+    send_and_spend_erc20_maker_payment_impl(SwapGasFeePolicy::Medium);
 }
 
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
@@ -1035,6 +1075,74 @@ fn test_nonce_lock() {
     let coin = eth_coin_with_random_privkey(swap_contract());
     let my_address = block_on(coin.derivation_method().single_addr_or_err()).unwrap();
     let futures = (0..5).map(|_| coin.send_to_address(my_address, 200000000.into()).compat());
+    let results = block_on(join_all(futures));
+
+    // make sure all transactions are successful
+    for result in results {
+        result.unwrap();
+    }
+}
+
+/// Test to validate duplicate nonces for legacy token activation
+/// https://github.com/KomodoPlatform/komodo-defi-framework/issues/2573
+#[test]
+fn test_nonce_erc20_lock() {
+    use futures::future::join_all;
+
+    let swap_addresses = SwapAddresses::init();
+    let swap_contract_address = swap_addresses.swap_contract_address.addr_to_string();
+
+    let eth_conf = eth_dev_conf();
+    let erc20_conf = erc20_dev_conf(&erc20_contract_checksum());
+    let eth_ticker = eth_conf["coin"].as_str().unwrap().to_owned();
+    let erc20_ticker = erc20_conf["coin"].as_str().unwrap().to_owned();
+    let erc20_contract = erc20_conf["protocol"]["protocol_data"]["contract_address"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let ctx = MmCtxBuilder::new()
+        .with_conf(json!({"coins":[eth_conf, erc20_conf]}))
+        .into_mm_arc();
+
+    let (eth_coin, privkey) =
+        eth_coin_v2_activation_with_random_privkey(&ctx, &eth_ticker, &eth_conf, swap_addresses, false);
+    block_on(lp_register_coin(
+        &ctx,
+        MmCoinEnum::EthCoin(eth_coin.clone()),
+        RegisterCoinParams {
+            ticker: eth_ticker.clone(),
+        },
+    ))
+    .unwrap();
+
+    // Use legacy "enable" RPC for token to validate this issue
+    let req_erc20 = json!({
+        "method": "enable",
+        "coin": erc20_ticker,
+        "swap_contract_address": swap_contract_address,
+        "urls": [ GETH_RPC_URL ]
+    });
+    let eth_token = block_on(eth_coin_from_conf_and_request(
+        &ctx,
+        &erc20_ticker,
+        &erc20_conf,
+        &req_erc20,
+        CoinProtocol::ERC20 {
+            platform: eth_ticker.clone(),
+            contract_address: erc20_contract,
+        },
+        PrivKeyBuildPolicy::IguanaPrivKey(privkey),
+    ))
+    .unwrap();
+
+    let my_address = block_on(eth_coin.derivation_method().single_addr_or_err()).unwrap();
+
+    let futures = vec![
+        eth_coin.send_to_address(my_address, 100.into()).compat(),
+        eth_token.send_to_address(my_address, 1.into()).compat(),
+        eth_token.send_to_address(my_address, 2.into()).compat(),
+        eth_coin.send_to_address(my_address, 200.into()).compat(),
+    ];
     let results = block_on(join_all(futures));
 
     // make sure all transactions are successful
@@ -1470,6 +1578,7 @@ fn eth_coin_v2_activation_with_random_privkey(
         enable_params: Default::default(),
         path_to_address: Default::default(),
         gap_limit: None,
+        swap_gas_fee_policy: None,
     };
     let coin = block_on(eth_coin_from_conf_and_request_v2(
         ctx,
@@ -2497,7 +2606,7 @@ fn test_eth_erc20_hd() {
     let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
     log!("Alice log path: {}", mm_hd.log_path.display());
 
-    let eth_enable = block_on(enable_eth_with_tokens_v2(
+    let eth_enable = block_on(task_enable_eth_with_tokens(
         &mm_hd,
         "ETH",
         &["ERC20DEV"],
@@ -2514,7 +2623,7 @@ fn test_eth_erc20_hd() {
         EnableCoinBalanceMap::HD(hd) => hd,
         _ => panic!("Expected EnableCoinBalance::HD"),
     };
-    let account = balance.accounts.get(0).expect("Expected account at index 0");
+    let account = balance.accounts.first().expect("Expected account at index 0");
     assert_eq!(
         account.addresses[0].address,
         "0x1737F1FaB40c6Fd3dc729B51C0F97DB3297CCA93"
@@ -2536,7 +2645,7 @@ fn test_eth_erc20_hd() {
     let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
     log!("Alice log path: {}", mm_hd.log_path.display());
 
-    let eth_enable = block_on(enable_eth_with_tokens_v2(
+    let eth_enable = block_on(task_enable_eth_with_tokens(
         &mm_hd,
         "ETH",
         &["ERC20DEV"],
@@ -2553,7 +2662,7 @@ fn test_eth_erc20_hd() {
         EnableCoinBalanceMap::HD(hd) => hd,
         _ => panic!("Expected EnableCoinBalance::HD"),
     };
-    let account = balance.accounts.get(0).expect("Expected account at index 0");
+    let account = balance.accounts.first().expect("Expected account at index 0");
     assert_eq!(
         account.addresses[1].address,
         "0xDe841899aB4A22E23dB21634e54920aDec402397"
@@ -2590,7 +2699,7 @@ fn test_eth_erc20_hd() {
     let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
     log!("Alice log path: {}", mm_hd.log_path.display());
 
-    let eth_enable = block_on(enable_eth_with_tokens_v2(
+    let eth_enable = block_on(task_enable_eth_with_tokens(
         &mm_hd,
         "ETH",
         &["ERC20DEV"],
@@ -2607,7 +2716,7 @@ fn test_eth_erc20_hd() {
         EnableCoinBalanceMap::HD(hd) => hd,
         _ => panic!("Expected EnableCoinBalance::HD"),
     };
-    let account = balance.accounts.get(0).expect("Expected account at index 0");
+    let account = balance.accounts.first().expect("Expected account at index 0");
     assert_eq!(
         account.addresses[7].address,
         "0xa420a4DBd8C50e6240014Db4587d2ec8D0cE0e6B"
@@ -2633,7 +2742,7 @@ fn test_enable_custom_erc20() {
     log!("Alice log path: {}", mm_hd.log_path.display());
 
     // Enable platform coin in HD mode
-    block_on(enable_eth_with_tokens_v2(
+    block_on(task_enable_eth_with_tokens(
         &mm_hd,
         "ETH",
         &[],
@@ -2717,7 +2826,7 @@ fn test_enable_custom_erc20_with_duplicate_contract_in_config() {
     log!("Alice log path: {}", mm_hd.log_path.display());
 
     // Enable platform coin in HD mode
-    block_on(enable_eth_with_tokens_v2(
+    block_on(task_enable_eth_with_tokens(
         &mm_hd,
         "ETH",
         &[],
@@ -2768,10 +2877,19 @@ fn test_enable_custom_erc20_with_duplicate_contract_in_config() {
 }
 
 #[test]
-fn test_v2_eth_eth_kickstart() {
+fn test_v2_eth_erc20_kickstart() {
+    test_v2_eth_eth_kickstart_impl("ETH", "ERC20DEV", 2500.0, 2500.0, 0.01)
+}
+
+#[test]
+fn test_v2_erc20_eth_kickstart() {
+    test_v2_eth_eth_kickstart_impl("ERC20DEV", "ETH", 0.0004, 0.0004, 100.0)
+}
+
+fn test_v2_eth_eth_kickstart_impl(base: &str, rel: &str, maker_price: f64, taker_price: f64, volume: f64) {
     // Initialize swap addresses and configurations
     let swap_addresses = SwapAddresses::init();
-    let contracts = SwapV2TestContracts {
+    let swap_v2_contracts = SwapV2TestContracts {
         maker_swap_v2_contract: swap_addresses.swap_v2_contracts.maker_swap_v2_contract.addr_to_string(),
         taker_swap_v2_contract: swap_addresses.swap_v2_contracts.taker_swap_v2_contract.addr_to_string(),
         nft_maker_swap_v2_contract: swap_addresses
@@ -2780,60 +2898,77 @@ fn test_v2_eth_eth_kickstart() {
             .addr_to_string(),
     };
     let swap_contract_address = swap_addresses.swap_contract_address.addr_to_string();
+    let erc20_conf = erc20_dev_conf(&erc20_contract_checksum());
+    let erc20_ticker = erc20_conf.get("coin").unwrap().as_str().unwrap();
     let node = TestNode {
         url: GETH_RPC_URL.to_string(),
     };
 
     // Helper function for activating coins
-    let enable_coins = |mm: &MarketMakerIt, coins: &[&str]| {
-        for &coin in coins {
-            log!(
-                "{:?}",
-                block_on(enable_eth_coin_v2(
-                    mm,
-                    coin,
-                    &swap_contract_address,
-                    contracts.clone(),
-                    None,
-                    &[node.clone()]
-                ))
-            );
-        }
+    let enable_coin_with_tokens = |mm: &MarketMakerIt, coin: &str, tokens: &[&str]| {
+        log!(
+            "{:?}",
+            block_on(enable_eth_coin_with_tokens_v2(
+                mm,
+                coin,
+                tokens,
+                &swap_contract_address,
+                swap_v2_contracts.clone(),
+                None,
+                std::slice::from_ref(&node)
+            ))
+        );
     };
 
-    // start Bob and Alice
+    // Top-up Bob and Alice
     let (_, bob_priv_key) =
         eth_coin_v2_activation_with_random_privkey(&MM_CTX, ETH, &eth_dev_conf(), swap_addresses, false);
     let (_, alice_priv_key) =
-        eth_coin_v2_activation_with_random_privkey(&MM_CTX1, ETH1, &eth1_dev_conf(), swap_addresses, false);
-    let coins = json!([eth_dev_conf(), eth1_dev_conf()]);
+        eth_coin_v2_activation_with_random_privkey(&MM_CTX1, ETH, &eth_dev_conf(), swap_addresses, false);
+    let coins = json!([eth_dev_conf(), erc20_conf]);
 
+    // Start Bob
     let mut bob_conf = Mm2TestConf::seednode_trade_v2(&format!("0x{}", hex::encode(bob_priv_key)), &coins);
     let mut mm_bob = MarketMakerIt::start(bob_conf.conf.clone(), bob_conf.rpc_password.clone(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
     log!("Bob log path: {}", mm_bob.log_path.display());
 
-    let mut alice_conf =
-        Mm2TestConf::light_node_trade_v2(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob
-            .ip
-            .to_string()]);
+    // Start Alice
+    let mut alice_conf = Mm2TestConf::light_node_trade_v2(
+        &format!("0x{}", hex::encode(alice_priv_key)),
+        &coins,
+        &[&mm_bob.ip.to_string()],
+    );
     let mut mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password.clone(), None).unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
     log!("Alice log path: {}", mm_alice.log_path.display());
 
-    // Enable ETH and ETH1 for both Bob and Alice
-    enable_coins(&mm_bob, &[ETH, ETH1]);
-    enable_coins(&mm_alice, &[ETH, ETH1]);
+    enable_coin_with_tokens(&mm_bob, ETH, &[erc20_ticker]);
+    enable_coin_with_tokens(&mm_alice, ETH, &[erc20_ticker]);
 
-    let uuids = block_on(start_swaps(&mut mm_bob, &mut mm_alice, &[(ETH, ETH1)], 1.0, 1.0, 77.));
+    let bob_base_balance_0 = block_on(my_balance(&mm_bob, base));
+    let alice_rel_balance_0 = block_on(my_balance(&mm_alice, rel));
+    let bob_rel_balance_0 = block_on(my_balance(&mm_bob, rel));
+    let alice_base_balance_0 = block_on(my_balance(&mm_alice, base));
+    log!("bob_base_balance_0={} {}", bob_base_balance_0.balance, base);
+    log!("alice_rel_balance_0={} {}", alice_rel_balance_0.balance, rel);
+    log!("bob_rel_balance_0={} {}", bob_rel_balance_0.balance, rel);
+    log!("alice_base_balance_0={} {}", alice_base_balance_0.balance, base);
+
+    let uuids = block_on(start_swaps(
+        &mut mm_bob,
+        &mut mm_alice,
+        &[(base, rel)],
+        maker_price,
+        taker_price,
+        volume,
+    ));
     log!("{:?}", uuids);
     let parsed_uuids: Vec<Uuid> = uuids.iter().map(|u| u.parse().unwrap()).collect();
-
     for uuid in uuids.iter() {
         log_swap_status_before_stop(&mm_bob, uuid, "Maker");
         log_swap_status_before_stop(&mm_alice, uuid, "Taker");
     }
-
     block_on(mm_bob.stop()).unwrap();
     block_on(mm_alice.stop()).unwrap();
 
@@ -2853,11 +2988,11 @@ fn test_v2_eth_eth_kickstart() {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
     log!("Alice log path: {}", mm_alice.log_path.display());
 
-    verify_coins_needed_for_kickstart(&mm_bob, &[ETH, ETH1]);
-    verify_coins_needed_for_kickstart(&mm_alice, &[ETH, ETH1]);
+    verify_coins_needed_for_kickstart(&mm_bob, &[base, rel]);
+    verify_coins_needed_for_kickstart(&mm_alice, &[base, rel]);
 
-    enable_coins(&mm_bob, &[ETH, ETH1]);
-    enable_coins(&mm_alice, &[ETH, ETH1]);
+    enable_coin_with_tokens(&mm_bob, ETH, &[erc20_ticker]);
+    enable_coin_with_tokens(&mm_alice, ETH, &[erc20_ticker]);
 
     // give swaps 1 second to restart
     thread::sleep(Duration::from_secs(1));
@@ -2866,8 +3001,135 @@ fn test_v2_eth_eth_kickstart() {
     verify_active_swaps(&mm_alice, &parsed_uuids);
 
     // coins must be virtually locked after kickstart until swap transactions are sent
-    verify_locked_amount(&mm_alice, "Taker", ETH1);
-    verify_locked_amount(&mm_bob, "Maker", ETH);
+    verify_locked_amount(&mm_alice, "Taker", rel);
+    verify_locked_amount(&mm_bob, "Maker", base);
+    for uuid in uuids {
+        block_on(wait_for_swap_finished(&mm_bob, &uuid, 240));
+        block_on(wait_for_swap_finished(&mm_alice, &uuid, 30));
+
+        let maker_swap_status = block_on(my_swap_status(&mm_bob, &uuid));
+        log!("{:?}", maker_swap_status);
+
+        let taker_swap_status = block_on(my_swap_status(&mm_alice, &uuid));
+        log!("{:?}", taker_swap_status);
+    }
+    block_on(check_recent_swaps(&mm_bob, 1));
+    block_on(check_recent_swaps(&mm_alice, 1));
+
+    let bob_base_balance_1 = block_on(my_balance(&mm_bob, base));
+    let alice_rel_balance_1 = block_on(my_balance(&mm_alice, rel));
+    let bob_rel_balance_1 = block_on(my_balance(&mm_bob, rel));
+    let alice_base_balance_1 = block_on(my_balance(&mm_alice, base));
+    log!("bob_base_balance_1={} {}", bob_base_balance_1.balance, base);
+    log!("alice_rel_balance_1={} {}", alice_rel_balance_1.balance, rel);
+    log!("bob_rel_balance_1={} {}", bob_rel_balance_1.balance, rel);
+    log!("alice_base_balance_1={} {}", alice_base_balance_1.balance, base);
+
+    // check buy/sell balance difference, with tx fee and tolerance
+    let check_balance =
+        |coin: &str, bal_0: &BigDecimal, bal_1: &BigDecimal, maker_volume: f64, price: Option<f64>, action: &str| {
+            let is_token = coins
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|c| c.get("coin").unwrap().as_str().unwrap() == coin)
+                .unwrap()["protocol"]["type"]
+                .as_str()
+                .unwrap()
+                == "ERC20";
+            let volume = if let Some(price) = price {
+                BigDecimal::from_f64(maker_volume).unwrap() * BigDecimal::from_f64(price).unwrap()
+            } else {
+                BigDecimal::from_f64(maker_volume).unwrap()
+            };
+
+            // Set low/high interval for swap total gas fees (if this is a platform coin):
+            let (gas_fee_low, gas_fee_high) = if !is_token {
+                (
+                    BigDecimal::from_f64(0.0).unwrap(),
+                    BigDecimal::from_f64(0.0005).unwrap(),
+                )
+            } else {
+                (BigDecimal::from_f64(0.0).unwrap(), BigDecimal::from_f64(0.0).unwrap())
+            };
+
+            let vol_tol = BigDecimal::from_f64(0.00001).unwrap();
+
+            if action == "sell" {
+                // Check low/high border for the swap result, for sell, as swap volume plus gas fee and plus/minus tolerance
+                let low_border = &volume + &gas_fee_low - &vol_tol;
+                let high_border = &volume + &gas_fee_high + &vol_tol;
+                assert!(
+                    bal_0 - bal_1 >= low_border,
+                    "{} >= {} {action} {}",
+                    bal_0 - bal_1,
+                    low_border,
+                    coin
+                );
+                assert!(
+                    bal_0 - bal_1 <= high_border,
+                    "{} <= {} {action} {}",
+                    bal_0 - bal_1,
+                    high_border,
+                    coin
+                );
+            } else {
+                // Check low/high border for the swap result, for buy, as swap volume minus gas fee and plus/minus tolerance
+                let low_border = &volume - &gas_fee_high - &vol_tol;
+                let high_border = &volume - &gas_fee_low + &vol_tol;
+                assert!(
+                    bal_1 - bal_0 >= low_border,
+                    "{} >= {} {action} {}",
+                    bal_1 - bal_0,
+                    low_border,
+                    coin
+                );
+                assert!(
+                    bal_1 - bal_0 <= high_border,
+                    "{} <= {} {action} {}",
+                    bal_1 - bal_0,
+                    high_border,
+                    coin
+                );
+            };
+        };
+
+    check_balance(
+        base,
+        &bob_base_balance_0.balance,
+        &bob_base_balance_1.balance,
+        volume,
+        None,
+        "sell",
+    );
+    check_balance(
+        rel,
+        &alice_rel_balance_0.balance,
+        &alice_rel_balance_1.balance,
+        volume * (1.0 + 1.0 / 777.0),
+        Some(taker_price),
+        "sell",
+    );
+    check_balance(
+        rel,
+        &bob_rel_balance_0.balance,
+        &bob_rel_balance_1.balance,
+        volume,
+        Some(taker_price),
+        "buy",
+    );
+    check_balance(
+        base,
+        &alice_base_balance_0.balance,
+        &alice_base_balance_1.balance,
+        volume,
+        None,
+        "buy",
+    );
+
+    // Disabling coins on both nodes should be successful at this point
+    block_on(disable_coin(&mm_bob, ETH, false));
+    block_on(disable_coin(&mm_alice, ETH, false));
 }
 
 fn log_swap_status_before_stop(mm: &MarketMakerIt, uuid: &str, role: &str) {
@@ -2878,6 +3140,8 @@ fn log_swap_status_before_stop(mm: &MarketMakerIt, uuid: &str, role: &str) {
 fn verify_coins_needed_for_kickstart(mm: &MarketMakerIt, expected_coins: &[&str]) {
     let mut coins_needed = block_on(coins_needed_for_kickstart(mm));
     coins_needed.sort();
+    let mut expected_coins = expected_coins.to_vec();
+    expected_coins.sort();
     assert_eq!(coins_needed, expected_coins);
 }
 

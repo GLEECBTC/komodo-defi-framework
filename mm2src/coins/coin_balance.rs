@@ -1,14 +1,19 @@
-use crate::hd_wallet::{DisplayAddress, HDAccountOps, HDAddressId, HDAddressOps, HDCoinAddress, HDCoinHDAccount,
-                       HDPathAccountToAddressId, HDWalletCoinOps, HDWalletOps, HDXPubExtractor,
-                       NewAccountCreationError, NewAddressDerivingError};
-use crate::{BalanceError, BalanceResult, CoinBalance, CoinBalanceMap, CoinWithDerivationMethod, DerivationMethod,
-            IguanaBalanceOps, MarketCoinOps};
+use crate::hd_wallet::{
+    DisplayAddress, HDAccountOps, HDAddressId, HDAddressOps, HDCoinAddress, HDCoinHDAccount, HDPathAccountToAddressId,
+    HDWalletCoinOps, HDWalletOps, HDXPubExtractor, NewAccountCreationError, NewAddressDerivingError,
+};
+use crate::{
+    BalanceError, BalanceResult, CoinBalance, CoinBalanceMap, CoinWithDerivationMethod, DerivationMethod,
+    IguanaBalanceOps, MarketCoinOps,
+};
 use async_trait::async_trait;
 use common::log::{debug, info};
 use crypto::{Bip44Chain, RpcDerivationPath};
+use derive_more::Display;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
-#[cfg(test)] use mocktopus::macros::*;
+#[cfg(test)]
+use mocktopus::macros::*;
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::{fmt, iter};
@@ -25,15 +30,21 @@ pub enum EnableCoinBalanceError {
 }
 
 impl From<NewAddressDerivingError> for EnableCoinBalanceError {
-    fn from(e: NewAddressDerivingError) -> Self { EnableCoinBalanceError::NewAddressDerivingError(e) }
+    fn from(e: NewAddressDerivingError) -> Self {
+        EnableCoinBalanceError::NewAddressDerivingError(e)
+    }
 }
 
 impl From<NewAccountCreationError> for EnableCoinBalanceError {
-    fn from(e: NewAccountCreationError) -> Self { EnableCoinBalanceError::NewAccountCreationError(e) }
+    fn from(e: NewAccountCreationError) -> Self {
+        EnableCoinBalanceError::NewAccountCreationError(e)
+    }
 }
 
 impl From<BalanceError> for EnableCoinBalanceError {
-    fn from(e: BalanceError) -> Self { EnableCoinBalanceError::BalanceError(e) }
+    fn from(e: BalanceError) -> Self {
+        EnableCoinBalanceError::BalanceError(e)
+    }
 }
 
 /// `BalanceObjectOps` should be implemented for a type that represents balance/s of a wallet.
@@ -337,7 +348,8 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
         // Derive HD addresses and split addresses and their derivation paths into two collections.
         let (addresses, der_paths): (Vec<_>, Vec<_>) = self
             .derive_addresses(hd_account, address_ids)
-            .await?
+            .await
+            .map_mm_err()?
             .into_iter()
             .map(|hd_address| (hd_address.address(), hd_address.derivation_path().clone()))
             .unzip();
@@ -411,8 +423,10 @@ pub enum AddressBalanceStatus<Balance> {
 
 pub mod common_impl {
     use super::*;
-    use crate::hd_wallet::{create_new_account, DisplayAddress, ExtractExtendedPubkey, HDAccountOps,
-                           HDAccountStorageOps, HDAddressOps, HDCoinExtendedPubkey, HDWalletOps};
+    use crate::hd_wallet::{
+        create_new_account, DisplayAddress, ExtractExtendedPubkey, HDAccountOps, HDAccountStorageOps, HDAddressOps,
+        HDCoinExtendedPubkey, HDWalletOps,
+    };
 
     pub(crate) async fn enable_hd_account<Coin>(
         coin: &Coin,
@@ -428,11 +442,12 @@ pub mod common_impl {
         HDCoinAddress<Coin>: fmt::Display,
     {
         let gap_limit = hd_wallet.gap_limit();
-        let mut addresses = coin.all_known_addresses_balances(hd_account).await?;
+        let mut addresses = coin.all_known_addresses_balances(hd_account).await.map_mm_err()?;
         if scan_new_addresses {
             addresses.extend(
                 coin.scan_for_new_addresses(hd_wallet, hd_account, address_scanner, gap_limit)
-                    .await?,
+                    .await
+                    .map_mm_err()?,
             );
         }
 
@@ -474,7 +489,7 @@ pub mod common_impl {
         HDCoinHDAccount<Coin>: HDAccountStorageOps,
     {
         let mut accounts = hd_wallet.get_accounts_mut().await;
-        let address_scanner = coin.produce_hd_address_scanner().await?;
+        let address_scanner = coin.produce_hd_address_scanner().await.map_mm_err()?;
 
         let mut result = HDWalletBalance {
             accounts: Vec::with_capacity(accounts.len() + 1),
@@ -489,8 +504,9 @@ pub mod common_impl {
             );
 
             // Create new HD account.
-            let mut new_account =
-                create_new_account(coin, hd_wallet, xpub_extractor, Some(path_to_address.account_id)).await?;
+            let mut new_account = create_new_account(coin, hd_wallet, xpub_extractor, Some(path_to_address.account_id))
+                .await
+                .map_mm_err()?;
             let scan_new_addresses = matches!(
                 params.scan_policy,
                 EnableCoinScanPolicy::ScanIfNewWallet | EnableCoinScanPolicy::Scan
@@ -522,8 +538,7 @@ pub mod common_impl {
                     .await
                     .map_err(|e| {
                         EnableCoinBalanceError::NewAddressDerivingError(NewAddressDerivingError::Internal(format!(
-                            "Coin rejected the enabled address derived from the hardware wallet: {}",
-                            e
+                            "Coin rejected the enabled address derived from the hardware wallet: {e}"
                         )))
                     })?;
             }
@@ -575,8 +590,7 @@ pub mod common_impl {
                 .await
                 .map_err(|e| {
                     EnableCoinBalanceError::NewAddressDerivingError(NewAddressDerivingError::Internal(format!(
-                        "Coin rejected the enabled address derived from the hardware wallet: {}",
-                        e
+                        "Coin rejected the enabled address derived from the hardware wallet: {e}"
                     )))
                 })?;
         }
@@ -618,7 +632,10 @@ pub mod common_impl {
         let mut new_addresses = Vec::with_capacity(to_generate);
         let mut addresses_to_request = Vec::with_capacity(to_generate);
         for _ in 0..to_generate {
-            let hd_address = coin.generate_new_address(hd_wallet, hd_account, chain).await?;
+            let hd_address = coin
+                .generate_new_address(hd_wallet, hd_account, chain)
+                .await
+                .map_mm_err()?;
 
             new_addresses.push(HDAddressBalance {
                 address: hd_address.address().display_address(),
@@ -631,7 +648,8 @@ pub mod common_impl {
 
         let to_extend = coin
             .known_addresses_balances(addresses_to_request)
-            .await?
+            .await
+            .map_mm_err()?
             .into_iter()
             // The balances are guaranteed to be in the same order as they were requests.
             .zip(new_addresses)

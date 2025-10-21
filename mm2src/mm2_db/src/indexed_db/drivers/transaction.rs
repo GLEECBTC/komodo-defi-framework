@@ -14,37 +14,37 @@ pub type DbTransactionResult<T> = Result<T, MmError<DbTransactionError>>;
 
 #[derive(Debug, Display, EnumFromTrait, PartialEq)]
 pub enum DbTransactionError {
-    #[display(fmt = "No such table '{}'", table)]
+    #[display(fmt = "No such table '{table}'")]
     NoSuchTable { table: String },
-    #[display(fmt = "Error creating DbTransaction: {:?}", _0)]
+    #[display(fmt = "Error creating DbTransaction: {_0:?}")]
     ErrorCreatingTransaction(String),
-    #[display(fmt = "Error opening the '{}' table: {}", table, description)]
+    #[display(fmt = "Error opening the '{table}' table: {description}")]
     ErrorOpeningTable { table: String, description: String },
-    #[display(fmt = "Error serializing the '{}' index: {:?}", index, description)]
+    #[display(fmt = "Error serializing the '{index}' index: {description:?}")]
     ErrorSerializingIndex { index: String, description: String },
-    #[display(fmt = "Error serializing an item: {:?}", _0)]
+    #[display(fmt = "Error serializing an item: {_0:?}")]
     ErrorSerializingItem(String),
-    #[display(fmt = "Error deserializing an item: {:?}", _0)]
+    #[display(fmt = "Error deserializing an item: {_0:?}")]
     ErrorDeserializingItem(String),
-    #[display(fmt = "Error uploading an item: {:?}", _0)]
+    #[display(fmt = "Error uploading an item: {_0:?}")]
     ErrorUploadingItem(String),
-    #[display(fmt = "Error getting items: {:?}", _0)]
+    #[display(fmt = "Error getting items: {_0:?}")]
     ErrorGettingItems(String),
-    #[display(fmt = "Error counting items: {:?}", _0)]
+    #[display(fmt = "Error counting items: {_0:?}")]
     ErrorCountingItems(String),
-    #[display(fmt = "Error deleting items: {:?}", _0)]
+    #[display(fmt = "Error deleting items: {_0:?}")]
     ErrorDeletingItems(String),
-    #[display(fmt = "Expected only one item by the unique '{}' index, got {}", index, got_items)]
+    #[display(fmt = "Expected only one item by the unique '{index}' index, got {got_items}")]
     MultipleItemsByUniqueIndex { index: String, got_items: usize },
-    #[display(fmt = "No such index '{}'", index)]
+    #[display(fmt = "No such index '{index}'")]
     NoSuchIndex { index: String },
-    #[display(fmt = "Invalid index '{}:{}': {:?}", index, index_value, description)]
+    #[display(fmt = "Invalid index '{index}:{index_value}': {description:?}")]
     InvalidIndex {
         index: String,
         index_value: Json,
         description: String,
     },
-    #[display(fmt = "Error occurred due to an unexpected state: {:?}", _0)]
+    #[display(fmt = "Error occurred due to an unexpected state: {_0:?}")]
     #[from_trait(WithInternal::internal)]
     UnexpectedState(String),
     #[display(fmt = "Transaction was aborted")]
@@ -58,12 +58,13 @@ pub struct IdbTransactionImpl {
     /// It's not used directly, but we need to hold the closures in memory till `transaciton` exists.
     #[allow(dead_code)]
     onabort_closure: Closure<dyn FnMut(JsValue)>,
+    _not_send: common::NotSend,
 }
 
-impl !Send for IdbTransactionImpl {}
-
 impl IdbTransactionImpl {
-    pub(crate) fn aborted(&self) -> bool { self.aborted.load(Ordering::Relaxed) }
+    pub(crate) fn aborted(&self) -> bool {
+        self.aborted.load(Ordering::Relaxed)
+    }
 
     pub(crate) fn open_table(&self, table_name: &str) -> DbTransactionResult<IdbObjectStoreImpl> {
         if self.aborted.load(Ordering::Relaxed) {
@@ -79,6 +80,7 @@ impl IdbTransactionImpl {
             Ok(object_store) => Ok(IdbObjectStoreImpl {
                 object_store,
                 aborted: self.aborted.clone(),
+                _not_send: common::NotSend::default(),
             }),
             Err(e) => MmError::err(DbTransactionError::ErrorOpeningTable {
                 table: table_name.to_owned(),
@@ -101,6 +103,7 @@ impl IdbTransactionImpl {
             tables,
             aborted,
             onabort_closure,
+            _not_send: common::NotSend::default(),
         }
     }
 }

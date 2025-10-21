@@ -3,6 +3,7 @@ use super::{EnableStreamingRequest, EnableStreamingResponse};
 
 use crate::heartbeat_event::{HeartbeatEvent, HeartbeatEventConfig};
 use common::HttpStatusCode;
+use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::{map_to_mm::MapToMmResult, mm_error::MmResult};
@@ -19,7 +20,9 @@ pub enum HeartbeatRequestError {
 }
 
 impl HttpStatusCode for HeartbeatRequestError {
-    fn status_code(&self) -> StatusCode { StatusCode::BAD_REQUEST }
+    fn status_code(&self) -> StatusCode {
+        StatusCode::BAD_REQUEST
+    }
 }
 
 pub async fn enable_heartbeat(

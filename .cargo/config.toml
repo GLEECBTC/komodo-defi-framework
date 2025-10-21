@@ -1,8 +1,25 @@
 [env]
+# Enables unstable features for specific crates to take advantage of useful
+# functionality not yet stabilized. Remove a crate from the list once all
+# required features are stabilized.
+#
+# # Core crates (used in production)
+#
+# - mm2_state_machine: Depends on `negative_impls` and `auto_traits`.
+# - mm2_err_handle: Depends on `negative_impls`, `auto_traits` and `allocator_api`.
+#
+# # Test crates (not leaked into the binary)
+#
+# - mocktopus: nightly only dependency.
+# - mocktopus_macros: nightly only dependency.
+# - docker_tests_main: Depends on `custom_test_frameworks` and `test`.
+# - docker_tests_sia_unique: Depends on `custom_test_frameworks` and `test`.
+RUSTC_BOOTSTRAP = "mm2_state_machine,mm2_err_handle,mocktopus,mocktopus_macros,docker_tests_main,docker_tests_sia_unique"
+
 JEMALLOC_SYS_WITH_MALLOC_CONF = "background_thread:true,narenas:1,tcache:false,dirty_decay_ms:0,muzzy_decay_ms:0,metadata_thp:auto"
 
 [target.'cfg(all())']
-rustflags = [ "-Zshare-generics=y", '--cfg=curve25519_dalek_backend="fiat"' ]
+rustflags = [ '--cfg=curve25519_dalek_backend="fiat"' ]
 
 # # Install lld using package manager
 # [target.x86_64-unknown-linux-gnu]

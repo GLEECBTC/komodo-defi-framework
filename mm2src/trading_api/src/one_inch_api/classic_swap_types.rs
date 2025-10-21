@@ -1,4 +1,4 @@
-#![allow(clippy::result_large_err)]
+//! Structs to call 1inch classic swap api
 
 use super::client::QueryParams;
 use super::errors::ApiClientError;
@@ -63,7 +63,8 @@ impl ClassicSwapQuoteParams {
     def_with_opt_param!(include_gas, bool);
     def_with_opt_param!(connector_tokens, String);
 
-    pub fn build_query_params(&self) -> MmResult<QueryParams<'static>, ApiClientError> {
+    #[allow(clippy::result_large_err)]
+    pub fn build_query_params(&self) -> MmResult<QueryParams, ApiClientError> {
         self.validate_params()?;
 
         let mut params = vec![
@@ -87,6 +88,7 @@ impl ClassicSwapQuoteParams {
     }
 
     /// Validate params by 1inch rules (to avoid extra requests)
+    #[allow(clippy::result_large_err)]
     fn validate_params(&self) -> MmResult<(), ApiClientError> {
         validate_fee(&self.fee)?;
         validate_complexity_level(&self.complexity_level)?;
@@ -159,7 +161,8 @@ impl ClassicSwapCreateParams {
     def_with_opt_param!(allow_partial_fill, bool);
     def_with_opt_param!(use_permit2, bool);
 
-    pub fn build_query_params(&self) -> MmResult<QueryParams<'static>, ApiClientError> {
+    #[allow(clippy::result_large_err)]
+    pub fn build_query_params(&self) -> MmResult<QueryParams, ApiClientError> {
         self.validate_params()?;
 
         let mut params = vec![
@@ -194,6 +197,7 @@ impl ClassicSwapCreateParams {
     }
 
     /// Validate params by 1inch rules (to avoid extra requests)
+    #[allow(clippy::result_large_err)]
     fn validate_params(&self) -> MmResult<(), ApiClientError> {
         validate_slippage(self.slippage)?;
         validate_fee(&self.fee)?;
@@ -205,7 +209,7 @@ impl ClassicSwapCreateParams {
     }
 }
 
-#[derive(Deserialize, Debug, Serialize)]
+#[derive(Clone, Deserialize, Debug, Serialize)]
 pub struct TokenInfo {
     pub address: Address,
     pub symbol: String,
@@ -219,7 +223,7 @@ pub struct TokenInfo {
     pub tags: Vec<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ProtocolInfo {
     pub name: String,
     pub part: f64,
@@ -229,7 +233,8 @@ pub struct ProtocolInfo {
     pub to_token_address: Address,
 }
 
-#[derive(Deserialize, Debug)]
+/// Returned data from an API call to get quote or create swap
+#[derive(Clone, Deserialize, Debug)]
 pub struct ClassicSwapData {
     /// dst token amount to receive, in api is a decimal number as string
     #[serde(rename = "dstAmount")]
@@ -239,11 +244,13 @@ pub struct ClassicSwapData {
     #[serde(rename = "dstToken")]
     pub dst_token: Option<TokenInfo>,
     pub protocols: Option<Vec<Vec<Vec<ProtocolInfo>>>>,
+    /// Returned from create swap call
     pub tx: Option<TxFields>,
+    /// Returned from quote call
     pub gas: Option<u128>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Clone, Deserialize, Debug)]
 pub struct TxFields {
     pub from: Address,
     pub to: Address,
@@ -299,6 +306,7 @@ mod serde_one_inch_link {
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn validate_slippage(slippage: f32) -> MmResult<(), ApiClientError> {
     if !(0.0..=ONE_INCH_MAX_SLIPPAGE).contains(&slippage) {
         return Err(ApiClientError::OutOfBounds {
@@ -312,6 +320,7 @@ fn validate_slippage(slippage: f32) -> MmResult<(), ApiClientError> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn validate_fee(fee: &Option<f32>) -> MmResult<(), ApiClientError> {
     if let Some(fee) = fee {
         if !(0.0..=ONE_INCH_MAX_FEE_SHARE).contains(fee) {
@@ -327,6 +336,7 @@ fn validate_fee(fee: &Option<f32>) -> MmResult<(), ApiClientError> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn validate_gas_limit(gas_limit: &Option<u128>) -> MmResult<(), ApiClientError> {
     if let Some(gas_limit) = gas_limit {
         if gas_limit > &ONE_INCH_MAX_GAS {
@@ -342,6 +352,7 @@ fn validate_gas_limit(gas_limit: &Option<u128>) -> MmResult<(), ApiClientError> 
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn validate_parts(parts: &Option<u32>) -> MmResult<(), ApiClientError> {
     if let Some(parts) = parts {
         if parts > &ONE_INCH_MAX_PARTS {
@@ -357,6 +368,7 @@ fn validate_parts(parts: &Option<u32>) -> MmResult<(), ApiClientError> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn validate_main_route_parts(main_route_parts: &Option<u32>) -> MmResult<(), ApiClientError> {
     if let Some(main_route_parts) = main_route_parts {
         if main_route_parts > &ONE_INCH_MAX_MAIN_ROUTE_PARTS {
@@ -372,6 +384,7 @@ fn validate_main_route_parts(main_route_parts: &Option<u32>) -> MmResult<(), Api
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn validate_complexity_level(complexity_level: &Option<u32>) -> MmResult<(), ApiClientError> {
     if let Some(complexity_level) = complexity_level {
         if complexity_level > &ONE_INCH_MAX_COMPLEXITY_LEVEL {
@@ -388,6 +401,7 @@ fn validate_complexity_level(complexity_level: &Option<u32>) -> MmResult<(), Api
 }
 
 /// Check if url is valid and is a subdomain of 1inch domain (simple anti-phishing check)
+#[allow(clippy::result_large_err)]
 fn validate_one_inch_link(s: &str) -> MmResult<String, ApiClientError> {
     let url = Url::parse(s).map_err(|_err| ApiClientError::ParseBodyError {
         error_msg: BAD_URL_IN_RESPONSE_ERROR.to_owned(),

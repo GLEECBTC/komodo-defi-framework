@@ -6,14 +6,20 @@ pub struct BoolAsInt(bool);
 
 impl BoolAsInt {
     /// Creates a new `BoolAsInt` instance from a boolean value.
-    pub fn new(value: bool) -> Self { BoolAsInt(value) }
+    pub fn new(value: bool) -> Self {
+        BoolAsInt(value)
+    }
 
     /// Retrieves the inner boolean value.
-    pub fn as_bool(&self) -> bool { self.0 }
+    pub fn as_bool(&self) -> bool {
+        self.0
+    }
 }
 
 impl From<bool> for BoolAsInt {
-    fn from(value: bool) -> Self { BoolAsInt(value) }
+    fn from(value: bool) -> Self {
+        BoolAsInt(value)
+    }
 }
 
 impl Serialize for BoolAsInt {

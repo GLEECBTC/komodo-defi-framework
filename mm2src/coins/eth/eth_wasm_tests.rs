@@ -47,7 +47,9 @@ async fn init_eth_coin_helper() -> Result<(MmArc, MmCoinEnum), String> {
 }
 
 #[wasm_bindgen_test]
-async fn test_init_eth_coin() { let (_ctx, _coin) = init_eth_coin_helper().await.unwrap(); }
+async fn test_init_eth_coin() {
+    let (_ctx, _coin) = init_eth_coin_helper().await.unwrap();
+}
 
 #[wasm_bindgen_test]
 async fn wasm_test_sign_eth_tx() {
@@ -64,7 +66,7 @@ async fn wasm_test_sign_eth_tx() {
     }))
     .unwrap();
     let res = coin.sign_raw_tx(&sign_req).await;
-    console::log_1(&format!("res={:?}", res).into());
+    console::log_1(&format!("res={res:?}").into());
     assert!(res.is_ok());
 }
 
@@ -88,7 +90,7 @@ async fn wasm_test_sign_eth_tx_with_priority_fee() {
     }))
     .unwrap();
     let res = coin.sign_raw_tx(&sign_req).await;
-    console::log_1(&format!("res={:?}", res).into());
+    console::log_1(&format!("res={res:?}").into());
     assert!(res.is_ok());
     let tx: UnverifiedTransactionWrapper = rlp::decode(&res.unwrap().tx_hex).expect("decoding signed tx okay");
     if !matches!(tx, UnverifiedTransactionWrapper::Eip1559(..)) {

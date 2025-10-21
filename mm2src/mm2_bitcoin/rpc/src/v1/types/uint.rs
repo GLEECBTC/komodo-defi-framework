@@ -16,18 +16,24 @@ macro_rules! impl_uint {
         where
             $other: From<T>,
         {
-            fn from(o: T) -> Self { $name($other::from(o)) }
+            fn from(o: T) -> Self {
+                $name($other::from(o))
+            }
         }
 
         impl FromStr for $name {
             type Err = <$other as FromStr>::Err;
 
-            fn from_str(s: &str) -> Result<Self, Self::Err> { $other::from_str(s).map($name) }
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                $other::from_str(s).map($name)
+            }
         }
 
         #[allow(clippy::from_over_into)]
         impl Into<$other> for $name {
-            fn into(self) -> $other { self.0 }
+            fn into(self) -> $other {
+                self.0
+            }
         }
 
         impl serde::Serialize for $name {

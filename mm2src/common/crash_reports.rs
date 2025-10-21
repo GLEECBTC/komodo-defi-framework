@@ -49,7 +49,9 @@ fn access_violation() {
 #[cfg(test)]
 #[inline(never)]
 #[allow(dead_code)]
-extern "C" fn call_access_violation() { access_violation() }
+extern "C" fn call_access_violation() {
+    access_violation()
+}
 
 #[cfg(unix)]
 extern "C" fn signal_handler(sig: c_int) {
@@ -129,7 +131,9 @@ pub fn init_crash_reports() {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub fn init_crash_reports() { unimplemented!() }
+pub fn init_crash_reports() {
+    unimplemented!()
+}
 
 // Make sure Rust panics still work in the presence of the VEH handler.
 #[test]

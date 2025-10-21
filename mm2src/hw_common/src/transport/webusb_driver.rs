@@ -22,38 +22,32 @@ type DeviceEventReceiver = mpsc::UnboundedReceiver<DeviceEvent>;
 pub enum WebUsbError {
     #[display(fmt = "WebUSB is not available on this browser")]
     NotSupported,
-    #[display(fmt = "Error requesting access permission: {}", _0)]
+    #[display(fmt = "Error requesting access permission: {_0}")]
     ErrorRequestingDevice(String),
-    #[display(fmt = "Error getting devices: {}", _0)]
+    #[display(fmt = "Error getting devices: {_0}")]
     ErrorGettingDevices(String),
-    #[display(
-        fmt = "Error setting configuration: configurationNumber={}, error='{}'",
-        configuration_number,
-        error
-    )]
+    #[display(fmt = "Error setting configuration: configurationNumber={configuration_number}, error='{error}'")]
     ErrorSettingConfiguration { configuration_number: u8, error: String },
-    #[display(
-        fmt = "Error claiming an interface: interfaceNumber={}, error='{}'",
-        interface_number,
-        error
-    )]
+    #[display(fmt = "Error claiming an interface: interfaceNumber={interface_number}, error='{error}'")]
     ErrorClaimingInterface { interface_number: u8, error: String },
-    #[display(fmt = "Error opening a device: {}", _0)]
+    #[display(fmt = "Error opening a device: {_0}")]
     ErrorOpeningDevice(String),
-    #[display(fmt = "Error resetting device: {}", _0)]
+    #[display(fmt = "Error resetting device: {_0}")]
     ErrorResettingDevice(String),
-    #[display(fmt = "Error writing a chunk: {}", _0)]
+    #[display(fmt = "Error writing a chunk: {_0}")]
     ErrorWritingChunk(String),
-    #[display(fmt = "Error reading a chunk: {}", _0)]
+    #[display(fmt = "Error reading a chunk: {_0}")]
     ErrorReadingChunk(String),
-    #[display(fmt = "Type mismatch: expected '{}', found '{}'", expected, found)]
+    #[display(fmt = "Type mismatch: expected '{expected}', found '{found}'")]
     TypeMismatch { expected: String, found: String },
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
 impl InternalError for WebUsbError {
-    fn internal(e: String) -> Self { WebUsbError::Internal(e) }
+    fn internal(e: String) -> Self {
+        WebUsbError::Internal(e)
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -162,7 +156,7 @@ impl WebUsbWrapper {
 
     async fn on_request_device(usb: &Usb, filters: Vec<DeviceFilter>) -> WebUsbResult<()> {
         let filters_js_value = serialize_to_js(&filters)
-            .map_to_mm(|e| WebUsbError::Internal(format!("DeviceFilter::serialize should never fail: {}", e)))?;
+            .map_to_mm(|e| WebUsbError::Internal(format!("DeviceFilter::serialize should never fail: {e}")))?;
 
         let request_options = UsbDeviceRequestOptions::new(&filters_js_value);
         if let Err(e) = JsFuture::from(usb.request_device(&request_options)).await {
@@ -177,14 +171,14 @@ impl WebUsbWrapper {
             .map_to_mm(|e| WebUsbError::ErrorGettingDevices(stringify_js_error(&e)))?;
         let devices_array: Array = devices.dyn_into().map_to_mm(|found| WebUsbError::TypeMismatch {
             expected: "Array".to_owned(),
-            found: format!("{:?}", found),
+            found: format!("{found:?}"),
         })?;
 
         let mut result_devices = Vec::with_capacity(devices_array.length() as usize);
         for device_js in devices_array.iter() {
             let device: UsbDevice = device_js.dyn_into().map_to_mm(|found| WebUsbError::TypeMismatch {
                 expected: "UsbDevice".to_owned(),
-                found: format!("{:?}", found),
+                found: format!("{found:?}"),
             })?;
             let device_info = WebUsbDeviceInfo::from_usb_device(&device);
 
@@ -296,7 +290,10 @@ impl WebUsbDevice {
                     result_tx,
                 } => {
                     result_tx
-                        .send(WebUsbDevice::on_write_chunk(&device, endpoint_number, chunk).await)
+                        .send(
+                            WebUsbDevice::on_write_chunk(&device, endpoint_number, Uint8Array::from(chunk.as_slice()))
+                                .await,
+                        )
                         .ok();
                 },
                 DeviceEvent::ReadChunk {
@@ -339,7 +336,9 @@ impl WebUsbDevice {
         Ok(())
     }
 
-    fn on_is_open(device: &UsbDevice) -> WebUsbResult<bool> { Ok(device.opened()) }
+    fn on_is_open(device: &UsbDevice) -> WebUsbResult<bool> {
+        Ok(device.opened())
+    }
 
     async fn on_reset_device(device: &UsbDevice) -> WebUsbResult<()> {
         JsFuture::from(device.reset())
@@ -348,10 +347,14 @@ impl WebUsbDevice {
         Ok(())
     }
 
-    async fn on_write_chunk(device: &UsbDevice, endpoint_number: u8, mut chunk: Vec<u8>) -> WebUsbResult<()> {
-        if let Err(e) = JsFuture::from(device.transfer_out_with_u8_array(endpoint_number, &mut chunk)).await {
-            return MmError::err(WebUsbError::ErrorWritingChunk(stringify_js_error(&e)));
-        }
+    async fn on_write_chunk(device: &UsbDevice, endpoint_number: u8, chunk: Uint8Array) -> WebUsbResult<()> {
+        let data = device
+            .transfer_out_with_u8_array(endpoint_number, &chunk)
+            .map_to_mm(|e| WebUsbError::ErrorWritingChunk(stringify_js_error(&e)))?;
+        JsFuture::from(data)
+            .await
+            .map_to_mm(|e| WebUsbError::ErrorWritingChunk(stringify_js_error(&e)))?;
+
         Ok(())
     }
 
@@ -362,7 +365,7 @@ impl WebUsbDevice {
                 .map_to_mm(|e| WebUsbError::ErrorReadingChunk(stringify_js_error(&e)))?;
             let result: UsbInTransferResult = js_value.dyn_into().map_to_mm(|found| WebUsbError::TypeMismatch {
                 expected: "UsbInTransferResult".to_owned(),
-                found: format!("{:?}", found),
+                found: format!("{found:?}"),
             })?;
             let data_view = match result.data() {
                 Some(data) => data,

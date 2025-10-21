@@ -2,9 +2,13 @@
 
 use crate::lp_swap::{MakerSavedSwap, SavedSwap, SavedSwapIo, TakerSavedSwap};
 use common::log::{debug, error};
-use db_common::{owned_named_params,
-                sqlite::{rusqlite::{params_from_iter, Connection, OptionalExtension},
-                         AsSqlNamedParams, OwnedSqlNamedParams, SqlValue}};
+use db_common::{
+    owned_named_params,
+    sqlite::{
+        rusqlite::{params_from_iter, Connection, OptionalExtension},
+        AsSqlNamedParams, OwnedSqlNamedParams, SqlValue,
+    },
+};
 use mm2_core::mm_ctx::MmArc;
 use std::collections::HashSet;
 
@@ -127,17 +131,17 @@ pub async fn fix_maker_and_taker_pubkeys_in_stats_db(ctx: &MmArc) -> Vec<(&'stat
         const UPDATE_MAKER_PUBKEY: &str = "UPDATE stats_swaps SET maker_pubkey = ?1 WHERE uuid = ?2;";
         match maker_swap.maker_pubkey() {
             Ok(maker_pubkey) => {
-                result.push((UPDATE_MAKER_PUBKEY, vec![
-                    maker_pubkey.into(),
-                    maker_swap.uuid.to_string().into(),
-                ]));
+                result.push((
+                    UPDATE_MAKER_PUBKEY,
+                    vec![maker_pubkey.into(), maker_swap.uuid.to_string().into()],
+                ));
             },
             Err(e) => {
                 covered_error!("Error {} on getting maker_pubkey for swap {}", e, maker_swap.uuid);
-                result.push((UPDATE_MAKER_PUBKEY, vec![
-                    SqlValue::Null,
-                    maker_swap.uuid.to_string().into(),
-                ]));
+                result.push((
+                    UPDATE_MAKER_PUBKEY,
+                    vec![SqlValue::Null, maker_swap.uuid.to_string().into()],
+                ));
             },
         }
     }
@@ -146,17 +150,17 @@ pub async fn fix_maker_and_taker_pubkeys_in_stats_db(ctx: &MmArc) -> Vec<(&'stat
         const UPDATE_TAKER_PUBKEY: &str = "UPDATE stats_swaps SET taker_pubkey = ?1 WHERE uuid = ?2;";
         match taker_swap.taker_pubkey() {
             Ok(taker_pubkey) => {
-                result.push((UPDATE_TAKER_PUBKEY, vec![
-                    taker_pubkey.into(),
-                    taker_swap.uuid.to_string().into(),
-                ]));
+                result.push((
+                    UPDATE_TAKER_PUBKEY,
+                    vec![taker_pubkey.into(), taker_swap.uuid.to_string().into()],
+                ));
             },
             Err(e) => {
                 covered_error!("Error {} on getting taker_pubkey for swap {}", e, taker_swap.uuid);
-                result.push((UPDATE_TAKER_PUBKEY, vec![
-                    SqlValue::Null,
-                    taker_swap.uuid.to_string().into(),
-                ]));
+                result.push((
+                    UPDATE_TAKER_PUBKEY,
+                    vec![SqlValue::Null, taker_swap.uuid.to_string().into()],
+                ));
             },
         }
     }

@@ -2,6 +2,7 @@ use crate::tx_history_storage::wasm::tx_history_db::TxHistoryDb;
 use crate::tx_history_storage::wasm::WasmTxHistoryResult;
 use crate::TransactionDetails;
 use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbUpgrader, OnUpgradeResult, TableSignature};
+use mm2_err_handle::prelude::MmResultExt;
 
 pub async fn load_tx_history(
     db: &TxHistoryDb,
@@ -10,12 +11,13 @@ pub async fn load_tx_history(
 ) -> WasmTxHistoryResult<Vec<TransactionDetails>> {
     let history_id = HistoryId::new(ticker, wallet_address);
 
-    let transaction = db.get_inner().transaction().await?;
-    let table = transaction.table::<TxHistoryTableV1>().await?;
+    let transaction = db.get_inner().transaction().await.map_mm_err()?;
+    let table = transaction.table::<TxHistoryTableV1>().await.map_mm_err()?;
 
     let item_opt = table
         .get_item_by_unique_index("history_id", history_id.as_str())
-        .await?;
+        .await
+        .map_mm_err()?;
     match item_opt {
         Some((_item_id, TxHistoryTableV1 { txs, .. })) => Ok(txs),
         None => Ok(Vec::new()),
@@ -32,24 +34,26 @@ pub async fn save_tx_history(
     let history_id_value = history_id.to_string();
     let tx_history_item = TxHistoryTableV1 { history_id, txs };
 
-    let transaction = db.get_inner().transaction().await?;
-    let table = transaction.table::<TxHistoryTableV1>().await?;
+    let transaction = db.get_inner().transaction().await.map_mm_err()?;
+    let table = transaction.table::<TxHistoryTableV1>().await.map_mm_err()?;
 
     table
         .replace_item_by_unique_index("history_id", &history_id_value, &tx_history_item)
-        .await?;
+        .await
+        .map_mm_err()?;
     Ok(())
 }
 
 pub async fn clear_tx_history(db: &TxHistoryDb, ticker: &str, wallet_address: &str) -> WasmTxHistoryResult<()> {
     let history_id = HistoryId::new(ticker, wallet_address);
 
-    let transaction = db.get_inner().transaction().await?;
-    let table = transaction.table::<TxHistoryTableV1>().await?;
+    let transaction = db.get_inner().transaction().await.map_mm_err()?;
+    let table = transaction.table::<TxHistoryTableV1>().await.map_mm_err()?;
 
     table
         .delete_item_by_unique_index("history_id", history_id.as_str())
-        .await?;
+        .await
+        .map_mm_err()?;
     Ok(())
 }
 
@@ -57,13 +61,19 @@ pub async fn clear_tx_history(db: &TxHistoryDb, ticker: &str, wallet_address: &s
 struct HistoryId(String);
 
 impl HistoryId {
-    fn new(ticker: &str, wallet_address: &str) -> HistoryId { HistoryId(format!("{}_{}", ticker, wallet_address)) }
+    fn new(ticker: &str, wallet_address: &str) -> HistoryId {
+        HistoryId(format!("{ticker}_{wallet_address}"))
+    }
 
-    fn as_str(&self) -> &str { &self.0 }
+    fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 impl std::fmt::Display for HistoryId {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "{}", &self.0) }
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", &self.0)
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]

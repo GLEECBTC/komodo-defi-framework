@@ -1,6 +1,8 @@
 use common::block_on;
 use sia_rust::http_client::{SiaApiClient, SiaApiClientError, SiaHttpConf};
-use sia_rust::http_endpoints::{AddressBalanceRequest, AddressUtxosRequest, ConsensusTipRequest, TxpoolBroadcastRequest};
+use sia_rust::http_endpoints::{
+    AddressBalanceRequest, AddressUtxosRequest, ConsensusTipRequest, TxpoolBroadcastRequest,
+};
 use sia_rust::spend_policy::SpendPolicy;
 use sia_rust::transaction::{SiacoinOutput, V2TransactionBuilder};
 use sia_rust::types::{Address, Currency};
@@ -16,8 +18,8 @@ fn mine_blocks(n: u64, addr: &Address) {
         .arg("sia-docker")
         .arg("walletd")
         .arg("mine")
-        .arg(format!("-addr={}", addr))
-        .arg(format!("-n={}", n))
+        .arg(format!("-addr={addr}"))
+        .arg(format!("-n={n}"))
         .status()
         .expect("Failed to execute docker command");
 }
@@ -98,7 +100,7 @@ fn test_sia_client_build_tx() {
     .unwrap();
     let spend_this = utxos[0].clone();
     let vin = spend_this.clone();
-    println!("utxo[0]: {:?}", spend_this);
+    println!("utxo[0]: {spend_this:?}");
     let vout = SiacoinOutput {
         value: spend_this.siacoin_output.value,
         address,

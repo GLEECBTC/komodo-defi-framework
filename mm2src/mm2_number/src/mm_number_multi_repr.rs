@@ -3,10 +3,10 @@ use crate::from_ratio_to_dec;
 use crate::mm_number::MmNumber;
 use bigdecimal::BigDecimal;
 use num_rational::BigRational;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// MmNumber representation in all available forms.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MmNumberMultiRepr {
     pub decimal: BigDecimal,
     pub rational: BigRational,

@@ -1,11 +1,13 @@
+use super::{ERC20_PROTOCOL_TYPE, ETH_PROTOCOL_TYPE};
 use crate::eth::web3_transport::Web3Transport;
 use crate::eth::{EthCoin, ERC20_CONTRACT};
-use crate::{CoinsContext, MarketCoinOps, MmCoinEnum};
+use crate::{CoinsContext, MarketCoinOps, MmCoinEnum, Ticker};
 use ethabi::Token;
 use ethereum_types::Address;
 use futures_util::TryFutureExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::mm_error::MmResult;
+use std::str::FromStr;
 use web3::types::{BlockId, BlockNumber, CallRequest};
 use web3::{Transport, Web3};
 
@@ -70,19 +72,40 @@ pub async fn get_erc20_token_info(coin: &EthCoin, token_addr: Address) -> Result
     Ok(Erc20TokenInfo { symbol, decimals })
 }
 
-/// Finds if an ERC20 token is in coins config by its contract address and returns its ticker.
-pub fn get_erc20_ticker_by_contract_address(ctx: &MmArc, platform: &str, contract_address: &str) -> Option<String> {
+/// Finds eth platfrom coin in coins config by chain_id and returns its ticker.
+pub fn get_platform_ticker(ctx: &MmArc, chain_id: u64) -> Option<Ticker> {
     ctx.conf["coins"].as_array()?.iter().find_map(|coin| {
         let protocol = coin.get("protocol")?;
         let protocol_type = protocol.get("type")?.as_str()?;
-        if protocol_type != "ERC20" {
+        if protocol_type != ETH_PROTOCOL_TYPE {
+            return None;
+        }
+        let coin_chain_id = protocol.get("protocol_data")?.get("chain_id")?.as_u64()?;
+        if coin_chain_id == chain_id {
+            coin.get("coin")?.as_str().map(|s| s.to_string())
+        } else {
+            None
+        }
+    })
+}
+
+/// Finds if an ERC20 token is in coins config by its contract address and returns its ticker.
+pub fn get_erc20_ticker_by_contract_address(
+    ctx: &MmArc,
+    platform_ticker: &str,
+    contract_address: &Address,
+) -> Option<String> {
+    ctx.conf["coins"].as_array()?.iter().find_map(|coin| {
+        let protocol = coin.get("protocol")?;
+        let protocol_type = protocol.get("type")?.as_str()?;
+        if protocol_type != ERC20_PROTOCOL_TYPE {
             return None;
         }
         let protocol_data = protocol.get("protocol_data")?;
-        let coin_platform = protocol_data.get("platform")?.as_str()?;
-        let coin_contract_address = protocol_data.get("contract_address")?.as_str()?;
+        let coin_platform_ticker = protocol_data.get("platform")?.as_str()?;
+        let coin_contract_address = Address::from_str(protocol_data.get("contract_address")?.as_str()?).ok()?;
 
-        if coin_platform == platform && coin_contract_address == contract_address {
+        if coin_platform_ticker == platform_ticker && &coin_contract_address == contract_address {
             coin.get("coin")?.as_str().map(|s| s.to_string())
         } else {
             None

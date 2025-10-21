@@ -56,8 +56,9 @@ impl<'a> MetamaskSession<'a> {
         CallFuture::new(self.transport.execute("wallet_switchEthereumChain", vec![req])).await
     }
 
-    /// * user_address - Must match user's active address.
     /// Returns a hash of the `Eip712` request and the signature.
+    ///
+    /// Note: `user_address` must match user's active address.
     pub async fn sign_typed_data_v4<Domain, SignData>(
         &self,
         user_address: String,

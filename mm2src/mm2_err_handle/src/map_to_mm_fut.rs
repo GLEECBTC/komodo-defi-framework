@@ -43,7 +43,7 @@ pub struct MapToMmFuture<'a, T, E1: NotMmError, E2: NotMmError> {
     closure: Option<Box<dyn FnOnce(E1) -> E2 + Send + 'a>>,
 }
 
-impl<'a, T, E1: NotMmError, E2: NotMmError> Future for MapToMmFuture<'a, T, E1, E2> {
+impl<T, E1: NotMmError, E2: NotMmError> Future for MapToMmFuture<'_, T, E1, E2> {
     type Item = T;
     type Error = MmError<E2>;
 

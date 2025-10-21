@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::z_coin::{ZCoin, ZTxHistoryError};
 use common::PagingOptionsEnum;
-use mm2_err_handle::prelude::MmError;
+use mm2_err_handle::prelude::*;
 use primitives::hash::H256;
 use std::convert::TryInto;
 use zcash_primitives::transaction::TxId;
@@ -12,7 +12,6 @@ cfg_wasm32!(
     use crate::MarketCoinOps;
     use mm2_number::BigInt;
     use mm2_db::indexed_db::cursor_prelude::CursorError;
-    use mm2_err_handle::prelude::MapToMmResult;
     use num_traits::ToPrimitive;
 );
 
@@ -53,9 +52,9 @@ pub(crate) async fn fetch_tx_history_from_db(
 ) -> Result<ZTxHistoryRes, MmError<ZTxHistoryError>> {
     let wallet_db = z.z_fields.light_wallet_db.clone();
     let wallet_db = wallet_db.db.lock_db().await.unwrap();
-    let db_transaction = wallet_db.get_inner().transaction().await?;
-    let tx_table = db_transaction.table::<WalletDbTransactionsTable>().await?;
-    let total_tx_count = tx_table.count_all().await? as u32;
+    let db_transaction = wallet_db.get_inner().transaction().await.map_mm_err()?;
+    let tx_table = db_transaction.table::<WalletDbTransactionsTable>().await.map_mm_err()?;
+    let total_tx_count = tx_table.count_all().await.map_mm_err()? as u32;
     let offset = match paging_options {
         PagingOptionsEnum::PageNumber(page_number) => ((page_number.get() - 1) * limit) as i64,
         PagingOptionsEnum::FromId(tx_id) => {
@@ -69,34 +68,46 @@ pub(crate) async fn fetch_tx_history_from_db(
     // Fetch transactions
     let txs = tx_table
         .cursor_builder()
-        .only("ticker", z.ticker())?
+        .only("ticker", z.ticker())
+        .map_mm_err()?
         .offset(offset as u32)
         .limit(limit)
         .reverse()
         .open_cursor("ticker")
-        .await?
+        .await
+        .map_mm_err()?
         .collect()
-        .await?;
+        .await
+        .map_mm_err()?;
 
     // Fetch received notes
-    let rn_table = db_transaction.table::<WalletDbReceivedNotesTable>().await?;
+    let rn_table = db_transaction
+        .table::<WalletDbReceivedNotesTable>()
+        .await
+        .map_mm_err()?;
     let received_notes = rn_table
         .cursor_builder()
-        .only("ticker", z.ticker())?
+        .only("ticker", z.ticker())
+        .map_mm_err()?
         .open_cursor("ticker")
-        .await?
+        .await
+        .map_mm_err()?
         .collect()
-        .await?;
+        .await
+        .map_mm_err()?;
 
     // Fetch blocks
-    let blocks_table = db_transaction.table::<WalletDbBlocksTable>().await?;
+    let blocks_table = db_transaction.table::<WalletDbBlocksTable>().await.map_mm_err()?;
     let blocks = blocks_table
         .cursor_builder()
-        .only("ticker", z.ticker())?
+        .only("ticker", z.ticker())
+        .map_mm_err()?
         .open_cursor("ticker")
-        .await?
+        .await
+        .map_mm_err()?
         .collect()
-        .await?;
+        .await
+        .map_mm_err()?;
 
     // Process transactions and construct tx_details
     let mut tx_details = Vec::new();
@@ -250,8 +261,8 @@ pub(crate) async fn fetch_txs_from_db(
 ) -> Result<Vec<ZCoinTxHistoryItem>, MmError<ZTxHistoryError>> {
     let wallet_db = z.z_fields.light_wallet_db.clone();
     let wallet_db = wallet_db.db.lock_db().await.unwrap();
-    let db_transaction = wallet_db.get_inner().transaction().await?;
-    let tx_table = db_transaction.table::<WalletDbTransactionsTable>().await?;
+    let db_transaction = wallet_db.get_inner().transaction().await.map_mm_err()?;
+    let tx_table = db_transaction.table::<WalletDbTransactionsTable>().await.map_mm_err()?;
 
     let limit = tx_hashes.len();
     let condition = {
@@ -267,36 +278,48 @@ pub(crate) async fn fetch_txs_from_db(
     // Fetch transactions
     let txs = tx_table
         .cursor_builder()
-        .only("ticker", z.ticker())?
+        .only("ticker", z.ticker())
+        .map_mm_err()?
         // We need to explicitly set a limit since `where_` implicitly sets a limit of 1 if no limit is set.
         // TODO: Remove when `where_` doesn't exhibit this behavior.
         .limit(limit)
         .where_(condition)
         .reverse()
         .open_cursor("ticker")
-        .await?
+        .await
+        .map_mm_err()?
         .collect()
-        .await?;
+        .await
+        .map_mm_err()?;
 
     // Fetch received notes
-    let rn_table = db_transaction.table::<WalletDbReceivedNotesTable>().await?;
+    let rn_table = db_transaction
+        .table::<WalletDbReceivedNotesTable>()
+        .await
+        .map_mm_err()?;
     let received_notes = rn_table
         .cursor_builder()
-        .only("ticker", z.ticker())?
+        .only("ticker", z.ticker())
+        .map_mm_err()?
         .open_cursor("ticker")
-        .await?
+        .await
+        .map_mm_err()?
         .collect()
-        .await?;
+        .await
+        .map_mm_err()?;
 
     // Fetch blocks
-    let blocks_table = db_transaction.table::<WalletDbBlocksTable>().await?;
+    let blocks_table = db_transaction.table::<WalletDbBlocksTable>().await.map_mm_err()?;
     let blocks = blocks_table
         .cursor_builder()
-        .only("ticker", z.ticker())?
+        .only("ticker", z.ticker())
+        .map_mm_err()?
         .open_cursor("ticker")
-        .await?
+        .await
+        .map_mm_err()?
         .collect()
-        .await?;
+        .await
+        .map_mm_err()?;
 
     // Process transactions and construct tx_details
     let mut transactions = Vec::new();

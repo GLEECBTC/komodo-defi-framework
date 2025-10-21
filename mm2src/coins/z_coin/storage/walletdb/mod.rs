@@ -6,7 +6,8 @@ cfg_native!(
     use zcash_client_sqlite::for_async::WalletDbAsync;
 );
 
-#[cfg(target_arch = "wasm32")] pub mod wasm;
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
 #[cfg(target_arch = "wasm32")]
 use wasm::storage::WalletIndexedDb;
 

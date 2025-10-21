@@ -42,7 +42,7 @@ pub trait HDCoinWithdrawOps: HDWalletCoinOps {
             // If [`HDWalletCoinOps::derive_address`] succeeds, [`HDAccountOps::is_address_activated`] shouldn't fails with an `InvalidBip44ChainError`.
             .mm_err(|e| HDWithdrawError::InternalError(e.to_string()))?;
 
-        let hd_address = self.derive_address(&hd_account, chain, address_id).await?;
+        let hd_address = self.derive_address(&hd_account, chain, address_id).await.map_mm_err()?;
         let address = hd_address.address();
         if !is_address_activated {
             let error = format!("'{}' address is not activated", address.display_address());

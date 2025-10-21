@@ -1,5 +1,6 @@
 use super::PUBLIC_METHODS;
 use common::HyRes;
+use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use futures::{Future as Future03, FutureExt, TryFutureExt};
 use http::Response;
@@ -8,23 +9,27 @@ use serde_json::{self as json, Value as Json};
 use std::net::SocketAddr;
 
 use super::lp_commands::legacy::*;
-use crate::lp_ordermatch::{best_orders_rpc, buy, cancel_all_orders_rpc, cancel_order_rpc, my_orders, order_status,
-                           orderbook_depth_rpc, orderbook_rpc, orders_history_by_filter, sell, set_price,
-                           update_maker_order_rpc};
-use crate::lp_swap::{active_swaps_rpc, all_swaps_uuids_by_filter, ban_pubkey_rpc, coins_needed_for_kick_start,
-                     import_swaps, list_banned_pubkeys_rpc, max_taker_vol, my_recent_swaps_rpc, my_swap_status,
-                     recover_funds_of_swap, stats_swap_status, unban_pubkeys_rpc};
+use crate::lp_ordermatch::{
+    best_orders_rpc, buy, cancel_all_orders_rpc, cancel_order_rpc, my_orders, order_status, orderbook_depth_rpc,
+    orderbook_rpc, orders_history_by_filter, sell, set_price, update_maker_order_rpc,
+};
+use crate::lp_swap::{
+    active_swaps_rpc, all_swaps_uuids_by_filter, ban_pubkey_rpc, coins_needed_for_kick_start, import_swaps,
+    list_banned_pubkeys_rpc, max_taker_vol, my_recent_swaps_rpc, my_swap_status, recover_funds_of_swap,
+    stats_swap_status, unban_pubkeys_rpc,
+};
 use crate::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
-use coins::{convert_address, convert_utxo_address, get_enabled_coins, get_trade_fee, kmd_rewards_info, my_tx_history,
-            send_raw_transaction, set_required_confirmations, set_requires_notarization, show_priv_key,
-            validate_address};
+use coins::{
+    convert_address, convert_utxo_address, get_enabled_coins, get_trade_fee, kmd_rewards_info, my_tx_history,
+    send_raw_transaction, set_required_confirmations, set_requires_notarization, show_priv_key, validate_address,
+};
 
 /// Result of `fn dispatcher`.
 pub enum DispatcherRes {
     /// `fn dispatcher` has found a Rust handler for the RPC "method".
     Match(HyRes),
     /// No handler found by `fn dispatcher`. Returning the `Json` request in order for it to be handled elsewhere.
-    NoMatch(Json),
+    NoMatch,
 }
 
 async fn auth(json: &Json, ctx: &MmArc, client: &SocketAddr) -> Result<(), String> {
@@ -54,7 +59,7 @@ fn hyres(handler: impl Future03<Output = Result<Response<Vec<u8>>, String>> + Se
 pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
     let method = match req["method"].clone() {
         Json::String(method) => method,
-        _ => return DispatcherRes::NoMatch(req),
+        _ => return DispatcherRes::NoMatch,
     };
     DispatcherRes::Match(match &method[..] {
         // Sorted alphanumerically (on the first latter) for readability.
@@ -113,7 +118,7 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
         "validateaddress" => hyres(validate_address(ctx, req)),
         "version" => version(ctx),
         "withdraw" => hyres(into_legacy::withdraw(ctx, req)),
-        _ => return DispatcherRes::NoMatch(req),
+        _ => return DispatcherRes::NoMatch,
     })
 }
 
@@ -151,7 +156,7 @@ pub async fn process_single_request(
 
     let handler = match dispatcher(req, ctx.clone()) {
         DispatcherRes::Match(handler) => handler,
-        DispatcherRes::NoMatch(_) => {
+        DispatcherRes::NoMatch => {
             return Err(LegacyRequestProcessError::NoMatch);
         },
     };

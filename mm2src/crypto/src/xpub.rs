@@ -15,12 +15,14 @@ const XPUB_PREFIX_RAW: [u8; 4] = [4, 136, 178, 30];
 pub enum XpubError {
     #[display(fmt = "Unknown prefix")]
     UnknownPrefix,
-    #[display(fmt = "base58 error: {}", _0)]
+    #[display(fmt = "base58 error: {_0}")]
     Base58Error(Base58Error),
 }
 
 impl From<Base58Error> for XpubError {
-    fn from(e: Base58Error) -> Self { XpubError::Base58Error(e) }
+    fn from(e: Base58Error) -> Self {
+        XpubError::Base58Error(e)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -31,7 +33,7 @@ impl XPubConverter {
     /// The input string must start with the standard `xpub` prefix and contain a valid checksum.
     pub fn is_standard_xpub(xpub: &str) -> MmResult<(), XpubError> {
         let bytes = bs58::decode(&xpub).with_check(None).into_vec()?;
-        if has_xpub_prefix(&bytes)? {
+        if has_xpub_prefix(&bytes).map_mm_err()? {
             Ok(())
         } else {
             MmError::err(XpubError::UnknownPrefix)
@@ -43,7 +45,7 @@ impl XPubConverter {
     pub fn replace_magic_prefix(xpub: XPub) -> MmResult<XPub, XpubError> {
         let mut bytes = bs58::decode(&xpub).with_check(None).into_vec()?;
 
-        if has_xpub_prefix(&bytes)? {
+        if has_xpub_prefix(&bytes).map_mm_err()? {
             return Ok(xpub);
         }
 

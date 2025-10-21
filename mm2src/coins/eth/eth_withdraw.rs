@@ -1,13 +1,19 @@
-use super::{checksum_address, u256_to_big_decimal, wei_from_big_decimal, ChainSpec, EthCoinType, EthDerivationMethod,
-            EthPrivKeyPolicy, Public, WithdrawError, WithdrawRequest, WithdrawResult, ERC20_CONTRACT, H160, H256};
+use super::{
+    checksum_address, u256_from_big_decimal, u256_to_big_decimal, ChainSpec, EthCoinType, EthDerivationMethod,
+    EthPrivKeyPolicy, Public, WithdrawError, WithdrawRequest, WithdrawResult, ERC20_CONTRACT, H160, H256,
+};
 use crate::eth::wallet_connect::WcEthTxParams;
-use crate::eth::{calc_total_fee, get_eth_gas_details_from_withdraw_fee, tx_builder_with_pay_for_gas_option,
-                 tx_type_from_pay_for_gas_option, Action, Address, EthTxFeeDetails, KeyPair, PayForGasOption,
-                 SignedEthTx, TransactionWrapper, UnSignedEthTxBuilder};
+use crate::eth::{
+    calc_total_fee, get_eth_gas_details_from_withdraw_fee, tx_builder_with_pay_for_gas_option,
+    tx_type_from_pay_for_gas_option, Action, Address, EthTxFeeDetails, KeyPair, PayForGasOption, SignedEthTx,
+    TransactionWrapper, UnSignedEthTxBuilder, ETH_RPC_REQUEST_TIMEOUT_S,
+};
 use crate::hd_wallet::{HDAddressSelector, HDCoinWithdrawOps, HDWalletOps, WithdrawSenderAddress};
 use crate::rpc_command::init_withdraw::{WithdrawInProgressStatus, WithdrawTaskHandleShared};
-use crate::{BytesJson, CoinWithDerivationMethod, EthCoin, GetWithdrawSenderAddress, PrivKeyPolicy, TransactionData,
-            TransactionDetails};
+use crate::{
+    BytesJson, CoinWithDerivationMethod, EthCoin, GetWithdrawSenderAddress, PrivKeyPolicy, TransactionData,
+    TransactionDetails,
+};
 use async_trait::async_trait;
 use bip32::DerivationPath;
 use common::custom_futures::timeout::FutureTimerExt;
@@ -21,7 +27,7 @@ use kdf_walletconnect::{WalletConnectCtx, WalletConnectOps};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::map_mm_error::MapMmError;
 use mm2_err_handle::mm_error::MmResult;
-use mm2_err_handle::prelude::{MapToMmResult, MmError, OrMmError};
+use mm2_err_handle::prelude::{MapToMmResult, MmError, MmResultExt, OrMmError};
 use std::ops::Deref;
 use std::sync::Arc;
 #[cfg(target_arch = "wasm32")]
@@ -59,8 +65,8 @@ where
     async fn get_from_address(&self, req: &WithdrawRequest) -> Result<H160, MmError<WithdrawError>> {
         let coin = self.coin();
         match req.from {
-            Some(_) => Ok(coin.get_withdraw_sender_address(req).await?.address),
-            None => Ok(coin.derivation_method.single_addr_or_err().await?),
+            Some(_) => Ok(coin.get_withdraw_sender_address(req).await.map_mm_err()?.address),
+            None => Ok(coin.derivation_method.single_addr_or_err().await.map_mm_err()?),
         }
     }
 
@@ -77,7 +83,8 @@ where
                 let derivation_path = self.get_from_derivation_path(from)?;
                 let raw_priv_key = coin
                     .priv_key_policy
-                    .hd_wallet_derived_priv_key_or_err(&derivation_path)?;
+                    .hd_wallet_derived_priv_key_or_err(&derivation_path)
+                    .map_mm_err()?;
                 KeyPair::from_secret_slice(raw_priv_key.as_slice())
                     .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))
             },
@@ -93,11 +100,17 @@ where
     #[allow(clippy::result_large_err)]
     fn get_from_derivation_path(&self, from: &HDAddressSelector) -> Result<DerivationPath, MmError<WithdrawError>> {
         let coin = self.coin();
-        let path_to_coin = &coin.deref().derivation_method.hd_wallet_or_err()?.derivation_path;
+        let path_to_coin = &coin
+            .deref()
+            .derivation_method
+            .hd_wallet_or_err()
+            .map_mm_err()?
+            .derivation_path;
         let path_to_address = from
             .to_address_path(path_to_coin.coin_type())
-            .mm_err(|err| WithdrawError::UnexpectedFromAddress(err.to_string()))?;
-        let derivation_path = path_to_address.to_derivation_path(path_to_coin)?;
+            .mm_err(|err| WithdrawError::UnexpectedFromAddress(err.to_string()))
+            .map_mm_err()?;
+        let derivation_path = path_to_address.to_derivation_path(path_to_coin).map_mm_err()?;
         Ok(derivation_path)
     }
 
@@ -113,7 +126,8 @@ where
                 let default_hd_address = &coin
                     .deref()
                     .derivation_method
-                    .hd_wallet_or_err()?
+                    .hd_wallet_or_err()
+                    .map_mm_err()?
                     .get_enabled_address()
                     .await
                     .ok_or_else(|| WithdrawError::InternalError("no enabled address".to_owned()))?;
@@ -187,7 +201,8 @@ where
 
                 let signed_tx = coin
                     .wait_for_tx_appears_on_rpc(tx_hash, wait_rpc_timeout, check_every)
-                    .await?;
+                    .await
+                    .map_mm_err()?;
                 let tx_hex = signed_tx
                     .map(|signed_tx| BytesJson::from(rlp::encode(&signed_tx).to_vec()))
                     // Return an empty `tx_hex` if the transaction is still not appeared on the RPC node.
@@ -216,13 +231,13 @@ where
 
         self.on_generating_transaction()?;
 
-        let my_balance = coin.address_balance(my_address).compat().await?;
-        let my_balance_dec = u256_to_big_decimal(my_balance, coin.decimals)?;
+        let my_balance = coin.address_balance(my_address).compat().await.map_mm_err()?;
+        let my_balance_dec = u256_to_big_decimal(my_balance, coin.decimals).map_mm_err()?;
 
         let (mut wei_amount, dec_amount) = if req.max {
             (my_balance, my_balance_dec.clone())
         } else {
-            let wei_amount = wei_from_big_decimal(&req.amount, coin.decimals)?;
+            let wei_amount = u256_from_big_decimal(&req.amount, coin.decimals).map_mm_err()?;
             (wei_amount, req.amount.clone())
         };
         if wei_amount > my_balance {
@@ -241,7 +256,7 @@ where
             },
             EthCoinType::Nft { .. } => return MmError::err(WithdrawError::NftProtocolNotSupported),
         };
-        let eth_value_dec = u256_to_big_decimal(eth_value, coin.decimals)?;
+        let eth_value_dec = u256_to_big_decimal(eth_value, coin.decimals).map_mm_err()?;
 
         let (gas, pay_for_gas_option) = get_eth_gas_details_from_withdraw_fee(
             coin,
@@ -250,11 +265,12 @@ where
             data.clone().into(),
             my_address,
             call_addr,
-            false,
+            req.max,
         )
-        .await?;
-        let total_fee = calc_total_fee(gas, &pay_for_gas_option)?;
-        let total_fee_dec = u256_to_big_decimal(total_fee, coin.decimals)?;
+        .await
+        .map_mm_err()?;
+        let total_fee = calc_total_fee(gas, &pay_for_gas_option).map_mm_err()?;
+        let total_fee_dec = u256_to_big_decimal(total_fee, coin.decimals).map_mm_err()?;
 
         if req.max && coin.coin_type == EthCoinType::Eth {
             if eth_value < total_fee || wei_amount < total_fee {
@@ -271,13 +287,13 @@ where
 
         let (tx_hash, tx_hex) = match coin.priv_key_policy {
             EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. } | EthPrivKeyPolicy::Trezor => {
-                let address_lock = coin.get_address_lock(my_address.to_string()).await;
+                let address_lock = coin.get_address_lock(my_address).await;
                 let _nonce_lock = address_lock.lock().await;
                 let (nonce, _) = coin
                     .clone()
                     .get_addr_nonce(my_address)
                     .compat()
-                    .timeout_secs(30.)
+                    .timeout(ETH_RPC_REQUEST_TIMEOUT_S)
                     .await?
                     .map_to_mm(WithdrawError::Transport)?;
 
@@ -322,11 +338,12 @@ where
                 ))?;
                 let gas_price = pay_for_gas_option.get_gas_price();
                 let (max_fee_per_gas, max_priority_fee_per_gas) = pay_for_gas_option.get_fee_per_gas();
+                // TODO: we should get _nonce_lock here (when WalletConnect is supported for swaps)
                 let (nonce, _) = coin
                     .clone()
                     .get_addr_nonce(my_address)
                     .compat()
-                    .timeout_secs(30.)
+                    .timeout(ETH_RPC_REQUEST_TIMEOUT_S)
                     .await?
                     .map_to_mm(WithdrawError::Transport)?;
                 let params = WcEthTxParams {
@@ -360,22 +377,22 @@ where
 
         self.on_finishing()?;
         let tx_hash_bytes = BytesJson::from(tx_hash.0.to_vec());
-        let tx_hash_str = format!("{:02x}", tx_hash_bytes);
+        let tx_hash_str = format!("{tx_hash_bytes:02x}");
 
-        let amount_decimal = u256_to_big_decimal(wei_amount, coin.decimals)?;
+        let amount_decimal = u256_to_big_decimal(wei_amount, coin.decimals).map_mm_err()?;
         let mut spent_by_me = amount_decimal.clone();
         let received_by_me = if to_addr == my_address {
             amount_decimal.clone()
         } else {
             0.into()
         };
-        let fee_details = EthTxFeeDetails::new(gas, pay_for_gas_option, fee_coin)?;
+        let fee_details = EthTxFeeDetails::new(gas, pay_for_gas_option, fee_coin).map_mm_err()?;
         if coin.coin_type == EthCoinType::Eth {
             spent_by_me += &fee_details.total_fee;
         }
         Ok(TransactionDetails {
-            to: vec![checksum_address(&format!("{:#02x}", to_addr))],
-            from: vec![checksum_address(&format!("{:#02x}", my_address))],
+            to: vec![checksum_address(&format!("{to_addr:#02x}"))],
+            from: vec![checksum_address(&format!("{my_address:#02x}"))],
             total_amount: amount_decimal,
             my_balance_change: &received_by_me - &spent_by_me,
             spent_by_me,
@@ -403,20 +420,24 @@ pub struct InitEthWithdraw {
 
 #[async_trait]
 impl EthWithdraw for InitEthWithdraw {
-    fn coin(&self) -> &EthCoin { &self.coin }
+    fn coin(&self) -> &EthCoin {
+        &self.coin
+    }
 
-    fn request(&self) -> &WithdrawRequest { &self.req }
+    fn request(&self) -> &WithdrawRequest {
+        &self.req
+    }
 
     fn on_generating_transaction(&self) -> Result<(), MmError<WithdrawError>> {
-        Ok(self
-            .task_handle
-            .update_in_progress_status(WithdrawInProgressStatus::GeneratingTransaction)?)
+        self.task_handle
+            .update_in_progress_status(WithdrawInProgressStatus::GeneratingTransaction)
+            .map_mm_err()
     }
 
     fn on_finishing(&self) -> Result<(), MmError<WithdrawError>> {
-        Ok(self
-            .task_handle
-            .update_in_progress_status(WithdrawInProgressStatus::Finishing)?)
+        self.task_handle
+            .update_in_progress_status(WithdrawInProgressStatus::Finishing)
+            .map_mm_err()
     }
 
     async fn sign_tx_with_trezor(
@@ -425,7 +446,7 @@ impl EthWithdraw for InitEthWithdraw {
         unsigned_tx: &TransactionWrapper,
     ) -> Result<SignedEthTx, MmError<WithdrawError>> {
         let coin = self.coin();
-        let crypto_ctx = CryptoCtx::from_ctx(&self.ctx)?;
+        let crypto_ctx = CryptoCtx::from_ctx(&self.ctx).map_mm_err()?;
         let hw_ctx = crypto_ctx
             .hw_ctx()
             .or_mm_err(|| WithdrawError::HwError(HwRpcError::NoTrezorDeviceAvailable))?;
@@ -437,7 +458,7 @@ impl EthWithdraw for InitEthWithdraw {
         };
         let sign_processor = TrezorRpcTaskProcessor::new(self.task_handle.clone(), trezor_statuses);
         let sign_processor = Arc::new(sign_processor);
-        let mut trezor_session = hw_ctx.trezor(sign_processor).await?;
+        let mut trezor_session = hw_ctx.trezor(sign_processor).await.map_mm_err()?;
         let chain_id = match coin.chain_spec {
             ChainSpec::Evm { chain_id } => chain_id,
             // Todo: Add support for Tron signing with Trezor
@@ -449,7 +470,9 @@ impl EthWithdraw for InitEthWithdraw {
         };
         let unverified_tx = trezor_session
             .sign_eth_tx(derivation_path, unsigned_tx, chain_id)
-            .await?;
+            .await
+            .map_mm_err()?;
+
         Ok(SignedEthTx::new(unverified_tx).map_to_mm(|err| WithdrawError::InternalError(err.to_string()))?)
     }
 }
@@ -479,13 +502,21 @@ pub struct StandardEthWithdraw {
 
 #[async_trait]
 impl EthWithdraw for StandardEthWithdraw {
-    fn coin(&self) -> &EthCoin { &self.coin }
+    fn coin(&self) -> &EthCoin {
+        &self.coin
+    }
 
-    fn request(&self) -> &WithdrawRequest { &self.req }
+    fn request(&self) -> &WithdrawRequest {
+        &self.req
+    }
 
-    fn on_generating_transaction(&self) -> Result<(), MmError<WithdrawError>> { Ok(()) }
+    fn on_generating_transaction(&self) -> Result<(), MmError<WithdrawError>> {
+        Ok(())
+    }
 
-    fn on_finishing(&self) -> Result<(), MmError<WithdrawError>> { Ok(()) }
+    fn on_finishing(&self) -> Result<(), MmError<WithdrawError>> {
+        Ok(())
+    }
 
     async fn sign_tx_with_trezor(
         &self,

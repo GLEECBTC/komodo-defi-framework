@@ -7,22 +7,30 @@ pub struct Stack<T> {
 }
 
 impl<T> From<Vec<T>> for Stack<T> {
-    fn from(v: Vec<T>) -> Self { Stack { data: v } }
+    fn from(v: Vec<T>) -> Self {
+        Stack { data: v }
+    }
 }
 
 impl<T> ops::Deref for Stack<T> {
     type Target = Vec<T>;
 
-    fn deref(&self) -> &Self::Target { &self.data }
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
 }
 
 impl<T> ops::DerefMut for Stack<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.data }
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.data
+    }
 }
 
 impl<T> Stack<T> {
     #[inline]
-    pub fn new() -> Self { Stack { data: Vec::new() } }
+    pub fn new() -> Self {
+        Stack { data: Vec::new() }
+    }
 
     #[inline]
     pub fn require(&self, len: usize) -> Result<(), Error> {
@@ -33,16 +41,24 @@ impl<T> Stack<T> {
     }
 
     #[inline]
-    pub fn last(&self) -> Result<&T, Error> { self.data.last().ok_or(Error::InvalidStackOperation) }
+    pub fn last(&self) -> Result<&T, Error> {
+        self.data.last().ok_or(Error::InvalidStackOperation)
+    }
 
     #[inline]
-    pub fn last_mut(&mut self) -> Result<&mut T, Error> { self.data.last_mut().ok_or(Error::InvalidStackOperation) }
+    pub fn last_mut(&mut self) -> Result<&mut T, Error> {
+        self.data.last_mut().ok_or(Error::InvalidStackOperation)
+    }
 
     #[inline]
-    pub fn pop(&mut self) -> Result<T, Error> { self.data.pop().ok_or(Error::InvalidStackOperation) }
+    pub fn pop(&mut self) -> Result<T, Error> {
+        self.data.pop().ok_or(Error::InvalidStackOperation)
+    }
 
     #[inline]
-    pub fn push(&mut self, value: T) { self.data.push(value) }
+    pub fn push(&mut self, value: T) {
+        self.data.push(value)
+    }
 
     #[inline]
     pub fn top(&self, i: usize) -> Result<&T, Error> {

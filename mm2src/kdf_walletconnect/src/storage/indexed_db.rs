@@ -4,8 +4,10 @@ use crate::session::Session;
 use async_trait::async_trait;
 use common::log::debug;
 use mm2_core::mm_ctx::MmArc;
-use mm2_db::indexed_db::{ConstructibleDb, DbIdentifier, DbInstance, DbLocked, DbUpgrader, IndexedDb, IndexedDbBuilder,
-                         InitDbResult, OnUpgradeResult, SharedDb, TableSignature};
+use mm2_db::indexed_db::{
+    ConstructibleDb, DbIdentifier, DbInstance, DbLocked, DbUpgrader, IndexedDb, IndexedDbBuilder, InitDbResult,
+    OnUpgradeResult, SharedDb, TableSignature,
+};
 use mm2_err_handle::prelude::MmResult;
 use mm2_err_handle::prelude::*;
 use relay_rpc::domain::Topic;
@@ -44,7 +46,9 @@ impl DbInstance for IDBSessionStorageInner {
 }
 
 impl IDBSessionStorageInner {
-    pub(crate) fn get_inner(&self) -> &IndexedDb { &self.0 }
+    pub(crate) fn get_inner(&self) -> &IndexedDb {
+        &self.0
+    }
 }
 
 #[derive(Clone)]
@@ -72,16 +76,19 @@ impl WalletConnectStorageOps for IDBSessionStorage {
         Ok(())
     }
 
-    async fn is_initialized(&self) -> MmResult<bool, Self::Error> { Ok(true) }
+    async fn is_initialized(&self) -> MmResult<bool, Self::Error> {
+        Ok(true)
+    }
 
     async fn save_session(&self, session: &Session) -> MmResult<(), Self::Error> {
         debug!("[{}] Saving WalletConnect session to storage", session.topic);
         let lock_db = self.lock_db().await?;
-        let transaction = lock_db.get_inner().transaction().await?;
-        let session_table = transaction.table::<Session>().await?;
+        let transaction = lock_db.get_inner().transaction().await.map_mm_err()?;
+        let session_table = transaction.table::<Session>().await.map_mm_err()?;
         session_table
             .replace_item_by_unique_index("topic", session.topic.clone(), session)
-            .await?;
+            .await
+            .map_mm_err()?;
 
         Ok(())
     }
@@ -89,24 +96,26 @@ impl WalletConnectStorageOps for IDBSessionStorage {
     async fn get_session(&self, topic: &Topic) -> MmResult<Option<Session>, Self::Error> {
         debug!("[{topic}] Retrieving WalletConnect session from storage");
         let lock_db = self.lock_db().await?;
-        let transaction = lock_db.get_inner().transaction().await?;
-        let session_table = transaction.table::<Session>().await?;
+        let transaction = lock_db.get_inner().transaction().await.map_mm_err()?;
+        let session_table = transaction.table::<Session>().await.map_mm_err()?;
 
         Ok(session_table
             .get_item_by_unique_index("topic", topic)
-            .await?
+            .await
+            .map_mm_err()?
             .map(|s| s.1))
     }
 
     async fn get_all_sessions(&self) -> MmResult<Vec<Session>, Self::Error> {
         debug!("Loading WalletConnect sessions from storage");
         let lock_db = self.lock_db().await?;
-        let transaction = lock_db.get_inner().transaction().await?;
-        let session_table = transaction.table::<Session>().await?;
+        let transaction = lock_db.get_inner().transaction().await.map_mm_err()?;
+        let session_table = transaction.table::<Session>().await.map_mm_err()?;
 
         Ok(session_table
             .get_all_items()
-            .await?
+            .await
+            .map_mm_err()?
             .into_iter()
             .map(|s| s.1)
             .collect::<Vec<_>>())
@@ -115,10 +124,13 @@ impl WalletConnectStorageOps for IDBSessionStorage {
     async fn delete_session(&self, topic: &Topic) -> MmResult<(), Self::Error> {
         debug!("[{topic}] Deleting WalletConnect session from storage");
         let lock_db = self.lock_db().await?;
-        let transaction = lock_db.get_inner().transaction().await?;
-        let session_table = transaction.table::<Session>().await?;
+        let transaction = lock_db.get_inner().transaction().await.map_mm_err()?;
+        let session_table = transaction.table::<Session>().await.map_mm_err()?;
 
-        session_table.delete_item_by_unique_index("topic", topic).await?;
+        session_table
+            .delete_item_by_unique_index("topic", topic)
+            .await
+            .map_mm_err()?;
         Ok(())
     }
 

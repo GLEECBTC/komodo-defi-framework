@@ -109,7 +109,9 @@ impl fmt::Debug for Private {
 }
 
 impl fmt::Display for Private {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { bs58::encode(self.layout()).into_string().fmt(f) }
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        bs58::encode(self.layout()).into_string().fmt(f)
+    }
 }
 
 impl FromStr for Private {
@@ -125,7 +127,9 @@ impl FromStr for Private {
 }
 
 impl From<&'static str> for Private {
-    fn from(s: &'static str) -> Self { s.parse().unwrap() }
+    fn from(s: &'static str) -> Self {
+        s.parse().unwrap()
+    }
 }
 
 #[cfg(test)]

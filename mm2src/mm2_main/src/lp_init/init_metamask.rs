@@ -31,9 +31,9 @@ pub enum InitMetamaskError {
     MetamaskInitializingAlready,
     #[from_trait(WithMetamaskRpcError::metamask_rpc_error)]
     MetamaskError(MetamaskRpcError),
-    #[display(fmt = "RPC timed out {:?}", _0)]
+    #[display(fmt = "RPC timed out {_0:?}")]
     Timeout(Duration),
-    #[display(fmt = "Internal: {}", _0)]
+    #[display(fmt = "Internal: {_0}")]
     #[from_trait(WithInternal::internal)]
     Internal(String),
 }
@@ -122,9 +122,9 @@ impl RpcTask for InitMetamaskTask {
     }
 
     async fn run(&mut self, _task_handle: InitMetamaskTaskHandleShared) -> Result<Self::Item, MmError<Self::Error>> {
-        let crypto_ctx = CryptoCtx::from_ctx(&self.ctx)?;
+        let crypto_ctx = CryptoCtx::from_ctx(&self.ctx).map_mm_err()?;
 
-        let metamask = crypto_ctx.init_metamask_ctx(self.req.project.clone()).await?;
+        let metamask = crypto_ctx.init_metamask_ctx(self.req.project.clone()).await.map_mm_err()?;
         Ok(InitMetamaskResponse {
             eth_address: metamask.eth_account_str().to_string(),
         })
@@ -139,7 +139,7 @@ pub async fn connect_metamask(
     let init_ctx = MmInitContext::from_ctx(&ctx).map_to_mm(InitMetamaskError::Internal)?;
     let spawner = ctx.spawner();
     let task = InitMetamaskTask { ctx, req };
-    let task_id = RpcTaskManager::spawn_rpc_task(&init_ctx.init_metamask_manager, &spawner, task, client_id)?;
+    let task_id = RpcTaskManager::spawn_rpc_task(&init_ctx.init_metamask_manager, &spawner, task, client_id).map_mm_err()?;
     Ok(InitRpcTaskResponse { task_id })
 }
 
@@ -166,6 +166,6 @@ pub async fn cancel_connect_metamask(
         .init_metamask_manager
         .lock()
         .map_to_mm(|e| CancelRpcTaskError::Internal(e.to_string()))?;
-    task_manager.cancel_task(req.task_id)?;
+    task_manager.cancel_task(req.task_id).map_mm_err()?;
     Ok(SuccessResponse::new())
 }

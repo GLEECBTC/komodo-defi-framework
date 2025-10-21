@@ -6,9 +6,11 @@ use std::fmt;
 /// Use with `#[serde(default, deserialize_with = "de_none_if_empty")]`.
 pub fn de_none_if_empty<'de, D: Deserializer<'de>>(des: D) -> Result<Option<String>, D::Error> {
     struct Visitor;
-    impl<'de> de::Visitor<'de> for Visitor {
+    impl de::Visitor<'_> for Visitor {
         type Value = Option<String>;
-        fn expecting(&self, fm: &mut fmt::Formatter) -> fmt::Result { fm.write_str("Optional string") }
+        fn expecting(&self, fm: &mut fmt::Formatter) -> fmt::Result {
+            fm.write_str("Optional string")
+        }
 
         fn visit_none<E>(self) -> Result<Option<String>, E>
         where

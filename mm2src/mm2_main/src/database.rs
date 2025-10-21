@@ -80,13 +80,17 @@ async fn migration_2(ctx: &MmArc) -> Vec<(&'static str, Vec<SqlValue>)> {
     create_and_fill_stats_swaps_from_json_statements(ctx).await
 }
 
-fn migration_3() -> Vec<(&'static str, Vec<SqlValue>)> { vec![(stats_swaps::ADD_STARTED_AT_INDEX, vec![])] }
+fn migration_3() -> Vec<(&'static str, Vec<SqlValue>)> {
+    vec![(stats_swaps::ADD_STARTED_AT_INDEX, vec![])]
+}
 
 fn migration_4() -> Vec<(&'static str, Vec<SqlValue>)> {
     db_common::sqlite::execute_batch(stats_swaps::ADD_SPLIT_TICKERS)
 }
 
-fn migration_5() -> Vec<(&'static str, Vec<SqlValue>)> { vec![(my_orders::CREATE_MY_ORDERS_TABLE, vec![])] }
+fn migration_5() -> Vec<(&'static str, Vec<SqlValue>)> {
+    vec![(my_orders::CREATE_MY_ORDERS_TABLE, vec![])]
+}
 
 fn migration_6() -> Vec<(&'static str, Vec<SqlValue>)> {
     vec![
@@ -165,9 +169,10 @@ pub async fn migrate_sqlite_database(ctx: &MmArc, mut current_migration: i64) ->
             transaction.execute(statement, params_from_iter(params.iter()))?;
         }
         current_migration += 1;
-        transaction.execute("INSERT INTO migration (current_migration) VALUES (?1);", [
-            current_migration,
-        ])?;
+        transaction.execute(
+            "INSERT INTO migration (current_migration) VALUES (?1);",
+            [current_migration],
+        )?;
         transaction.commit()?;
     }
     info!("migrate_sqlite_database complete, migrated to {}", current_migration);

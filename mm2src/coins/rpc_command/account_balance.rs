@@ -62,7 +62,7 @@ pub async fn account_balance(
     ctx: MmArc,
     req: HDAccountBalanceRequest,
 ) -> MmResult<HDAccountBalanceResponseEnum, HDAccountBalanceRpcError> {
-    match lp_coinfind_or_err(&ctx, &req.coin).await? {
+    match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
         MmCoinEnum::UtxoCoin(utxo) => Ok(HDAccountBalanceResponseEnum::Map(
             utxo.account_balance_rpc(req.params).await?,
         )),
@@ -93,11 +93,12 @@ pub mod common_impl {
         let account_id = params.account_index;
         let hd_account = coin
             .derivation_method()
-            .hd_wallet_or_err()?
+            .hd_wallet_or_err()
+            .map_mm_err()?
             .get_account(account_id)
             .await
             .or_mm_err(|| HDAccountBalanceRpcError::UnknownAccount { account_id })?;
-        let total_addresses_number = hd_account.known_addresses_number(params.chain)?;
+        let total_addresses_number = hd_account.known_addresses_number(params.chain).map_mm_err()?;
 
         let from_address_id = match params.paging_options {
             PagingOptionsEnum::FromId(from_address_id) => from_address_id + 1,
@@ -107,7 +108,8 @@ pub mod common_impl {
 
         let addresses = coin
             .known_addresses_balances_with_ids(&hd_account, params.chain, from_address_id..to_address_id)
-            .await?;
+            .await
+            .map_mm_err()?;
 
         let page_balance = addresses
             .iter()

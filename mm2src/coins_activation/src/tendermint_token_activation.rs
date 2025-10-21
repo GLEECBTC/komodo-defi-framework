@@ -1,11 +1,20 @@
-use crate::{prelude::TryPlatformCoinFromMmCoinEnum,
-            token::{EnableTokenError, TokenActivationOps, TokenProtocolParams}};
+use crate::{
+    prelude::TryPlatformCoinFromMmCoinEnum,
+    token::{EnableTokenError, TokenActivationOps, TokenProtocolParams},
+};
 use async_trait::async_trait;
-use coins::{tendermint::{TendermintCoin, TendermintToken, TendermintTokenActivationParams, TendermintTokenInitError,
-                         TendermintTokenProtocolInfo},
-            CoinBalance, MarketCoinOps, MmCoinEnum};
+use coins::{
+    tendermint::{
+        TendermintCoin, TendermintToken, TendermintTokenActivationParams, TendermintTokenInitError,
+        TendermintTokenProtocolInfo,
+    },
+    CoinBalance, MarketCoinOps, MmCoinEnum,
+};
 use common::Future01CompatExt;
-use mm2_err_handle::prelude::{MapMmError, MmError};
+use mm2_err_handle::{
+    map_mm_error::MmResultExt,
+    prelude::{MapMmError, MmError},
+};
 use serde::Serialize;
 use serde_json::Value as Json;
 use std::collections::HashMap;
@@ -17,6 +26,7 @@ impl From<TendermintTokenInitError> for EnableTokenError {
                 EnableTokenError::Internal(e)
             },
             TendermintTokenInitError::CouldNotFetchBalance(e) => EnableTokenError::CouldNotFetchBalance(e),
+            TendermintTokenInitError::PlatformCoinMismatch => EnableTokenError::PlatformCoinMismatch,
         }
     }
 }
@@ -40,7 +50,9 @@ impl TryPlatformCoinFromMmCoinEnum for TendermintCoin {
 }
 
 impl TokenProtocolParams for TendermintTokenProtocolInfo {
-    fn platform_coin_ticker(&self) -> &str { &self.platform }
+    fn platform_coin_ticker(&self) -> &str {
+        &self.platform
+    }
 }
 
 #[async_trait]
@@ -66,7 +78,7 @@ impl TokenActivationOps for TendermintToken {
             .await
             .mm_err(|e| TendermintTokenInitError::CouldNotFetchBalance(e.to_string()))?;
 
-        let my_address = token.my_address()?;
+        let my_address = token.my_address().map_mm_err()?;
         let balances = HashMap::from([(my_address, balance)]);
 
         let init_result = TendermintTokenInitResult {

@@ -3,8 +3,10 @@ use super::maker_swap_v2::MakerSwapEvent;
 use super::my_swaps_storage::{MySwapsError, MySwapsOps, MySwapsStorage};
 use super::taker_swap::TakerSavedSwap;
 use super::taker_swap_v2::TakerSwapEvent;
-use super::{active_swaps, MySwapsFilter, SavedSwap, SavedSwapError, SavedSwapIo, LEGACY_SWAP_TYPE, MAKER_SWAP_V2_TYPE,
-            TAKER_SWAP_V2_TYPE};
+use super::{
+    active_swaps, MySwapsFilter, SavedSwap, SavedSwapError, SavedSwapIo, LEGACY_SWAP_TYPE, MAKER_SWAP_V2_TYPE,
+    TAKER_SWAP_V2_TYPE,
+};
 use common::log::{error, warn};
 use common::{calc_total_pages, HttpStatusCode, PagingOptions};
 use derive_more::Display;
@@ -62,17 +64,23 @@ pub enum SwapV2DbError {
 
 #[cfg(target_arch = "wasm32")]
 impl From<DbTransactionError> for SwapV2DbError {
-    fn from(e: DbTransactionError) -> Self { SwapV2DbError::DbTransaction(e) }
+    fn from(e: DbTransactionError) -> Self {
+        SwapV2DbError::DbTransaction(e)
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
 impl From<InitDbError> for SwapV2DbError {
-    fn from(e: InitDbError) -> Self { SwapV2DbError::InitDb(e) }
+    fn from(e: InitDbError) -> Self {
+        SwapV2DbError::InitDb(e)
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
 impl From<serde_json::Error> for SwapV2DbError {
-    fn from(e: serde_json::Error) -> Self { SwapV2DbError::Serde(e) }
+    fn from(e: serde_json::Error) -> Self {
+        SwapV2DbError::Serde(e)
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -80,10 +88,10 @@ pub(super) async fn get_swap_type(ctx: &MmArc, uuid: &Uuid) -> MmResult<Option<u
     use crate::lp_swap::swap_wasm_db::MySwapsFiltersTable;
 
     let swaps_ctx = SwapsContext::from_ctx(ctx).unwrap();
-    let db = swaps_ctx.swap_db().await?;
-    let transaction = db.transaction().await?;
-    let table = transaction.table::<MySwapsFiltersTable>().await?;
-    let item = match table.get_item_by_unique_index("uuid", uuid).await? {
+    let db = swaps_ctx.swap_db().await.map_mm_err()?;
+    let transaction = db.transaction().await.map_mm_err()?;
+    let table = transaction.table::<MySwapsFiltersTable>().await.map_mm_err()?;
+    let item = match table.get_item_by_unique_index("uuid", uuid).await.map_mm_err()? {
         Some((_item_id, item)) => item,
         None => return Ok(None),
     };
@@ -189,16 +197,20 @@ pub(super) async fn get_maker_swap_data_for_rpc(
     uuid: &Uuid,
 ) -> MmResult<Option<MySwapForRpc<MakerSwapEvent>>, SwapV2DbError> {
     let swaps_ctx = SwapsContext::from_ctx(ctx).unwrap();
-    let db = swaps_ctx.swap_db().await?;
-    let transaction = db.transaction().await?;
-    let table = transaction.table::<SavedSwapTable>().await?;
-    let item = match table.get_item_by_unique_index("uuid", uuid).await? {
+    let db = swaps_ctx.swap_db().await.map_mm_err()?;
+    let transaction = db.transaction().await.map_mm_err()?;
+    let table = transaction.table::<SavedSwapTable>().await.map_mm_err()?;
+    let item = match table.get_item_by_unique_index("uuid", uuid).await.map_mm_err()? {
         Some((_item_id, item)) => item,
         None => return Ok(None),
     };
 
-    let filters_table = transaction.table::<MySwapsFiltersTable>().await?;
-    let filter_item = match filters_table.get_item_by_unique_index("uuid", uuid).await? {
+    let filters_table = transaction.table::<MySwapsFiltersTable>().await.map_mm_err()?;
+    let filter_item = match filters_table
+        .get_item_by_unique_index("uuid", uuid)
+        .await
+        .map_mm_err()?
+    {
         Some((_item_id, item)) => item,
         None => return Ok(None),
     };
@@ -230,16 +242,20 @@ pub(super) async fn get_taker_swap_data_for_rpc(
     uuid: &Uuid,
 ) -> MmResult<Option<MySwapForRpc<TakerSwapEvent>>, SwapV2DbError> {
     let swaps_ctx = SwapsContext::from_ctx(ctx).unwrap();
-    let db = swaps_ctx.swap_db().await?;
-    let transaction = db.transaction().await?;
-    let table = transaction.table::<SavedSwapTable>().await?;
-    let item = match table.get_item_by_unique_index("uuid", uuid).await? {
+    let db = swaps_ctx.swap_db().await.map_mm_err()?;
+    let transaction = db.transaction().await.map_mm_err()?;
+    let table = transaction.table::<SavedSwapTable>().await.map_mm_err()?;
+    let item = match table.get_item_by_unique_index("uuid", uuid).await.map_mm_err()? {
         Some((_item_id, item)) => item,
         None => return Ok(None),
     };
 
-    let filters_table = transaction.table::<MySwapsFiltersTable>().await?;
-    let filter_item = match filters_table.get_item_by_unique_index("uuid", uuid).await? {
+    let filters_table = transaction.table::<MySwapsFiltersTable>().await.map_mm_err()?;
+    let filter_item = match filters_table
+        .get_item_by_unique_index("uuid", uuid)
+        .await
+        .map_mm_err()?
+    {
         Some((_item_id, item)) => item,
         None => return Ok(None),
     };
@@ -281,17 +297,23 @@ enum GetSwapDataErr {
 }
 
 impl From<SavedSwapError> for GetSwapDataErr {
-    fn from(e: SavedSwapError) -> Self { GetSwapDataErr::DbError(e.to_string()) }
+    fn from(e: SavedSwapError) -> Self {
+        GetSwapDataErr::DbError(e.to_string())
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<SqlError> for GetSwapDataErr {
-    fn from(e: SqlError) -> Self { GetSwapDataErr::DbError(e.to_string()) }
+    fn from(e: SqlError) -> Self {
+        GetSwapDataErr::DbError(e.to_string())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
 impl From<SwapV2DbError> for GetSwapDataErr {
-    fn from(e: SwapV2DbError) -> Self { GetSwapDataErr::DbError(e.to_string()) }
+    fn from(e: SwapV2DbError) -> Self {
+        GetSwapDataErr::DbError(e.to_string())
+    }
 }
 
 async fn get_swap_data_by_uuid_and_type(
@@ -301,18 +323,18 @@ async fn get_swap_data_by_uuid_and_type(
 ) -> MmResult<Option<SwapRpcData>, GetSwapDataErr> {
     match swap_type {
         LEGACY_SWAP_TYPE => {
-            let saved_swap = SavedSwap::load_my_swap_from_db(ctx, None, uuid).await?;
+            let saved_swap = SavedSwap::load_my_swap_from_db(ctx, None, uuid).await.map_mm_err()?;
             Ok(saved_swap.map(|swap| match swap {
                 SavedSwap::Maker(m) => SwapRpcData::MakerV1(m),
                 SavedSwap::Taker(t) => SwapRpcData::TakerV1(t),
             }))
         },
         MAKER_SWAP_V2_TYPE => {
-            let data = get_maker_swap_data_for_rpc(ctx, &uuid).await?;
+            let data = get_maker_swap_data_for_rpc(ctx, &uuid).await.map_mm_err()?;
             Ok(data.map(SwapRpcData::MakerV2))
         },
         TAKER_SWAP_V2_TYPE => {
-            let data = get_taker_swap_data_for_rpc(ctx, &uuid).await?;
+            let data = get_taker_swap_data_for_rpc(ctx, &uuid).await.map_mm_err()?;
             Ok(data.map(SwapRpcData::TakerV2))
         },
         unsupported => MmError::err(GetSwapDataErr::UnsupportedSwapType(unsupported)),
@@ -334,12 +356,16 @@ pub(crate) enum MySwapStatusError {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<SqlError> for MySwapStatusError {
-    fn from(e: SqlError) -> Self { MySwapStatusError::DbError(e.to_string()) }
+    fn from(e: SqlError) -> Self {
+        MySwapStatusError::DbError(e.to_string())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
 impl From<SwapV2DbError> for MySwapStatusError {
-    fn from(e: SwapV2DbError) -> Self { MySwapStatusError::DbError(e.to_string()) }
+    fn from(e: SwapV2DbError) -> Self {
+        MySwapStatusError::DbError(e.to_string())
+    }
 }
 
 impl From<GetSwapDataErr> for MySwapStatusError {
@@ -367,10 +393,12 @@ pub(crate) async fn my_swap_status_rpc(
     req: MySwapStatusRequest,
 ) -> MmResult<SwapRpcData, MySwapStatusError> {
     let swap_type = get_swap_type(&ctx, &req.uuid)
-        .await?
+        .await
+        .map_mm_err()?
         .or_mm_err(|| MySwapStatusError::NoSwapWithUuid(req.uuid))?;
     get_swap_data_by_uuid_and_type(&ctx, req.uuid, swap_type)
-        .await?
+        .await
+        .map_mm_err()?
         .or_mm_err(|| MySwapStatusError::NoSwapWithUuid(req.uuid))
 }
 
@@ -429,7 +457,8 @@ pub(crate) async fn my_recent_swaps_rpc(
 ) -> MmResult<MyRecentSwapsResponse, MyRecentSwapsErr> {
     let db_result = MySwapsStorage::new(ctx.clone())
         .my_recent_swaps_with_filters(&req.filter, Some(&req.paging_options))
-        .await?;
+        .await
+        .map_mm_err()?;
     let mut swaps = Vec::with_capacity(db_result.uuids_and_types.len());
     for (uuid, swap_type) in db_result.uuids_and_types.iter() {
         match get_swap_data_by_uuid_and_type(&ctx, *uuid, *swap_type).await {

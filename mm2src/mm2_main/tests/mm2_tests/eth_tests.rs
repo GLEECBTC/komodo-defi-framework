@@ -1,8 +1,9 @@
 use common::block_on;
 use ethcore_transaction::UnverifiedTransactionWrapper;
 use http::StatusCode;
-use mm2_test_helpers::for_tests::{eth_sepolia_conf, get_passphrase, MarketMakerIt, Mm2TestConf, ETH_SEPOLIA_NODES,
-                                  ETH_SEPOLIA_SWAP_CONTRACT};
+use mm2_test_helpers::for_tests::{
+    eth_sepolia_conf, get_passphrase, MarketMakerIt, Mm2TestConf, ETH_SEPOLIA_NODES, ETH_SEPOLIA_SWAP_CONTRACT,
+};
 use serde_json::{json, Value as Json};
 use std::str::FromStr;
 

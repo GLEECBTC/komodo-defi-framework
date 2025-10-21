@@ -13,5 +13,7 @@ pub trait WithTimeout {
 pub struct InternalError(pub String);
 
 impl InternalError {
-    pub fn take(self) -> String { self.0 }
+    pub fn take(self) -> String {
+        self.0
+    }
 }

@@ -1,29 +1,35 @@
-use crate::docker_tests::docker_tests_common::{generate_utxo_coin_with_privkey, trade_base_rel, GETH_RPC_URL, MM_CTX,
-                                               SET_BURN_PUBKEY_TO_ALICE};
-use crate::docker_tests::eth_docker_tests::{erc20_coin_with_random_privkey, erc20_contract_checksum,
-                                            fill_eth_erc20_with_private_key, swap_contract};
+use crate::docker_tests::docker_tests_common::{
+    generate_utxo_coin_with_privkey, trade_base_rel, GETH_RPC_URL, MM_CTX, SET_BURN_PUBKEY_TO_ALICE,
+};
+use crate::docker_tests::eth_docker_tests::{
+    erc20_coin_with_random_privkey, erc20_contract_checksum, fill_eth_erc20_with_private_key, swap_contract,
+};
 use crate::integration_tests_common::*;
-use crate::{fill_address, generate_utxo_coin_with_random_privkey, random_secp256k1_secret, rmd160_from_priv,
-            utxo_coin_from_privkey};
+use crate::{
+    fill_address, generate_utxo_coin_with_random_privkey, random_secp256k1_secret, rmd160_from_priv,
+    utxo_coin_from_privkey,
+};
 use bitcrypto::dhash160;
 use chain::OutPoint;
 use coins::utxo::rpc_clients::UnspentInfo;
 use coins::utxo::{GetUtxoListOps, UtxoCommonOps};
 use coins::TxFeeDetails;
-use coins::{ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, RefundPaymentArgs,
-            SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash,
-            TransactionEnum, WithdrawRequest};
+use coins::{
+    ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, RefundPaymentArgs, SearchForSwapTxSpendInput,
+    SendPaymentArgs, SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash, TransactionEnum, WithdrawRequest,
+};
 use common::{block_on, block_on_f01, executor::Timer, get_utc_timestamp, now_sec, wait_until_sec};
 use crypto::privkey::key_pair_from_seed;
 use crypto::{CryptoCtx, DerivationPath, KeyPairPolicy};
 use http::StatusCode;
 use mm2_libp2p::behaviours::atomicdex::MAX_TIME_GAP_FOR_CONNECTED_PEER;
 use mm2_number::{BigDecimal, BigRational, MmNumber};
-use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, disable_coin, disable_coin_err, enable_eth_coin,
-                                  enable_eth_with_tokens_v2, erc20_dev_conf, eth_dev_conf, get_locked_amount,
-                                  kmd_conf, max_maker_vol, mm_dump, mycoin1_conf, mycoin_conf, set_price, start_swaps,
-                                  wait_for_swap_contract_negotiation, wait_for_swap_negotiation_failure,
-                                  MarketMakerIt, Mm2TestConf, DEFAULT_RPC_PASSWORD};
+use mm2_test_helpers::for_tests::{
+    check_my_swap_status_amounts, disable_coin, disable_coin_err, enable_eth_coin, erc20_dev_conf, eth_dev_conf,
+    get_locked_amount, kmd_conf, max_maker_vol, mm_dump, mycoin1_conf, mycoin_conf, set_price, start_swaps,
+    task_enable_eth_with_tokens, wait_for_swap_contract_negotiation, wait_for_swap_negotiation_failure, MarketMakerIt,
+    Mm2TestConf, DEFAULT_RPC_PASSWORD,
+};
 use mm2_test_helpers::{get_passphrase, structs::*};
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
@@ -581,7 +587,7 @@ fn order_should_be_updated_when_balance_is_decreased_alice_subscribes_after_upda
         "userpass": mm_bob.userpass,
         "method": "withdraw",
         "coin": "MYCOIN",
-        "amount": "499.99998",
+        "amount": "499.99999481",
         "to": "R9imXLs1hEcU9KbFDQq2hJEEJ1P5UoekaF",
     })))
     .unwrap();
@@ -616,7 +622,7 @@ fn order_should_be_updated_when_balance_is_decreased_alice_subscribes_after_upda
     assert_eq!(asks.len(), 1, "Bob MYCOIN/MYCOIN1 orderbook must have exactly 1 ask");
 
     let order_volume = asks[0]["maxvolume"].as_str().unwrap();
-    assert_eq!("500", order_volume);
+    assert_eq!("500", order_volume); // 1000.0 - (499.99999481 + 0.00000274 txfee) = (500.0 + 0.00000274 txfee)
 
     log!("Get MYCOIN/MYCOIN1 orderbook on Alice side");
     let rc = block_on(mm_alice.rpc(&json!({
@@ -731,7 +737,7 @@ fn order_should_be_updated_when_balance_is_decreased_alice_subscribes_before_upd
         "userpass": mm_bob.userpass,
         "method": "withdraw",
         "coin": "MYCOIN",
-        "amount": "499.99998",
+        "amount": "499.99999481",
         "to": "R9imXLs1hEcU9KbFDQq2hJEEJ1P5UoekaF",
     })))
     .unwrap();
@@ -766,7 +772,7 @@ fn order_should_be_updated_when_balance_is_decreased_alice_subscribes_before_upd
     assert_eq!(asks.len(), 1, "Bob MYCOIN/MYCOIN1 orderbook must have exactly 1 ask");
 
     let order_volume = asks[0]["maxvolume"].as_str().unwrap();
-    assert_eq!("500", order_volume);
+    assert_eq!("500", order_volume); // 1000.0 - (499.99999481 + 0.00000245 txfee) = (500.0 + 0.00000274 txfee)
 
     log!("Get MYCOIN/MYCOIN1 orderbook on Alice side");
     let rc = block_on(mm_alice.rpc(&json!({
@@ -965,7 +971,7 @@ fn test_match_and_trade_setprice_max() {
     log!("orderbook {:?}", bob_orderbook);
     let asks = bob_orderbook["asks"].as_array().unwrap();
     assert_eq!(asks.len(), 1, "MYCOIN/MYCOIN1 orderbook must have exactly 1 ask");
-    assert_eq!(asks[0]["maxvolume"], Json::from("999.99999"));
+    assert_eq!(asks[0]["maxvolume"], Json::from("999.99999726"));
 
     let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
@@ -1074,7 +1080,7 @@ fn test_max_taker_vol_swap() {
     .unwrap();
     assert!(rc.0.is_success(), "!max_taker_vol: {}", rc.1);
     let vol: MaxTakerVolResponse = serde_json::from_str(&rc.1).unwrap();
-    let expected_vol = MmNumber::from((647499741, 12965000));
+    let expected_vol = MmNumber::from((1294999865579, 25930000000));
 
     let actual_vol = MmNumber::from(vol.result.clone());
     log!("actual vol {}", actual_vol.to_decimal());
@@ -1176,10 +1182,10 @@ fn test_buy_when_coins_locked_by_other_swap() {
         "base": "MYCOIN",
         "rel": "MYCOIN1",
         "price": 1,
-        // the result of equation x + x / 777 + 0.00002 = 1
+        // the result of equation x + x / 777 + 0.00000274 dexfee_txfee + 0.00000245 payment_txfee = 1
         "volume": {
-            "numer":"77698446",
-            "denom":"77800000"
+            "numer":"77699596737",
+            "denom":"77800000000"
         },
     })))
     .unwrap();
@@ -1200,8 +1206,8 @@ fn test_buy_when_coins_locked_by_other_swap() {
         // it is slightly more than previous volume so it should fail
         // because the total sum of used funds will be slightly more than available 2
         "volume": {
-            "numer":"77698447",
-            "denom":"77800000"
+            "numer":"77699599999", // increase volume +0.00000001
+            "denom":"77800000000"
         },
     })))
     .unwrap();
@@ -1270,10 +1276,10 @@ fn test_sell_when_coins_locked_by_other_swap() {
         "base": "MYCOIN1",
         "rel": "MYCOIN",
         "price": 1,
-        // the result of equation x + x / 777 + 0.00002 = 1
+        // the result of equation x + x / 777 + 0.00000245 + 0.00000274 = 1
         "volume": {
-            "numer":"77698446",
-            "denom":"77800000"
+            "numer":"77699596737",
+            "denom":"77800000000"
         },
     })))
     .unwrap();
@@ -1283,6 +1289,7 @@ fn test_sell_when_coins_locked_by_other_swap() {
     block_on(mm_alice.wait_for_log(22., |log| log.contains("Entering the taker_swap_loop MYCOIN/MYCOIN1"))).unwrap();
     // TODO when sell call is made immediately swap might be not put into swap ctx yet so locked
     // amount returns 0
+    // NOTE: in this test sometimes Alice has time to send only the taker fee, sometimes can send even the payment tx too
     thread::sleep(Duration::from_secs(6));
 
     let rc = block_on(mm_alice.rpc(&json!({
@@ -1294,8 +1301,8 @@ fn test_sell_when_coins_locked_by_other_swap() {
         // it is slightly more than previous volume so it should fail
         // because the total sum of used funds will be slightly more than available 2
         "volume": {
-            "numer":"77698447",
-            "denom":"77800000"
+            "numer":"77699599999", // ensure volume > 1.00000000
+            "denom":"77800000000"
         },
     })))
     .unwrap();
@@ -1334,10 +1341,11 @@ fn test_buy_max() {
         "base": "MYCOIN",
         "rel": "MYCOIN1",
         "price": 1,
-        // the result of equation x + x / 777 + 0.00002 = 1
+        // the result of equation x + x / 777 + 0.00000274 dexfee_txfee + 0.00000245 payment_txfee = 1
+        // (btw no need to add refund txfee - it's taken from the spend amount for utxo taker)
         "volume": {
-            "numer":"77698446",
-            "denom":"77800000"
+            "numer":"77699596737",
+            "denom":"77800000000"
         },
     })))
     .unwrap();
@@ -1351,8 +1359,8 @@ fn test_buy_max() {
         "price": 1,
         // it is slightly more than previous volume so it should fail
         "volume": {
-            "numer":"77698447",
-            "denom":"77800000"
+            "numer":"77699596738",
+            "denom":"77800000000"
         },
     })))
     .unwrap();
@@ -1408,12 +1416,12 @@ fn test_maker_trade_preimage() {
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!trade_preimage: {}", rc.1);
-    let base_coin_fee = TradeFeeForTest::new("MYCOIN", "0.00001", false);
-    let rel_coin_fee = TradeFeeForTest::new("MYCOIN1", "0.00002", true);
-    let volume = MmNumber::from("9.99999");
+    let base_coin_fee = TradeFeeForTest::new("MYCOIN", "0.00000274", false); // txfee from get_sender_trade_fee
+    let rel_coin_fee = TradeFeeForTest::new("MYCOIN1", "0.00000992", true);
+    let volume = MmNumber::from("9.99999726"); // 1.0 - 0.00000274 from calc_max_maker_vol
 
-    let my_coin_total = TotalTradeFeeForTest::new("MYCOIN", "0.00001", "0.00001");
-    let my_coin1_total = TotalTradeFeeForTest::new("MYCOIN1", "0.00002", "0");
+    let my_coin_total = TotalTradeFeeForTest::new("MYCOIN", "0.00000274", "0.00000274");
+    let my_coin1_total = TotalTradeFeeForTest::new("MYCOIN1", "0.00000992", "0");
 
     let expected = TradePreimageResult::MakerPreimage(MakerPreimage {
         base_coin_fee,
@@ -1445,12 +1453,12 @@ fn test_maker_trade_preimage() {
     let mut actual: RpcSuccessResponse<TradePreimageResult> = serde_json::from_str(&rc.1).unwrap();
     actual.result.sort_total_fees();
 
-    let base_coin_fee = TradeFeeForTest::new("MYCOIN1", "0.00002", false);
-    let rel_coin_fee = TradeFeeForTest::new("MYCOIN", "0.00001", true);
-    let volume = MmNumber::from("19.99998");
+    let base_coin_fee = TradeFeeForTest::new("MYCOIN1", "0.00000548", false);
+    let rel_coin_fee = TradeFeeForTest::new("MYCOIN", "0.00000496", true);
+    let volume = MmNumber::from("19.99999452");
 
-    let my_coin_total = TotalTradeFeeForTest::new("MYCOIN", "0.00001", "0");
-    let my_coin1_total = TotalTradeFeeForTest::new("MYCOIN1", "0.00002", "0.00002");
+    let my_coin_total = TotalTradeFeeForTest::new("MYCOIN", "0.00000496", "0");
+    let my_coin1_total = TotalTradeFeeForTest::new("MYCOIN1", "0.00000548", "0.00000548");
     let expected = TradePreimageResult::MakerPreimage(MakerPreimage {
         base_coin_fee,
         rel_coin_fee,
@@ -1472,7 +1480,7 @@ fn test_maker_trade_preimage() {
             "rel": "MYCOIN",
             "swap_method": "setprice",
             "price": 1,
-            "volume": "19.99998",
+            "volume": "19.99999109", // actually try max value (balance - txfee = 20.0 - 0.00000823)
         },
     })))
     .unwrap();
@@ -1480,11 +1488,11 @@ fn test_maker_trade_preimage() {
     let mut actual: RpcSuccessResponse<TradePreimageResult> = serde_json::from_str(&rc.1).unwrap();
     actual.result.sort_total_fees();
 
-    let base_coin_fee = TradeFeeForTest::new("MYCOIN1", "0.00002", false);
-    let rel_coin_fee = TradeFeeForTest::new("MYCOIN", "0.00001", true);
+    let base_coin_fee = TradeFeeForTest::new("MYCOIN1", "0.00000891", false); // txfee updated for calculated max volume (not 616)
+    let rel_coin_fee = TradeFeeForTest::new("MYCOIN", "0.00000496", true);
 
-    let total_my_coin = TotalTradeFeeForTest::new("MYCOIN", "0.00001", "0");
-    let total_my_coin1 = TotalTradeFeeForTest::new("MYCOIN1", "0.00002", "0.00002");
+    let total_my_coin = TotalTradeFeeForTest::new("MYCOIN", "0.00000496", "0");
+    let total_my_coin1 = TotalTradeFeeForTest::new("MYCOIN1", "0.00000891", "0.00000891");
 
     let expected = TradePreimageResult::MakerPreimage(MakerPreimage {
         base_coin_fee,
@@ -1574,13 +1582,13 @@ fn test_taker_trade_preimage() {
     let mut actual: RpcSuccessResponse<TradePreimageResult> = serde_json::from_str(&rc.1).unwrap();
     actual.result.sort_total_fees();
 
-    let base_coin_fee = TradeFeeForTest::new("MYCOIN", "0.00001", false);
-    let rel_coin_fee = TradeFeeForTest::new("MYCOIN1", "0.00002", true);
+    let base_coin_fee = TradeFeeForTest::new("MYCOIN", "0.00000274", false);
+    let rel_coin_fee = TradeFeeForTest::new("MYCOIN1", "0.00000992", true);
     let taker_fee = TradeFeeForTest::new("MYCOIN", "0.01", false);
-    let fee_to_send_taker_fee = TradeFeeForTest::new("MYCOIN", "0.00001", false);
+    let fee_to_send_taker_fee = TradeFeeForTest::new("MYCOIN", "0.00000245", false);
 
-    let my_coin_total_fee = TotalTradeFeeForTest::new("MYCOIN", "0.01002", "0.01002");
-    let my_coin1_total_fee = TotalTradeFeeForTest::new("MYCOIN1", "0.00002", "0");
+    let my_coin_total_fee = TotalTradeFeeForTest::new("MYCOIN", "0.01000519", "0.01000519");
+    let my_coin1_total_fee = TotalTradeFeeForTest::new("MYCOIN1", "0.00000992", "0");
 
     let expected = TradePreimageResult::TakerPreimage(TakerPreimage {
         base_coin_fee,
@@ -1608,13 +1616,13 @@ fn test_taker_trade_preimage() {
     let mut actual: RpcSuccessResponse<TradePreimageResult> = serde_json::from_str(&rc.1).unwrap();
     actual.result.sort_total_fees();
 
-    let base_coin_fee = TradeFeeForTest::new("MYCOIN", "0.00001", true);
-    let rel_coin_fee = TradeFeeForTest::new("MYCOIN1", "0.00002", false);
+    let base_coin_fee = TradeFeeForTest::new("MYCOIN", "0.00000496", true);
+    let rel_coin_fee = TradeFeeForTest::new("MYCOIN1", "0.00000548", false); // fee to send taker payment
     let taker_fee = TradeFeeForTest::new("MYCOIN1", "0.02", false);
-    let fee_to_send_taker_fee = TradeFeeForTest::new("MYCOIN1", "0.00002", false);
+    let fee_to_send_taker_fee = TradeFeeForTest::new("MYCOIN1", "0.0000049", false);
 
-    let my_coin_total_fee = TotalTradeFeeForTest::new("MYCOIN", "0.00001", "0");
-    let my_coin1_total_fee = TotalTradeFeeForTest::new("MYCOIN1", "0.02004", "0.02004");
+    let my_coin_total_fee = TotalTradeFeeForTest::new("MYCOIN", "0.00000496", "0");
+    let my_coin1_total_fee = TotalTradeFeeForTest::new("MYCOIN1", "0.02001038", "0.02001038"); // taker_fee + rel_coin_fee + fee_to_send_taker_fee
 
     let expected = TradePreimageResult::TakerPreimage(TakerPreimage {
         base_coin_fee,
@@ -1674,8 +1682,8 @@ fn test_trade_preimage_not_sufficient_balance() {
     log!("{:?}", block_on(enable_native(&mm, "MYCOIN1", &[], None)));
     log!("{:?}", block_on(enable_native(&mm, "MYCOIN", &[], None)));
 
-    fill_balance_functor(MmNumber::from("0.000015").to_decimal());
-    // Try sell the max amount with the zero balance.
+    fill_balance_functor(MmNumber::from("0.00001273").to_decimal()); // volume < txfee + dust = 274 + 1000
+                                                                     // Try sell the max amount with the zero balance.
     let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "mmrpc": "2.0",
@@ -1690,10 +1698,10 @@ fn test_trade_preimage_not_sufficient_balance() {
     })))
     .unwrap();
     assert!(!rc.0.is_success(), "trade_preimage success, but should fail: {}", rc.1);
-    let available = MmNumber::from("0.000015").to_decimal();
-    // Required at least 0.00002 MYCOIN to pay the transaction_fee(0.00001) and to send a value not less than dust(0.00001).
-    let required = MmNumber::from("0.00002").to_decimal();
-    expect_not_sufficient_balance(&rc.1, available, required, None);
+    let available = MmNumber::from("0.00001273").to_decimal();
+    // Required at least 0.00001274 MYCOIN to pay the transaction_fee(0.00000274) and to send a value not less than dust(0.00001) and not less than min_trading_vol (10 * dust).
+    let required = MmNumber::from("0.00001274").to_decimal(); // TODO: this is not true actually: we can't create orders less that min_trading_vol = 10 * dust
+    expect_not_sufficient_balance(&rc.1, available, required, Some(MmNumber::from("0").to_decimal()));
 
     let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
@@ -1710,8 +1718,8 @@ fn test_trade_preimage_not_sufficient_balance() {
     .unwrap();
     assert!(!rc.0.is_success(), "trade_preimage success, but should fail: {}", rc.1);
     // Required 0.00001 MYCOIN to pay the transaction fee and the specified 0.1 volume.
-    let available = MmNumber::from("0.000015").to_decimal();
-    let required = MmNumber::from("0.10001").to_decimal();
+    let available = MmNumber::from("0.00001273").to_decimal();
+    let required = MmNumber::from("0.1000024").to_decimal();
     expect_not_sufficient_balance(&rc.1, available, required, None);
 
     let rc = block_on(mm.rpc(&json!({
@@ -1728,11 +1736,11 @@ fn test_trade_preimage_not_sufficient_balance() {
     })))
     .unwrap();
     assert!(!rc.0.is_success(), "trade_preimage success, but should fail: {}", rc.1);
-    // balance(0.000015)
-    let available = MmNumber::from("0.000015").to_decimal();
-    // balance(0.000015) + transaction_fee(0.00001)
-    let required = MmNumber::from("0.00002").to_decimal();
-    expect_not_sufficient_balance(&rc.1, available, required, None);
+    // balance(0.00001273)
+    let available = MmNumber::from("0.00001273").to_decimal();
+    // required min_tx_amount(0.00001) + transaction_fee(0.00000274)
+    let required = MmNumber::from("0.00001274").to_decimal();
+    expect_not_sufficient_balance(&rc.1, available, required, Some(MmNumber::from("0").to_decimal()));
 
     fill_balance_functor(MmNumber::from("7.770085").to_decimal());
     let rc = block_on(mm.rpc(&json!({
@@ -1749,12 +1757,12 @@ fn test_trade_preimage_not_sufficient_balance() {
     })))
     .unwrap();
     assert!(!rc.0.is_success(), "trade_preimage success, but should fail: {}", rc.1);
-    let available = MmNumber::from("7.7701").to_decimal();
+    let available = MmNumber::from("7.77009773").to_decimal();
     // `required = volume + fee_to_send_taker_payment + dex_fee + fee_to_send_dex_fee`,
-    // where `volume = 7.77`, `fee_to_send_taker_payment = fee_to_send_dex_fee = 0.00001`, `dex_fee = 0.01`.
+    // where `volume = 7.77`, `fee_to_send_taker_payment = 0.00000393, fee_to_send_dex_fee = 0.00000422`, `dex_fee = 0.01`.
     // Please note `dex_fee = 7.77 / 777` with dex_fee = 0.01
-    // required = 7.77 + 0.01 (dex_fee) + (0.0001 * 2) = 7.78002
-    let required = MmNumber::from("7.78002");
+    // required = 7.77 + 0.01 (dex_fee) + (0.00000393 + 0.00000422) = 7.78000815
+    let required = MmNumber::from("7.78000815");
     expect_not_sufficient_balance(&rc.1, available, required.to_decimal(), Some(BigDecimal::from(0)));
 }
 
@@ -2012,10 +2020,10 @@ fn test_get_max_taker_vol() {
     .unwrap();
     assert!(rc.0.is_success(), "!max_taker_vol: {}", rc.1);
     let json: MaxTakerVolResponse = serde_json::from_str(&rc.1).unwrap();
-    // the result of equation `max_vol + max_vol / 777 + 0.00002 = 1`
+    // the result of equation `max_vol + max_vol / 777 + 0.00000274 + 0.00000245 = 1`
     // derived from `max_vol = balance - locked - trade_fee - fee_to_send_taker_fee - dex_fee(max_vol)`
     // where balance = 1, locked = 0, trade_fee = fee_to_send_taker_fee = 0.00001, dex_fee = max_vol / 777
-    let expected = MmNumber::from((38849223, 38900000)).to_fraction();
+    let expected = MmNumber::from((77699596737, 77800000000)).to_fraction();
     assert_eq!(json.result, expected);
     assert_eq!(json.coin, "MYCOIN1");
 
@@ -2065,8 +2073,8 @@ fn test_get_max_taker_vol_dex_fee_min_tx_amount() {
     .unwrap();
     assert!(rc.0.is_success(), "!max_taker_vol: {}", rc.1);
     let json: Json = serde_json::from_str(&rc.1).unwrap();
-    // the result of equation x + 0.00001 (dex fee) + 0.0002 (miner fee * 2) = 0.00532845
-    assert_eq!(json["result"]["numer"], Json::from("102369"));
+    // the result of equation x + 0.00001 (dex fee) + 0.0000485 (miner fee 2740 + 2450) = 0.00532845
+    assert_eq!(json["result"]["numer"], Json::from("105331"));
     assert_eq!(json["result"]["denom"], Json::from("20000000"));
 
     let rc = block_on(mm_alice.rpc(&json!({
@@ -2091,11 +2099,11 @@ fn test_get_max_taker_vol_dex_fee_min_tx_amount() {
 /// `volume + taker_fee + trade_fee + fee_to_send_taker_fee = x`.
 /// Let `dust = 0.000728` like for Qtum, `trade_fee = 0.0001`, `fee_to_send_taker_fee = 0.0001` and `taker_fee` is the `0.000728` threshold,
 /// therefore to find a minimum required balance, we should pass the `dust` as the `volume` into the equation above:
-/// `2 * 0.000728 + 0.0002 = x`, so `x = 0.001656`
+/// `2 * 0.000728 + 0.00002740 + 0.00002450 = x`, so `x = 0.0014041`
 #[test]
 fn test_get_max_taker_vol_dust_threshold() {
     // first, try to test with the balance slightly less than required
-    let (_ctx, coin, priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", "0.001656".parse().unwrap());
+    let (_ctx, coin, priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", "0.0014041".parse().unwrap());
     let coins = json!([
     mycoin_conf(10000),
     {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":10000,"protocol":{"type":"UTXO"},"dust":72800}
@@ -2131,7 +2139,7 @@ fn test_get_max_taker_vol_dust_threshold() {
     let result: MmNumber = serde_json::from_value(json["result"].clone()).unwrap();
     assert!(result.is_zero());
 
-    fill_address(&coin, &coin.my_address().unwrap(), "0.00001".parse().unwrap(), 30);
+    fill_address(&coin, &coin.my_address().unwrap(), "0.0002".parse().unwrap(), 30); //00699910
 
     let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
@@ -2141,9 +2149,9 @@ fn test_get_max_taker_vol_dust_threshold() {
     .unwrap();
     assert!(rc.0.is_success(), "!max_taker_vol: {}", rc.1);
     let json: Json = serde_json::from_str(&rc.1).unwrap();
-    // the result of equation x + 0.000728 (dex fee) + 0.0002 (miner fee * 2) = 0.001666
-    assert_eq!(json["result"]["numer"], Json::from("369"));
-    assert_eq!(json["result"]["denom"], Json::from("500000"));
+    // the result of equation x + 0.000728 (dex fee) + 0.00004220 + 0.00003930 (miner fees) = 0.0016041, x > dust
+    assert_eq!(json["result"]["numer"], Json::from("3973"));
+    assert_eq!(json["result"]["denom"], Json::from("5000000"));
 
     block_on(mm.stop()).unwrap();
 }
@@ -2171,11 +2179,16 @@ fn test_get_max_taker_vol_with_kmd() {
 
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[], None)));
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[], None)));
-    let electrum = block_on(enable_electrum(&mm_alice, "KMD", false, &[
-        "electrum1.cipig.net:10001",
-        "electrum2.cipig.net:10001",
-        "electrum3.cipig.net:10001",
-    ]));
+    let electrum = block_on(enable_electrum(
+        &mm_alice,
+        "KMD",
+        false,
+        &[
+            "electrum1.cipig.net:10001",
+            "electrum2.cipig.net:10001",
+            "electrum3.cipig.net:10001",
+        ],
+    ));
     log!("{:?}", electrum);
     let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
@@ -2186,9 +2199,9 @@ fn test_get_max_taker_vol_with_kmd() {
     .unwrap();
     assert!(rc.0.is_success(), "!max_taker_vol: {}", rc.1);
     let json: Json = serde_json::from_str(&rc.1).unwrap();
-    // the result of equation x + x * 9 / 7770 + 0.0002 = 1
-    assert_eq!(json["result"]["numer"], Json::from("1294741"));
-    assert_eq!(json["result"]["denom"], Json::from("1296500"));
+    // the result of equation x + x * 9 / 7770 + 0.00002740 + 0.00002450 = 1
+    assert_eq!(json["result"]["numer"], Json::from("2589865579"));
+    assert_eq!(json["result"]["denom"], Json::from("2593000000"));
 
     let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
@@ -2218,8 +2231,8 @@ fn test_get_max_maker_vol() {
     log!("{:?}", block_on(enable_native(&mm, "MYCOIN", &[], None)));
     log!("{:?}", block_on(enable_native(&mm, "MYCOIN1", &[], None)));
 
-    // 1 - tx_fee
-    let expected_volume = MmNumber::from("0.99999");
+    // 1 - tx_fee (274)
+    let expected_volume = MmNumber::from("0.99999726");
     let expected = MaxMakerVolResponse {
         coin: "MYCOIN1".to_string(),
         volume: MmNumberMultiRepr::from(expected_volume.clone()),
@@ -2229,7 +2242,7 @@ fn test_get_max_maker_vol() {
     let actual = block_on(max_maker_vol(&mm, "MYCOIN1")).unwrap::<MaxMakerVolResponse>();
     assert_eq!(actual, expected);
 
-    let res = block_on(set_price(&mm, "MYCOIN1", "MYCOIN", "1", "0", true));
+    let res = block_on(set_price(&mm, "MYCOIN1", "MYCOIN", "1", "0", true, None));
     assert_eq!(res.result.max_base_vol, expected_volume.to_decimal());
 }
 
@@ -2381,15 +2394,13 @@ fn swaps_should_stop_on_stop_rpc() {
     for uuid in uuids.iter() {
         block_on(mm_bob.wait_for_log(22., |log| {
             log.contains(&format!(
-                "Entering the maker_swap_loop MYCOIN/MYCOIN1 with uuid: {}",
-                uuid
+                "Entering the maker_swap_loop MYCOIN/MYCOIN1 with uuid: {uuid}"
             ))
         }))
         .unwrap();
         block_on(mm_alice.wait_for_log(22., |log| {
             log.contains(&format!(
-                "Entering the taker_swap_loop MYCOIN/MYCOIN1 with uuid: {}",
-                uuid
+                "Entering the taker_swap_loop MYCOIN/MYCOIN1 with uuid: {uuid}"
             ))
         }))
         .unwrap();
@@ -2398,8 +2409,8 @@ fn swaps_should_stop_on_stop_rpc() {
     block_on(mm_bob.stop()).unwrap();
     block_on(mm_alice.stop()).unwrap();
     for uuid in uuids {
-        block_on(mm_bob.wait_for_log_after_stop(22., |log| log.contains(&format!("swap {} stopped", uuid)))).unwrap();
-        block_on(mm_alice.wait_for_log_after_stop(22., |log| log.contains(&format!("swap {} stopped", uuid)))).unwrap();
+        block_on(mm_bob.wait_for_log_after_stop(22., |log| log.contains(&format!("swap {uuid} stopped")))).unwrap();
+        block_on(mm_alice.wait_for_log_after_stop(22., |log| log.contains(&format!("swap {uuid} stopped")))).unwrap();
     }
 }
 
@@ -2984,9 +2995,10 @@ fn test_utxo_merge() {
 
     block_on(mm_bob.wait_for_log(4., |log| log.contains("Starting UTXO merge loop for coin MYCOIN"))).unwrap();
 
-    block_on(mm_bob.wait_for_log(4., |log| log.contains("Trying to merge 5 UTXOs of coin MYCOIN"))).unwrap();
-
-    block_on(mm_bob.wait_for_log(4., |log| log.contains("UTXO merge successful for coin MYCOIN, tx_hash"))).unwrap();
+    block_on(mm_bob.wait_for_log(4., |log| {
+        log.contains("UTXO merge of 5 outputs successful for coin=MYCOIN, tx_hash")
+    }))
+    .unwrap();
 
     thread::sleep(Duration::from_secs(2));
     let address = block_on(coin.as_ref().derivation_method.unwrap_single_addr());
@@ -3039,15 +3051,143 @@ fn test_utxo_merge_max_merge_at_once() {
 
     block_on(mm_bob.wait_for_log(4., |log| log.contains("Starting UTXO merge loop for coin MYCOIN"))).unwrap();
 
-    block_on(mm_bob.wait_for_log(4., |log| log.contains("Trying to merge 4 UTXOs of coin MYCOIN"))).unwrap();
-
-    block_on(mm_bob.wait_for_log(4., |log| log.contains("UTXO merge successful for coin MYCOIN, tx_hash"))).unwrap();
+    block_on(mm_bob.wait_for_log(4., |log| {
+        log.contains("UTXO merge of 4 outputs successful for coin=MYCOIN, tx_hash")
+    }))
+    .unwrap();
 
     thread::sleep(Duration::from_secs(2));
     let address = block_on(coin.as_ref().derivation_method.unwrap_single_addr());
     let (unspents, _) = block_on(coin.get_unspent_ordered_list(&address)).unwrap();
     // 4 utxos are merged of 5 so the resulting unspents len must be 2
     assert_eq!(unspents.len(), 2);
+}
+
+#[test]
+fn test_consolidate_utxos_rpc() {
+    let timeout = 30; // timeout if test takes more than 30 seconds to run
+    let utxos = 50;
+    let (_ctx, coin, privkey) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
+
+    // fill several times to have more UTXOs on address
+    for i in 1..=utxos {
+        fill_address(&coin, &coin.my_address().unwrap(), i.into(), timeout);
+    }
+
+    let coins = json!([mycoin_conf(1000)]);
+    let mm_bob = MarketMakerIt::start(
+        json!({
+            "gui": "nogui",
+            "netid": 9000,
+            "dht": "on",  // Enable DHT without delay.
+            "passphrase": format!("0x{}", hex::encode(privkey)),
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+            "is_bootstrap_node": true
+        }),
+        "pass".to_string(),
+        None,
+    )
+    .unwrap();
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
+
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[], None)));
+
+    let consolidate_rpc = |merge_at: u32, merge_at_once: u32| {
+        block_on(mm_bob.rpc(&json!({
+            "mmrpc": "2.0",
+            "userpass": mm_bob.userpass,
+            "method": "consolidate_utxos",
+            "params": {
+                "coin": "MYCOIN",
+                "merge_conditions": {
+                    "merge_at": merge_at,
+                    "max_merge_at_once": merge_at_once,
+                },
+                "broadcast": true
+            }
+        })))
+        .unwrap()
+    };
+
+    let res = consolidate_rpc(52, 4);
+    assert!(!res.0.is_success(), "Expected error for merge_at > utxos: {}", res.1);
+
+    let res = consolidate_rpc(30, 4);
+    assert!(res.0.is_success(), "Consolidate utxos failed: {}", res.1);
+
+    let res: RpcSuccessResponse<ConsolidateUtxoResponse> =
+        serde_json::from_str(&res.1).expect("Expected 'RpcSuccessResponse<ConsolidateUtxoResponse>'");
+    // Assert that we respected `max_merge_at_once` and merged only 4 UTXOs.
+    assert_eq!(res.result.consolidated_utxos.len(), 4);
+    // Assert that we merged the smallest 4 UTXOs.
+    for i in 1..=4 {
+        assert_eq!(res.result.consolidated_utxos[i - 1].value, (i as u32).into());
+    }
+
+    thread::sleep(Duration::from_secs(2));
+    let address = block_on(coin.as_ref().derivation_method.unwrap_single_addr());
+    let (unspents, _) = block_on(coin.get_unspent_ordered_list(&address)).unwrap();
+    // We have 51 utxos and merged 4 of them which resulted in an extra one.
+    assert_eq!(unspents.len(), 51 - 4 + 1);
+}
+
+#[test]
+fn test_fetch_utxos_rpc() {
+    let timeout = 30; // timeout if test takes more than 30 seconds to run
+    let (_ctx, coin, privkey) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
+
+    // fill several times to have more UTXOs on address
+    for i in 1..=10 {
+        fill_address(&coin, &coin.my_address().unwrap(), i.into(), timeout);
+    }
+
+    let coins = json!([mycoin_conf(1000)]);
+    let mm_bob = MarketMakerIt::start(
+        json!({
+            "gui": "nogui",
+            "netid": 9000,
+            "dht": "on",  // Enable DHT without delay.
+            "passphrase": format!("0x{}", hex::encode(privkey)),
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+            "is_bootstrap_node": true
+        }),
+        "pass".to_string(),
+        None,
+    )
+    .unwrap();
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
+
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[], None)));
+
+    let fetch_utxo_rpc = || {
+        let res = block_on(mm_bob.rpc(&json!({
+            "mmrpc": "2.0",
+            "userpass": mm_bob.userpass,
+            "method": "fetch_utxos",
+            "params": {
+                "coin": "MYCOIN"
+            }
+        })))
+        .unwrap();
+        assert!(res.0.is_success(), "Fetch UTXOs failed: {}", res.1);
+        let res: RpcSuccessResponse<FetchUtxosResponse> =
+            serde_json::from_str(&res.1).expect("Expected 'RpcSuccessResponse<FetchUtxosResponse>'");
+        res.result
+    };
+
+    let res = fetch_utxo_rpc();
+    assert!(res.total_count == 11);
+
+    fill_address(&coin, &coin.my_address().unwrap(), 100.into(), timeout);
+    thread::sleep(Duration::from_secs(2));
+
+    let res = fetch_utxo_rpc();
+    assert!(res.total_count == 12);
+    assert!(res.addresses[0].utxos.iter().any(|utxo| utxo.value == 100.into()));
 }
 
 #[test]
@@ -3104,9 +3244,9 @@ fn test_withdraw_not_sufficient_balance() {
     let (_ctx, coin) = utxo_coin_from_privkey("MYCOIN", privkey);
     fill_address(&coin, &coin.my_address().unwrap(), balance.clone(), 30);
 
-    // txfee = 0.00001, amount = 0.5 => required = 0.50001
+    // txfee = 0.00000211, amount = 0.5 => required = 0.50000211
     // but balance = 0.5
-    let txfee = BigDecimal::from(1) / BigDecimal::from(100000);
+    let txfee = BigDecimal::from_str("0.00000211").unwrap();
     let withdraw = block_on(mm.rpc(&json!({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
@@ -3568,9 +3708,11 @@ fn test_locked_amount() {
     let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
 
-    let alice_conf = Mm2TestConf::light_node(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob
-        .ip
-        .to_string()]);
+    let alice_conf = Mm2TestConf::light_node(
+        &format!("0x{}", hex::encode(alice_priv_key)),
+        &coins,
+        &[&mm_bob.ip.to_string()],
+    );
     let mut mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
@@ -3591,13 +3733,13 @@ fn test_locked_amount() {
     let locked_bob = block_on(get_locked_amount(&mm_bob, "MYCOIN"));
     assert_eq!(locked_bob.coin, "MYCOIN");
 
-    let expected_result: MmNumberMultiRepr = MmNumber::from("777.00001").into();
+    let expected_result: MmNumberMultiRepr = MmNumber::from("777.00000274").into(); // volume + txfee = 777 + 1 + 0.0000274
     assert_eq!(expected_result, locked_bob.locked_amount);
 
     let locked_alice = block_on(get_locked_amount(&mm_alice, "MYCOIN1"));
     assert_eq!(locked_alice.coin, "MYCOIN1");
 
-    let expected_result: MmNumberMultiRepr = MmNumber::from("778.00002").into();
+    let expected_result: MmNumberMultiRepr = MmNumber::from("778.00000519").into(); // volume + dexfee + txfee + txfee = 777 + 1 + 0.0000245 + 0.00000274
     assert_eq!(expected_result, locked_alice.locked_amount);
 }
 
@@ -3694,6 +3836,52 @@ fn test_enable_eth_coin_with_token_then_disable() {
     // And forced `disable_coin` should not fail
     let res = block_on(disable_coin(&mm, "ETH", true));
     assert!(!res.passivized);
+}
+
+#[test]
+fn test_platform_coin_mismatch() {
+    let coin = erc20_coin_with_random_privkey(swap_contract());
+
+    let priv_key = coin.display_priv_key().unwrap();
+    let mut erc20_conf = erc20_dev_conf(&erc20_contract_checksum());
+    erc20_conf["protocol"]["protocol_data"]["platform"] = "MATIC".into(); // set a different platform coin
+    let coins = json!([eth_dev_conf(), erc20_conf]);
+
+    let conf = Mm2TestConf::seednode(&priv_key, &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!("log path: {}", mm.log_path.display());
+
+    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let erc20_tokens_requests = vec![json!({ "ticker": "ERC20DEV" })];
+    let nodes = vec![json!({ "url": GETH_RPC_URL })];
+
+    let enable = block_on(mm.rpc(&json!({
+    "userpass": mm.userpass,
+    "method": "enable_eth_with_tokens",
+    "mmrpc": "2.0",
+    "params": {
+            "ticker": "ETH",
+            "erc20_tokens_requests": erc20_tokens_requests,
+            "swap_contract_address": swap_contract,
+            "nodes": nodes,
+            "tx_history": false,
+            "get_balances": false,
+        }
+    })))
+    .unwrap();
+    assert_eq!(
+        enable.0,
+        StatusCode::BAD_REQUEST,
+        "'enable_eth_with_tokens' must fail with PlatformCoinMismatch",
+    );
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&enable.1).unwrap()["error_type"]
+            .as_str()
+            .unwrap(),
+        "PlatformCoinMismatch",
+    );
 }
 
 #[test]
@@ -3920,10 +4108,14 @@ fn test_eth_swap_negotiation_fails_maker_no_fallback() {
 }
 
 #[test]
-fn test_trade_base_rel_eth_erc20_coins() { trade_base_rel(("ETH", "ERC20DEV")); }
+fn test_trade_base_rel_eth_erc20_coins() {
+    trade_base_rel(("ETH", "ERC20DEV"));
+}
 
 #[test]
-fn test_trade_base_rel_mycoin_mycoin1_coins() { trade_base_rel(("MYCOIN", "MYCOIN1")); }
+fn test_trade_base_rel_mycoin_mycoin1_coins() {
+    trade_base_rel(("MYCOIN", "MYCOIN1"));
+}
 
 // run swap with burn pubkey set to alice (no dex fee)
 #[test]
@@ -4108,7 +4300,7 @@ fn test_withdraw_and_send_hd_eth_erc20() {
     let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
     log!("Alice log path: {}", mm_hd.log_path.display());
 
-    let eth_enable = block_on(enable_eth_with_tokens_v2(
+    let eth_enable = block_on(task_enable_eth_with_tokens(
         &mm_hd,
         "ETH",
         &["ERC20DEV"],
@@ -4125,7 +4317,7 @@ fn test_withdraw_and_send_hd_eth_erc20() {
         EnableCoinBalanceMap::HD(hd) => hd,
         _ => panic!("Expected EnableCoinBalance::HD"),
     };
-    let account = balance.accounts.get(0).expect("Expected account at index 0");
+    let account = balance.accounts.first().expect("Expected account at index 0");
     assert_eq!(
         account.addresses[1].address,
         "0xDe841899aB4A22E23dB21634e54920aDec402397"
@@ -4865,9 +5057,11 @@ fn test_my_orders_after_matched() {
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
 
-    let alice_conf = Mm2TestConf::light_node(&alice_coin.display_priv_key().unwrap(), &coins, &[&mm_bob
-        .ip
-        .to_string()]);
+    let alice_conf = Mm2TestConf::light_node(
+        &alice_coin.display_priv_key().unwrap(),
+        &coins,
+        &[&mm_bob.ip.to_string()],
+    );
     let mut mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
@@ -4961,9 +5155,11 @@ fn test_update_maker_order_after_matched() {
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
 
-    let alice_conf = Mm2TestConf::light_node(&alice_coin.display_priv_key().unwrap(), &coins, &[&mm_bob
-        .ip
-        .to_string()]);
+    let alice_conf = Mm2TestConf::light_node(
+        &alice_coin.display_priv_key().unwrap(),
+        &coins,
+        &[&mm_bob.ip.to_string()],
+    );
     let mut mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
@@ -5410,9 +5606,11 @@ fn test_orderbook_depth() {
         assert!(rc.0.is_success(), "!setprice: {}", rc.1);
     }
 
-    let alice_conf = Mm2TestConf::light_node(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob
-        .ip
-        .to_string()]);
+    let alice_conf = Mm2TestConf::light_node(
+        &format!("0x{}", hex::encode(alice_priv_key)),
+        &coins,
+        &[&mm_bob.ip.to_string()],
+    );
     let mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
@@ -5492,7 +5690,7 @@ fn test_approve_erc20() {
         hex::decode(str_strip_0x!(res["result"].as_str().unwrap())).is_ok(),
         "approve_token result incorrect"
     );
-
+    thread::sleep(Duration::from_secs(5));
     let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method":"get_token_allowance",

@@ -3,18 +3,21 @@ use ethcore_transaction::Action;
 use ethereum_types::U256;
 use ethkey::public_to_address;
 use futures::compat::Future01CompatExt;
-use mm2_err_handle::prelude::{MapToMmResult, MmError, MmResult};
+use mm2_err_handle::prelude::{MapToMmResult, MmError, MmResult, MmResultExt};
 use mm2_number::BigDecimal;
 use num_traits::Signed;
 use web3::types::TransactionId;
 
-use super::ContractType;
+use super::{signed_tx_from_web3_tx, ContractType};
 use crate::coin_errors::{ValidatePaymentError, ValidatePaymentResult};
 use crate::eth::eth_swap_v2::{validate_from_to_addresses, PaymentMethod, PrepareTxDataError, ZERO_VALUE};
-use crate::eth::{decode_contract_call, EthCoin, EthCoinType, SignedEthTx, ERC1155_CONTRACT, ERC721_CONTRACT,
-                 NFT_MAKER_SWAP_V2};
-use crate::{ParseCoinAssocTypes, RefundNftMakerPaymentArgs, SendNftMakerPaymentArgs, SpendNftMakerPaymentArgs,
-            TransactionErr, ValidateNftMakerPaymentArgs};
+use crate::eth::{
+    decode_contract_call, EthCoin, EthCoinType, SignedEthTx, ERC1155_CONTRACT, ERC721_CONTRACT, NFT_MAKER_SWAP_V2,
+};
+use crate::{
+    ParseCoinAssocTypes, RefundNftMakerPaymentArgs, SendNftMakerPaymentArgs, SpendNftMakerPaymentArgs, TransactionErr,
+    ValidateNftMakerPaymentArgs,
+};
 
 pub(crate) mod errors;
 use errors::{Erc721FunctionError, HtlcParamsError};
@@ -44,7 +47,7 @@ impl EthCoin {
                     ZERO_VALUE.into(),
                     Action::Call(*args.nft_swap_info.token_address),
                     data,
-                    U256::from(gas_limit),
+                    Some(U256::from(gas_limit)),
                 )
                 .compat()
                 .await
@@ -89,7 +92,9 @@ impl EthCoin {
                         args.maker_payment_tx.tx_hash()
                     ))
                 })?;
-                validate_from_to_addresses(tx_from_rpc, maker_address, *token_address)?;
+                let signed_tx = signed_tx_from_web3_tx(tx_from_rpc.clone())
+                    .map_err(|err| ValidatePaymentError::WrongPaymentTx(format!("Could not parse tx: {:?}", err)))?;
+                validate_from_to_addresses(&signed_tx, maker_address, *token_address).map_mm_err()?;
 
                 let (decoded, bytes_index) = get_decoded_tx_data_and_bytes_index(contract_type, &tx_from_rpc.input.0)?;
 
@@ -116,7 +121,7 @@ impl EthCoin {
                     maker_secret_hash: args.maker_secret_hash.to_vec(),
                     time_lock: U256::from(args.time_lock),
                 };
-                decode_and_validate_htlc_params(decoded, bytes_index, htlc_params)?;
+                decode_and_validate_htlc_params(decoded, bytes_index, htlc_params).map_mm_err()?;
             },
             EthCoinType::Eth | EthCoinType::Erc20 { .. } => {
                 return MmError::err(ValidatePaymentError::InternalError(
@@ -156,7 +161,7 @@ impl EthCoin {
                     ZERO_VALUE.into(),
                     Action::Call(nft_maker_swap_v2_contract),
                     data,
-                    U256::from(gas_limit),
+                    Some(U256::from(gas_limit)),
                 )
                 .compat()
                 .await
@@ -193,7 +198,7 @@ impl EthCoin {
                     ZERO_VALUE.into(),
                     Action::Call(nft_maker_swap_v2_contract),
                     data,
-                    U256::from(gas_limit),
+                    Some(U256::from(gas_limit)),
                 )
                 .compat()
                 .await
@@ -231,7 +236,7 @@ impl EthCoin {
                     ZERO_VALUE.into(),
                     Action::Call(nft_maker_swap_v2_contract),
                     data,
-                    U256::from(gas_limit),
+                    Some(U256::from(gas_limit)),
                 )
                 .compat()
                 .await
@@ -498,7 +503,9 @@ fn htlc_params() -> &'static [ethabi::ParamType] {
 
 /// function to check if BigDecimal is a positive integer
 #[inline(always)]
-fn is_positive_integer(amount: &BigDecimal) -> bool { amount == &amount.with_scale(0) && amount.is_positive() }
+fn is_positive_integer(amount: &BigDecimal) -> bool {
+    amount == &amount.with_scale(0) && amount.is_positive()
+}
 
 fn validate_payment_args<'a>(
     taker_secret_hash: &'a [u8],

@@ -34,7 +34,7 @@ async fn create_table(conn: Arc<Mutex<AsyncConnection>>) -> Result<(), AsyncConn
 impl LockedNotesStorage {
     #[cfg(not(any(test, feature = "run-docker-tests")))]
     pub(crate) async fn new(ctx: &MmArc, address: String) -> MmResult<Self, LockedNotesStorageError> {
-        let path = ctx.wallet_dir().join(format!("{}_locked_notes_cache.db", address));
+        let path = ctx.wallet_dir().join(format!("{address}_locked_notes_cache.db"));
         let db = AsyncConnection::open(path)
             .await
             .map_to_mm(|err| LockedNotesStorageError::SqliteError(err.to_string()))?;
@@ -49,7 +49,7 @@ impl LockedNotesStorage {
     pub(crate) async fn new(ctx: &MmArc, address: String) -> MmResult<Self, LockedNotesStorageError> {
         #[cfg(feature = "run-docker-tests")]
         let db = {
-            let path = ctx.wallet_dir().join(format!("{}_locked_notes_cache.db", address));
+            let path = ctx.wallet_dir().join(format!("{address}_locked_notes_cache.db"));
             mm2_io::fs::create_parents_async(&path)
                 .await
                 .map_err(|err| LockedNotesStorageError::SqliteError(err.to_string()))?;
@@ -148,7 +148,7 @@ impl LockedNotesStorage {
                     unexpected => Err(db_common::sqlite::rusqlite::Error::FromSqlConversionFailure(
                         0, // Column index for "variant"
                         db_common::sqlite::rusqlite::types::Type::Text,
-                        format!("Unexpected variant value: {}", unexpected).into()
+                        format!("Unexpected variant value: {unexpected}").into()
                     )),
                 }
             })?;

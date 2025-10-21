@@ -1,12 +1,17 @@
 use super::*;
 use crate::eth::erc20::{get_enabled_erc20_by_platform_and_contract, get_token_decimals};
+use crate::eth::eth_utils::nonce_sequencer::PerNetNonceLocks;
+use crate::eth::wallet_connect::eth_request_wc_personal_sign;
 use crate::eth::web3_transport::http_transport::HttpTransport;
-use crate::hd_wallet::{load_hd_accounts_from_storage, HDAccountsMutex, HDPathAccountToAddressId, HDWalletCoinStorage,
-                       HDWalletStorageError, DEFAULT_GAP_LIMIT};
+use crate::hd_wallet::{
+    load_hd_accounts_from_storage, HDAccountsMutex, HDPathAccountToAddressId, HDWalletCoinStorage,
+    HDWalletStorageError, DEFAULT_GAP_LIMIT,
+};
 use crate::nft::get_nfts_for_activation;
 use crate::nft::nft_errors::{GetNftInfoError, ParseChainTypeError};
 use crate::nft::nft_structs::Chain;
-#[cfg(target_arch = "wasm32")] use crate::EthMetamaskPolicy;
+#[cfg(target_arch = "wasm32")]
+use crate::EthMetamaskPolicy;
 
 use common::executor::AbortedError;
 use compatible_time::Instant;
@@ -14,6 +19,7 @@ use crypto::{trezor::TrezorError, Bip32Error, CryptoCtxError, HwError};
 use enum_derives::EnumFromTrait;
 use ethereum_types::H264;
 use kdf_walletconnect::error::WalletConnectError;
+use kdf_walletconnect::WcTopic;
 use mm2_err_handle::common_errors::WithInternal;
 #[cfg(target_arch = "wasm32")]
 use mm2_metamask::{from_metamask_error, MetamaskError, MetamaskRpcError, WithMetamaskRpcError};
@@ -35,12 +41,12 @@ pub enum EthActivationV2Error {
     InvalidPathToAddress(String),
     #[display(fmt = "`chain_id` should be set for evm coins or tokens")]
     ChainIdNotSet,
-    #[display(fmt = "{} chains don't support {}", chain, feature)]
+    #[display(fmt = "{chain} chains don't support {feature}")]
     UnsupportedChain {
         chain: String,
         feature: String,
     },
-    #[display(fmt = "Platform coin {} activation failed. {}", ticker, error)]
+    #[display(fmt = "Platform coin {ticker} activation failed. {error}")]
     ActivationFailed {
         ticker: String,
         error: String,
@@ -49,7 +55,7 @@ pub enum EthActivationV2Error {
     UnreachableNodes(String),
     #[display(fmt = "Enable request for ETH coin must have at least 1 node")]
     AtLeastOneNodeRequired,
-    #[display(fmt = "Error deserializing 'derivation_path': {}", _0)]
+    #[display(fmt = "Error deserializing 'derivation_path': {_0}")]
     ErrorDeserializingDerivationPath(String),
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     #[display(fmt = "Failed spawning balance events. Error: {_0}")]
@@ -57,43 +63,52 @@ pub enum EthActivationV2Error {
     HDWalletStorageError(String),
     #[cfg(target_arch = "wasm32")]
     #[from_trait(WithMetamaskRpcError::metamask_rpc_error)]
-    #[display(fmt = "{}", _0)]
+    #[display(fmt = "{_0}")]
     MetamaskError(MetamaskRpcError),
     #[from_trait(WithInternal::internal)]
-    #[display(fmt = "Internal: {}", _0)]
+    #[display(fmt = "Internal: {_0}")]
     InternalError(String),
     Transport(String),
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     CoinDoesntSupportTrezor,
     HwContextNotInitialized,
-    #[display(fmt = "Initialization task has timed out {:?}", duration)]
+    #[display(fmt = "Initialization task has timed out {duration:?}")]
     TaskTimedOut {
         duration: Duration,
     },
     HwError(HwRpcError),
     #[display(fmt = "Hardware wallet must be called within rpc task framework")]
     InvalidHardwareWalletCall,
-    #[display(fmt = "Custom token error: {}", _0)]
+    #[display(fmt = "Custom token error: {_0}")]
     CustomTokenError(CustomTokenError),
     // TODO: Map WalletConnectError to distinct error categories (transport, invalid payload) after refactoring.
     #[from_stringify("WalletConnectError")]
     WalletConnectError(String),
+    PlatformCoinMismatch,
 }
 
 impl From<MyAddressError> for EthActivationV2Error {
-    fn from(err: MyAddressError) -> Self { Self::InternalError(err.to_string()) }
+    fn from(err: MyAddressError) -> Self {
+        Self::InternalError(err.to_string())
+    }
 }
 
 impl From<AbortedError> for EthActivationV2Error {
-    fn from(e: AbortedError) -> Self { EthActivationV2Error::InternalError(e.to_string()) }
+    fn from(e: AbortedError) -> Self {
+        EthActivationV2Error::InternalError(e.to_string())
+    }
 }
 
 impl From<CryptoCtxError> for EthActivationV2Error {
-    fn from(e: CryptoCtxError) -> Self { EthActivationV2Error::InternalError(e.to_string()) }
+    fn from(e: CryptoCtxError) -> Self {
+        EthActivationV2Error::InternalError(e.to_string())
+    }
 }
 
 impl From<UnexpectedDerivationMethod> for EthActivationV2Error {
-    fn from(e: UnexpectedDerivationMethod) -> Self { EthActivationV2Error::InternalError(e.to_string()) }
+    fn from(e: UnexpectedDerivationMethod) -> Self {
+        EthActivationV2Error::InternalError(e.to_string())
+    }
 }
 
 impl From<EthTokenActivationError> for EthActivationV2Error {
@@ -110,24 +125,33 @@ impl From<EthTokenActivationError> for EthActivationV2Error {
             },
             EthTokenActivationError::PrivKeyPolicyNotAllowed(e) => EthActivationV2Error::PrivKeyPolicyNotAllowed(e),
             EthTokenActivationError::CustomTokenError(e) => EthActivationV2Error::CustomTokenError(e),
+            EthTokenActivationError::PlatformCoinMismatch => EthActivationV2Error::PlatformCoinMismatch,
         }
     }
 }
 
 impl From<HDWalletStorageError> for EthActivationV2Error {
-    fn from(e: HDWalletStorageError) -> Self { EthActivationV2Error::HDWalletStorageError(e.to_string()) }
+    fn from(e: HDWalletStorageError) -> Self {
+        EthActivationV2Error::HDWalletStorageError(e.to_string())
+    }
 }
 
 impl From<HwError> for EthActivationV2Error {
-    fn from(e: HwError) -> Self { EthActivationV2Error::InternalError(e.to_string()) }
+    fn from(e: HwError) -> Self {
+        EthActivationV2Error::InternalError(e.to_string())
+    }
 }
 
 impl From<Bip32Error> for EthActivationV2Error {
-    fn from(e: Bip32Error) -> Self { EthActivationV2Error::InternalError(e.to_string()) }
+    fn from(e: Bip32Error) -> Self {
+        EthActivationV2Error::InternalError(e.to_string())
+    }
 }
 
 impl From<TrezorError> for EthActivationV2Error {
-    fn from(e: TrezorError) -> Self { EthActivationV2Error::InternalError(e.to_string()) }
+    fn from(e: TrezorError) -> Self {
+        EthActivationV2Error::InternalError(e.to_string())
+    }
 }
 
 impl From<RpcTaskError> for EthActivationV2Error {
@@ -141,15 +165,21 @@ impl From<RpcTaskError> for EthActivationV2Error {
 
 #[cfg(target_arch = "wasm32")]
 impl From<MetamaskError> for EthActivationV2Error {
-    fn from(e: MetamaskError) -> Self { from_metamask_error(e) }
+    fn from(e: MetamaskError) -> Self {
+        from_metamask_error(e)
+    }
 }
 
 impl From<ParseChainTypeError> for EthActivationV2Error {
-    fn from(e: ParseChainTypeError) -> Self { EthActivationV2Error::InternalError(e.to_string()) }
+    fn from(e: ParseChainTypeError) -> Self {
+        EthActivationV2Error::InternalError(e.to_string())
+    }
 }
 
 impl From<String> for EthActivationV2Error {
-    fn from(e: String) -> Self { EthActivationV2Error::InternalError(e) }
+    fn from(e: String) -> Self {
+        EthActivationV2Error::InternalError(e)
+    }
 }
 
 impl From<EnableCoinBalanceError> for EthActivationV2Error {
@@ -176,12 +206,14 @@ pub enum EthPrivKeyActivationPolicy {
     #[cfg(target_arch = "wasm32")]
     Metamask,
     WalletConnect {
-        session_topic: String,
+        session_topic: WcTopic,
     },
 }
 
 impl EthPrivKeyActivationPolicy {
-    pub fn is_hw_policy(&self) -> bool { matches!(self, EthPrivKeyActivationPolicy::Trezor) }
+    pub fn is_hw_policy(&self) -> bool {
+        matches!(self, EthPrivKeyActivationPolicy::Trezor)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Default)]
@@ -213,6 +245,7 @@ pub struct EthActivationV2Request {
     #[serde(default)]
     pub path_to_address: HDPathAccountToAddressId,
     pub gap_limit: Option<u32>,
+    pub swap_gas_fee_policy: Option<SwapGasFeePolicy>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -233,18 +266,25 @@ pub enum EthTokenActivationError {
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     CustomTokenError(CustomTokenError),
+    PlatformCoinMismatch,
 }
 
 impl From<AbortedError> for EthTokenActivationError {
-    fn from(e: AbortedError) -> Self { EthTokenActivationError::InternalError(e.to_string()) }
+    fn from(e: AbortedError) -> Self {
+        EthTokenActivationError::InternalError(e.to_string())
+    }
 }
 
 impl From<MyAddressError> for EthTokenActivationError {
-    fn from(err: MyAddressError) -> Self { Self::InternalError(err.to_string()) }
+    fn from(err: MyAddressError) -> Self {
+        Self::InternalError(err.to_string())
+    }
 }
 
 impl From<UnexpectedDerivationMethod> for EthTokenActivationError {
-    fn from(e: UnexpectedDerivationMethod) -> Self { EthTokenActivationError::UnexpectedDerivationMethod(e) }
+    fn from(e: UnexpectedDerivationMethod) -> Self {
+        EthTokenActivationError::UnexpectedDerivationMethod(e)
+    }
 }
 
 impl From<GetNftInfoError> for EthTokenActivationError {
@@ -268,23 +308,28 @@ impl From<GetNftInfoError> for EthTokenActivationError {
                 token_address,
                 token_id,
             } => EthTokenActivationError::InternalError(format!(
-                "Token not found in wallet: {}, {}",
-                token_address, token_id
+                "Token not found in wallet: {token_address}, {token_id}"
             )),
         }
     }
 }
 
 impl From<ParseChainTypeError> for EthTokenActivationError {
-    fn from(e: ParseChainTypeError) -> Self { EthTokenActivationError::InternalError(e.to_string()) }
+    fn from(e: ParseChainTypeError) -> Self {
+        EthTokenActivationError::InternalError(e.to_string())
+    }
 }
 
 impl From<String> for EthTokenActivationError {
-    fn from(e: String) -> Self { EthTokenActivationError::InternalError(e) }
+    fn from(e: String) -> Self {
+        EthTokenActivationError::InternalError(e)
+    }
 }
 
 impl From<PrivKeyPolicyNotAllowed> for EthTokenActivationError {
-    fn from(e: PrivKeyPolicyNotAllowed) -> Self { EthTokenActivationError::PrivKeyPolicyNotAllowed(e) }
+    fn from(e: PrivKeyPolicyNotAllowed) -> Self {
+        EthTokenActivationError::PrivKeyPolicyNotAllowed(e)
+    }
 }
 
 impl From<GenerateSignedMessageError> for EthTokenActivationError {
@@ -300,17 +345,21 @@ impl From<GenerateSignedMessageError> for EthTokenActivationError {
 
 #[derive(Display, Serialize)]
 pub enum GenerateSignedMessageError {
-    #[display(fmt = "Internal: {}", _0)]
+    #[display(fmt = "Internal: {_0}")]
     InternalError(String),
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
 }
 
 impl From<PrivKeyPolicyNotAllowed> for GenerateSignedMessageError {
-    fn from(e: PrivKeyPolicyNotAllowed) -> Self { GenerateSignedMessageError::PrivKeyPolicyNotAllowed(e) }
+    fn from(e: PrivKeyPolicyNotAllowed) -> Self {
+        GenerateSignedMessageError::PrivKeyPolicyNotAllowed(e)
+    }
 }
 
 impl From<SignatureError> for GenerateSignedMessageError {
-    fn from(e: SignatureError) -> Self { GenerateSignedMessageError::InternalError(e.to_string()) }
+    fn from(e: SignatureError) -> Self {
+        GenerateSignedMessageError::InternalError(e.to_string())
+    }
 }
 
 /// Represents the parameters required for activating either an ERC-20 token or an NFT on the Ethereum platform.
@@ -458,11 +507,21 @@ impl EthCoin {
             platform: protocol.platform,
             token_addr: protocol.token_addr,
         };
-        let max_eth_tx_type = get_max_eth_tx_type_conf(&ctx, &token_conf, &coin_type).await?;
-        let gas_limit: EthGasLimit = extract_gas_limit_from_conf(&token_conf)
-            .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {}", e)))?;
-        let gas_limit_v2: EthGasLimitV2 = extract_gas_limit_from_conf(&token_conf)
-            .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {}", e)))?;
+        let max_eth_tx_type =
+            get_conf_param_or_from_plaform_coin(&ctx, &token_conf, &coin_type, MAX_ETH_TX_TYPE_SUPPORTED)?;
+        let estimate_gas_mult = get_conf_param_or_from_plaform_coin(&ctx, &token_conf, &coin_type, ESTIMATE_GAS_MULT)?;
+        let gas_price_adjust = get_conf_param_or_from_plaform_coin(&ctx, &token_conf, &coin_type, GAS_PRICE_ADJUST)?;
+        let gas_limit: EthGasLimit =
+            get_conf_param_or_from_plaform_coin(&ctx, &token_conf, &coin_type, EthGasLimit::key())
+                .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {}", e)))
+                .map_mm_err()?
+                .unwrap_or_default();
+        let gas_limit_v2: EthGasLimitV2 =
+            get_conf_param_or_from_plaform_coin(&ctx, &token_conf, &coin_type, EthGasLimitV2::key())
+                .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {}", e)))
+                .map_mm_err()?
+                .unwrap_or_default();
+        let swap_gas_fee_policy = SwapGasFeePolicy::default();
 
         let token = EthCoinImpl {
             priv_key_policy: self.priv_key_policy.clone(),
@@ -481,8 +540,9 @@ impl EthCoin {
             ticker,
             web3_instances: AsyncMutex::new(self.web3_instances.lock().await.clone()),
             history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
-            swap_txfee_policy: Mutex::new(SwapTxFeePolicy::Internal),
+            swap_gas_fee_policy: Mutex::new(swap_gas_fee_policy),
             max_eth_tx_type,
+            gas_price_adjust,
             ctx: self.ctx.clone(),
             required_confirmations,
             trezor_coin: self.trezor_coin.clone(),
@@ -492,6 +552,7 @@ impl EthCoin {
             nfts_infos: Default::default(),
             gas_limit,
             gas_limit_v2,
+            estimate_gas_mult,
             abortable_system,
         };
 
@@ -532,7 +593,7 @@ impl EthCoin {
         let abortable_system = self.abortable_system.create_subsystem()?;
 
         // Todo: support HD wallet for NFTs, currently we get nfts for enabled address only and there might be some issues when activating NFTs while ETH is activated with HD wallet
-        let my_address = self.derivation_method.single_addr_or_err().await?;
+        let my_address = self.derivation_method.single_addr_or_err().await.map_mm_err()?;
 
         let proxy_sign = if komodo_proxy {
             let uri = Uri::from_str(original_url.as_ref())
@@ -544,15 +605,23 @@ impl EthCoin {
             None
         };
 
-        let nft_infos = get_nfts_for_activation(&chain, &my_address, original_url, proxy_sign).await?;
+        let nft_infos = get_nfts_for_activation(&chain, &my_address, original_url, proxy_sign)
+            .await
+            .map_mm_err()?;
         let coin_type = EthCoinType::Nft {
             platform: self.ticker.clone(),
         };
-        let max_eth_tx_type = get_max_eth_tx_type_conf(&ctx, &conf, &coin_type).await?;
-        let gas_limit: EthGasLimit = extract_gas_limit_from_conf(&conf)
-            .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {}", e)))?;
-        let gas_limit_v2: EthGasLimitV2 = extract_gas_limit_from_conf(&conf)
-            .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {}", e)))?;
+        let max_eth_tx_type = get_conf_param_or_from_plaform_coin(&ctx, &conf, &coin_type, MAX_ETH_TX_TYPE_SUPPORTED)?;
+        let estimate_gas_mult = get_conf_param_or_from_plaform_coin(&ctx, &conf, &coin_type, ESTIMATE_GAS_MULT)?;
+        let gas_price_adjust = get_conf_param_or_from_plaform_coin(&ctx, &conf, &coin_type, GAS_PRICE_ADJUST)?;
+        let gas_limit: EthGasLimit = get_conf_param_or_from_plaform_coin(&ctx, &conf, &coin_type, EthGasLimit::key())
+            .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {}", e)))?
+            .unwrap_or_default();
+        let gas_limit_v2: EthGasLimitV2 =
+            get_conf_param_or_from_plaform_coin(&ctx, &conf, &coin_type, EthGasLimitV2::key())
+                .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {}", e)))?
+                .unwrap_or_default();
+        let swap_gas_fee_policy = SwapGasFeePolicy::default();
 
         let global_nft = EthCoinImpl {
             ticker,
@@ -568,8 +637,9 @@ impl EthCoin {
             web3_instances: AsyncMutex::new(self.web3_instances.lock().await.clone()),
             decimals: self.decimals,
             history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
-            swap_txfee_policy: Mutex::new(SwapTxFeePolicy::Internal),
+            swap_gas_fee_policy: Mutex::new(swap_gas_fee_policy),
             max_eth_tx_type,
+            gas_price_adjust,
             required_confirmations,
             ctx: self.ctx.clone(),
             trezor_coin: self.trezor_coin.clone(),
@@ -579,6 +649,7 @@ impl EthCoin {
             nfts_infos: Arc::new(AsyncMutex::new(nft_infos)),
             gas_limit,
             gas_limit_v2,
+            estimate_gas_mult,
             abortable_system,
         };
         Ok(EthCoin(Arc::new(global_nft)))
@@ -635,6 +706,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         priv_key_build_policy,
         &req.path_to_address,
         req.gap_limit,
+        Some(&chain_spec),
     )
     .await?;
 
@@ -677,22 +749,22 @@ pub async fn eth_coin_from_conf_and_request_v2(
 
     let trezor_coin: Option<String> = json::from_value(conf["trezor_coin"].clone()).ok();
 
-    let address_nonce_locks = {
-        let mut map = NONCE_LOCK.lock().unwrap();
-        Arc::new(AsyncMutex::new(
-            map.entry(ticker.to_string()).or_insert_with(new_nonce_lock).clone(),
-        ))
-    };
-
     // Create an abortable system linked to the `MmCtx` so if the app is stopped on `MmArc::stop`,
     // all spawned futures related to `ETH` coin will be aborted as well.
     let abortable_system = ctx.abortable_system.create_subsystem()?;
     let coin_type = EthCoinType::Eth;
-    let max_eth_tx_type = get_max_eth_tx_type_conf(ctx, conf, &coin_type).await?;
-    let gas_limit: EthGasLimit = extract_gas_limit_from_conf(conf)
-        .map_to_mm(|e| EthActivationV2Error::InternalError(format!("invalid gas_limit config {}", e)))?;
-    let gas_limit_v2: EthGasLimitV2 = extract_gas_limit_from_conf(conf)
-        .map_to_mm(|e| EthActivationV2Error::InternalError(format!("invalid gas_limit config {}", e)))?;
+    let max_eth_tx_type = get_conf_param_or_from_plaform_coin(ctx, conf, &coin_type, MAX_ETH_TX_TYPE_SUPPORTED)?;
+    let estimate_gas_mult = get_conf_param_or_from_plaform_coin(ctx, conf, &coin_type, ESTIMATE_GAS_MULT)?;
+    let gas_price_adjust = get_conf_param_or_from_plaform_coin(ctx, conf, &coin_type, GAS_PRICE_ADJUST)?;
+    let gas_limit: EthGasLimit = get_conf_param_or_from_plaform_coin(ctx, conf, &coin_type, EthGasLimit::key())
+        .map_to_mm(|e| EthActivationV2Error::InternalError(format!("invalid gas_limit config {}", e)))?
+        .unwrap_or_default();
+    let gas_limit_v2: EthGasLimitV2 = get_conf_param_or_from_plaform_coin(ctx, conf, &coin_type, EthGasLimitV2::key())
+        .map_to_mm(|e| EthActivationV2Error::InternalError(format!("invalid gas_limit config {}", e)))?
+        .unwrap_or_default();
+    let swap_gas_fee_policy_default: SwapGasFeePolicy =
+        get_conf_param_or_from_plaform_coin(ctx, conf, &coin_type, SWAP_GAS_FEE_POLICY)?.unwrap_or_default();
+    let swap_gas_fee_policy: SwapGasFeePolicy = req.swap_gas_fee_policy.unwrap_or(swap_gas_fee_policy_default);
 
     let coin = EthCoinImpl {
         priv_key_policy,
@@ -708,17 +780,19 @@ pub async fn eth_coin_from_conf_and_request_v2(
         ticker: ticker.to_string(),
         web3_instances: AsyncMutex::new(web3_instances),
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
-        swap_txfee_policy: Mutex::new(SwapTxFeePolicy::Internal),
+        swap_gas_fee_policy: Mutex::new(swap_gas_fee_policy),
         max_eth_tx_type,
+        gas_price_adjust,
         ctx: ctx.weak(),
         required_confirmations,
         trezor_coin,
         logs_block_range: conf["logs_block_range"].as_u64().unwrap_or(DEFAULT_LOGS_BLOCK_RANGE),
-        address_nonce_locks,
+        address_nonce_locks: PerNetNonceLocks::get_net_locks(ticker.to_owned()),
         erc20_tokens_infos: Default::default(),
         nfts_infos: Default::default(),
         gas_limit,
         gas_limit_v2,
+        estimate_gas_mult,
         abortable_system,
     };
 
@@ -735,6 +809,7 @@ pub(crate) async fn build_address_and_priv_key_policy(
     priv_key_build_policy: EthPrivKeyBuildPolicy,
     path_to_address: &HDPathAccountToAddressId,
     gap_limit: Option<u32>,
+    chain_spec: Option<&ChainSpec>,
 ) -> MmResult<(EthPrivKeyPolicy, EthDerivationMethod), EthActivationV2Error> {
     match priv_key_build_policy {
         EthPrivKeyBuildPolicy::IguanaPrivKey(iguana) => {
@@ -763,7 +838,9 @@ pub(crate) async fn build_address_and_priv_key_policy(
             let hd_wallet_storage = HDWalletCoinStorage::init_with_rmd160(ctx, ticker.to_string(), hd_wallet_rmd160)
                 .await
                 .mm_err(EthActivationV2Error::from)?;
-            let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, &path_to_coin).await?;
+            let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, &path_to_coin)
+                .await
+                .map_mm_err()?;
             let gap_limit = gap_limit.unwrap_or(DEFAULT_GAP_LIMIT);
             let hd_wallet = EthHDWallet {
                 hd_wallet_rmd160,
@@ -791,7 +868,7 @@ pub(crate) async fn build_address_and_priv_key_policy(
             if trezor_coin.is_none() {
                 return MmError::err(EthActivationV2Error::CoinDoesntSupportTrezor);
             }
-            let crypto_ctx = CryptoCtx::from_ctx(ctx)?;
+            let crypto_ctx = CryptoCtx::from_ctx(ctx).map_mm_err()?;
             let hw_ctx = crypto_ctx
                 .hw_ctx()
                 .or_mm_err(|| EthActivationV2Error::HwContextNotInitialized)?;
@@ -799,7 +876,9 @@ pub(crate) async fn build_address_and_priv_key_policy(
             let hd_wallet_storage = HDWalletCoinStorage::init_with_rmd160(ctx, ticker.to_string(), hd_wallet_rmd160)
                 .await
                 .mm_err(EthActivationV2Error::from)?;
-            let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, &path_to_coin).await?;
+            let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, &path_to_coin)
+                .await
+                .map_mm_err()?;
             let gap_limit = gap_limit.unwrap_or(DEFAULT_GAP_LIMIT);
             let hd_wallet = EthHDWallet {
                 hd_wallet_rmd160,
@@ -814,7 +893,7 @@ pub(crate) async fn build_address_and_priv_key_policy(
         },
         #[cfg(target_arch = "wasm32")]
         EthPrivKeyBuildPolicy::Metamask(metamask_ctx) => {
-            let address = *metamask_ctx.check_active_eth_account().await?;
+            let address = *metamask_ctx.check_active_eth_account().await.map_mm_err()?;
             let public_key_uncompressed = metamask_ctx.eth_account_pubkey_uncompressed();
             let public_key = compress_public_key(public_key_uncompressed)?;
             Ok((
@@ -825,11 +904,18 @@ pub(crate) async fn build_address_and_priv_key_policy(
                 DerivationMethod::SingleAddress(address),
             ))
         },
-        EthPrivKeyBuildPolicy::WalletConnect {
-            address,
-            public_key_uncompressed,
-            session_topic,
-        } => {
+        EthPrivKeyBuildPolicy::WalletConnect { session_topic } => {
+            let wc = WalletConnectCtx::from_ctx(ctx).map_err(|e| {
+                EthActivationV2Error::WalletConnectError(format!("Failed to get WalletConnect context: {e}"))
+            })?;
+            let chain_spec = chain_spec.ok_or(EthActivationV2Error::ChainIdNotSet)?;
+            let chain_id = chain_spec.chain_id().ok_or(EthActivationV2Error::UnsupportedChain {
+                chain: chain_spec.kind().to_string(),
+                feature: "WalletConnect".to_string(),
+            })?;
+            let (public_key_uncompressed, address) = eth_request_wc_personal_sign(&wc, &session_topic, chain_id)
+                .await
+                .mm_err(|err| EthActivationV2Error::WalletConnectError(err.to_string()))?;
             let public_key = compress_public_key(public_key_uncompressed)?;
             Ok((
                 EthPrivKeyPolicy::WalletConnect {
@@ -867,18 +953,8 @@ async fn build_web3_instances(
 
         let transport = create_transport(ctx, &uri, &eth_node, &event_handlers)?;
         let web3 = Web3::new(transport);
-        let version = match web3.web3().client_version().await {
-            Ok(v) => v,
-            Err(e) => {
-                error!("Couldn't get client version for url {}: {}", eth_node.url, e);
-                continue;
-            },
-        };
 
-        web3_instances.push(Web3Instance {
-            web3,
-            is_parity: version.contains("Parity") || version.contains("parity"),
-        });
+        web3_instances.push(Web3Instance(web3));
     }
 
     if web3_instances.is_empty() {
@@ -927,7 +1003,7 @@ fn create_websocket_transport(
     let fut = websocket_transport
         .clone()
         .start_connection_loop(Some(Instant::now() + TMP_SOCKET_CONNECTION));
-    let settings = AbortSettings::info_on_abort(format!("connection loop stopped for {:?}", uri));
+    let settings = AbortSettings::info_on_abort(format!("connection loop stopped for {uri:?}"));
     ctx.spawner().spawn_with_settings(fut, settings);
 
     Web3Transport::Websocket(websocket_transport)
@@ -963,18 +1039,17 @@ async fn build_metamask_transport(
     let event_handlers = rpc_event_handlers_for_eth_transport(ctx, coin_ticker.clone());
 
     let eth_config = web3_transport::metamask_transport::MetamaskEthConfig { chain_id };
-    let web3 = Web3::new(Web3Transport::new_metamask_with_event_handlers(
-        eth_config,
-        event_handlers,
-    )?);
+    let web3 = Web3::new(Web3Transport::new_metamask_with_event_handlers(eth_config, event_handlers).map_mm_err()?);
 
     // Check if MetaMask supports the given `chain_id`.
     // Please note that this request may take a long time.
-    check_metamask_supports_chain_id(coin_ticker, &web3, chain_id).await?;
+    check_metamask_supports_chain_id(coin_ticker, &web3, chain_id)
+        .await
+        .map_mm_err()?;
 
     // MetaMask doesn't use Parity nodes. So `MetamaskTransport` doesn't support `parity_nextNonce` RPC.
     // An example of the `web3_clientVersion` RPC - `MetaMask/v10.22.1`.
-    let web3_instances = vec![Web3Instance { web3, is_parity: false }];
+    let web3_instances = vec![Web3Instance(web3)];
 
     Ok(web3_instances)
 }
@@ -1013,7 +1088,8 @@ async fn check_metamask_supports_chain_id(
 
 fn compress_public_key(uncompressed: H520) -> MmResult<H264, EthActivationV2Error> {
     let public_key = PublicKey::from_slice(uncompressed.as_bytes())
-        .map_to_mm(|e| EthActivationV2Error::InternalError(e.to_string()))?;
+        .map_to_mm(|e| EthActivationV2Error::InternalError(e.to_string()))
+        .map_mm_err()?;
     let compressed = public_key.serialize();
 
     Ok(H264::from(compressed))

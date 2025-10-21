@@ -1,28 +1,36 @@
 use super::swap_events::{SwapStatusEvent, SwapStatusStreamer};
 use super::swap_v2_common::*;
-use super::{swap_v2_topic, LockedAmount, LockedAmountInfo, SavedTradeFee, SwapsContext, NEGOTIATE_SEND_INTERVAL,
-            NEGOTIATION_TIMEOUT_SEC};
+use super::{
+    swap_v2_topic, LockedAmount, LockedAmountInfo, SavedTradeFee, SwapsContext, NEGOTIATE_SEND_INTERVAL,
+    NEGOTIATION_TIMEOUT_SEC,
+};
 use crate::lp_swap::maker_swap::MakerSwapPreparedParams;
 use crate::lp_swap::swap_lock::SwapLock;
-use crate::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_maker_swap, recv_swap_v2_msg,
-                     SwapConfirmationsSettings, TransactionIdentifier, MAKER_SWAP_V2_TYPE, MAX_STARTED_AT_DIFF};
-use crate::lp_swap::{swap_v2_pb::*, NO_REFUND_FEE};
+use crate::lp_swap::swap_v2_pb::*;
+use crate::lp_swap::{
+    broadcast_swap_v2_msg_every, check_balance_for_maker_swap, recv_swap_v2_msg, SwapConfirmationsSettings,
+    TransactionIdentifier, MAKER_SWAP_V2_TYPE, MAX_STARTED_AT_DIFF,
+};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use coins::hd_wallet::AddrToString;
-use coins::{CanRefundHtlc, ConfirmPaymentInput, DexFee, FeeApproxStage, FundingTxSpend, GenTakerFundingSpendArgs,
-            GenTakerPaymentSpendArgs, MakerCoinSwapOpsV2, MmCoin, ParseCoinAssocTypes, RefundMakerPaymentSecretArgs,
-            RefundMakerPaymentTimelockArgs, SearchForFundingSpendErr, SendMakerPaymentArgs, SwapTxTypeWithSecretHash,
-            TakerCoinSwapOpsV2, ToBytes, TradePreimageValue, Transaction, TxPreimageWithSig, ValidateTakerFundingArgs};
+use coins::{
+    CanRefundHtlc, ConfirmPaymentInput, DexFee, FeeApproxStage, FundingTxSpend, GenTakerFundingSpendArgs,
+    GenTakerPaymentSpendArgs, MakerCoinSwapOpsV2, MmCoin, ParseCoinAssocTypes, RefundMakerPaymentSecretArgs,
+    RefundMakerPaymentTimelockArgs, SearchForFundingSpendErr, SendMakerPaymentArgs, SwapTxTypeWithSecretHash,
+    TakerCoinSwapOpsV2, ToBytes, TradePreimageValue, Transaction, TxPreimageWithSig, ValidateTakerFundingArgs,
+};
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{AbortableSystem, Timer};
 use common::log::{debug, error, info, warn};
 use common::{now_sec, Future01CompatExt};
 use crypto::privkey::SerializableSecp256k1Keypair;
 use crypto::secret_hash_algo::SecretHashAlgo;
+use derive_more::Display;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_event_stream::DeriveStreamerId;
 use mm2_libp2p::Secp256k1PubkeySerialize;
 use mm2_number::MmNumber;
 use mm2_state_machine::prelude::*;
@@ -47,7 +55,8 @@ cfg_wasm32!(
 );
 
 // This is needed to have Debug on messages
-#[allow(unused_imports)] use prost::Message;
+#[allow(unused_imports)]
+use prost::Message;
 
 /// Negotiation data representation to be stored in DB.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -148,7 +157,9 @@ pub struct MakerSwapStorage {
 }
 
 impl MakerSwapStorage {
-    pub fn new(ctx: MmArc) -> Self { MakerSwapStorage { ctx } }
+    pub fn new(ctx: MmArc) -> Self {
+        MakerSwapStorage { ctx }
+    }
 }
 
 #[async_trait]
@@ -194,10 +205,10 @@ impl StateMachineStorage for MakerSwapStorage {
     #[cfg(target_arch = "wasm32")]
     async fn store_repr(&mut self, uuid: Self::MachineId, repr: Self::DbRepr) -> Result<(), Self::Error> {
         let swaps_ctx = SwapsContext::from_ctx(&self.ctx).expect("SwapsContext::from_ctx should not fail");
-        let db = swaps_ctx.swap_db().await?;
-        let transaction = db.transaction().await?;
+        let db = swaps_ctx.swap_db().await.map_mm_err()?;
+        let transaction = db.transaction().await.map_mm_err()?;
 
-        let filters_table = transaction.table::<MySwapsFiltersTable>().await?;
+        let filters_table = transaction.table::<MySwapsFiltersTable>().await.map_mm_err()?;
 
         let item = MySwapsFiltersTable {
             uuid,
@@ -207,14 +218,14 @@ impl StateMachineStorage for MakerSwapStorage {
             is_finished: false.into(),
             swap_type: MAKER_SWAP_V2_TYPE,
         };
-        filters_table.add_item(&item).await?;
+        filters_table.add_item(&item).await.map_mm_err()?;
 
-        let table = transaction.table::<SavedSwapTable>().await?;
+        let table = transaction.table::<SavedSwapTable>().await.map_mm_err()?;
         let item = SavedSwapTable {
             uuid,
             saved_swap: serde_json::to_value(repr)?,
         };
-        table.add_item(&item).await?;
+        table.add_item(&item).await.map_mm_err()?;
         Ok(())
     }
 
@@ -299,13 +310,19 @@ pub struct MakerSwapDbRepr {
 impl StateMachineDbRepr for MakerSwapDbRepr {
     type Event = MakerSwapEvent;
 
-    fn add_event(&mut self, event: Self::Event) { self.events.push(event) }
+    fn add_event(&mut self, event: Self::Event) {
+        self.events.push(event)
+    }
 }
 
 impl GetSwapCoins for MakerSwapDbRepr {
-    fn maker_coin(&self) -> &str { &self.maker_coin }
+    fn maker_coin(&self) -> &str {
+        &self.maker_coin
+    }
 
-    fn taker_coin(&self) -> &str { &self.taker_coin }
+    fn taker_coin(&self) -> &str {
+        &self.taker_coin
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -414,11 +431,15 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
 {
     /// Timeout for taker payment's on-chain confirmation.
     #[inline]
-    fn taker_payment_conf_timeout(&self) -> u64 { self.started_at + self.lock_duration * 2 / 3 }
+    fn taker_payment_conf_timeout(&self) -> u64 {
+        self.started_at + self.lock_duration * 2 / 3
+    }
 
     /// Returns timestamp of maker payment's locktime.
     #[inline]
-    fn maker_payment_locktime(&self) -> u64 { self.started_at + 2 * self.lock_duration }
+    fn maker_payment_locktime(&self) -> u64 {
+        self.started_at + 2 * self.lock_duration
+    }
 
     /// Returns secret hash generated using selected [SecretHashAlgo].
     fn secret_hash(&self) -> Vec<u8> {
@@ -430,7 +451,9 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
 
     /// Returns data that is unique for this swap.
     #[inline]
-    fn unique_data(&self) -> Vec<u8> { self.secret_hash() }
+    fn unique_data(&self) -> Vec<u8> {
+        self.secret_hash()
+    }
 
     /// Calculate dex fee while taker pub is not known yet
     fn dex_fee(&self) -> DexFee {
@@ -492,9 +515,13 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         }
     }
 
-    fn storage(&mut self) -> &mut Self::Storage { &mut self.storage }
+    fn storage(&mut self) -> &mut Self::Storage {
+        &mut self.storage
+    }
 
-    fn id(&self) -> <Self::Storage as StateMachineStorage>::MachineId { self.uuid }
+    fn id(&self) -> <Self::Storage as StateMachineStorage>::MachineId {
+        self.uuid
+    }
 
     async fn recreate_machine(
         uuid: Uuid,
@@ -769,7 +796,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                     .lock()
                     .unwrap()
                     .entry(maker_coin_ticker)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(new_locked);
             },
             MakerSwapEvent::MakerPaymentSentFundingSpendGenerated { .. } => {
@@ -792,9 +819,11 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         // Send a notification to the swap status streamer about a new event.
         self.ctx
             .event_stream_manager
-            .send_fn(&SwapStatusStreamer::derive_streamer_id(), || SwapStatusEvent::MakerV2 {
-                uuid: self.uuid,
-                event: event.clone(),
+            .send_fn(&SwapStatusStreamer::derive_streamer_id(()), || {
+                SwapStatusEvent::MakerV2 {
+                    uuid: self.uuid,
+                    event: event.clone(),
+                }
             })
             .ok();
     }
@@ -828,7 +857,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                     .lock()
                     .unwrap()
                     .entry(maker_coin_ticker)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(new_locked);
             },
             MakerSwapEvent::MakerPaymentSentFundingSpendGenerated { .. }
@@ -891,7 +920,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         let stage = FeeApproxStage::StartSwap;
         let maker_payment_trade_fee = match state_machine
             .maker_coin
-            .get_sender_trade_fee(preimage_value, stage, NO_REFUND_FEE)
+            .get_sender_trade_fee(preimage_value, stage)
             .await
         {
             Ok(fee) => fee,
@@ -1284,7 +1313,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         let maker_payment = match state_machine.maker_coin.send_maker_payment_v2(args).await {
             Ok(tx) => tx,
             Err(e) => {
-                let reason = AbortReason::FailedToSendMakerPayment(format!("{:?}", e));
+                let reason = AbortReason::FailedToSendMakerPayment(format!("{e:?}"));
                 return Self::change_state(Aborted::new(reason), state_machine).await;
             },
         };
@@ -1455,7 +1484,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                             taker_coin_start_block: self.taker_coin_start_block,
                             negotiation_data: self.negotiation_data,
                             maker_payment: self.maker_payment,
-                            reason: MakerPaymentRefundReason::ErrorOnTakerFundingSpendSearch(format!("{:?}", e)),
+                            reason: MakerPaymentRefundReason::ErrorOnTakerFundingSpendSearch(format!("{e:?}")),
                         };
 
                         break Self::change_state(next_state, state_machine).await;
@@ -1786,7 +1815,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                     taker_coin_start_block: self.taker_coin_start_block,
                     negotiation_data: self.negotiation_data,
                     maker_payment: self.maker_payment,
-                    reason: MakerPaymentRefundReason::TakerPaymentSpendBroadcastFailed(format!("{:?}", e)),
+                    reason: MakerPaymentRefundReason::TakerPaymentSpendBroadcastFailed(format!("{e:?}")),
                 };
                 return Self::change_state(next_state, state_machine).await;
             },
@@ -1900,7 +1929,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                     taker_coin_start_block: self.taker_coin_start_block,
                     negotiation_data: self.negotiation_data,
                     maker_payment: self.maker_payment,
-                    reason: MakerPaymentRefundReason::TakerPaymentSpendBroadcastFailed(format!("{:?}", e)),
+                    reason: MakerPaymentRefundReason::TakerPaymentSpendBroadcastFailed(format!("{e:?}")),
                 };
                 return Self::change_state(next_state, state_machine).await;
             },
@@ -2122,7 +2151,9 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
 {
     type StateMachine = MakerSwapStateMachine<MakerCoin, TakerCoin>;
 
-    fn get_event(&self) -> MakerSwapEvent { MakerSwapEvent::Completed }
+    fn get_event(&self) -> MakerSwapEvent {
+        MakerSwapEvent::Completed
+    }
 }
 
 #[async_trait]
