@@ -3664,7 +3664,7 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
     /// Transaction history background sync status
     fn history_sync_status(&self) -> HistorySyncState;
 
-    /// Get fee to be paid per 1 swap transaction
+    /// Returns the approximate amount of the miner fee that is paid per swap transaction.
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send>;
 
     /// Get fee to be paid by sender per whole swap (including possible refund) using the sending value and check if the wallet has sufficient balance to pay the fee.
