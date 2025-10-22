@@ -3524,7 +3524,27 @@ impl MmCoin for TendermintCoin {
     }
 
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
-        Box::new(futures01::future::err("Not implemented".into()))
+        let coin = self.clone();
+
+        let fut = async move {
+            let fee = try_s!(
+                coin.get_sender_trade_fee_for_denom(
+                    coin.ticker.to_owned(),
+                    coin.protocol_info.denom.clone(),
+                    coin.protocol_info.decimals,
+                    coin.min_tx_amount(),
+                )
+                .await
+            );
+
+            Ok(TradeFee {
+                coin: coin.ticker.to_owned(),
+                amount: fee.amount,
+                paid_from_trading_vol: false,
+            })
+        };
+
+        Box::new(fut.boxed().compat())
     }
 
     async fn get_sender_trade_fee(
