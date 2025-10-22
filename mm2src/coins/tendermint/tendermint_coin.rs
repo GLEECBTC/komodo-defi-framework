@@ -3532,6 +3532,7 @@ impl MmCoin for TendermintCoin {
                     coin.ticker.to_owned(),
                     coin.protocol_info.denom.clone(),
                     coin.protocol_info.decimals,
+                    // Transaction amount does not influence the fee.
                     coin.min_tx_amount(),
                 )
                 .await
