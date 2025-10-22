@@ -1,5 +1,5 @@
 use super::utils::*;
-use crate::lp_swap::PAYMENT_LOCKTIME;
+use mm2_main::lp_swap::PAYMENT_LOCKTIME;
 use std::sync::atomic::Ordering;
 
 use coins::siacoin::ApiClientHelpers;

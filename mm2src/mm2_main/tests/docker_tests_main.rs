@@ -30,6 +30,8 @@ use std::time::Duration;
 use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
 
 mod docker_tests;
+#[cfg(feature = "enable-sia")]
+mod sia_tests;
 use docker_tests::docker_tests_common::*;
 use docker_tests::qrc20_tests::{qtum_docker_node, QtumDockerOps, QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG};
 

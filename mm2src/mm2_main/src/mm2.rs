@@ -78,7 +78,7 @@ pub mod heartbeat_event;
 pub mod lp_dispatcher;
 pub mod lp_healthcheck;
 pub mod lp_message_service;
-mod lp_native_dex;
+pub mod lp_native_dex;
 pub mod lp_network;
 pub mod lp_ordermatch;
 pub mod lp_stats;
@@ -90,14 +90,6 @@ mod swap_versioning;
 mod wasm_tests;
 
 use clap::Parser;
-
-#[cfg(all(
-    feature = "enable-sia",
-    feature = "run-sia-functional-tests",
-    test,
-    not(target_arch = "wasm32")
-))]
-mod sia_tests;
 
 pub const PASSWORD_MAXIMUM_CONSECUTIVE_CHARACTERS: usize = 3;
 

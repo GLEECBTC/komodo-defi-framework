@@ -454,7 +454,7 @@ const PAYMENT_LOCKTIME: u64 = 3600 * 2 + 300 * 2;
 /// Default atomic swap payment locktime, in seconds.
 /// Maker sends payment with LOCKTIME * 2
 /// Taker sends payment with LOCKTIME
-pub(crate) static PAYMENT_LOCKTIME: AtomicU64 = AtomicU64::new(super::CUSTOM_PAYMENT_LOCKTIME_DEFAULT);
+pub static PAYMENT_LOCKTIME: AtomicU64 = AtomicU64::new(super::CUSTOM_PAYMENT_LOCKTIME_DEFAULT);
 
 #[inline]
 /// Returns `PAYMENT_LOCKTIME`

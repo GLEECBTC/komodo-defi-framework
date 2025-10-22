@@ -1,7 +1,7 @@
-use crate::lp_native_dex::lp_init;
-use crate::lp_network::MAX_NETID;
 pub use coins::siacoin::sia_rust::types::{Address, Currency, Keypair};
 pub use coins::siacoin::sia_rust::utils::V2TransactionBuilder;
+use mm2_main::lp_native_dex::lp_init;
+use mm2_main::lp_network::MAX_NETID;
 
 use coins::siacoin::{ApiClientHelpers, SiaApiClient, SiaClient, SiaClientConf};
 use coins::utxo::zcash_params_path;
