@@ -1,8 +1,12 @@
-use crate::siacoin::{hastings_to_siacoin, siacoin_to_hastings, Address, ApiClientHelpers, Currency, SiaCoin,
-                     SiaFeeDetails, SiaFeePolicy, SiaKeypair as Keypair, SiaTransactionTypes, SiacoinElement,
-                     SiacoinOutput, SpendPolicy, V2TransactionBuilder};
-use crate::{MarketCoinOps, PrivKeyPolicy, TransactionData, TransactionDetails, TransactionType, WithdrawError,
-            WithdrawRequest, WithdrawResult};
+use crate::siacoin::{
+    hastings_to_siacoin, siacoin_to_hastings, Address, ApiClientHelpers, Currency, SiaCoin, SiaFeeDetails,
+    SiaFeePolicy, SiaKeypair as Keypair, SiaTransactionTypes, SiacoinElement, SiacoinOutput, SpendPolicy,
+    V2TransactionBuilder,
+};
+use crate::{
+    MarketCoinOps, PrivKeyPolicy, TransactionData, TransactionDetails, TransactionType, WithdrawError, WithdrawRequest,
+    WithdrawResult,
+};
 use common::now_sec;
 use mm2_err_handle::mm_error::MmError;
 use std::str::FromStr;

@@ -42,7 +42,6 @@ cfg_native! {
     use futures::task::SpawnExt;
     use http::Request;
     use regex::Regex;
-    use serde::Deserialize;
     use std::fs;
     use std::io::Write;
     use std::net::Ipv4Addr;

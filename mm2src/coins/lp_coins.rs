@@ -274,7 +274,8 @@ pub use test_coin::TestCoin;
 
 pub mod tx_history_storage;
 
-#[cfg(feature = "enable-sia")] pub mod siacoin;
+#[cfg(feature = "enable-sia")]
+pub mod siacoin;
 #[cfg(feature = "enable-sia")]
 use siacoin::{SiaCoin, SiaCoinActivationRequest, SiaFeeDetails, SiaTransaction, SiaTransactionTypes};
 
@@ -676,11 +677,15 @@ pub enum TransactionErr {
 }
 
 impl From<String> for TransactionErr {
-    fn from(e: String) -> Self { TransactionErr::Plain(e) }
+    fn from(e: String) -> Self {
+        TransactionErr::Plain(e)
+    }
 }
 
 impl From<&str> for TransactionErr {
-    fn from(e: &str) -> Self { TransactionErr::Plain(e.to_string()) }
+    fn from(e: &str) -> Self {
+        TransactionErr::Plain(e.to_string())
+    }
 }
 
 impl TransactionErr {
@@ -2516,7 +2521,9 @@ impl From<Qrc20FeeDetails> for TxFeeDetails {
 
 #[cfg(feature = "enable-sia")]
 impl From<SiaFeeDetails> for TxFeeDetails {
-    fn from(sia_details: SiaFeeDetails) -> Self { TxFeeDetails::Sia(sia_details) }
+    fn from(sia_details: SiaFeeDetails) -> Self {
+        TxFeeDetails::Sia(sia_details)
+    }
 }
 
 impl From<TendermintFeeDetails> for TxFeeDetails {
@@ -3636,7 +3643,9 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
     // state serialization, to get full rewind and debugging information about the coins participating in a SWAP operation.
     // status/availability check: https://github.com/artemii235/SuperNET/issues/156#issuecomment-446501816
 
-    fn is_asset_chain(&self) -> bool { false }
+    fn is_asset_chain(&self) -> bool {
+        false
+    }
 
     /// The coin can be initialized, but it cannot participate in the swaps.
     fn wallet_only(&self, ctx: &MmArc) -> bool {
@@ -3840,54 +3849,78 @@ pub enum MmCoinEnum {
 }
 
 impl From<UtxoStandardCoin> for MmCoinEnum {
-    fn from(c: UtxoStandardCoin) -> MmCoinEnum { MmCoinEnum::UtxoCoinVariant(c) }
+    fn from(c: UtxoStandardCoin) -> MmCoinEnum {
+        MmCoinEnum::UtxoCoinVariant(c)
+    }
 }
 
 impl From<EthCoin> for MmCoinEnum {
-    fn from(c: EthCoin) -> MmCoinEnum { MmCoinEnum::EthCoinVariant(c) }
+    fn from(c: EthCoin) -> MmCoinEnum {
+        MmCoinEnum::EthCoinVariant(c)
+    }
 }
 
 #[cfg(any(test, feature = "for-tests"))]
 impl From<TestCoin> for MmCoinEnum {
-    fn from(c: TestCoin) -> MmCoinEnum { MmCoinEnum::TestVariant(c) }
+    fn from(c: TestCoin) -> MmCoinEnum {
+        MmCoinEnum::TestVariant(c)
+    }
 }
 
 impl From<QtumCoin> for MmCoinEnum {
-    fn from(coin: QtumCoin) -> Self { MmCoinEnum::QtumCoinVariant(coin) }
+    fn from(coin: QtumCoin) -> Self {
+        MmCoinEnum::QtumCoinVariant(coin)
+    }
 }
 
 impl From<Qrc20Coin> for MmCoinEnum {
-    fn from(c: Qrc20Coin) -> MmCoinEnum { MmCoinEnum::Qrc20CoinVariant(c) }
+    fn from(c: Qrc20Coin) -> MmCoinEnum {
+        MmCoinEnum::Qrc20CoinVariant(c)
+    }
 }
 
 impl From<BchCoin> for MmCoinEnum {
-    fn from(c: BchCoin) -> MmCoinEnum { MmCoinEnum::BchVariant(c) }
+    fn from(c: BchCoin) -> MmCoinEnum {
+        MmCoinEnum::BchVariant(c)
+    }
 }
 
 impl From<SlpToken> for MmCoinEnum {
-    fn from(c: SlpToken) -> MmCoinEnum { MmCoinEnum::SlpTokenVariant(c) }
+    fn from(c: SlpToken) -> MmCoinEnum {
+        MmCoinEnum::SlpTokenVariant(c)
+    }
 }
 
 impl From<TendermintCoin> for MmCoinEnum {
-    fn from(c: TendermintCoin) -> Self { MmCoinEnum::TendermintVariant(c) }
+    fn from(c: TendermintCoin) -> Self {
+        MmCoinEnum::TendermintVariant(c)
+    }
 }
 
 impl From<TendermintToken> for MmCoinEnum {
-    fn from(c: TendermintToken) -> Self { MmCoinEnum::TendermintTokenVariant(c) }
+    fn from(c: TendermintToken) -> Self {
+        MmCoinEnum::TendermintTokenVariant(c)
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<LightningCoin> for MmCoinEnum {
-    fn from(c: LightningCoin) -> MmCoinEnum { MmCoinEnum::LightningCoinVariant(c) }
+    fn from(c: LightningCoin) -> MmCoinEnum {
+        MmCoinEnum::LightningCoinVariant(c)
+    }
 }
 
 impl From<ZCoin> for MmCoinEnum {
-    fn from(c: ZCoin) -> MmCoinEnum { MmCoinEnum::ZCoinVariant(c) }
+    fn from(c: ZCoin) -> MmCoinEnum {
+        MmCoinEnum::ZCoinVariant(c)
+    }
 }
 
 #[cfg(feature = "enable-sia")]
 impl From<SiaCoin> for MmCoinEnum {
-    fn from(c: SiaCoin) -> MmCoinEnum { MmCoinEnum::SiaCoinVariant(c) }
+    fn from(c: SiaCoin) -> MmCoinEnum {
+        MmCoinEnum::SiaCoinVariant(c)
+    }
 }
 
 #[cfg(feature = "enable-solana")]
@@ -3903,7 +3936,6 @@ impl From<solana::SolanaToken> for MmCoinEnum {
         MmCoinEnum::SolanaToken(c)
     }
 }
-
 
 // NB: When stable and groked by IDEs, `enum_dispatch` can be used instead of `Deref` to speed things up.
 impl Deref for MmCoinEnum {
@@ -3947,7 +3979,9 @@ impl MmCoinEnum {
         }
     }
 
-    pub fn is_eth(&self) -> bool { matches!(self, MmCoinEnum::EthCoinVariant(_)) }
+    pub fn is_eth(&self) -> bool {
+        matches!(self, MmCoinEnum::EthCoinVariant(_))
+    }
 
     fn is_platform_coin(&self) -> bool {
         self.ticker() == self.platform_ticker()
@@ -5949,7 +5983,7 @@ pub fn address_by_coin_conf_and_pubkey_str(
         // this will require significant changes and this function is only called from "legacy" dispatcher's `orderbook` rpc
         // so it's not a priority right now
         #[cfg(feature = "enable-sia")]
-        CoinProtocol::SIA { .. } => Ok("sia-address".to_string()),
+        CoinProtocol::SIA => Ok("sia-address".to_string()),
         #[cfg(feature = "enable-solana")]
         CoinProtocol::SOLANA(_) => ERR!("address_by_coin_conf_and_pubkey_str is not implemented for SOLANA yet."),
         #[cfg(feature = "enable-solana")]

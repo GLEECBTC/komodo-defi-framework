@@ -27,7 +27,6 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::Command;
 use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
-use testcontainers::clients::Cli;
 
 mod docker_tests;
 use docker_tests::docker_tests_common::*;
@@ -37,7 +36,6 @@ mod integration_tests_common;
 
 /// Custom test runner intended to initialize the SIA coin daemon in a Docker container.
 pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
-    let docker = Cli::default();
     let mut containers = vec![];
 
     let skip_docker_tests_runner = std::env::var("SKIP_DOCKER_TESTS_RUNNER")
@@ -52,7 +50,7 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
             remove_docker_containers(image);
         }
 
-        let sia_node = sia_docker_node(&docker, "SIA", 9980);
+        let sia_node = sia_docker_node("SIA", 9980);
         println!("ran container?");
         containers.push(sia_node);
     }

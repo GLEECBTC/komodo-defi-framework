@@ -10,8 +10,9 @@ use coins::coin_errors::MyAddressError;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::siacoin::{SiaCoin, SiaCoinActivationRequest, SiaCoinNewError, SiaCoinProtocolInfo};
 use coins::tx_history_storage::CreateTxHistoryStorageError;
-use coins::{lp_spawn_tx_history, BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, PrivKeyBuildPolicy,
-            RegisterCoinError};
+use coins::{
+    lp_spawn_tx_history, BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, PrivKeyBuildPolicy, RegisterCoinError,
+};
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use crypto::CryptoCtxError;
 use derive_more::Display;

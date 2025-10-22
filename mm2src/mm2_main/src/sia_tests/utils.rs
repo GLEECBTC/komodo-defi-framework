@@ -247,7 +247,9 @@ lazy_static! {
 macro_rules! current_function_name {
     () => {{
         fn f() {}
-        fn type_name_of<T>(_: T) -> &'static str { std::any::type_name::<T>() }
+        fn type_name_of<T>(_: T) -> &'static str {
+            std::any::type_name::<T>()
+        }
         let name = type_name_of(f);
         name.strip_suffix("::{{closure}}::f")
             .unwrap()
@@ -363,14 +365,6 @@ pub struct TestKeyPair<'a> {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(transparent, rename = "result")]
 pub struct GetDirectlyConnectedPeersResponse(pub HashMap<String, Vec<String>>);
-
-/// Response from `get_my_peer_id` RPC endpoint.
-/// eg, {"result:" "<PeerId>"}
-/// TODO: Should technically be Peerid but not needed for current use cases.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GetMyPeerIdResponse {
-    pub result: String,
-}
 
 pub async fn enable_dsia(mm: &MarketMakerIt, walletd_port: u16) -> CoinInitResponse {
     let url = format!("http://127.0.0.1:{}/", walletd_port);

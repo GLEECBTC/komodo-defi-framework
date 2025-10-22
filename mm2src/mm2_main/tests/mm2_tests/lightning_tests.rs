@@ -714,8 +714,8 @@ fn test_lightning_swaps() {
     let price = 0.0005;
     let volume = 0.1;
     let uuids = block_on(start_swaps(
-        &mm_node_1,
-        &mm_node_2,
+        &mut mm_node_1,
+        &mut mm_node_2,
         &[("RICK", "tBTC-TEST-lightning")],
         price,
         price,
@@ -739,8 +739,8 @@ fn test_lightning_swaps() {
     let price = 10.;
     let volume = 0.00004;
     let uuids = block_on(start_swaps(
-        &mm_node_1,
-        &mm_node_2,
+        &mut mm_node_1,
+        &mut mm_node_2,
         &[("tBTC-TEST-lightning", "RICK")],
         price,
         price,
@@ -799,8 +799,8 @@ fn test_lightning_taker_swap_mpp() {
     let price = 0.0025;
     let volume = 0.1;
     let uuids = block_on(start_swaps(
-        &mm_node_1,
-        &mm_node_2,
+        &mut mm_node_1,
+        &mut mm_node_2,
         &[("RICK", "tBTC-TEST-lightning")],
         price,
         price,
@@ -858,8 +858,8 @@ fn test_lightning_maker_swap_mpp() {
     let price = 10.;
     let volume = 0.00025;
     let uuids = block_on(start_swaps(
-        &mm_node_2,
-        &mm_node_1,
+        &mut mm_node_2,
+        &mut mm_node_1,
         &[("tBTC-TEST-lightning", "RICK")],
         price,
         price,
@@ -911,8 +911,8 @@ fn test_lightning_taker_gets_swap_preimage_onchain() {
     let price = 0.0005;
     let volume = 0.1;
     let uuids = block_on(start_swaps(
-        &mm_node_1,
-        &mm_node_2,
+        &mut mm_node_1,
+        &mut mm_node_2,
         &[("RICK", "tBTC-TEST-lightning")],
         price,
         price,
@@ -974,8 +974,8 @@ fn test_lightning_taker_claims_mpp() {
     let price = 0.0025;
     let volume = 0.1;
     let uuids = block_on(start_swaps(
-        &mm_node_1,
-        &mm_node_2,
+        &mut mm_node_1,
+        &mut mm_node_2,
         &[("RICK", "tBTC-TEST-lightning")],
         price,
         price,

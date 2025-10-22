@@ -1108,7 +1108,7 @@ fn test_nonce_erc20_lock() {
         eth_coin_v2_activation_with_random_privkey(&ctx, &eth_ticker, &eth_conf, swap_addresses, false);
     block_on(lp_register_coin(
         &ctx,
-        MmCoinEnum::EthCoin(eth_coin.clone()),
+        MmCoinEnum::EthCoinVariant(eth_coin.clone()),
         RegisterCoinParams {
             ticker: eth_ticker.clone(),
         },
@@ -2929,7 +2929,7 @@ fn test_v2_eth_eth_kickstart_impl(base: &str, rel: &str, maker_price: f64, taker
 
     // Start Bob
     let mut bob_conf = Mm2TestConf::seednode_trade_v2(&format!("0x{}", hex::encode(bob_priv_key)), &coins);
-    let mm_bob = MarketMakerIt::start(bob_conf.conf.clone(), bob_conf.rpc_password.clone(), None).unwrap();
+    let mut mm_bob = MarketMakerIt::start(bob_conf.conf.clone(), bob_conf.rpc_password.clone(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
     log!("Bob log path: {}", mm_bob.log_path.display());
 

@@ -33,7 +33,9 @@ impl TxHistory for BchActivationRequest {
 
 #[cfg(feature = "enable-sia")]
 impl TxHistory for SiaCoinActivationRequest {
-    fn tx_history(&self) -> bool { self.tx_history }
+    fn tx_history(&self) -> bool {
+        self.tx_history
+    }
 }
 
 impl TxHistory for ZcoinActivationParams {

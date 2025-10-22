@@ -11,8 +11,10 @@ use coins::utxo::rpc_clients::{NativeClient, UtxoRpcClientEnum, UtxoRpcClientOps
 use coins::utxo::slp::{slp_genesis_output, SlpOutput, SlpToken};
 use coins::utxo::utxo_common::send_outputs_from_my_address;
 use coins::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
-use coins::utxo::{coin_daemon_data_dir, sat_from_big_decimal, zcash_params_path, UtxoActivationParams,
-                  UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps};
+use coins::utxo::{
+    coin_daemon_data_dir, sat_from_big_decimal, zcash_params_path, UtxoActivationParams, UtxoAddressFormat,
+    UtxoCoinFields, UtxoCommonOps,
+};
 use coins::z_coin::ZCoin;
 use coins::{ConfirmPaymentInput, MarketCoinOps, Transaction};
 pub use common::{block_on, block_on_f01, now_ms, now_sec, wait_until_ms, wait_until_sec};
@@ -30,9 +32,10 @@ use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::BigDecimal;
 pub use mm2_number::MmNumber;
 use mm2_rpc::data::legacy::BalanceResponse;
-pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, enable_eth_coin, enable_native,
-                                      enable_native_bch, erc20_dev_conf, eth_dev_conf, mm_dump,
-                                      wait_check_stats_swap_status, MarketMakerIt};
+pub use mm2_test_helpers::for_tests::{
+    check_my_swap_status, check_recent_swaps, enable_eth_coin, enable_native, enable_native_bch, erc20_dev_conf,
+    eth_dev_conf, mm_dump, wait_check_stats_swap_status, MarketMakerIt,
+};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::TransactionDetails;
 use primitives::hash::{H160, H256};

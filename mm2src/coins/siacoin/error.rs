@@ -1,8 +1,11 @@
-use crate::siacoin::client_error::{BroadcastTransactionError, ClientError, CurrentHeightError,
-                                   FindWhereUtxoSpentError, GetMedianTimestampError, GetUnconfirmedTransactionError,
-                                   UtxoFromTxidError};
-use crate::siacoin::{Address, Currency, Event, EventDataWrapper, Hash256, Hash256Error, KeypairError, PreimageError,
-                     PublicKeyError, SiaTransaction, SiacoinOutput, TransactionId, V2TransactionBuilderError};
+use crate::siacoin::client_error::{
+    BroadcastTransactionError, ClientError, CurrentHeightError, FindWhereUtxoSpentError, GetMedianTimestampError,
+    GetUnconfirmedTransactionError, UtxoFromTxidError,
+};
+use crate::siacoin::{
+    Address, Currency, Event, EventDataWrapper, Hash256, Hash256Error, KeypairError, PreimageError, PublicKeyError,
+    SiaTransaction, SiacoinOutput, TransactionId, V2TransactionBuilderError,
+};
 use crate::{DexFee, TransactionEnum};
 use common::executor::AbortedError;
 use crypto::privkey::PrivKeyError;
@@ -232,7 +235,9 @@ pub enum SiaCoinBuilderError {
 
 // This is required because AbortedError doesn't impl Error
 impl From<AbortedError> for SiaCoinBuilderError {
-    fn from(e: AbortedError) -> Self { SiaCoinBuilderError::AbortableSystem(e) }
+    fn from(e: AbortedError) -> Self {
+        SiaCoinBuilderError::AbortableSystem(e)
+    }
 }
 
 #[derive(Debug, Error)]

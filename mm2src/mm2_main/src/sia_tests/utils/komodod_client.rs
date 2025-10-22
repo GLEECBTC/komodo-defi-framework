@@ -66,7 +66,7 @@ impl KomododClient {
             "method": method,
             "params": params
         });
-        common::log::debug!("Sending komodod RPC request: {}", payload.to_string());
+        common::log::debug!("Sending komodod RPC request: {}", payload);
 
         let mut attempts = 0;
         let max_retries = 3;
@@ -74,7 +74,7 @@ impl KomododClient {
             match self.client.post(self.url.clone()).json(&payload).send().await {
                 Ok(response) => {
                     let json_response: serde_json::Value = response.json().await.unwrap();
-                    common::log::debug!("Received komodod RPC response: {}", json_response.to_string());
+                    common::log::debug!("Received komodod RPC response: {}", json_response);
                     return json_response;
                 },
                 Err(err) => {

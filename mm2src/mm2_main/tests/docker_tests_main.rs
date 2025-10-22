@@ -90,40 +90,40 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
 
         let (nucleus_node, atom_node, ibc_relayer_node) = if !disable_cosmos {
             let runtime_dir = prepare_runtime_dir().unwrap();
-            let nucleus_node = nucleus_node(&docker, runtime_dir.clone());
-            let atom_node = atom_node(&docker, runtime_dir.clone());
-            let ibc_relayer_node = ibc_relayer_node(&docker, runtime_dir);
+            let nucleus_node = nucleus_node(runtime_dir.clone());
+            let atom_node = atom_node(runtime_dir.clone());
+            let ibc_relayer_node = ibc_relayer_node(runtime_dir);
             (Some(nucleus_node), Some(atom_node), Some(ibc_relayer_node))
         } else {
             (None, None, None)
         };
         let (utxo_node, utxo_node1) = if !disable_utxo {
-            let utxo_node = utxo_asset_docker_node(&docker, "MYCOIN", 7000);
-            let utxo_node1 = utxo_asset_docker_node(&docker, "MYCOIN1", 8000);
+            let utxo_node = utxo_asset_docker_node("MYCOIN", 7000);
+            let utxo_node1 = utxo_asset_docker_node("MYCOIN1", 8000);
             (Some(utxo_node), Some(utxo_node1))
         } else {
             (None, None)
         };
         let qtum_node = if !disable_qtum {
-            let qtum_node = qtum_docker_node(&docker, 9000);
+            let qtum_node = qtum_docker_node(9000);
             Some(qtum_node)
         } else {
             None
         };
         let for_slp_node = if !disable_slp {
-            let for_slp_node = utxo_asset_docker_node(&docker, "FORSLP", 10000);
+            let for_slp_node = utxo_asset_docker_node("FORSLP", 10000);
             Some(for_slp_node)
         } else {
             None
         };
         let geth_node = if !disable_eth {
-            let geth_node = geth_docker_node(&docker, "ETH", 8545);
+            let geth_node = geth_docker_node("ETH", 8545);
             Some(geth_node)
         } else {
             None
         };
         let zombie_node = if !disable_zombie {
-            let zombie_node = zombie_asset_docker_node(&docker, 7090);
+            let zombie_node = zombie_asset_docker_node(7090);
             Some(zombie_node)
         } else {
             None

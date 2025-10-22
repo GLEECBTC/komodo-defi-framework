@@ -150,8 +150,8 @@ async fn test_bob_sells_doc_for_dsia() {
     dsia.client.mine_blocks(155, &ALICE_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
-    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, None).await;
-    let (_ctx_alice, mm_alice) = init_alice(&temp_dir, netid, None).await;
+    let (_ctx_bob, mut mm_bob) = init_bob(&temp_dir, netid, None).await;
+    let (_ctx_alice, mut mm_alice) = init_alice(&temp_dir, netid, None).await;
 
     // Enable DOC coin via electrum for Alice and Bob
     let _ = enable_utxo_v2_electrum(&mm_bob, "DOC", doc_electrums(), None, 60, None).await;
@@ -167,7 +167,7 @@ async fn test_bob_sells_doc_for_dsia() {
         .unwrap();
 
     // Start a swap where Bob sells DOC for Alice's DSIA
-    let uuid = start_swaps(&mm_bob, &mm_alice, &[("DOC", "DSIA")], 1., 1., 0.05)
+    let uuid = start_swaps(&mut mm_bob, &mut mm_alice, &[("DOC", "DSIA")], 1., 1., 0.05)
         .await
         .first()
         .cloned()
@@ -202,8 +202,8 @@ async fn test_bob_sells_dsia_for_doc() {
     dsia.client.mine_blocks(155, &BOB_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
-    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, None).await;
-    let (_ctx_alice, mm_alice) = init_alice(&temp_dir, netid, None).await;
+    let (_ctx_bob, mut mm_bob) = init_bob(&temp_dir, netid, None).await;
+    let (_ctx_alice, mut mm_alice) = init_alice(&temp_dir, netid, None).await;
 
     // Enable DOC coin via electrum for Alice and Bob
     let _ = enable_utxo_v2_electrum(&mm_bob, "DOC", doc_electrums(), None, 60, None).await;
@@ -219,7 +219,7 @@ async fn test_bob_sells_dsia_for_doc() {
         .unwrap();
 
     // Start a swap where Bob sells DSIA for Alice's DOC
-    let uuid = start_swaps(&mm_bob, &mm_alice, &[("DSIA", "DOC")], 1., 1., 0.05)
+    let uuid = start_swaps(&mut mm_bob, &mut mm_alice, &[("DSIA", "DOC")], 1., 1., 0.05)
         .await
         .first()
         .cloned()
@@ -259,8 +259,8 @@ async fn test_bob_sells_dsia_for_dutxo() {
     dsia.client.mine_blocks(155, &BOB_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
-    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, Some(bob_client.conf.port)).await;
-    let (_ctx_alice, mm_alice) = init_alice(&temp_dir, netid, Some(alice_client.conf.port)).await;
+    let (_ctx_bob, mut mm_bob) = init_bob(&temp_dir, netid, Some(bob_client.conf.port)).await;
+    let (_ctx_alice, mut mm_alice) = init_alice(&temp_dir, netid, Some(alice_client.conf.port)).await;
 
     // Enable DSIA coin for Alice and Bob
     let _ = enable_dsia(&mm_bob, dsia.host_port).await;
@@ -276,7 +276,7 @@ async fn test_bob_sells_dsia_for_dutxo() {
         .unwrap();
 
     // Start a swap where Bob sells DSIA for Alice's DUTXO
-    let uuid = start_swaps(&mm_bob, &mm_alice, &[("DSIA", "DUTXO")], 1., 1., 0.05)
+    let uuid = start_swaps(&mut mm_bob, &mut mm_alice, &[("DSIA", "DUTXO")], 1., 1., 0.05)
         .await
         .first()
         .cloned()
@@ -312,8 +312,8 @@ async fn test_bob_sells_dutxo_for_dsia() {
     dsia.client.mine_blocks(155, &ALICE_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
-    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, Some(bob_komodod_client.conf.port)).await;
-    let (_ctx_alice, mm_alice) = init_alice(&temp_dir, netid, Some(alice_komodod_client.conf.port)).await;
+    let (_ctx_bob, mut mm_bob) = init_bob(&temp_dir, netid, Some(bob_komodod_client.conf.port)).await;
+    let (_ctx_alice, mut mm_alice) = init_alice(&temp_dir, netid, Some(alice_komodod_client.conf.port)).await;
 
     // Enable DSIA coin for Alice and Bob
     let _ = enable_dsia(&mm_bob, dsia.host_port).await;
@@ -329,7 +329,7 @@ async fn test_bob_sells_dutxo_for_dsia() {
         .unwrap();
 
     // Start a swap where Bob sells DUTXO for Alice's DSIA
-    let uuid = start_swaps(&mm_bob, &mm_alice, &[("DUTXO", "DSIA")], 1., 1., 0.05)
+    let uuid = start_swaps(&mut mm_bob, &mut mm_alice, &[("DUTXO", "DSIA")], 1., 1., 0.05)
         .await
         .first()
         .cloned()

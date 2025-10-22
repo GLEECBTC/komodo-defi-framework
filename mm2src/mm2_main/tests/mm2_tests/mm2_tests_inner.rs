@@ -771,7 +771,7 @@ async fn trade_base_rel_electrum(
     let rc = enable_utxo_v2_electrum(&mm_alice, "MORTY", marty_electrums(), alice_path_to_address, 600, None).await;
     log!("enable MORTY (alice): {:?}", rc);
 
-    let uuids = start_swaps(&mm_bob, &mm_alice, pairs, maker_price, taker_price, volume).await;
+    let uuids = start_swaps(&mut mm_bob, &mut mm_alice, pairs, maker_price, taker_price, volume).await;
 
     #[cfg(not(target_arch = "wasm32"))]
     for uuid in uuids.iter() {

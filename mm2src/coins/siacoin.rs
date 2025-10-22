@@ -1,16 +1,21 @@
-use super::{BalanceError, CoinBalance, CoinsContext, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionError,
-            RawTransactionFut, RawTransactionRequest, SignatureError, SwapOps, SwapTxTypeWithSecretHash, TradeFee,
-            TransactionData, TransactionDetails, TransactionEnum, TransactionErr, TransactionType, VerificationError};
+use super::{
+    BalanceError, CoinBalance, CoinsContext, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionError,
+    RawTransactionFut, RawTransactionRequest, RawTransactionResult, SignRawTransactionRequest, SignatureError, SwapOps,
+    SwapTxTypeWithSecretHash, TradeFee, TransactionData, TransactionDetails, TransactionEnum, TransactionErr,
+    TransactionType, VerificationError,
+};
 use crate::hd_wallet::HDAddressSelector;
 use crate::siacoin::sia_withdraw::SiaWithdrawBuilder;
-use crate::{coin_errors::{AddressFromPubkeyError, MyAddressError},
-            now_sec, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, DexFee, FeeApproxStage,
-            FoundSwapTxSpend, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, PrivKeyPolicy, RawTransactionRes,
-            RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SignatureResult, SpendPaymentArgs,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction, TransactionResult,
-            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentInput, ValidatePaymentResult,
-            VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawFut, WithdrawRequest};
+use crate::{
+    coin_errors::{AddressFromPubkeyError, MyAddressError},
+    now_sec, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, DexFee, FeeApproxStage,
+    FoundSwapTxSpend, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, PrivKeyPolicy, RawTransactionRes,
+    RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SignatureResult, SpendPaymentArgs, TradePreimageFut,
+    TradePreimageResult, TradePreimageValue, Transaction, TransactionResult, TxMarshalingErr,
+    UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentError,
+    ValidatePaymentInput, ValidatePaymentResult, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner,
+    WithdrawFut, WithdrawRequest,
+};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::executor::abortable_queue::AbortableQueue;
@@ -47,13 +52,15 @@ use serde_json::Value as Json;
 // expose all of sia-rust so mm2_main can use it via coins::siacoin::sia_rust
 pub use sia_rust;
 pub use sia_rust::transport::client::{ApiClient as SiaApiClient, ApiClientHelpers};
-pub use sia_rust::transport::endpoints::{AddressesEventsRequest, ConsensusTipRequest, GetAddressUtxosRequest,
-                                         GetEventRequest, TxpoolBroadcastRequest, TxpoolTransactionsRequest,
-                                         TxpoolTransactionsResponse};
-pub use sia_rust::types::{Address, Currency, Event, EventDataWrapper, EventPayout, EventType, Hash256, Hash256Error,
-                          Keypair as SiaKeypair, KeypairError, Preimage, PreimageError, PublicKey, PublicKeyError,
-                          SiacoinElement, SiacoinOutput, SiacoinOutputId, SpendPolicy, TransactionId, V1Transaction,
-                          V2Transaction};
+pub use sia_rust::transport::endpoints::{
+    AddressesEventsRequest, ConsensusTipRequest, GetAddressUtxosRequest, GetEventRequest, TxpoolBroadcastRequest,
+    TxpoolTransactionsRequest, TxpoolTransactionsResponse,
+};
+pub use sia_rust::types::{
+    Address, Currency, Event, EventDataWrapper, EventPayout, EventType, Hash256, Hash256Error, Keypair as SiaKeypair,
+    KeypairError, Preimage, PreimageError, PublicKey, PublicKeyError, SiacoinElement, SiacoinOutput, SiacoinOutputId,
+    SpendPolicy, TransactionId, V1Transaction, V2Transaction,
+};
 pub use sia_rust::utils::{V2TransactionBuilder, V2TransactionBuilderError};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
@@ -310,7 +317,9 @@ pub struct SiaFeeDetails {
 
 #[async_trait]
 impl MmCoin for SiaCoin {
-    fn spawner(&self) -> WeakSpawner { self.abortable_system.weak_spawner() }
+    fn spawner(&self) -> WeakSpawner {
+        self.abortable_system.weak_spawner()
+    }
 
     /*
     TODO: refactor MmCoin to remove or better generalize this method
@@ -319,7 +328,7 @@ impl MmCoin for SiaCoin {
     Ideally, we would use an associated type within the response to allow returning
     the transaction as a JSON. For now, we encode JSON to hex and return this hex string.
     */
-    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
+    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut<'_> {
         let fut = async move {
             let txid = match Hash256::from_str(&req.tx_hash).map_err(|e| {
                 RawTransactionError::InternalError(format!("SiaCoin::get_raw_transaction: failed to parse txid: {}", e))
@@ -343,7 +352,7 @@ impl MmCoin for SiaCoin {
     }
 
     // TODO Alright - this is only applicable to Watcher logic and will be removed from MmCoin trait
-    fn get_tx_hex_by_hash(&self, _tx_hash: Vec<u8>) -> RawTransactionFut {
+    fn get_tx_hex_by_hash(&self, _tx_hash: Vec<u8>) -> RawTransactionFut<'_> {
         let fut = async move {
             Err(RawTransactionError::InternalError(
                 "SiaCoin::get_tx_hex_by_hash: Unsupported".to_string(),
@@ -361,7 +370,9 @@ impl MmCoin for SiaCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn decimals(&self) -> u8 { 24 }
+    fn decimals(&self) -> u8 {
+        24
+    }
 
     fn convert_to_address(&self, _from: &str, _to_address_format: Json) -> Result<String, String> {
         Err("SiaCoin::convert_to_address: Unsupported".to_string())
@@ -590,7 +601,9 @@ impl MmCoin for SiaCoin {
         Box::new(fut.map(|_| Ok(())).boxed().compat())
     }
 
-    fn history_sync_status(&self) -> HistorySyncState { self.history_sync_state.lock().unwrap().clone() }
+    fn history_sync_status(&self) -> HistorySyncState {
+        self.history_sync_state.lock().unwrap().clone()
+    }
 
     // This is only utilized by the now deprecated get_trade_fee RPC method and should be removed
     // from the MmCoin trait
@@ -638,7 +651,9 @@ impl MmCoin for SiaCoin {
         })
     }
 
-    fn required_confirmations(&self) -> u64 { self.required_confirmations.load(AtomicOrdering::Relaxed) }
+    fn required_confirmations(&self) -> u64 {
+        self.required_confirmations.load(AtomicOrdering::Relaxed)
+    }
 
     fn requires_notarization(&self) -> bool {
         false
@@ -651,11 +666,17 @@ impl MmCoin for SiaCoin {
 
     fn set_requires_notarization(&self, _requires_nota: bool) {}
 
-    fn swap_contract_address(&self) -> Option<BytesJson> { None }
+    fn swap_contract_address(&self) -> Option<BytesJson> {
+        None
+    }
 
-    fn fallback_swap_contract(&self) -> Option<BytesJson> { None }
+    fn fallback_swap_contract(&self) -> Option<BytesJson> {
+        None
+    }
 
-    fn mature_confirmations(&self) -> Option<u32> { None }
+    fn mature_confirmations(&self) -> Option<u32> {
+        None
+    }
 
     fn coin_protocol_info(&self, _amount_to_receive: Option<MmNumber>) -> Vec<u8> {
         Vec::new()
@@ -671,14 +692,18 @@ impl MmCoin for SiaCoin {
         true
     }
 
-    fn on_disabled(&self) -> Result<(), AbortedError> { self.abortable_system.abort_all() }
+    fn on_disabled(&self) -> Result<(), AbortedError> {
+        self.abortable_system.abort_all()
+    }
 
     fn on_token_deactivated(&self, _ticker: &str) {}
 }
 
 #[async_trait]
 impl MarketCoinOps for SiaCoin {
-    fn ticker(&self) -> &str { &self.conf.ticker }
+    fn ticker(&self) -> &str {
+        &self.conf.ticker
+    }
 
     fn my_address(&self) -> MmResult<String, MyAddressError> {
         let key_pair = match &*self.priv_key_policy {
@@ -737,7 +762,9 @@ impl MarketCoinOps for SiaCoin {
     }
 
     // TODO Alright - Unsupported and will be removed - see dev comments in trait declaration
-    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { None }
+    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> {
+        None
+    }
 
     // Todo: needed as part of feature completion
     fn sign_message(&self, _message: &str, _address: Option<HDAddressSelector>) -> SignatureResult<String> {
@@ -776,9 +803,13 @@ impl MarketCoinOps for SiaCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn platform_coin_balance(&self) -> BalanceFut<BigDecimal> { Box::new(self.my_balance().map(|res| res.spendable)) }
+    fn platform_coin_balance(&self) -> BalanceFut<BigDecimal> {
+        Box::new(self.my_balance().map(|res| res.spendable))
+    }
 
-    fn platform_ticker(&self) -> &str { self.ticker() }
+    fn platform_ticker(&self) -> &str {
+        self.ticker()
+    }
 
     /// Receives raw transaction bytes in hexadecimal format as input and returns tx hash in hexadecimal format
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
@@ -869,17 +900,25 @@ impl MarketCoinOps for SiaCoin {
     // This remains unimplemented because the response is meaningless to a typical sia user since
     // all Sia software only ever presents or accepts seed phrases, never raw private keys.
     // TODO Alright: provide useful import/export functionality prior to mainnet v2 activation
-    fn display_priv_key(&self) -> Result<String, String> { Err("SiaCoin::display_priv_key: Unsupported".to_string()) }
+    fn display_priv_key(&self) -> Result<String, String> {
+        Err("SiaCoin::display_priv_key: Unsupported".to_string())
+    }
 
-    fn min_tx_amount(&self) -> BigDecimal { hastings_to_siacoin(1u64.into()) }
+    fn min_tx_amount(&self) -> BigDecimal {
+        hastings_to_siacoin(1u64.into())
+    }
 
-    fn min_trading_vol(&self) -> MmNumber { hastings_to_siacoin(1u64.into()).into() }
+    fn min_trading_vol(&self) -> MmNumber {
+        hastings_to_siacoin(1u64.into()).into()
+    }
 
     fn should_burn_dex_fee(&self) -> bool {
         false
     }
 
-    fn is_trezor(&self) -> bool { self.priv_key_policy.is_trezor() }
+    fn is_trezor(&self) -> bool {
+        self.priv_key_policy.is_trezor()
+    }
 }
 
 // contains various helpers to account for subpar error handling trait method signatures
@@ -1817,7 +1856,9 @@ impl SwapOps for SiaCoin {
     }
 
     // Todo: This is only used for watchers so it's ok to use a default implementation as watchers are not supported for SIA yet
-    fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { KeyPair::default() }
+    fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair {
+        KeyPair::default()
+    }
 
     /// Return the iguana ed25519 public key
     /// This is the public key that will be used inside the HTLC SpendPolicy
@@ -1877,7 +1918,9 @@ impl fmt::Display for SiaTransaction {
 }
 
 impl SiaTransaction {
-    pub fn txid(&self) -> Hash256 { self.0.txid() }
+    pub fn txid(&self) -> Hash256 {
+        self.0.txid()
+    }
 }
 
 impl TryFrom<SiaTransaction> for Vec<u8> {
@@ -1907,9 +1950,13 @@ impl TryFrom<Vec<u8>> for SiaTransaction {
 impl Transaction for SiaTransaction {
     // serde should always be succesful but write an empty vec just in case.
     // FIXME Alright this trait should be refactored to return a Result for this method
-    fn tx_hex(&self) -> Vec<u8> { serde_json::ser::to_vec(self).unwrap_or_default() }
+    fn tx_hex(&self) -> Vec<u8> {
+        serde_json::ser::to_vec(self).unwrap_or_default()
+    }
 
-    fn tx_hash_as_bytes(&self) -> BytesJson { BytesJson(self.txid().0.to_vec()) }
+    fn tx_hash_as_bytes(&self) -> BytesJson {
+        BytesJson(self.txid().0.to_vec())
+    }
 }
 
 /// Represents the different types of transactions that can be sent to a wallet.
