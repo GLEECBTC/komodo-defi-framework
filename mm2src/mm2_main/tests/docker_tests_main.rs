@@ -32,9 +32,10 @@ use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
 mod docker_tests;
 #[cfg(feature = "enable-sia")]
 mod sia_tests;
-use crate::sia_tests::utils::wait_for_dsia_node_ready;
 use docker_tests::docker_tests_common::*;
 use docker_tests::qrc20_tests::{qtum_docker_node, QtumDockerOps, QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG};
+#[cfg(feature = "enable-sia")]
+use sia_tests::utils::wait_for_dsia_node_ready;
 
 #[allow(dead_code)]
 mod integration_tests_common;
@@ -189,6 +190,7 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
             containers.push(atom_node);
             containers.push(ibc_relayer_node);
         }
+        #[cfg(feature = "enable-sia")]
         if let Some(sia_node) = sia_node {
             block_on(wait_for_dsia_node_ready());
             containers.push(sia_node);
