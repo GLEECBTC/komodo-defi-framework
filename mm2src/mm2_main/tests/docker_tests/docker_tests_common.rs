@@ -122,6 +122,9 @@ pub static mut SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2: H160Eth = H160Eth::zero();
 pub static GETH_RPC_URL: &str = "http://127.0.0.1:8545";
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 pub static SEPOLIA_RPC_URL: &str = "https://ethereum-sepolia-rpc.publicnode.com";
+/// SIA daemon RPC connection parameters
+#[cfg(feature = "enable-sia")]
+pub static SIA_RPC_PARAMS: (&str, u16, &str) = ("127.0.0.1", 9980, "password");
 
 // use thread local to affect only the current running test
 thread_local! {
@@ -136,9 +139,9 @@ pub const GETH_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/ethereum/client-go:stabl
 pub const ZOMBIE_ASSET_DOCKER_IMAGE: &str = "docker.io/borngraced/zombietestrunner";
 pub const ZOMBIE_ASSET_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/borngraced/zombietestrunner:multiarch";
 
-#[allow(dead_code)]
+#[cfg(feature = "enable-sia")]
 pub const SIA_DOCKER_IMAGE: &str = "docker.io/alrighttt/walletd-komodo";
-#[allow(dead_code)]
+#[cfg(feature = "enable-sia")]
 pub const SIA_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/alrighttt/walletd-komodo:latest";
 
 pub const NUCLEUS_IMAGE: &str = "docker.io/komodoofficial/nucleusd";
@@ -441,14 +444,11 @@ pub fn geth_docker_node(ticker: &'static str, port: u16) -> DockerNode {
     }
 }
 
-#[allow(dead_code)]
+#[cfg(feature = "enable-sia")]
 pub fn sia_docker_node(ticker: &'static str, port: u16) -> DockerNode {
     let image =
         GenericImage::new(SIA_DOCKER_IMAGE, "latest").with_env_var("WALLETD_API_PASSWORD", "password".to_string());
-    let args = vec![];
-    let image = RunnableImage::from((image, args))
-        .with_mapped_port((port, port))
-        .with_container_name("sia-docker");
+    let image = RunnableImage::from(image).with_mapped_port((port, port));
     let container = image.start().expect("Failed to start Sia docker node");
     DockerNode {
         container,

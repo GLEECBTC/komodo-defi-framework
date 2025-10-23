@@ -6,6 +6,9 @@ use mm2_main::lp_network::MAX_NETID;
 use coins::siacoin::{ApiClientHelpers, SiaApiClient, SiaClient, SiaClientConf};
 use coins::utxo::zcash_params_path;
 
+use crate::docker_tests::docker_tests_common::SIA_RPC_PARAMS;
+use common::custom_futures::timeout::FutureTimerExt;
+use common::executor::Timer;
 use common::log::{LogLevel, UnifiedLoggerBuilder};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_rpc::data::legacy::CoinInitResponse;
@@ -608,6 +611,32 @@ pub async fn init_sia_client(ip: &str, port: u16, password: &str) -> SiaClient {
     SiaClient::new(conf).await.unwrap()
 }
 
+#[cfg(feature = "enable-sia")]
+pub async fn wait_for_dsia_node_ready() {
+    let (ip, port, password) = SIA_RPC_PARAMS;
+    let client = init_sia_client(ip, port, password).await;
+    let mut attempts = 0;
+    loop {
+        if attempts >= 5 {
+            panic!("Failed to connect to Dsia node after several attempts.");
+        }
+        match client.current_height().timeout(Duration::from_secs(6)).await {
+            Ok(Ok(block_number)) => {
+                log!("Dsia node is ready, latest block number: {:?}", block_number);
+                break;
+            },
+            Ok(Err(e)) => {
+                log!("Failed to connect to Dsia node: {:?}, retrying...", e);
+            },
+            Err(_) => {
+                log!("Connection to Dsia node timed out, retrying...");
+            },
+        }
+        attempts += 1;
+        Timer::sleep(1.).await;
+    }
+}
+
 /// Initialize a walletd docker container with walletd API bound to a random port on the host.
 /// Returns the container and the host port it is bound to.
 /// The container will run until it falls out of scope.
@@ -728,70 +757,6 @@ pub async fn init_komodod_container() -> (ContainerAsync<GenericImage>, u16, u16
     let mining_host_port = container.get_host_port_ipv4(mining_node_port).await.unwrap();
     let nonmining_host_port = container.get_host_port_ipv4(nonmining_node_port).await.unwrap();
     (container, mining_host_port, nonmining_host_port)
-}
-
-/// Initialize a KomodoOcean container and return the container and KomododClient.
-/// The container will run until it falls out of scope.
-/// args:
-/// - working_dir: The directory to use for the container's data. This is where the config file will be created.
-pub async fn init_ocean_container(working_dir: &Path) -> (ContainerAsync<GenericImage>, KomododClient) {
-    let utxo_data_dir = working_dir.join("DOCKER");
-    std::fs::create_dir_all(&utxo_data_dir).unwrap();
-    let config_path = utxo_data_dir.join("DOCKER.conf");
-
-    let config_contents = r#"rpcuser=user
-    rpcpassword=password
-    rpcport=7777
-    server=1
-    addressindex=1
-    spentindex=1
-    timestampindex=1
-    txindex=1
-    rpcworkqueue=256
-    rpcbind=0.0.0.0
-    rpcallowip=0.0.0.0/0
-    "#;
-
-    // write the config file to the working directory so it can be mounted in the container
-    std::fs::write(&config_path, config_contents).unwrap();
-
-    let image = RunnableImage::from(
-        GenericImage::new("deckersu/komodoocean", "latest")
-            .with_exposed_port(7777)
-            .with_entrypoint("/app/komodod")
-            .with_mount(Mount::bind_mount(
-                zcash_params_path().display().to_string(),
-                "/data/.zcash-params",
-            ))
-            .with_mount(Mount::bind_mount(
-                utxo_data_dir.display().to_string(),
-                "/data/.komodo/DOCKER/",
-            )),
-    )
-    .with_args(vec![
-        "-ac_name=DOCKER".to_string(),
-        "-ac_supply=999999".to_string(),
-        "-ac_reward=100000000000".to_string(), // 1000 coins coinbase reward
-        "-ac_nk=96,5".to_string(),             // easy CPU mining
-        "-ac_sapling=1".to_string(),           // activate sapling hardfork immediately
-        "-testnode=1".to_string(),             // allow mining with no connected peers
-        "-printtoconsole=1".to_string(),       // print debug.log content to stdout
-        "-connect=0".to_string(),              // connect to no peers
-        format!("-pubkey={}", CHARLIE_KMD_KEY.pubkey).to_string(), // public key to use for the coinbase transaction
-    ]);
-
-    let container = image.start().await.unwrap();
-    let host_rpc_port = container.get_host_port_ipv4(7777).await.unwrap();
-
-    let client = KomododClient::new(KomododClientConf {
-        ip: IpAddr::from([127, 0, 0, 1]),
-        port: host_rpc_port,
-        rpcuser: "user".to_string(),
-        rpcpassword: "password".to_string(),
-        timeout: Some(60),
-    })
-    .await;
-    (container, client)
 }
 
 // this is imprecise because it relies on polling the block height every 2 seconds

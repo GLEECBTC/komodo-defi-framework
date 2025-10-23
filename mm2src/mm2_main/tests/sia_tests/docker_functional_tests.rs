@@ -105,20 +105,6 @@ async fn test_alice_and_bob_enable_dsia() {
     let _alice_enable_sia_resp = enable_dsia(&mm_bob, dsia.host_port).await;
 }
 
-#[tokio::test]
-#[ignore]
-async fn test_init_komodo_ocean_container_and_client() {
-    let temp_dir = init_test_dir(current_function_name!(), true).await;
-
-    let (container, _) = init_ocean_container(&temp_dir).await;
-
-    let stdout = container.stdout(true);
-
-    tokio::spawn(async move {
-        pipe_buf_to_stdout(stdout).await;
-    });
-}
-
 /// Initialize Komodods container, initialize KomododClient for Alice and Bob
 /// Validate Alice and Bob's addresses were imported via `importaddress`
 #[tokio::test]
@@ -138,7 +124,6 @@ async fn test_init_utxo_container_and_client() {
 /// Bob sells DOC for Alice's DSIA
 /// Will fail if Bob is not prefunded with DOC
 #[tokio::test]
-#[ignore]
 async fn test_bob_sells_doc_for_dsia() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
     let netid = get_unique_netid();
@@ -190,7 +175,6 @@ async fn test_bob_sells_doc_for_dsia() {
 /// Bob sells DSIA for Alice's DOC
 /// Will fail if Alice is not prefunded with DOC
 #[tokio::test]
-#[ignore]
 async fn test_bob_sells_dsia_for_doc() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
     let netid = get_unique_netid();

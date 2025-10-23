@@ -32,6 +32,7 @@ use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
 mod docker_tests;
 #[cfg(feature = "enable-sia")]
 mod sia_tests;
+use crate::sia_tests::utils::wait_for_dsia_node_ready;
 use docker_tests::docker_tests_common::*;
 use docker_tests::qrc20_tests::{qtum_docker_node, QtumDockerOps, QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG};
 
@@ -44,6 +45,8 @@ const ENV_VAR_NO_SLP_DOCKER: &str = "_KDF_NO_SLP_DOCKER";
 const ENV_VAR_NO_ETH_DOCKER: &str = "_KDF_NO_ETH_DOCKER";
 const ENV_VAR_NO_COSMOS_DOCKER: &str = "_KDF_NO_COSMOS_DOCKER";
 const ENV_VAR_NO_ZOMBIE_DOCKER: &str = "_KDF_NO_ZOMBIE_DOCKER";
+#[cfg(feature = "enable-sia")]
+const ENV_VAR_NO_SIA_DOCKER: &str = "_KDF_NO_SIA_DOCKER";
 
 // AP: custom test runner is intended to initialize the required environment (e.g. coin daemons in the docker containers)
 // and then gracefully clear it by dropping the RAII docker container handlers
@@ -66,6 +69,8 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
         let disable_eth: bool = env::var(ENV_VAR_NO_ETH_DOCKER).is_ok();
         let disable_cosmos: bool = env::var(ENV_VAR_NO_COSMOS_DOCKER).is_ok();
         let disable_zombie: bool = env::var(ENV_VAR_NO_ZOMBIE_DOCKER).is_ok();
+        #[cfg(feature = "enable-sia")]
+        let disable_sia: bool = env::var(ENV_VAR_NO_SIA_DOCKER).is_ok();
 
         if !disable_utxo || !disable_slp {
             images.push(UTXO_ASSET_DOCKER_IMAGE_WITH_TAG)
@@ -83,6 +88,11 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
         }
         if !disable_zombie {
             images.push(ZOMBIE_ASSET_DOCKER_IMAGE_WITH_TAG);
+        }
+
+        #[cfg(feature = "enable-sia")]
+        if !disable_sia {
+            images.push(SIA_DOCKER_IMAGE_WITH_TAG);
         }
 
         for image in images {
@@ -131,6 +141,14 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
             None
         };
 
+        #[cfg(feature = "enable-sia")]
+        let sia_node = if !disable_sia {
+            let sia_node = sia_docker_node("SIA", 9980);
+            Some(sia_node)
+        } else {
+            None
+        };
+
         if let (Some(utxo_node), Some(utxo_node1)) = (utxo_node, utxo_node1) {
             let utxo_ops = UtxoAssetDockerOps::from_ticker("MYCOIN");
             let utxo_ops1 = UtxoAssetDockerOps::from_ticker("MYCOIN1");
@@ -170,6 +188,10 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
             containers.push(nucleus_node);
             containers.push(atom_node);
             containers.push(ibc_relayer_node);
+        }
+        if let Some(sia_node) = sia_node {
+            block_on(wait_for_dsia_node_ready());
+            containers.push(sia_node);
         }
     }
     // detect if docker is installed
