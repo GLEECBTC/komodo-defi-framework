@@ -245,12 +245,12 @@ impl SolanaCoin {
         })
     }
 
-    /// Calculates the amount (in lamports) that can be withdrawn based on the
-    /// user's request.
+    /// Calculates the withdraw amount (in lamports) that can be withdrawn based on the
+    /// user's request along with the network fee (in lamports).
     ///
-    /// Returns the amount to withdraw in lamports on success or a [`WithdrawError`]
-    /// if the request is invalid or cannot be processed.
-    async fn calculate_withdraw_amount(&self, req: &WithdrawRequest) -> MmResult<u64, WithdrawError> {
+    /// Returns the amount to withdraw and network fee in lamports on success or
+    /// [`WithdrawError`] if the request is invalid or cannot be processed.
+    async fn calculate_withdraw_and_fee_amount(&self, req: &WithdrawRequest) -> MmResult<(u64, u64), WithdrawError> {
         let rpc = self
             .rpc_client()
             .await
@@ -285,7 +285,7 @@ impl SolanaCoin {
                 });
             }
 
-            return Ok(amount);
+            return Ok((amount, fee_u64));
         }
 
         let requested_amount = include_lamports_to_big_decimal(&req.amount, SOLANA_DECIMALS);
@@ -313,7 +313,7 @@ impl SolanaCoin {
             });
         };
 
-        Ok(requested_amount_u64)
+        Ok((requested_amount_u64, fee_u64))
     }
 }
 
@@ -341,9 +341,9 @@ impl MmCoin for SolanaCoin {
                 .await
                 .map_err(|e| WithdrawError::Transport(e.into_inner()))?;
 
-            let lamports = coin.calculate_withdraw_amount(&req).await?;
+            let (withdraw_lamports, fee_lamports) = coin.calculate_withdraw_and_fee_amount(&req).await?;
 
-            if lamports == 0 {
+            if withdraw_lamports == 0 {
                 return MmError::err(WithdrawError::AmountTooLow {
                     amount: req.amount,
                     threshold: coin.min_tx_amount(),
@@ -356,7 +356,7 @@ impl MmCoin for SolanaCoin {
                 .map_err(|e| WithdrawError::Transport(e.to_string()))?;
 
             // Actual TX
-            let tx = solana_system_transaction::transfer(&coin.keypair, &to, lamports, recent_blockhash);
+            let tx = solana_system_transaction::transfer(&coin.keypair, &to, withdraw_lamports, recent_blockhash);
 
             let tx_hash = tx
                 .signatures
@@ -369,13 +369,9 @@ impl MmCoin for SolanaCoin {
 
             let tx_data = TransactionData::new_signed(BytesJson(tx_bytes), tx_hash.clone());
 
-            let amount_dec = u64_lamports_to_big_decimal(lamports, SOLANA_DECIMALS);
+            let amount_dec = u64_lamports_to_big_decimal(withdraw_lamports, SOLANA_DECIMALS);
 
-            let fee = rpc
-                .get_fee_for_message(tx.message())
-                .await
-                .map_err(|e| WithdrawError::Transport(e.to_string()))?;
-            let fee = u64_lamports_to_big_decimal(fee, SOLANA_DECIMALS);
+            let fee = u64_lamports_to_big_decimal(fee_lamports, SOLANA_DECIMALS);
 
             let received_by_me = if to == coin.address {
                 amount_dec.clone()
