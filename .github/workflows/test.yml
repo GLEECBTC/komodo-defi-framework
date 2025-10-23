@@ -219,7 +219,7 @@ jobs:
 
       - name: Test
         run: |
-          wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/d05fda5da6b7780be5d96a3df9750cadc83d18ee/zcutil/fetch-params-alt.sh | bash
+          wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/v0.8.1//zcutil/fetch-params-alt.sh | bash
           cargo test --test 'docker_tests_main' --features run-docker-tests --no-fail-fast
 
   wasm:
@@ -295,7 +295,6 @@ jobs:
 
       - name: Sia functional tests - default locktime
         run: |
-          wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/d05fda5da6b7780be5d96a3df9750cadc83d18ee/zcutil/fetch-params-alt.sh | bash
           cargo test -p mm2_main --features enable-sia,run-sia-functional-tests -- sia_tests::docker_functional_tests --nocapture
 
       - name: Sia functional tests - short locktime
