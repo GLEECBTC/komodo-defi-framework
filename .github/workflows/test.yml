@@ -38,7 +38,7 @@ jobs:
 
       - name: Test
         run: |
-          cargo test --bins --lib --no-fail-fast --features enable-sia
+          cargo test --bins --lib --no-fail-fast
 
   mac-x86-64-unit:
     timeout-minutes: 90
@@ -66,7 +66,7 @@ jobs:
 
       - name: Test
         run: |
-          cargo test --bins --lib --no-fail-fast --features enable-sia
+          cargo test --bins --lib --no-fail-fast
 
   win-x86-64-unit:
     timeout-minutes: 90
@@ -94,7 +94,7 @@ jobs:
 
       - name: Test
         run: |
-          cargo test --bins --lib --no-fail-fast --features enable-sia
+          cargo test --bins --lib --no-fail-fast
 
   linux-x86-64-kdf-integration:
     timeout-minutes: 90
@@ -270,20 +270,17 @@ jobs:
       - name: Test
         run: WASM_BINDGEN_TEST_TIMEOUT=1200 GECKODRIVER=/bin/geckodriver wasm-pack test --firefox --headless mm2src/mm2_main
 
-  # Sia functional tests are a special case for now. They are unit tests that should be integration tests.
-  # They are included as unit tests because they need access to various pieces of mm2_main that
-  # are not exposed in the public API.
-  sia-functional-tests:
+  # TODO: Integrate this job into the docker job (we shouldn't have enable-sia and !enable-sia)
+  sia-tests:
     timeout-minutes: 30
     runs-on: ubuntu-latest
-    env:
-      RUST_LOG: "libp2p_gossipsub=warn" # Reduce log spam from heartbeat messages
     steps:
       - uses: actions/checkout@v3
+
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2023-06-01 --no-self-update --profile=minimal
-          rustup default nightly-2023-06-01
+          rustup toolchain install stable --no-self-update --profile=minimal
+          rustup default stable
 
       - name: Install build deps
         uses: ./.github/actions/deps-install
@@ -293,10 +290,6 @@ jobs:
       - name: Build cache
         uses: ./.github/actions/build-cache
 
-      - name: Sia functional tests - default locktime
-        run: |
-          cargo test -p mm2_main --features enable-sia,run-sia-functional-tests -- sia_tests::docker_functional_tests --nocapture
-
       - name: Sia functional tests - short locktime
         run: |
-          cargo test -p mm2_main --features enable-sia,run-sia-functional-tests -- sia_tests::short_locktime_tests
+          _KDF_NO_UTXO_DOCKER= _KDF_NO_QTUM_DOCKER= _KDF_NO_SLP_DOCKER= _KDF_NO_ETH_DOCKER= _KDF_NO_COSMOS_DOCKER= _KDF_NO_ZOMBIE_DOCKER= cargo test --test 'docker_tests_main' --features run-docker-tests,enable-sia --no-fail-fast sia
