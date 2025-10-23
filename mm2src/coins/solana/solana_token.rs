@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::executor::abortable_queue::{AbortableQueue, WeakSpawner};
 use common::executor::{AbortableSystem, AbortedError};
-use common::Future01CompatExt;
+use common::{now_sec, Future01CompatExt};
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
@@ -124,10 +124,7 @@ impl SolanaToken {
                 kind: SolanaTokenInitErrorKind::Internal { reason: e.to_string() },
             })?;
 
-        let address = spl_associated_token_account_client::address::get_associated_token_address(
-            &platform_coin.address,
-            &protocol_info.mint_address,
-        );
+        let address = get_associated_token_address(&platform_coin.address, &protocol_info.mint_address);
 
         let rpc = platform_coin.rpc_client().await.map_err(|e| SolanaTokenInitError {
             ticker: ticker.clone(),
@@ -337,7 +334,7 @@ impl MmCoin for SolanaToken {
                 my_balance_change: &received_by_me - &amount_dec,
                 received_by_me,
                 block_height: 0,
-                timestamp: 0,
+                timestamp: now_sec(),
                 fee_details: Some(TxFeeDetails::Solana(SolanaFeeDetails { total_amount: fee_dec })),
                 coin: req.coin,
                 internal_id: rpc::v1::types::Bytes(tx_hash.into_bytes()),

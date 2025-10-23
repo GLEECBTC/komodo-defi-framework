@@ -10,6 +10,7 @@ use common::executor::{
     abortable_queue::{AbortableQueue, WeakSpawner},
     AbortableSystem, AbortedError,
 };
+use common::now_sec;
 use derive_more::Display;
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
@@ -393,7 +394,7 @@ impl MmCoin for SolanaCoin {
                 total_amount: amount_dec,
                 received_by_me,
                 block_height: 0,
-                timestamp: 0,
+                timestamp: now_sec(),
                 fee_details: Some(TxFeeDetails::Solana(SolanaFeeDetails { total_amount: fee })),
                 coin: req.coin,
                 internal_id: BytesJson(tx_hash.into_bytes()),

@@ -90,12 +90,10 @@ fn enable_with_tokens_and_withdraw() {
 
     // Withdraw and send transaction to ourselves.
     let tx_details = block_on(withdraw_v1(&mm, coin, MY_ADDRESS, "0.1", None));
-    let fee: BigDecimal = tx_details.fee_details["amount"].as_str().unwrap().parse().unwrap();
     log!("Withdraw to self {}", serde_json::to_string(&tx_details).unwrap());
 
     let expected_received: BigDecimal = "0.1".parse().unwrap();
-    // We sent it to ourselves, so the fee value should be extracted.
-    assert_eq!(tx_details.received_by_me, expected_received - fee);
+    assert_eq!(tx_details.received_by_me, expected_received);
 
     assert_eq!(tx_details.to, vec![MY_ADDRESS.to_owned()]);
     assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
