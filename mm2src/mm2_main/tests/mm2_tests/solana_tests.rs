@@ -36,7 +36,8 @@ fn usdc_token_config() -> serde_json::Value {
             "protocol_data": {
                 "platform": "SOL-DEV",
                 "decimals": 6,
-                "mint_address": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+                "mint_address": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+                "program_id": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
             }
         },
         "derivation_path": "m/44'/501'"

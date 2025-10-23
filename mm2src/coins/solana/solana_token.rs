@@ -39,7 +39,7 @@ use crate::{
 };
 use solana_pubkey::Pubkey as SolanaAddress;
 use solana_transaction::Transaction;
-use spl_associated_token_account_client::address::get_associated_token_address;
+use spl_associated_token_account_client::address::get_associated_token_address_with_program_id;
 use spl_associated_token_account_client::instruction::create_associated_token_account_idempotent;
 use spl_token as spl_token_program;
 
@@ -68,6 +68,8 @@ pub struct SolanaTokenProtocolInfo {
     pub decimals: u8,
     #[serde(serialize_with = "serialize_pubkey", deserialize_with = "deserialize_pubkey")]
     pub mint_address: SolanaAddress,
+    #[serde(serialize_with = "serialize_pubkey", deserialize_with = "deserialize_pubkey")]
+    program_id: SolanaAddress,
 }
 
 pub fn serialize_pubkey<S>(public_key: &SolanaAddress, serializer: S) -> Result<S::Ok, S::Error>
@@ -124,7 +126,11 @@ impl SolanaToken {
                 kind: SolanaTokenInitErrorKind::Internal { reason: e.to_string() },
             })?;
 
-        let address = get_associated_token_address(&platform_coin.address, &protocol_info.mint_address);
+        let address = get_associated_token_address_with_program_id(
+            &platform_coin.address,
+            &protocol_info.mint_address,
+            &protocol_info.program_id,
+        );
 
         let rpc = platform_coin.rpc_client().await.map_err(|e| SolanaTokenInitError {
             ticker: ticker.clone(),
@@ -133,14 +139,13 @@ impl SolanaToken {
 
         match rpc.get_account(&protocol_info.mint_address).await {
             Ok(mint_account) => {
-                if mint_account.owner != spl_token_program::id() {
+                if mint_account.owner != protocol_info.program_id {
                     return MmError::err(SolanaTokenInitError {
                         ticker: ticker.clone(),
                         kind: SolanaTokenInitErrorKind::QueryError {
                             reason: format!(
                                 "Unsupported SPL program. Expected Program ID: '{}', Got: '{}'.",
-                                spl_token_program::id(),
-                                mint_account.owner
+                                protocol_info.program_id, mint_account.owner
                             ),
                         },
                     });
@@ -200,7 +205,11 @@ impl MmCoin for SolanaToken {
             // `to` can be either a Solana address, or a token address. We create
             // `to_token_account` regardless to support the both cases.
             let to = SolanaAddress::from_str(&req.to).map_err(|e| WithdrawError::InvalidAddress(e.to_string()))?;
-            let to_token_account = get_associated_token_address(&to, &token.protocol_info.mint_address);
+            let to_token_account = get_associated_token_address_with_program_id(
+                &to,
+                &token.protocol_info.mint_address,
+                &token.protocol_info.program_id,
+            );
 
             let balance = token
                 .my_balance()
@@ -255,12 +264,12 @@ impl MmCoin for SolanaToken {
                     &coin.address,
                     &to,
                     &token.protocol_info.mint_address,
-                    &spl_token_program::id(),
+                    &token.protocol_info.program_id,
                 ));
             };
 
             let transfer_ix = spl_token_program::instruction::transfer_checked(
-                &spl_token_program::id(),
+                &token.protocol_info.program_id,
                 &token.address,
                 &token.protocol_info.mint_address,
                 &to_token_account,
