@@ -110,8 +110,16 @@ pub enum SolanaInitErrorKind {
     },
 }
 
+/// Fees associated with a Solana transaction.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SolanaFeeDetails {
+    /// Network fee in SOL.
+    pub fee_amount: BigDecimal,
+    /// Rent in SOL when an associated token account (ATA) is created.
+    ///
+    /// This is 0 if no ATA creation is needed.
+    pub rent_amount: BigDecimal,
+    /// Sum of the network fee and rent.
     pub total_amount: BigDecimal,
 }
 
@@ -391,7 +399,11 @@ impl MmCoin for SolanaCoin {
                 received_by_me,
                 block_height: 0,
                 timestamp: now_sec(),
-                fee_details: Some(TxFeeDetails::Solana(SolanaFeeDetails { total_amount: fee })),
+                fee_details: Some(TxFeeDetails::Solana(SolanaFeeDetails {
+                    fee_amount: fee.clone(),
+                    rent_amount: 0.into(),
+                    total_amount: fee,
+                })),
                 coin: req.coin,
                 internal_id: BytesJson(tx_hash.into_bytes()),
                 kmd_rewards: None,

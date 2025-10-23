@@ -41,7 +41,7 @@ use solana_pubkey::Pubkey as SolanaAddress;
 use solana_transaction::Transaction;
 use spl_associated_token_account_client::address::get_associated_token_address_with_program_id;
 use spl_associated_token_account_client::instruction::create_associated_token_account_idempotent;
-use spl_token as spl_token_program;
+use spl_token::solana_program::program_pack::Pack;
 
 pub struct SolanaTokenFields {
     pub ticker: String,
@@ -254,11 +254,17 @@ impl MmCoin for SolanaToken {
             //  - Create recipient address if missing.
             //  - Transfer.
             let mut instructions = Vec::new();
+            let mut rent_lamports = 0;
 
             if let Err(e) = rpc.get_account(&to_token_account).await {
                 if !e.kind.to_string().contains("AccountNotFound") {
                     return MmError::err(WithdrawError::Transport(e.to_string()));
                 }
+
+                rent_lamports = rpc
+                    .get_minimum_balance_for_rent_exemption(spl_token::state::Account::LEN)
+                    .await
+                    .map_err(|e| WithdrawError::Transport(e.to_string()))?;
 
                 instructions.push(create_associated_token_account_idempotent(
                     &coin.address,
@@ -268,7 +274,7 @@ impl MmCoin for SolanaToken {
                 ));
             };
 
-            let transfer_ix = spl_token_program::instruction::transfer_checked(
+            let transfer_ix = spl_token::instruction::transfer_checked(
                 &token.protocol_info.program_id,
                 &token.address,
                 &token.protocol_info.mint_address,
@@ -311,7 +317,9 @@ impl MmCoin for SolanaToken {
                 .get_fee_for_message(tx.message())
                 .await
                 .map_err(|e| WithdrawError::Transport(e.to_string()))?;
-            let fee_dec = u64_lamports_to_big_decimal(fee_lamports, super::solana_coin::SOLANA_DECIMALS);
+            let network_fee_dec = u64_lamports_to_big_decimal(fee_lamports, super::solana_coin::SOLANA_DECIMALS);
+            let rent_dec = u64_lamports_to_big_decimal(rent_lamports, super::solana_coin::SOLANA_DECIMALS);
+            let total_fee_dec = &network_fee_dec + &rent_dec;
 
             let platform_coin_balance = coin
                 .my_balance()
@@ -320,10 +328,10 @@ impl MmCoin for SolanaToken {
                 .map_err(|e| WithdrawError::Transport(e.to_string()))?
                 .spendable;
 
-            if fee_dec > platform_coin_balance {
+            if total_fee_dec > platform_coin_balance {
                 return MmError::err(WithdrawError::NotSufficientPlatformBalanceForFee {
                     available: platform_coin_balance,
-                    required: fee_dec,
+                    required: total_fee_dec,
                     coin: coin.ticker().to_owned(),
                 });
             }
@@ -344,7 +352,11 @@ impl MmCoin for SolanaToken {
                 received_by_me,
                 block_height: 0,
                 timestamp: now_sec(),
-                fee_details: Some(TxFeeDetails::Solana(SolanaFeeDetails { total_amount: fee_dec })),
+                fee_details: Some(TxFeeDetails::Solana(SolanaFeeDetails {
+                    fee_amount: network_fee_dec,
+                    rent_amount: rent_dec,
+                    total_amount: total_fee_dec,
+                })),
                 coin: req.coin,
                 internal_id: rpc::v1::types::Bytes(tx_hash.into_bytes()),
                 kmd_rewards: None,
