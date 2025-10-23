@@ -91,7 +91,10 @@ pub enum SendRefundHltcError {
     #[error("SiaCoin::send_refund_hltc: failed to parse RefundPaymentArgs: {0}")]
     ParseArgs(#[from] SiaRefundPaymentArgsError),
     #[error("SiaCoin::send_refund_hltc: failed to fetch SiacoinElement from txid {0}")]
-    UtxoFromTxid(#[from] UtxoFromTxidError),
+    // TODO: This is boxed since it's very large compared to the other variants.
+    //       This shows up in many different enums where this embedded field is used as a variant.
+    //       We should consider boxing the `EventVariant` within this field instead (requires changes in sia-rust).
+    UtxoFromTxid(#[from] Box<UtxoFromTxidError>),
     #[error("SiaCoin::send_refund_hltc: failed to satisfy HTLC SpendPolicy {0}")]
     SatisfyHtlc(#[from] V2TransactionBuilderError),
     #[error("SiaCoin::send_refund_hltc: failed to broadcast transaction {0}")]
@@ -153,7 +156,7 @@ pub enum TakerSpendsMakerPaymentError {
     #[error("SiaCoin::new_send_taker_spends_maker_payment: failed to parse secret_hash {0}")]
     ParseSecretHash(#[from] Hash256Error),
     #[error("SiaCoin::new_send_taker_spends_maker_payment: failed to fetch SiacoinElement from txid {0}")]
-    UtxoFromTxid(#[from] UtxoFromTxidError),
+    UtxoFromTxid(#[from] Box<UtxoFromTxidError>),
     #[error("SiaCoin::new_send_taker_spends_maker_payment: failed to satisfy HTLC SpendPolicy {0}")]
     SatisfyHtlc(#[from] V2TransactionBuilderError),
     #[error("SiaCoin::new_send_taker_spends_maker_payment: failed to broadcast spend_maker_payment transaction {0}")]
@@ -175,7 +178,7 @@ pub enum MakerSpendsTakerPaymentError {
     #[error("SiaCoin::new_send_maker_spends_taker_payment: failed to parse secret_hash {0}")]
     ParseSecretHash(#[from] Hash256Error),
     #[error("SiaCoin::new_send_maker_spends_taker_payment: failed to fetch SiacoinElement from txid {0}")]
-    UtxoFromTxid(#[from] UtxoFromTxidError),
+    UtxoFromTxid(#[from] Box<UtxoFromTxidError>),
     #[error("SiaCoin::new_send_maker_spends_taker_payment: failed to satisfy HTLC SpendPolicy {0}")]
     SatisfyHtlc(#[from] V2TransactionBuilderError),
     #[error("SiaCoin::new_send_maker_spends_taker_payment: failed to broadcast spend_taker_payment transaction {0}")]
@@ -321,7 +324,7 @@ pub enum SiaWaitForHTLCTxSpendError {
     #[error("SiaCoin::sia_wait_for_htlc_tx_spend: timed out waiting for spend of txid:{txid} vout 0")]
     Timeout { txid: TransactionId },
     #[error("SiaCoin::sia_wait_for_htlc_tx_spend: find_where_utxo_spent failed: {0}")]
-    FindWhereUtxoSpent(#[from] FindWhereUtxoSpentError),
+    FindWhereUtxoSpent(#[from] Box<FindWhereUtxoSpentError>),
 }
 
 #[derive(Debug, Error)]

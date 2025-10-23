@@ -1102,7 +1102,11 @@ impl SiaCoin {
             SpendPolicy::atomic_swap_success(&maker_public_key, &taker_public_key, args.time_lock, &secret_hash);
 
         // Fetch the HTLC UTXO from the taker payment transaction
-        let htlc_utxo = self.client.utxo_from_txid(&taker_payment_txid, 0).await?;
+        let htlc_utxo = self
+            .client
+            .utxo_from_txid(&taker_payment_txid, 0)
+            .await
+            .map_err(Box::new)?;
 
         // FIXME Alright this transaction will have a fixed size, calculate the miner fee amount
         // after we have the actual transaction size
@@ -1155,7 +1159,11 @@ impl SiaCoin {
             SpendPolicy::atomic_swap_success(&taker_public_key, &maker_public_key, args.time_lock, &secret_hash);
 
         // Fetch the HTLC UTXO from the taker payment transaction
-        let htlc_utxo = self.client.utxo_from_txid(&maker_payment_txid, 0).await?;
+        let htlc_utxo = self
+            .client
+            .utxo_from_txid(&maker_payment_txid, 0)
+            .await
+            .map_err(Box::new)?;
 
         let miner_fee = Currency::DEFAULT_FEE;
         let htlc_utxo_amount = htlc_utxo.output.siacoin_output.value;
@@ -1300,7 +1308,11 @@ impl SiaCoin {
         );
 
         // Fetch the HTLC UTXO from the payment_tx transaction
-        let htlc_utxo = self.client.utxo_from_txid(&sia_args.payment_tx.txid(), 0).await?;
+        let htlc_utxo = self
+            .client
+            .utxo_from_txid(&sia_args.payment_tx.txid(), 0)
+            .await
+            .map_err(Box::new)?;
 
         let miner_fee = Currency::DEFAULT_FEE;
         let htlc_utxo_amount = htlc_utxo.output.siacoin_output.value;
