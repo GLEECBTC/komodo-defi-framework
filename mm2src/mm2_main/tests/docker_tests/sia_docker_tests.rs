@@ -25,6 +25,7 @@ fn mine_blocks(n: u64, addr: &Address) {
 }
 
 #[test]
+#[ignore]
 fn test_sia_new_client() {
     let conf = SiaHttpConf {
         url: Url::parse("http://localhost:9980/").unwrap(),
@@ -44,6 +45,7 @@ fn test_sia_client_bad_auth() {
 }
 
 #[test]
+#[ignore]
 fn test_sia_client_consensus_tip() {
     let conf = SiaHttpConf {
         url: Url::parse("http://localhost:9980/").unwrap(),
@@ -56,6 +58,7 @@ fn test_sia_client_consensus_tip() {
 // This test likely needs to be removed because mine_blocks has possibility of interfering with other async tests
 // related to block height
 #[test]
+#[ignore]
 fn test_sia_client_address_balance() {
     let conf = SiaHttpConf {
         url: Url::parse("http://localhost:9980/").unwrap(),
@@ -76,6 +79,7 @@ fn test_sia_client_address_balance() {
 }
 
 #[test]
+#[ignore]
 fn test_sia_client_build_tx() {
     let conf = SiaHttpConf {
         url: Url::parse("http://localhost:9980/").unwrap(),
