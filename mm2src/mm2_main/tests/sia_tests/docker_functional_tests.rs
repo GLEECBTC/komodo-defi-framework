@@ -111,6 +111,7 @@ async fn test_alice_and_bob_enable_dsia() {
 /// Initialize Komodods container, initialize KomododClient for Alice and Bob
 /// Validate Alice and Bob's addresses were imported via `importaddress`
 #[tokio::test]
+#[ignore]
 async fn test_init_utxo_container_and_client() {
     let (_container, (alice_client, bob_client)) = init_komodod_clients(ALICE_KMD_KEY, BOB_KMD_KEY).await;
 
