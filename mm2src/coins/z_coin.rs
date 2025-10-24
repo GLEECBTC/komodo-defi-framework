@@ -1050,6 +1050,10 @@ impl<'a> ZCoinBuilder<'a> {
         z_spending_key: Option<ExtendedSpendingKey>,
         protocol_info: ZcoinProtocolInfo,
     ) -> MmResult<ZCoinBuilder<'a>, ZCoinBuildError> {
+        println!("ZCoinBuilder::new mode={:?}", z_coin_params.mode);
+        info!("ZCoinBuilder::new mode={:?}", z_coin_params.mode);
+        #[cfg(target_arch = "wasm32")]
+        common::console_info!("ZCoinBuilder::new mode={:?}", z_coin_params.mode);
         let utxo_mode = match &z_coin_params.mode {
             #[cfg(not(target_arch = "wasm32"))]
             ZcoinRpcMode::Native => UtxoRpcMode::Native,
