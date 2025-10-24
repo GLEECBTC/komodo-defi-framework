@@ -406,6 +406,7 @@ where
             kmd_rewards: None,
             transaction_type: Default::default(),
             memo: None,
+            rseeds: None,
         })
     }
 }

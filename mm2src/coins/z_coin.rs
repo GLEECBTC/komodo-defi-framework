@@ -33,14 +33,15 @@ use crate::z_coin::storage::{BlockDbImpl, LockedNotesStorage, WalletDbShared};
 use crate::z_coin::z_tx_history::{fetch_tx_history_from_db, ZCoinTxHistoryItem};
 use crate::{
     BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInput, DexFee, FeeApproxStage,
-    FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, NumConversError,
-    PrivKeyActivationPolicy, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest,
-    RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SignRawTransactionRequest,
-    SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
-    TradePreimageValue, Transaction, TransactionData, TransactionDetails, TransactionEnum, TransactionResult,
-    TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-    ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentInput, VerificationError, VerificationResult,
-    WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawError, WithdrawFut, WithdrawRequest,
+    FoundSwapTxSpend, GetRawTransactionRequest, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
+    NumConversError, PrivKeyActivationPolicy, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionError,
+    RawTransactionFut, RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs,
+    SignRawTransactionRequest, SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TradeFee, TradePreimageFut,
+    TradePreimageResult, TradePreimageValue, Transaction, TransactionData, TransactionDetails, TransactionEnum,
+    TransactionResult, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
+    ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentInput, VerificationError,
+    VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawError, WithdrawFut, WithdrawRequest,
+    ZcoinSendRawTransactionRequest,
 };
 
 use crate::z_coin::storage::z_locked_notes::LockedNote;
@@ -66,6 +67,7 @@ use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 #[cfg(test)]
 use mocktopus::macros::*;
+use num_traits::Zero;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json, H264 as H264Json};
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use serde_json::Value as Json;
@@ -753,6 +755,47 @@ impl ZCoin {
         }
         Ok(true)
     }
+
+    pub async fn z_send_raw_tx(&self, req: ZcoinSendRawTransactionRequest) -> MmResult<String, RawTransactionError> {
+        let tx_bytes = hex::decode(req.tx_hex.clone())?;
+        let z_tx =
+            ZTransaction::read(tx_bytes.as_slice()).map_err(|err| RawTransactionError::DecodeError(err.to_string()))?;
+
+        let mut sync_guard = self
+            .wait_for_gen_tx_blockchain_sync()
+            .await
+            .mm_err(|err| RawTransactionError::InternalError(err.to_string()))
+            .map_mm_err()?;
+        let tx_hash = utxo_common::send_raw_tx(self.as_ref(), &req.tx_hex)
+            .compat()
+            .await
+            .map_err(RawTransactionError::TransactionError)?;
+
+        if !validate_rseeds(&req.rseeds) {
+            return MmError::err(RawTransactionError::InvalidParam("invalid rseed".to_owned()));
+        }
+
+        for rseed in req.rseeds {
+            self.z_fields
+                .locked_notes_db
+                .insert_spent_note(z_tx.txid().to_string(), rseed)
+                .await
+                .mm_err(|err| RawTransactionError::InternalError(err.to_string()))
+                .map_mm_err()?;
+        }
+
+        if req.received_by_me > BigDecimal::zero() {
+            let received_by_me = sat_from_big_decimal(&req.received_by_me, self.as_ref().decimals).map_mm_err()?;
+            self.z_fields
+                .locked_notes_db
+                .insert_change_note(z_tx.txid().to_string(), received_by_me)
+                .await
+                .mm_err(|err| RawTransactionError::InternalError(err.to_string()))
+                .map_mm_err()?;
+        }
+        sync_guard.respawn_guard.watch_for_tx(z_tx.txid());
+        Ok(tx_hash)
+    }
 }
 
 impl AsRef<UtxoCoinFields> for ZCoin {
@@ -1309,22 +1352,13 @@ impl MarketCoinOps for ZCoin {
         self.ticker()
     }
 
-    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
-        let tx_bytes = try_fus!(hex::decode(tx));
-        let z_tx = try_fus!(ZTransaction::read(tx_bytes.as_slice()));
-
-        let this = self.clone();
-        let tx = tx.to_owned();
-
-        let fut = async move {
-            let mut sync_guard = try_s!(this.wait_for_gen_tx_blockchain_sync().await);
-            let tx_hash = utxo_common::send_raw_tx(this.as_ref(), &tx).compat().await?;
-            sync_guard.respawn_guard.watch_for_tx(z_tx.txid());
-            Ok(tx_hash)
-        };
+    fn send_raw_tx(&self, _tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
+        let fut = async move { Err("Not implemented, use z_send_raw_transaction rpc".to_string()) };
         Box::new(fut.boxed().compat())
     }
 
+    /// This function is used for rebroadcasting transaction by seed nodes
+    /// For broadcasting z_transactions locally z_send_raw_tx should be used
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
         let z_tx = try_fus!(ZTransaction::read(tx));
 
@@ -1763,7 +1797,7 @@ impl MmCoin for ZCoin {
         ))))
     }
 
-    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut<'_> {
+    fn get_raw_transaction(&self, req: GetRawTransactionRequest) -> RawTransactionFut<'_> {
         Box::new(utxo_common::get_raw_transaction(&self.utxo_arc, req).boxed().compat())
     }
 
@@ -2098,7 +2132,7 @@ impl InitWithdrawCoin for ZCoin {
             memo,
         };
 
-        let GenTxData { tx, data, .. } = self.gen_tx(vec![], vec![z_output]).await.map_mm_err()?;
+        let GenTxData { tx, data, rseeds, .. } = self.gen_tx(vec![], vec![z_output]).await.map_mm_err()?;
         let mut tx_bytes = Vec::with_capacity(1024);
         tx.write(&mut tx_bytes)
             .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
@@ -2128,6 +2162,80 @@ impl InitWithdrawCoin for ZCoin {
             kmd_rewards: None,
             transaction_type: Default::default(),
             memo: req.memo,
+            rseeds: Some(rseeds),
+        })
+    }
+}
+
+impl ZCoin {
+    #[cfg(feature = "run-docker-tests")]
+    pub async fn withdraw_for_tests(&self, req: WithdrawRequest) -> Result<TransactionDetails, MmError<WithdrawError>> {
+        if req.fee.is_some() {
+            return MmError::err(WithdrawError::UnsupportedError(
+                "Setting a custom withdraw fee is not supported for ZCoin yet".to_owned(),
+            ));
+        }
+
+        if req.from.is_some() {
+            return MmError::err(WithdrawError::UnsupportedError(
+                "Withdraw from a specific address is not supported for ZCoin yet".to_owned(),
+            ));
+        }
+
+        let to_addr = decode_payment_address(z_mainnet_constants::HRP_SAPLING_PAYMENT_ADDRESS, &req.to)
+            .map_to_mm(|e| WithdrawError::InvalidAddress(format!("{e}")))?
+            .or_mm_err(|| WithdrawError::InvalidAddress(format!("Address {} decoded to None", req.to)))?;
+        let amount = if req.max {
+            let fee = self.get_one_kbyte_tx_fee().await.map_mm_err()?;
+            let balance = self.my_balance().compat().await.map_mm_err()?;
+            balance.spendable - fee
+        } else {
+            req.amount
+        };
+        let satoshi = sat_from_big_decimal(&amount, self.decimals()).map_mm_err()?;
+
+        let memo = req.memo.as_deref().map(interpret_memo_string).transpose()?;
+        let z_output = ZOutput {
+            to_addr,
+            amount: Amount::from_u64(satoshi)
+                .map_to_mm(|_| NumConversError(format!("Failed to get ZCash amount from {amount}")))
+                .map_mm_err()?,
+            // TODO add optional viewing_key and memo fields to the WithdrawRequest
+            viewing_key: Some(self.z_fields.evk.fvk.ovk),
+            memo,
+        };
+
+        let GenTxData { tx, data, rseeds, .. } = self.gen_tx(vec![], vec![z_output]).await.map_mm_err()?;
+        let mut tx_bytes = Vec::with_capacity(1024);
+        tx.write(&mut tx_bytes)
+            .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+        let mut tx_hash = tx.txid().0.to_vec();
+        tx_hash.reverse();
+
+        let received_by_me = big_decimal_from_sat_unsigned(data.received_by_me, self.decimals());
+        let spent_by_me = big_decimal_from_sat_unsigned(data.spent_by_me, self.decimals());
+        let tx_hash_hex = hex::encode(&tx_hash);
+
+        Ok(TransactionDetails {
+            tx: TransactionData::new_signed(tx_bytes.into(), tx_hash_hex),
+            from: vec![self.z_fields.my_z_addr_encoded.clone()],
+            to: vec![req.to],
+            my_balance_change: &received_by_me - &spent_by_me,
+            total_amount: spent_by_me.clone(),
+            spent_by_me,
+            received_by_me,
+            block_height: 0,
+            timestamp: 0,
+            fee_details: Some(TxFeeDetails::Utxo(UtxoFeeDetails {
+                coin: Some(self.ticker().to_owned()),
+                amount: big_decimal_from_sat_unsigned(data.fee_amount, self.decimals()),
+            })),
+            coin: self.ticker().to_owned(),
+            internal_id: tx_hash.into(),
+            kmd_rewards: None,
+            transaction_type: Default::default(),
+            memo: req.memo,
+            rseeds: Some(rseeds),
         })
     }
 }
@@ -2180,7 +2288,7 @@ async fn wait_for_spendable_balance_impl(
         let sum_available = u64::from(sum_available);
         let sum_available = big_decimal_from_sat_unsigned(sum_available, selfi.decimals());
 
-        // Reteurn InsufficientBalance error when all notes are unlocked but amount is insufficient.
+        // Return InsufficientBalance error when all notes are unlocked but amount is insufficient.
         if sum_available < total_required && unlocked_notes_len == wallet_notes_len {
             return MmError::err(GenTxError::InsufficientBalance {
                 coin: selfi.ticker().to_string(),
@@ -2311,4 +2419,18 @@ fn rseed_to_string(rseed: &Rseed) -> String {
         Rseed::BeforeZip212(rcm) => rcm.to_string(),
         Rseed::AfterZip212(rseed) => jubjub::Fr::from_bytes_wide(prf_expand(rseed, &INPUT).as_array()).to_string(),
     }
+}
+
+#[inline]
+fn validate_rseeds(rseeds: &Vec<String>) -> bool {
+    const MAX_RSEED_OR_RCM_LEN: usize = 64;
+    for rseed in rseeds {
+        if let Ok(v) = hex::decode(str_strip_0x!(rseed)) {
+            if v.len() <= MAX_RSEED_OR_RCM_LEN {
+                continue;
+            }
+        }
+        return false;
+    }
+    true
 }

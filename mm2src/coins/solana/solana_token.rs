@@ -19,12 +19,10 @@ use serde::Deserialize;
 
 use crate::coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentResult};
 use crate::hd_wallet::HDAddressSelector;
+use crate::{solana::SolanaCoin, BalanceFut, CoinBalance, RawTransactionFut, WithdrawFut, WithdrawRequest};
 use crate::{
-    solana::SolanaCoin, BalanceFut, CoinBalance, RawTransactionFut, RawTransactionRequest, WithdrawFut, WithdrawRequest,
-};
-use crate::{
-    CheckIfMyPaymentSentArgs, ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
-    MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, RawTransactionResult, RefundPaymentArgs,
+    CheckIfMyPaymentSentArgs, ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend, GetRawTransactionRequest,
+    HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, RawTransactionResult, RefundPaymentArgs,
     SearchForSwapTxSpendInput, SendPaymentArgs, SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps,
     TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionResult,
     TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr,
@@ -139,7 +137,7 @@ impl MmCoin for SolanaToken {
         todo!()
     }
 
-    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut<'_> {
+    fn get_raw_transaction(&self, req: GetRawTransactionRequest) -> RawTransactionFut<'_> {
         todo!()
     }
 

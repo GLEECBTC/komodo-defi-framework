@@ -24,8 +24,8 @@ use crate::utxo::{
 };
 use crate::{
     BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInput, DexFee, FeeApproxStage,
-    FoundSwapTxSpend, HistorySyncState, IguanaPrivKey, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
-    PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest, RawTransactionResult,
+    FoundSwapTxSpend, GetRawTransactionRequest, HistorySyncState, IguanaPrivKey, MarketCoinOps, MmCoin,
+    NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionResult,
     RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SignRawTransactionRequest, SignatureResult,
     SpendPaymentArgs, SwapOps, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue,
     TransactionData, TransactionDetails, TransactionEnum, TransactionErr, TransactionResult, TransactionType,
@@ -1247,7 +1247,7 @@ impl MmCoin for Qrc20Coin {
         Box::new(qrc20_withdraw(self.clone(), req).boxed().compat())
     }
 
-    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut<'_> {
+    fn get_raw_transaction(&self, req: GetRawTransactionRequest) -> RawTransactionFut<'_> {
         Box::new(utxo_common::get_raw_transaction(&self.utxo, req).boxed().compat())
     }
 
@@ -1571,6 +1571,7 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult
         kmd_rewards: None,
         transaction_type: TransactionType::StandardTransfer,
         memo: None,
+        rseeds: None,
     })
 }
 

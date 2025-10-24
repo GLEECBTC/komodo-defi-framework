@@ -32,8 +32,8 @@ use crate::{
     coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentResult},
     hd_wallet::HDAddressSelector,
     BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInput, DexFee, FeeApproxStage,
-    FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy,
-    RawTransactionFut, RawTransactionRequest, RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput,
+    FoundSwapTxSpend, GetRawTransactionRequest, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
+    PrivKeyBuildPolicy, RawTransactionFut, RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput,
     SendPaymentArgs, SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps, TradeFee, TradePreimageFut,
     TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionResult, TxMarshalingErr,
     UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentInput,
@@ -235,7 +235,7 @@ impl MmCoin for SolanaCoin {
         todo!()
     }
 
-    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut<'_> {
+    fn get_raw_transaction(&self, req: GetRawTransactionRequest) -> RawTransactionFut<'_> {
         todo!()
     }
 

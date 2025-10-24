@@ -1,16 +1,17 @@
 use super::{
-    BalanceError, CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest,
-    SwapOps, TradeFee, TransactionEnum,
+    BalanceError, CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, SwapOps, TradeFee,
+    TransactionEnum,
 };
 use crate::hd_wallet::HDAddressSelector;
 use crate::{
     coin_errors::MyAddressError, AddressFromPubkeyError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs,
-    ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy,
-    PrivKeyPolicy, RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs,
-    SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, TradePreimageFut, TradePreimageResult,
-    TradePreimageValue, TransactionResult, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
-    ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentInput, ValidatePaymentResult, VerificationResult,
-    WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawFut, WithdrawRequest,
+    ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend, GetRawTransactionRequest,
+    NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, PrivKeyPolicy, RawTransactionResult, RefundPaymentArgs,
+    SearchForSwapTxSpendInput, SendPaymentArgs, SignRawTransactionRequest, SignatureResult, SpendPaymentArgs,
+    TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionResult, TxMarshalingErr,
+    UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentInput,
+    ValidatePaymentResult, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawFut,
+    WithdrawRequest,
 };
 use crate::{SignatureError, VerificationError};
 use async_trait::async_trait;
@@ -243,7 +244,7 @@ impl MmCoin for SiaCoin {
         unimplemented!()
     }
 
-    fn get_raw_transaction(&self, _req: RawTransactionRequest) -> RawTransactionFut<'_> {
+    fn get_raw_transaction(&self, _req: GetRawTransactionRequest) -> RawTransactionFut<'_> {
         unimplemented!()
     }
 
