@@ -4794,7 +4794,7 @@ where
     let expected_redeem = tx_type_with_secret_hash.redeem_script(time_lock, first_pub0, second_pub0);
     let tx_hash = tx.tx_hash_as_bytes();
 
-    // Note: This is redundant when used in swaps v2.
+    // TODO: This is redundant when used in swaps v2.
     // It will be removed if we implemented cross-publishing swap payments in swaps v1.
     let tx_from_rpc = retry_on_err!(async {
         coin.as_ref()

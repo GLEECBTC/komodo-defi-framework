@@ -438,7 +438,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
     /// One confirmation at most is safe enough for this stage of the swap.
     /// Makers can opt out if they want to serve faster swaps to taker at the risk of getting their funds stuck occasionally.
     #[inline]
-    fn taker_funding_required_confs(&self) -> u64 {
+    fn taker_funding_required_confirmations(&self) -> u64 {
         if self.require_taker_funding_confirm_before_maker_payment {
             self.conf_settings.taker_coin_confs.min(1)
         } else {
@@ -1311,39 +1311,32 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             .await;
 
             // IMPORTANT (timing):
-            // - Default: require_taker_funding_confirm_before_maker_payment = false.
-            // - Behavior: proceed once the taker funding transaction is visible in the mempool (0-conf).
+            //   - Default: require_taker_funding_confirm_before_maker_payment = false.
+            //   - Behavior: proceed once the taker funding transaction is visible in the mempool (0-conf).
             //
             // Rationale:
-            // - On UTXO chains, waiting for 1 confirmation often exceeds the taker's ~90 s window,
-            //   causing timeouts and wasted network fees.
+            //   - On UTXO chains, waiting for 1 confirmation often exceeds the taker's ~90 s window,
+            //     causing timeouts and wasted network fees.
             //
             // Trade-off:
-            // - If the funding transaction is dropped or replaced before confirmation, the maker's
-            //   payment may remain locked until the refund path becomes available.
+            //   - If the funding transaction is dropped or replaced before confirmation, the maker's
+            //     payment may remain locked until the refund path becomes available.
             //
             // Intent and future options:
-            // - This is an intentional speed optimization.
-            // - We may expose a config for makers who want to opt into stricter confirmation requirements.
-            // - Alternatively, confirmations can be only allowed for trusted makers until a reputation system is in place.
-            //   Meaning takers increase the time-out where they wait for the maker payment p2p message from a trusted maker.
-            //   It can also be a setting from maker related to the volume of the trade.
+            //   - This is an intentional speed optimization.
+            //   - We may expose a config for makers who want to opt into stricter confirmation requirements.
+            //   - Alternatively, confirmations can be only allowed for trusted makers until a reputation system is in place.
+            //     Meaning takers increase the time-out where they wait for the maker payment p2p message from a trusted maker.
+            //     It can also be a setting from maker related to the volume of the trade.
             //
-            // NOTE(PR #2496):
+            // TODO(PR #2496):
             // It's worth considering allowing maker to not mark balance as locked by swap until funding transaction
             // is visible or confirmed depending on if `require_taker_funding_confirm_before_maker_payment` is set.
-            let confs = state_machine.taker_funding_required_confs();
-            if confs == 0 {
-                if !visible {
-                    let reason = AbortReason::TakerFundingValidationFailed(
-                        "Taker funding transaction is not visible on network even after fallback rebroadcast".into(),
-                    );
-                    return Self::change_state(Aborted::new(reason), state_machine).await;
-                }
-            } else {
+            let confirmations = state_machine.taker_funding_required_confirmations();
+            if confirmations > 0 {
                 let input = ConfirmPaymentInput {
                     payment_tx: self.taker_funding.tx_hex(),
-                    confirmations: confs,
+                    confirmations,
                     requires_nota: state_machine.conf_settings.taker_coin_nota,
                     wait_until: state_machine.maker_payment_locktime(),
                     check_every: 10,
@@ -1354,6 +1347,11 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                     ));
                     return Self::change_state(Aborted::new(reason), state_machine).await;
                 }
+            } else if !visible {
+                let reason = AbortReason::TakerFundingValidationFailed(
+                    "Taker funding transaction is not visible on network even after fallback rebroadcast".into(),
+                );
+                return Self::change_state(Aborted::new(reason), state_machine).await;
             }
         }
 
