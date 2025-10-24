@@ -543,7 +543,7 @@ pub(super) async fn init_light_client(
     let continue_from_prev_sync =
         (min_height > 0 && sync_params.is_none()) || (skip_sync_params && min_height < sapling_activation_height);
 
-    let wallet_db = WalletDbShared::new(builder, maybe_checkpoint_block, continue_from_prev_sync)
+    let wallet_db = WalletDbShared::new(builder, maybe_checkpoint_block.clone(), continue_from_prev_sync)
         .await
         .map_mm_err()?;
 
@@ -565,7 +565,7 @@ pub(super) async fn init_light_client(
     };
     #[cfg(target_arch = "wasm32")]
     common::console_info!("init_light_client requested={} actual={} sapling_activation_height={} continue_from_prev_sync={} min_height={} maybe_checkpoint_block={:?} current_block_height={}",
-        sync_height, actual, sapling_activation_height, continue_from_prev_sync, min_height, maybe_checkpoint_block, current_block_height);
+        sync_height, first_sync_block.actual, sapling_activation_height, continue_from_prev_sync, min_height, maybe_checkpoint_block, current_block_height);
     let sync_handle = SaplingSyncLoopHandle {
         coin,
         current_block: BlockHeight::from_u32(0),
