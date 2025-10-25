@@ -534,26 +534,34 @@ pub(super) async fn init_light_client(
             .mm_err(ZcoinClientInitError::UtxoCoinBuildError)?
             .unwrap_or(sapling_activation_height),
     };
+
+    #[cfg(target_arch = "wasm32")]
+    common::console_info!("{} init_light_client getting maybe_checkpoint_block", chrono::Local::now());
     let maybe_checkpoint_block = light_rpc_clients
         .checkpoint_block_from_height(sync_height.max(sapling_activation_height), &coin)
         .await
         .map_mm_err()?;
 
+
     // check if no sync_params was provided and continue syncing from last height in db if it's > 0 or skip_sync_params is true.
     let continue_from_prev_sync =
         (min_height > 0 && sync_params.is_none()) || (skip_sync_params && min_height < sapling_activation_height);
 
+    #[cfg(target_arch = "wasm32")]
+    common::console_info!("{} init_light_client calling WalletDbShared::new", chrono::Local::now());
     let wallet_db = WalletDbShared::new(builder, maybe_checkpoint_block.clone(), continue_from_prev_sync)
         .await
         .map_mm_err()?;
 
+    #[cfg(target_arch = "wasm32")]
+    common::console_info!("{} init_light_client finished WalletDbShared::new", chrono::Local::now());
     // Check min_height in blocks_db and rewind blocks_db to 0 if sync_height != min_height
     if !continue_from_prev_sync && (sync_height != min_height) {
         // let user know we're clearing cache and re-syncing from new provided height.
         if min_height > 0 {
             info!("Older/Newer sync height detected!, rewinding blocks_db to new height: {sync_height:?}");
             #[cfg(target_arch = "wasm32")]
-            common::console_info!("Older/Newer sync height detected!, rewinding blocks_db to new height: {sync_height:?}");
+            common::console_info!("{} Older/Newer sync height detected!, rewinding blocks_db to new height: {sync_height:?}", chrono::Local::now());
         }
         blocks_db.rewind_to_height(u32::MIN.into()).await.map_mm_err()?;
     };
@@ -564,8 +572,8 @@ pub(super) async fn init_light_client(
         actual: sync_height.max(sapling_activation_height),
     };
     #[cfg(target_arch = "wasm32")]
-    common::console_info!("init_light_client requested={} actual={} sapling_activation_height={} continue_from_prev_sync={} min_height={} maybe_checkpoint_block={:?} current_block_height={}",
-        sync_height, first_sync_block.actual, sapling_activation_height, continue_from_prev_sync, min_height, maybe_checkpoint_block, current_block_height);
+    common::console_info!("{} init_light_client requested={} actual={} sapling_activation_height={} continue_from_prev_sync={} min_height={} maybe_checkpoint_block={:?} current_block_height={}",
+        chrono::Local::now(), sync_height, first_sync_block.actual, sapling_activation_height, continue_from_prev_sync, min_height, maybe_checkpoint_block, current_block_height);
     let sync_handle = SaplingSyncLoopHandle {
         coin,
         current_block: BlockHeight::from_u32(0),
@@ -801,8 +809,7 @@ impl SaplingSyncLoopHandle {
             from_block = from_block.max(max_in_wallet.into());
         }
         #[cfg(target_arch = "wasm32")]
-        common::console_info!("update_blocks_cache from_block={:?} fixed", from_block);
-
+        common::console_info!("{} update_blocks_cache from_block(fixed)={:?} to current_block={}", from_block, current_block, chrono::Local::now());
 
         if current_block >= from_block {
             rpc.scan_blocks(from_block, current_block, &block_db, self)
@@ -822,7 +829,7 @@ impl SaplingSyncLoopHandle {
         let mut wallet_ops = wallet_db.get_update_ops().expect("get_update_ops always returns Ok");
 
         #[cfg(target_arch = "wasm32")]
-        common::console_info!("scan_validate_and_update_blocks enterred");
+        common::console_info!("{} scan_validate_and_update_blocks enterred", chrono::Local::now());
 
         if let Err(e) = blocks_db
             .process_blocks_with_mode(
@@ -862,14 +869,15 @@ impl SaplingSyncLoopHandle {
                     } else {
                         debug!("Updating wallet.db from max_in_wallet={} to current_block={}", max_in_wallet, current_block);
                         #[cfg(target_arch = "wasm32")]
-                        common::console_info!("scan_validate_and_update_blocks Updating wallet.db from max_in_wallet={} to current_block={}", max_in_wallet, current_block);
+                        common::console_info!("{} scan_validate_and_update_blocks Updating wallet.db from max_in_wallet={} to current_block={}", 
+                            chrono::Local::now(), max_in_wallet, current_block);
                         self.notify_building_wallet_db(max_in_wallet.into(), current_block.into());
                     }
                 },
                 None => {
                     debug!("Updating wallet.db from block0 {} to current_block={}", 0, current_block);
                     #[cfg(target_arch = "wasm32")]
-                    common::console_info!("scan_validate_and_update_blocks Updating wallet.db from block0={} to current_block={}", 0, current_block);
+                    common::console_info!("{} scan_validate_and_update_blocks Updating wallet.db from block0={} to current_block={}", chrono::Local::now(), 0, current_block);
 
                     self.notify_building_wallet_db(0, current_block.into())
                 },
@@ -941,7 +949,7 @@ async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncLoopHandle, mut c
         }
 
         #[cfg(target_arch = "wasm32")]
-        common::console_info!("update_blocks_cache finished");
+        common::console_info!("{} update_blocks_cache finished", chrono::Local::now());
 
         if let Err(e) = sync_handle.scan_validate_and_update_blocks().await {
             error!("Error {} on scan_blocks", e);
@@ -952,7 +960,7 @@ async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncLoopHandle, mut c
             continue;
         }
         #[cfg(target_arch = "wasm32")]
-        common::console_info!("scan_validate_and_update_blocks finished");
+        common::console_info!("{} scan_validate_and_update_blocks finished", chrono::Local::now());
 
         sync_handle.notify_sync_finished();
 

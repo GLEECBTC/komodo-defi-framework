@@ -134,8 +134,8 @@ pub async fn scan_cached_block(
     last_height: &mut BlockHeight,
 ) -> Result<Vec<WalletTx<Nullifier>>, ValidateBlocksError> {
 
-    #[cfg(target_arch = "wasm32")]
-    common::console_info!("scan_cached_block block.height()={}", block.height());
+    //#[cfg(target_arch = "wasm32")]
+    //common::console_info!("scan_cached_block block.height()={}", block.height());
     let mut data_guard = data.inner().clone();
     // Fetch the ExtendedFullViewingKeys we are tracking
     let extfvks = data_guard.get_extended_full_viewing_keys().await?;
