@@ -73,9 +73,13 @@ impl WalletDbShared {
             // let user know we're clearing cache and resyncing from new provided height.
             if min_sync_height.unwrap_or(0) > 0 {
                 info!("Older/Newer sync height detected!, rewinding walletdb to new height: {init_block_height:?}");
+                #[cfg(target_arch = "wasm32")]
+                common::console_info!("WalletDbShared::new Older/Newer sync height detected!, rewinding blocks_db to new height: {init_block_height:?}");
             }
             db.rewind_to_height(BlockHeight::from(u32::MIN)).await?;
             if let Some(block) = checkpoint_block {
+                #[cfg(target_arch = "wasm32")]
+                common::console_info!("WalletDbShared::new start init_blocks_table");
                 db.init_blocks_table(
                     BlockHeight::from_u32(block.height),
                     BlockHash(block.hash.0),
@@ -83,6 +87,8 @@ impl WalletDbShared {
                     &block.sapling_tree.0,
                 )
                 .await?;
+                #[cfg(target_arch = "wasm32")]
+                common::console_info!("WalletDbShared::new end init_blocks_table");
             }
         }
 

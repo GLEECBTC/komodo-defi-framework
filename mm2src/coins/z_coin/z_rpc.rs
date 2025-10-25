@@ -796,8 +796,13 @@ impl SaplingSyncLoopHandle {
             .max(current_block_in_db + 1) as u64;
 
         if let Some((_, max_in_wallet)) = extrema {
+            #[cfg(target_arch = "wasm32")]
+            common::console_info!("update_blocks_cache old from_block={:?} max_in_wallet={:?}", from_block, max_in_wallet);
             from_block = from_block.max(max_in_wallet.into());
         }
+        #[cfg(target_arch = "wasm32")]
+        common::console_info!("update_blocks_cache from_block={:?} fixed", from_block);
+
 
         if current_block >= from_block {
             rpc.scan_blocks(from_block, current_block, &block_db, self)
@@ -815,6 +820,9 @@ impl SaplingSyncLoopHandle {
         let blocks_db = self.blocks_db.clone();
         let wallet_db = self.wallet_db.db.clone();
         let mut wallet_ops = wallet_db.get_update_ops().expect("get_update_ops always returns Ok");
+
+        #[cfg(target_arch = "wasm32")]
+        common::console_info!("scan_validate_and_update_blocks enterred");
 
         if let Err(e) = blocks_db
             .process_blocks_with_mode(
@@ -848,14 +856,21 @@ impl SaplingSyncLoopHandle {
             match wallet_ops.block_height_extrema().await? {
                 Some((_, max_in_wallet)) => {
                     if max_in_wallet >= current_block {
+                        #[cfg(target_arch = "wasm32")]
+                        common::console_info!("scan_validate_and_update_blocks max_in_wallet={:?} >= current_block={:?} breaking", max_in_wallet, current_block);
                         break;
                     } else {
-                        debug!("Updating wallet.db from block {} to {}", max_in_wallet, current_block);
+                        debug!("Updating wallet.db from max_in_wallet={} to current_block={}", max_in_wallet, current_block);
+                        #[cfg(target_arch = "wasm32")]
+                        common::console_info!("scan_validate_and_update_blocks Updating wallet.db from max_in_wallet={} to current_block={}", max_in_wallet, current_block);
                         self.notify_building_wallet_db(max_in_wallet.into(), current_block.into());
                     }
                 },
                 None => {
-                    debug!("Updating wallet.db from block {} to {}", 0, current_block);
+                    debug!("Updating wallet.db from block0 {} to current_block={}", 0, current_block);
+                    #[cfg(target_arch = "wasm32")]
+                    common::console_info!("scan_validate_and_update_blocks Updating wallet.db from block0={} to current_block={}", 0, current_block);
+
                     self.notify_building_wallet_db(0, current_block.into())
                 },
             }
@@ -918,17 +933,26 @@ async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncLoopHandle, mut c
     loop {
         if let Err(e) = sync_handle.update_blocks_cache(client.as_ref()).await {
             error!("Error {} on blocks cache update", e);
+            #[cfg(target_arch = "wasm32")]
+            common::console_info!("Error {} on blocks cache update", e);
             sync_handle.notify_on_error(e.to_string());
             Timer::sleep(10.).await;
             continue;
         }
 
+        #[cfg(target_arch = "wasm32")]
+        common::console_info!("update_blocks_cache finished");
+
         if let Err(e) = sync_handle.scan_validate_and_update_blocks().await {
             error!("Error {} on scan_blocks", e);
+            #[cfg(target_arch = "wasm32")]
+            common::console_info!("Error {} on scan_blocks", e);
             sync_handle.notify_on_error(e.to_string());
             Timer::sleep(10.).await;
             continue;
         }
+        #[cfg(target_arch = "wasm32")]
+        common::console_info!("scan_validate_and_update_blocks finished");
 
         sync_handle.notify_sync_finished();
 

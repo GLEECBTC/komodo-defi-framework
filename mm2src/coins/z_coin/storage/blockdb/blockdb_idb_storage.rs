@@ -246,6 +246,10 @@ impl BlockDbImpl {
         limit: Option<u32>,
         locked_notes_db: &LockedNotesStorage,
     ) -> ZcoinStorageRes<()> {
+
+        #[cfg(target_arch = "wasm32")]
+        common::console_info!("process_blocks_with_mode enterred is_validate={}", matches!(mode, BlockProcessingMode::Validate));
+
         let ticker = self.ticker.to_owned();
         let mut from_height = match &mode {
             BlockProcessingMode::Validate => validate_from
@@ -256,6 +260,8 @@ impl BlockDbImpl {
                     .unwrap_or(BlockHeight::from_u32(params.sapling_activation_height) - 1)
             })?,
         };
+        #[cfg(target_arch = "wasm32")]
+        common::console_info!("process_blocks_with_mode from_height={:?} limit={:?}", from_height, limit);
         let mut prev_height = from_height;
         let mut prev_hash: Option<BlockHash> = validate_from.map(|(_, hash)| hash);
 
