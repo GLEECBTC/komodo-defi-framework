@@ -972,6 +972,9 @@ impl UtxoCoinBuilder for ZCoinBuilder<'_> {
         let utxo = self.build_utxo_fields().await.map_mm_err()?;
         let utxo_arc = UtxoArc::new(utxo);
 
+        #[cfg(target_arch = "wasm32")]
+        common::console_info!("{} ZCoinBuilder::build enterred", chrono::Local::now());
+
         let dex_fee_addr = decode_payment_address(
             self.protocol_info.consensus_params.hrp_sapling_payment_address(),
             DEX_FEE_Z_ADDR,
@@ -986,12 +989,20 @@ impl UtxoCoinBuilder for ZCoinBuilder<'_> {
         .expect("DEX_BURN_Z_ADDR is a valid z-address")
         .expect("DEX_BURN_Z_ADDR is a valid z-address");
 
+        #[cfg(target_arch = "wasm32")]
+        common::console_info!("{} ZCoinBuilder::build calling z_tx_prover", chrono::Local::now());
         let z_tx_prover = self.z_tx_prover().await?;
+        #[cfg(target_arch = "wasm32")]
+        common::console_info!("{} ZCoinBuilder::build calling init_blocks_db", chrono::Local::now());
         let blocks_db = self.init_blocks_db().await.map_mm_err()?;
+        #[cfg(target_arch = "wasm32")]
+        common::console_info!("{} ZCoinBuilder::build calling LockedNotesStorage::new", chrono::Local::now());
         let locked_notes_db = LockedNotesStorage::new(self.ctx, self.my_z_addr_encoded.clone())
             .await
             .map_mm_err()?;
 
+        #[cfg(target_arch = "wasm32")]
+        common::console_info!("{} ZCoinBuilder::build calling match &self.z_coin_params.mode", chrono::Local::now());
         let (sync_state_connector, light_wallet_db) = match &self.z_coin_params.mode {
             #[cfg(not(target_arch = "wasm32"))]
             ZcoinRpcMode::Native => init_native_client(
@@ -1053,7 +1064,7 @@ impl<'a> ZCoinBuilder<'a> {
         println!("ZCoinBuilder::new mode={:?}", z_coin_params.mode);
         info!("ZCoinBuilder::new mode={:?}", z_coin_params.mode);
         #[cfg(target_arch = "wasm32")]
-        common::console_info!("ZCoinBuilder::new mode={:?}", z_coin_params.mode);
+        common::console_info!("{} ZCoinBuilder::new mode={:?}", chrono::Local::now(), z_coin_params.mode);
         let utxo_mode = match &z_coin_params.mode {
             #[cfg(not(target_arch = "wasm32"))]
             ZcoinRpcMode::Native => UtxoRpcMode::Native,

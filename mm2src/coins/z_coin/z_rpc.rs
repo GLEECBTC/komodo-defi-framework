@@ -510,18 +510,28 @@ pub(super) async fn init_light_client(
     skip_sync_params: bool,
     locked_notes_db: LockedNotesStorage,
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
+    #[cfg(target_arch = "wasm32")]
+    common::console_info!("{} init_light_client enterred", chrono::Local::now());
     let coin = builder.ticker.to_string();
     let (sync_status_notifier, sync_watcher) = channel(1);
     let (on_tx_gen_notifier, on_tx_gen_watcher) = channel(1);
 
+    #[cfg(target_arch = "wasm32")]
+    common::console_info!("{} init_light_client calling LightRpcClient::new", chrono::Local::now());
     let light_rpc_clients = LightRpcClient::new(lightwalletd_urls).await?;
 
+    #[cfg(target_arch = "wasm32")]
+    common::console_info!("{} init_light_client calling get_earliest_block", chrono::Local::now());
     let min_height = blocks_db.get_earliest_block().await.map_mm_err()? as u64;
+    #[cfg(target_arch = "wasm32")]
+    common::console_info!("{} init_light_client calling get_block_height", chrono::Local::now());
     let current_block_height = light_rpc_clients
         .get_block_height()
         .await
         .mm_err(ZcoinClientInitError::UpdateBlocksCacheErr)?;
     let sapling_activation_height = builder.protocol_info.consensus_params.sapling_activation_height as u64;
+    #[cfg(target_arch = "wasm32")]
+    common::console_info!("{} init_light_client calling match *sync_params", chrono::Local::now());
     let sync_height = match *sync_params {
         Some(SyncStartPoint::Date(date)) => builder
             .calculate_starting_height_from_date(date, current_block_height)
