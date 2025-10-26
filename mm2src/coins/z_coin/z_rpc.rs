@@ -523,6 +523,9 @@ pub(super) async fn init_light_client(
     #[cfg(target_arch = "wasm32")]
     common::console_info!("{} init_light_client calling get_earliest_block", chrono::Local::now());
     let min_height = blocks_db.get_earliest_block().await.map_mm_err()? as u64;
+
+    let sync_params = if min_height > 0 { None } else { sync_params.clone() };
+
     #[cfg(target_arch = "wasm32")]
     common::console_info!("{} init_light_client calling get_block_height", chrono::Local::now());
     let current_block_height = light_rpc_clients
@@ -532,7 +535,7 @@ pub(super) async fn init_light_client(
     let sapling_activation_height = builder.protocol_info.consensus_params.sapling_activation_height as u64;
     #[cfg(target_arch = "wasm32")]
     common::console_info!("{} init_light_client calling match *sync_params", chrono::Local::now());
-    let sync_height = match *sync_params {
+    let sync_height = match sync_params {
         Some(SyncStartPoint::Date(date)) => builder
             .calculate_starting_height_from_date(date, current_block_height)
             .mm_err(ZcoinClientInitError::UtxoCoinBuildError)?
