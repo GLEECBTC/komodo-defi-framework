@@ -69,6 +69,9 @@ impl WalletDbShared {
         let min_sync_height = extrema.map(|(min, _)| u32::from(min));
         let init_block_height = checkpoint_block.clone().map(|block| block.height);
 
+        #[cfg(target_arch = "wasm32")]
+        common::console_info!("WalletDbShared::new {init_block_height:?} min_sync_height={:?}", min_sync_height);
+
         if get_evk.is_empty() || (!continue_from_prev_sync && init_block_height != min_sync_height) {
             // let user know we're clearing cache and resyncing from new provided height.
             if min_sync_height.unwrap_or(0) > 0 {
