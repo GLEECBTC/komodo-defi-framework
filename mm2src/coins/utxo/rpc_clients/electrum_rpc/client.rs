@@ -803,11 +803,7 @@ impl ElectrumClient {
             let addresses = selfi.connection_manager.get_all_server_addresses();
 
             for address in addresses {
-                let block_count_res = selfi.get_block_count_from(&address).compat().await;
-                // Inform the connection manager that the connection was queried and no longer needed now.
-                // This will let the connection manager disconnect it if there are too many connections.
-                selfi.connection_manager.not_needed(&address);
-                match block_count_res {
+                match selfi.get_block_count_from(&address).compat().await {
                     Ok(block_count) => successful_responses.push((address, block_count)),
                     Err(e) => erroneous_responses.push((address, e)),
                 }
