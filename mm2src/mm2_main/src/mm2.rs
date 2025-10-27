@@ -85,6 +85,8 @@ pub mod lp_stats;
 pub mod lp_swap;
 pub mod lp_wallet;
 pub mod rpc;
+#[cfg(not(any(target_arch = "wasm32", target_os = "windows")))]
+pub mod shutdown_signal_event;
 mod swap_versioning;
 #[cfg(all(target_arch = "wasm32", test))]
 mod wasm_tests;
@@ -236,16 +238,19 @@ fn spawn_os_signal_handler(ctx: MmArc) {
             return;
         };
 
+        let signal_name = match signal {
+            libc::SIGINT => "SIGINT".to_owned(),
+            libc::SIGTERM => "SIGTERM".to_owned(),
+            libc::SIGQUIT => "SIGQUIT".to_owned(),
+            _ => format!("UNKNOWN({signal})"),
+        };
+
+        ctx.event_stream_manager
+            .send(&mm2_event_stream::StreamerId::ShutdownSignal, signal_name.clone())
+            .unwrap();
+
         if signals_to_handle.contains(&signal) {
-            let signal_name = match signal {
-                libc::SIGINT => "SIGINT",
-                libc::SIGTERM => "SIGTERM",
-                libc::SIGQUIT => "SIGQUIT",
-                _ => unreachable!(),
-            };
-
             log::info!("Received {signal_name} signal from the OS. Wrapping things up and shutting down...");
-
             dispatch_lp_event(ctx.clone(), StopCtxEvent.into()).await;
             ctx.stop().await.expect("Couldn't stop the KDF runtime.");
         } else {

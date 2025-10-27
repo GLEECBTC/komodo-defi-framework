@@ -13,6 +13,8 @@ const TX_HISTORY_PREFIX: &str = "TX_HISTORY:";
 const FEE_ESTIMATION_PREFIX: &str = "FEE_ESTIMATION:";
 const DATA_NEEDED_PREFIX: &str = "DATA_NEEDED:";
 const ORDERBOOK_UPDATE_PREFIX: &str = "ORDERBOOK_UPDATE:";
+#[cfg(not(any(target_arch = "wasm32", target_os = "windows")))]
+const SHUTDOWN_SIGNAL: &str = "SHUTDOWN_SIGNAL";
 #[cfg(any(test, target_arch = "wasm32"))]
 const FOR_TESTING_PREFIX: &str = "TEST_STREAMER:";
 
@@ -44,6 +46,8 @@ pub enum StreamerId {
     ForTesting {
         test_streamer: String,
     },
+    #[cfg(not(any(target_arch = "wasm32", target_os = "windows")))]
+    ShutdownSignal,
 }
 
 impl fmt::Display for StreamerId {
@@ -61,6 +65,8 @@ impl fmt::Display for StreamerId {
             StreamerId::OrderbookUpdate { topic } => write!(f, "{ORDERBOOK_UPDATE_PREFIX}{topic}"),
             #[cfg(any(test, target_arch = "wasm32"))]
             StreamerId::ForTesting { test_streamer } => write!(f, "{FOR_TESTING_PREFIX}{test_streamer}"),
+            #[cfg(not(any(target_arch = "wasm32", target_os = "windows")))]
+            StreamerId::ShutdownSignal => write!(f, "{SHUTDOWN_SIGNAL}"),
         }
     }
 }
@@ -119,6 +125,8 @@ impl<'de> Deserialize<'de> for StreamerId {
                     v if v.starts_with(FOR_TESTING_PREFIX) => Ok(StreamerId::ForTesting {
                         test_streamer: v[FOR_TESTING_PREFIX.len()..].to_string(),
                     }),
+                    #[cfg(not(any(target_arch = "wasm32", target_os = "windows")))]
+                    SHUTDOWN_SIGNAL => Ok(StreamerId::ShutdownSignal),
                     _ => Err(de::Error::custom(format!("Invalid StreamerId: {value}"))),
                 }
             }
