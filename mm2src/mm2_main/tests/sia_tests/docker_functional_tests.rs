@@ -31,7 +31,6 @@ async fn test_shared_dsia_container_wip() {
 ///
 /// The container must be manually stopped.
 #[tokio::test]
-#[ignore]
 async fn debug_init_walletd_container() {
     use std::mem;
     let temp_dir = init_test_dir(current_function_name!(), true).await;
@@ -49,7 +48,6 @@ async fn debug_init_walletd_container() {
 /// This is for debugging purposes.
 /// This creates a public API endpoint with the password "password".
 #[tokio::test]
-#[ignore]
 async fn debug_init_zen_container() {
     use std::mem;
     let temp_dir = init_test_dir(current_function_name!(), true).await;
@@ -70,7 +68,6 @@ async fn test_init_alice() {
 
 /// Initialize Bob KDF instance
 #[tokio::test]
-#[ignore]
 async fn test_init_bob() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
     let netid = get_unique_netid();

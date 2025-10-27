@@ -568,6 +568,7 @@ pub async fn init_bob(kdf_dir: &Path, netid: u16, utxo_rpc_port: Option<u16>) ->
         "rpc_password": "password",
         "rpcport": 0, // 0 value will assign an available port that can be read from ctx.rpc_started
         "i_am_seed": true,
+        "is_bootstrap_node": true,
         "enable_hd": false,
         "dbdir": bob_db_dir.to_str().unwrap(),
     });
