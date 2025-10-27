@@ -602,36 +602,42 @@ pub async fn init_bob(kdf_dir: &Path, netid: u16, utxo_rpc_port: Option<u16>) ->
 /// Initialize a Sia standalone SiaClient.
 /// This is useful to interact with a Sia testnet container for commands that are not from Alice or
 /// Bob. Eg, mining blocks to progress the chain.
-pub async fn init_sia_client(ip: &str, port: u16, password: &str) -> SiaClient {
+pub async fn init_sia_client(ip: &str, port: u16, password: &str) -> Result<SiaClient, String> {
     let conf = SiaClientConf {
         server_url: Url::parse(&format!("http://{}:{}/", ip, port)).unwrap(),
         password: Some(password.to_string()),
         timeout: Some(10),
     };
-    SiaClient::new(conf).await.unwrap()
+    SiaClient::new(conf).await.map_err(|e| e.to_string())
 }
 
 #[cfg(feature = "enable-sia")]
 pub async fn wait_for_dsia_node_ready() {
     let (ip, port, password) = SIA_RPC_PARAMS;
-    let client = init_sia_client(ip, port, password).await;
     let mut attempts = 0;
     loop {
         if attempts >= 5 {
             panic!("Failed to connect to Dsia node after several attempts.");
         }
-        match client.current_height().timeout(Duration::from_secs(6)).await {
-            Ok(Ok(block_number)) => {
-                log!("Dsia node is ready, latest block number: {:?}", block_number);
-                break;
+
+        match init_sia_client(ip, port, password).await {
+            Ok(client) => match client.current_height().timeout(Duration::from_secs(6)).await {
+                Ok(Ok(block_number)) => {
+                    log!("Dsia node is ready, latest block number: {:?}", block_number);
+                    break;
+                },
+                Ok(Err(e)) => {
+                    log!("Failed to connect to Dsia node: {:?}, retrying...", e);
+                },
+                Err(_) => {
+                    log!("Connection to Dsia node timed out, retrying...");
+                },
             },
-            Ok(Err(e)) => {
-                log!("Failed to connect to Dsia node: {:?}, retrying...", e);
+            Err(e) => {
+                log!("Failed to create Sia client: {:?}, retrying...", e);
             },
-            Err(_) => {
-                log!("Connection to Dsia node timed out, retrying...");
-            },
-        }
+        };
+
         attempts += 1;
         Timer::sleep(1.).await;
     }
@@ -679,7 +685,7 @@ pub async fn init_walletd_container(temp_dir: &Path) -> SiaTestnetContainer {
     let host_port = container.get_host_port_ipv4(9980).await.unwrap();
 
     // Initialize a SiaClient to interact with the walletd API
-    let client = init_sia_client("127.0.0.1", host_port, "password").await;
+    let client = init_sia_client("127.0.0.1", host_port, "password").await.unwrap();
     SiaTestnetContainer {
         container,
         client,
@@ -720,7 +726,7 @@ pub async fn init_zen_container(temp_dir: &Path) -> SiaTestnetContainer {
     let host_port = container.get_host_port_ipv4(9980).await.unwrap();
 
     // Initialize a SiaClient to interact with the walletd API
-    let client = init_sia_client("127.0.0.1", host_port, "password").await;
+    let client = init_sia_client("127.0.0.1", host_port, "password").await.unwrap();
     SiaTestnetContainer {
         container,
         client,
