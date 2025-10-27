@@ -262,6 +262,7 @@ impl MmCoin for SolanaToken {
                 }
 
                 rent_lamports = rpc
+                    // TODO: use dynamic account length
                     .get_minimum_balance_for_rent_exemption(spl_token::state::Account::LEN)
                     .await
                     .map_err(|e| WithdrawError::Transport(e.to_string()))?;
