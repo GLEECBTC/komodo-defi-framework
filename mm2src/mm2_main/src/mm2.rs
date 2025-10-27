@@ -198,7 +198,7 @@ pub async fn lp_main(
         .into_mm_arc();
     ctx_cb(try_s!(ctx.ffi_handle()));
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(any(target_arch = "wasm32", target_os = "windows")))]
     spawn_os_signal_handler(ctx.clone());
 
     try_s!(lp_init(ctx.clone(), version, datetime).await);
@@ -221,7 +221,7 @@ pub async fn lp_run(ctx: MmArc) {
 /// Handles various OS signals and shutdowns the KDF runtime gracefully.
 ///
 /// It's important to spawn this task as soon as `Ctx` is in the correct state.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(any(target_arch = "wasm32", target_os = "windows")))]
 fn spawn_os_signal_handler(ctx: MmArc) {
     use crate::lp_dispatcher::{dispatch_lp_event, StopCtxEvent};
     use futures::StreamExt;
