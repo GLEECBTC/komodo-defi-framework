@@ -129,7 +129,7 @@ rustls = { workspace = true, default-features = false }
 rustls-pemfile.workspace = true
 signal-hook-tokio = { version = "0.3", features = [ "futures-v0_3" ] }
 timed-map = { workspace = true, features = ["rustc-hash"] }
-tokio = { workspace = true, features = ["io-util", "rt-multi-thread", "net", "signal"] }
+tokio = { workspace = true, features = ["io-util", "rt-multi-thread", "net"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi.workspace = true
