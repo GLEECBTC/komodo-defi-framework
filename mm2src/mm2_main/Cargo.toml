@@ -30,7 +30,6 @@ new-db-arch = ["mm2_core/new-db-arch"] # A temporary feature to integrate the ne
 # once we consider it as stable.
 ibc-routing-for-swaps = []
 for-tests = []
-enable-solana = ["coins/enable-solana", "coins_activation/enable-solana"]
 
 [dependencies]
 async-std = { workspace = true, features = ["unstable"] }
