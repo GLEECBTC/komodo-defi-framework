@@ -1094,7 +1094,7 @@ dependencies = [
  "serialization_derive",
  "sha2 0.10.9",
  "sha3 0.9.1",
- "sia-rust 0.1.0 (git+https://github.com/KomodoPlatform/sia-rust.git?rev=dd4e466ae55fee0dafb81e1246371b4e150aaca1)",
+ "sia-rust",
  "solana-keypair",
  "solana-pubkey",
  "solana-rpc-client",
@@ -4621,7 +4621,7 @@ dependencies = [
  "serde_json",
  "serialization",
  "serialization_derive",
- "sia-rust 0.1.0 (git+https://github.com/KomodoPlatform/sia-rust?rev=9f188b80b3213bcb604e7619275251ce08fae808)",
+ "sia-rust",
  "sp-runtime-interface",
  "sp-trie",
  "spv_validation",
@@ -7190,27 +7190,7 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 [[package]]
 name = "sia-rust"
 version = "0.1.0"
-source = "git+https://github.com/KomodoPlatform/sia-rust?rev=9f188b80b3213bcb604e7619275251ce08fae808#9f188b80b3213bcb604e7619275251ce08fae808"
-dependencies = [
- "base64 0.21.7",
- "blake2b_simd",
- "chrono",
- "derive_more",
- "ed25519-dalek 1.0.1",
- "hex",
- "nom",
- "reqwest 0.11.9",
- "rustc-hex",
- "serde",
- "serde_json",
- "serde_with 1.14.0",
- "url",
-]
-
-[[package]]
-name = "sia-rust"
-version = "0.1.0"
-source = "git+https://github.com/KomodoPlatform/sia-rust.git?rev=dd4e466ae55fee0dafb81e1246371b4e150aaca1#dd4e466ae55fee0dafb81e1246371b4e150aaca1"
+source = "git+https://github.com/KomodoPlatform/sia-rust?branch=refactor%2Frc-cleanup#dd4e466ae55fee0dafb81e1246371b4e150aaca1"
 dependencies = [
  "async-trait",
  "base64 0.21.7",

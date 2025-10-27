@@ -182,7 +182,7 @@ serde-wasm-bindgen = "0.4.3"
 sha-1 = "0.9"
 sha2 = "0.10"
 sha3 = "0.9"
-sia-rust = { git = "https://github.com/KomodoPlatform/sia-rust", rev = "9f188b80b3213bcb604e7619275251ce08fae808" }
+sia-rust = { git = "https://github.com/KomodoPlatform/sia-rust", branch = "refactor/rc-cleanup"}
 siphasher = "0.1.1"
 smallvec = "1.6.1"
 sp-runtime-interface = { version = "6.0.0", default-features = false, features = ["disable_target_static_assertions"] }

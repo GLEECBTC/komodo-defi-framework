@@ -98,7 +98,7 @@ rlp.workspace = true
 rmp-serde.workspace = true
 rpc = { path = "../mm2_bitcoin/rpc" }
 rpc_task = { path = "../rpc_task" }
-sia-rust = { git = "https://github.com/KomodoPlatform/sia-rust.git", rev = "dd4e466ae55fee0dafb81e1246371b4e150aaca1", optional = true }
+sia-rust = { workspace = true, optional = true }
 script = { path = "../mm2_bitcoin/script" }
 secp256k1.workspace = true
 ser_error = { path = "../derives/ser_error" }
