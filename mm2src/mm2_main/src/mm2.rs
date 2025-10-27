@@ -199,7 +199,7 @@ pub async fn lp_main(
     ctx_cb(try_s!(ctx.ffi_handle()));
 
     #[cfg(not(target_arch = "wasm32"))]
-    spawn_ctrl_c_handler(ctx.clone());
+    spawn_os_signal_handler(ctx.clone());
 
     try_s!(lp_init(ctx.clone(), version, datetime).await);
     Ok(ctx)
@@ -218,22 +218,39 @@ pub async fn lp_run(ctx: MmArc) {
     lp_swap::clear_running_swaps(&ctx);
 }
 
-/// Handles CTRL-C signals and shutdowns the KDF runtime gracefully.
+/// Handles various OS signals and shutdowns the KDF runtime gracefully.
 ///
 /// It's important to spawn this task as soon as `Ctx` is in the correct state.
 #[cfg(not(target_arch = "wasm32"))]
-fn spawn_ctrl_c_handler(ctx: MmArc) {
+fn spawn_os_signal_handler(ctx: MmArc) {
     use crate::lp_dispatcher::{dispatch_lp_event, StopCtxEvent};
+    use futures::StreamExt;
 
     common::executor::spawn(async move {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("Couldn't listen for the CTRL-C signal.");
+        let signals_to_handle = [libc::SIGINT, libc::SIGTERM, libc::SIGQUIT];
+        let mut signals =
+            signal_hook_tokio::Signals::new(signals_to_handle).expect("Couldn't listen for the CTRL-C signal.");
 
-        log::info!("Wrapping things up and shutting down...");
+        let Some(signal) = signals.next().await else {
+            log::error!("Could not catch the OS signal.");
+            return;
+        };
 
-        dispatch_lp_event(ctx.clone(), StopCtxEvent.into()).await;
-        ctx.stop().await.expect("Couldn't stop the KDF runtime.");
+        if signals_to_handle.contains(&signal) {
+            let signal_name = match signal {
+                libc::SIGINT => "SIGINT",
+                libc::SIGTERM => "SIGTERM",
+                libc::SIGQUIT => "SIGQUIT",
+                _ => unreachable!(),
+            };
+
+            log::info!("Received {signal_name} signal from the OS. Wrapping things up and shutting down...");
+
+            dispatch_lp_event(ctx.clone(), StopCtxEvent.into()).await;
+            ctx.stop().await.expect("Couldn't stop the KDF runtime.");
+        } else {
+            log::warn!("Received a signal ({signal}) from the OS that cannot be handled.");
+        }
     });
 }
 
