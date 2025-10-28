@@ -42,7 +42,6 @@ http:
   address: :9980
   password: password
   publicEndpoints: true
-
 index:
   mode: full
 log:
@@ -96,7 +95,8 @@ const WALLETD_NETWORK_CONFIG: &str = r#"{
         "hardforkASIC": {
             "height": 20,
             "oakTime": 600000000000,
-            "oakTarget": "0100000000000000000000000000000000000000000000000000000000000000"
+            "oakTarget": "0100000000000000000000000000000000000000000000000000000000000000",
+            "nonceFactor": 1009
         },
         "hardforkFoundation": {
             "height": 30,
@@ -105,7 +105,8 @@ const WALLETD_NETWORK_CONFIG: &str = r#"{
         },
         "hardforkV2": {
             "allowHeight": 40,
-            "requireHeight": 7777777
+            "requireHeight": 7777777,
+            "finalCutHeight": 8888888
         }
     },
     "genesis": {
@@ -669,11 +670,7 @@ pub async fn init_walletd_container(temp_dir: &Path) -> SiaTestnetContainer {
             config_dir.to_str().expect("config path is invalid"),
             "/config",
         ));
-    let walletd_args = vec![
-        "--network".to_string(),
-        "/config/ci_network.json".to_string(),
-        "-debug".to_string(),
-    ];
+    let walletd_args = vec!["-network=/config/ci_network.json".to_string(), "-debug".to_string()];
 
     // Wrap the image in `RunnableImage` to allow custom port mapping to an available host port
     // 0 indicates that the host port will be automatically assigned to an available port

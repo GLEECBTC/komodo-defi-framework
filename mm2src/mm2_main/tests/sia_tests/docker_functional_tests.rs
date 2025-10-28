@@ -1,9 +1,10 @@
 use super::utils::*;
 
 use coins::siacoin::ApiClientHelpers;
-
 use mm2_test_helpers::electrums::doc_electrums;
 use mm2_test_helpers::for_tests::{enable_utxo_v2_electrum, start_swaps, wait_for_swap_finished_or_err};
+
+use std::str::FromStr;
 
 // FIXME Alright - WIP stub to demonstrate used of a shared DSIA container amongst multiple tokio tests.
 #[tokio::test]
@@ -36,6 +37,18 @@ async fn debug_init_walletd_container() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
     let dsia = init_walletd_container(&temp_dir).await;
     println!("DSIA host port: {}", dsia.host_port);
+
+    let address =
+        Address::from_str("591fcf237f8854b5653d1ac84ae4c107b37f148c3c7b413f292d48db0c25a8840be0653e411f").unwrap();
+
+    let response = dsia.client.address_balance(address.clone()).await.unwrap();
+    println!("Address balance: {:?}", response);
+
+    dsia.client.mine_blocks(1, &address).await.unwrap();
+
+    let response = dsia.client.address_balance(address).await.unwrap();
+    println!("Address balance: {:?}", response);
+    assert_eq!(response.immature_siacoins, Currency(299999000000000000000000000000));
 
     // Prevent automatic testcontainers cleanup
     mem::forget(dsia);
