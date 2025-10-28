@@ -451,7 +451,7 @@ pub fn sia_docker_node(ticker: &'static str, port: u16) -> DockerNode {
     let config_dir = std::env::temp_dir()
         .join(format!(
             "sia-docker-tests-temp-{}",
-            chrono::Local::now().format("%Y-%m-%d_%H-%M-%S-%3f").to_string()
+            chrono::Local::now().format("%Y-%m-%d_%H-%M-%S-%3f")
         ))
         .join("walletd_config");
     std::fs::create_dir_all(&config_dir).unwrap();

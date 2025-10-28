@@ -2,34 +2,15 @@
 
 use common::block_on;
 use sia_rust::transport::client::{
-    error::ClientError as SiaApiClientError, ApiClient, Client as SiaApiClient, Conf as SiaHttpConf,
+    error::ClientError as SiaApiClientError, ApiClient, ApiClientHelpers, Client as SiaApiClient, Conf as SiaHttpConf,
 };
 use sia_rust::transport::endpoints::{
     AddressBalanceRequest, ConsensusTipRequest, GetAddressUtxosRequest, TxpoolBroadcastRequest,
 };
 use sia_rust::types::{Address, Currency, Keypair, SiacoinOutput, SpendPolicy};
 use sia_rust::utils::V2TransactionBuilder;
-use std::process::Command;
 use std::str::FromStr;
 use url::Url;
-
-#[cfg(test)]
-fn mine_blocks(n: u64, addr: &Address) {
-    let status = Command::new("docker")
-        .arg("exec")
-        .arg("sia-docker")
-        .arg("walletd")
-        .arg("mine")
-        .arg(format!("-addr={addr}"))
-        .arg(format!("-n={n}"))
-        .status()
-        .expect("Failed to execute docker command");
-    assert!(
-        status.success(),
-        "Docker command did not execute successfully: {:?}",
-        status
-    );
-}
 
 #[test]
 fn test_sia_new_client() {
@@ -91,7 +72,7 @@ fn test_sia_client_address_balance() {
 
     let address =
         Address::from_str("591fcf237f8854b5653d1ac84ae4c107b37f148c3c7b413f292d48db0c25a8840be0653e411f").unwrap();
-    mine_blocks(10, &address);
+    block_on(api_client.mine_blocks(10, &address)).unwrap();
 
     let request = AddressBalanceRequest { address };
     let response = block_on(api_client.dispatcher(request)).unwrap();
@@ -118,7 +99,7 @@ fn test_sia_client_build_tx() {
 
     let address = spend_policy.address();
 
-    mine_blocks(201, &address);
+    block_on(api_client.mine_blocks(201, &address)).unwrap();
 
     let utxos = block_on(api_client.dispatcher(GetAddressUtxosRequest {
         address: address.clone(),
