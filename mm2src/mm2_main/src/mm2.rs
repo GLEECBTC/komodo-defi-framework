@@ -245,9 +245,14 @@ fn spawn_os_signal_handler(ctx: MmArc) {
             _ => format!("UNKNOWN({signal})"),
         };
 
-        ctx.event_stream_manager
+        // This fails if the streamer has no active listeners,
+        // but we can safely ignore any failure here.
+        if let Err(e) = ctx
+            .event_stream_manager
             .send(&mm2_event_stream::StreamerId::ShutdownSignal, signal_name.clone())
-            .unwrap();
+        {
+            log::debug!("Failed to send the SHUTDOWN_SIGNAL event: {e:?}");
+        }
 
         if signals_to_handle.contains(&signal) {
             log::info!("Received {signal_name} signal from the OS. Wrapping things up and shutting down...");
