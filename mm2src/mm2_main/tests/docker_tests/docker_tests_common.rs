@@ -140,9 +140,9 @@ pub const ZOMBIE_ASSET_DOCKER_IMAGE: &str = "docker.io/borngraced/zombietestrunn
 pub const ZOMBIE_ASSET_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/borngraced/zombietestrunner:multiarch";
 
 #[cfg(feature = "enable-sia")]
-pub const SIA_DOCKER_IMAGE: &str = "docker.io/alrighttt/walletd-komodo";
+pub const SIA_DOCKER_IMAGE: &str = "ghcr.io/siafoundation/walletd";
 #[cfg(feature = "enable-sia")]
-pub const SIA_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/alrighttt/walletd-komodo:latest";
+pub const SIA_DOCKER_IMAGE_WITH_TAG: &str = "ghcr.io/siafoundation/walletd:latest";
 
 pub const NUCLEUS_IMAGE: &str = "docker.io/komodoofficial/nucleusd";
 pub const ATOM_IMAGE_WITH_TAG: &str = "docker.io/komodoofficial/gaiad:kdf-ci";
@@ -446,9 +446,37 @@ pub fn geth_docker_node(ticker: &'static str, port: u16) -> DockerNode {
 
 #[cfg(feature = "enable-sia")]
 pub fn sia_docker_node(ticker: &'static str, port: u16) -> DockerNode {
-    let image =
-        GenericImage::new(SIA_DOCKER_IMAGE, "latest").with_env_var("WALLETD_API_PASSWORD", "password".to_string());
-    let image = RunnableImage::from(image).with_mapped_port((port, port));
+    use crate::sia_tests::utils::{WALLETD_CONFIG, WALLETD_NETWORK_CONFIG};
+
+    let config_dir = std::env::temp_dir()
+        .join(format!(
+            "sia-docker-tests-temp-{}",
+            chrono::Local::now().format("%Y-%m-%d_%H-%M-%S-%3f").to_string()
+        ))
+        .join("walletd_config");
+    std::fs::create_dir_all(&config_dir).unwrap();
+
+    // Write walletd.yml
+    std::fs::write(config_dir.join("walletd.yml"), WALLETD_CONFIG).expect("failed to write walletd.yml");
+
+    // Write ci_network.json
+    std::fs::write(config_dir.join("ci_network.json"), WALLETD_NETWORK_CONFIG)
+        .expect("failed to write ci_network.json");
+
+    let image = GenericImage::new(SIA_DOCKER_IMAGE, "latest")
+        .with_env_var("WALLETD_CONFIG_FILE", "/config/walletd.yml")
+        .with_wait_for(WaitFor::message_on_stdout("node started"))
+        .with_mount(Mount::bind_mount(
+            config_dir.to_str().expect("config path is invalid"),
+            "/config",
+        ));
+
+    let args = vec!["-network=/config/ci_network.json".to_string(), "-debug".to_string()];
+    let image = RunnableImage::from(image)
+        .with_mapped_port((port, port))
+        .with_args(args)
+        .with_container_name("sia-docker");
+
     let container = image.start().expect("Failed to start Sia docker node");
     DockerNode {
         container,

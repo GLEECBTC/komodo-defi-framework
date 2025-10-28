@@ -37,11 +37,11 @@ use url::Url; // for read_line()
 mod komodod_client;
 pub use komodod_client::*;
 
-const WALLETD_CONFIG: &str = r#"
+pub const WALLETD_CONFIG: &str = r#"
 http:
   address: :9980
   password: password
-  publicEndpoints: true
+  publicEndpoints: false
 index:
   mode: full
 log:
@@ -52,7 +52,7 @@ log:
 "#;
 
 // FIXME Alright - Nate provided a simplified version of this... use that after testing this works at all
-const WALLETD_NETWORK_CONFIG: &str = r#"{
+pub const WALLETD_NETWORK_CONFIG: &str = r#"{
     "network": {
         "name": "komodo-ci",
         "initialCoinbase": "300000000000000000000000000000",

@@ -1,3 +1,5 @@
+//! TODO: These tests have nothing to do with SiaCoin and should rather be in `sia-rust` repo instead.
+
 use common::block_on;
 use sia_rust::transport::client::{
     error::ClientError as SiaApiClientError, ApiClient, Client as SiaApiClient, Conf as SiaHttpConf,
@@ -13,7 +15,7 @@ use url::Url;
 
 #[cfg(test)]
 fn mine_blocks(n: u64, addr: &Address) {
-    Command::new("docker")
+    let status = Command::new("docker")
         .arg("exec")
         .arg("sia-docker")
         .arg("walletd")
@@ -22,10 +24,14 @@ fn mine_blocks(n: u64, addr: &Address) {
         .arg(format!("-n={n}"))
         .status()
         .expect("Failed to execute docker command");
+    assert!(
+        status.success(),
+        "Docker command did not execute successfully: {:?}",
+        status
+    );
 }
 
 #[test]
-#[ignore]
 fn test_sia_new_client() {
     let conf = SiaHttpConf {
         server_url: Url::parse("http://localhost:9980/").unwrap(),
@@ -75,7 +81,6 @@ fn test_sia_client_consensus_tip() {
 // This test likely needs to be removed because mine_blocks has possibility of interfering with other async tests
 // related to block height
 #[test]
-#[ignore]
 fn test_sia_client_address_balance() {
     let conf = SiaHttpConf {
         server_url: Url::parse("http://localhost:9980/").unwrap(),
@@ -87,17 +92,17 @@ fn test_sia_client_address_balance() {
     let address =
         Address::from_str("591fcf237f8854b5653d1ac84ae4c107b37f148c3c7b413f292d48db0c25a8840be0653e411f").unwrap();
     mine_blocks(10, &address);
-    mine_blocks(1000, &address);
 
     let request = AddressBalanceRequest { address };
     let response = block_on(api_client.dispatcher(request)).unwrap();
 
-    let expected = Currency(1000000000000000000000000000000000000);
-    assert_eq!(response.siacoins, expected);
+    // It's hard to predict how much was mined to this address while other tests are also mining in the same network.
+    // Looks like the halving happens so quickly and the sum of mined coins change between different test runs.
+    // Just make sure we at least mined something.
+    assert!(response.immature_siacoins + response.siacoins > Currency(0));
 }
 
 #[test]
-#[ignore]
 fn test_sia_client_build_tx() {
     let conf = SiaHttpConf {
         server_url: Url::parse("http://localhost:9980/").unwrap(),
@@ -141,5 +146,6 @@ fn test_sia_client_build_tx() {
         transactions: vec![],
         v2transactions: vec![tx],
     };
+
     let _response = block_on(api_client.dispatcher(req)).unwrap();
 }
