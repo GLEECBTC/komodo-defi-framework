@@ -54,23 +54,6 @@ async fn debug_init_walletd_container() {
     mem::forget(dsia);
 }
 
-/// Not a real test, useful to start a ZEN testnet container
-/// Starts a new walletd container and prints the port walletd is bound to on the host.
-///
-/// The container must be manually stopped.
-/// This is for debugging purposes.
-/// This creates a public API endpoint with the password "password".
-#[tokio::test]
-async fn debug_init_zen_container() {
-    use std::mem;
-    let temp_dir = init_test_dir(current_function_name!(), true).await;
-    let dsia = init_zen_container(&temp_dir).await;
-    println!("ZEN host port: {}", dsia.host_port);
-
-    // Prevent automatic testcontainers cleanup
-    mem::forget(dsia);
-}
-
 /// Initialize Alice KDF instance
 #[tokio::test]
 async fn test_init_alice() {
