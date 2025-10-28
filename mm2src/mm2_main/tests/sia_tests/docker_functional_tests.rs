@@ -72,7 +72,6 @@ async fn test_init_bob() {
 
 /// Initialize Alice and Bob, check that they connected via p2p network
 #[tokio::test]
-#[ignore]
 async fn test_init_alice_and_bob() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
     let netid = get_unique_netid();
@@ -88,7 +87,6 @@ async fn test_init_alice_and_bob() {
 
 /// Initialize Alice and Bob, initialize Sia testnet container, enable DSIA for both parties
 #[tokio::test]
-#[ignore]
 async fn test_alice_and_bob_enable_dsia() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
     let dsia = init_walletd_container(&temp_dir).await;
@@ -104,7 +102,6 @@ async fn test_alice_and_bob_enable_dsia() {
 /// Initialize Komodods container, initialize KomododClient for Alice and Bob
 /// Validate Alice and Bob's addresses were imported via `importaddress`
 #[tokio::test]
-#[ignore]
 async fn test_init_utxo_container_and_client() {
     let (_container, (alice_client, bob_client)) = init_komodod_clients(ALICE_KMD_KEY, BOB_KMD_KEY).await;
 

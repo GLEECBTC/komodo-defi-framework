@@ -667,6 +667,15 @@ pub async fn init_walletd_container(temp_dir: &Path) -> SiaTestnetContainer {
     let host_port = container.get_host_port_ipv4(9980).await.unwrap();
 
     // Initialize a SiaClient to interact with the walletd API
+    while let Err(error) = (1..=5)
+        .map(|_| init_sia_client("127.0.0.1", host_port, "password"))
+        .next()
+        .expect("couldn't connect to sia client within 5 attempts")
+        .await
+    {
+        log!("Waiting for walletd SiaClient to be ready: {error}");
+        Timer::sleep(1.).await;
+    }
     let client = init_sia_client("127.0.0.1", host_port, "password").await.unwrap();
     SiaTestnetContainer {
         container,
