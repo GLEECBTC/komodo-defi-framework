@@ -4,7 +4,6 @@ use mm2_main::lp_native_dex::lp_init;
 use mm2_main::lp_network::MAX_NETID;
 
 use coins::siacoin::{ApiClientHelpers, SiaApiClient, SiaClient, SiaClientConf};
-use coins::utxo::zcash_params_path;
 
 use crate::docker_tests::docker_tests_common::SIA_RPC_PARAMS;
 use common::custom_futures::timeout::FutureTimerExt;
@@ -15,7 +14,6 @@ use mm2_rpc::data::legacy::CoinInitResponse;
 use mm2_test_helpers::for_tests::MarketMakerIt;
 
 use chrono::Local;
-use core::pin::Pin;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -27,10 +25,6 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use testcontainers::core::{ContainerAsync, Mount, WaitFor};
-use testcontainers::runners::AsyncRunner;
-use testcontainers::GenericImage;
-use tokio::io::{AsyncBufRead, AsyncBufReadExt};
 use tokio::sync::OnceCell;
 use url::Url; // for read_line()
 
@@ -136,12 +130,6 @@ pub const BOB_KMD_KEY: TestKeyPair = TestKeyPair {
     wif: "UvU3bn2bucriZVDaSSB51aGGu9emUbmf9ZK72sdRjrD2Vb4smQ8T",
 };
 
-pub const CHARLIE_KMD_KEY: TestKeyPair = TestKeyPair {
-    address: "RHidEv1tYs7GxB2o6hYJcuruBcsPVSvutp",
-    pubkey: "0363bee6428ce79a60ff905573e8358b3ba827aac455f3377b495a020035ce9d30",
-    wif: "UtZxep1DqSk1UhizSmNktbZeoMqR3xkafRLXmgdwSKD7cVXE7TWP",
-};
-
 /// A new temporary directory created by init_test_dir() each time a test or group of tests is ran.
 /// eg, /tmp/kdf_tests_2025-02-18_11-36-21-802/ which might include subdirectories for each test.
 pub static SHARED_TEMP_DIR: OnceCell<PathBuf> = OnceCell::const_new();
@@ -243,26 +231,6 @@ macro_rules! current_function_name {
 
 pub(crate) use current_function_name;
 
-/// Takes the output of container.stdout() or container.stderr() and pipes it to the host's stdout.
-/// Should be spawned as a tokio task.
-pub async fn pipe_buf_to_stdout(mut reader: Pin<Box<dyn AsyncBufRead + Send>>) {
-    let mut line = String::new();
-    loop {
-        line.clear();
-        match reader.read_line(&mut line).await {
-            Ok(0) => break, // EOF
-            Ok(_) => {
-                print!("{}", line);
-                let _ = std::io::stdout().flush();
-            },
-            Err(e) => {
-                eprintln!("Error reading from stdout: {}", e);
-                break;
-            },
-        }
-    }
-}
-
 /// A container running a Sia walletd instance.
 /// The container will run until the `Container` falls out of scope. It will then be stopped and removed.
 /// It is sometimes useful while debugging to leave a container running after a test executes.
@@ -315,7 +283,9 @@ pub async fn get_global_walletd_container() -> Arc<SiaTestnetContainer> {
 
 pub struct TestKeyPair<'a> {
     pub address: &'a str,
+    #[allow(dead_code)]
     pub pubkey: &'a str,
+    #[allow(dead_code)]
     pub wif: &'a str,
 }
 
@@ -617,82 +587,14 @@ pub async fn wait_for_dsia_node_ready() {
     });
 }
 
-// Initialize a container with 2 komodod nodes.
-// First node is inaccisible via some port and used for mining only.
-// The second node is accisible via `port` and auth "test:test"
-pub async fn init_komodod_container() -> (ContainerAsync<GenericImage>, u16) {
-    // the port komodod will listen on the container's network interface
-    let port = 10000;
-    let image = GenericImage::new("docker.io/artempikulin/testblockchain", "multiarch")
-        .with_env_var("CLIENTS", "2")
-        .with_env_var("CHAIN", "ANYTHING")
-        .with_env_var("TEST_ADDY", CHARLIE_KMD_KEY.address)
-        .with_env_var("TEST_WIF", CHARLIE_KMD_KEY.wif)
-        .with_env_var("TEST_PUBKEY", CHARLIE_KMD_KEY.pubkey)
-        .with_env_var("DAEMON_URL", "http://test:test@127.0.0.1:7000")
-        .with_env_var("COIN", "Komodo")
-        .with_env_var("COIN_RPC_PORT", port.to_string())
-        //.with_wait_for(WaitFor::message_on_stdout("'name': 'ANYTHING'"))
-        .with_wait_for(WaitFor::seconds(20))
-        .with_exposed_port(port)
-        .with_mount(Mount::bind_mount(
-            zcash_params_path().display().to_string(),
-            "/root/.zcash-params",
-        ));
-    let container = image.start().await.unwrap();
-    let host_side_port = container.get_host_port_ipv4(port).await.unwrap();
-    (container, host_side_port)
-}
-
-// this is imprecise because it relies on polling the block height every 2 seconds
-// A docker container allowing the use of the `generate` RPC command was required from Decker as a
-// solution.
-#[allow(dead_code)]
-pub async fn mine_n_blocks(client: &KomododClient, target_blocks: u64) {
-    // Fetch current block height
-    let result = client.rpc("getblockcount", json!([])).await;
-    let start_height = result["result"]
-        .as_u64()
-        .expect("missing or invalid result field in initial getblockcount");
-    let target_height = start_height + target_blocks;
-
-    // Start mining
-    let _ = client.rpc("setgenerate", json!([true, 1])).await;
-
-    loop {
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-
-        let result = client.rpc("getblockcount", json!([])).await;
-        let current_height = result["result"]
-            .as_u64()
-            .expect("missing or invalid result field in getblockcount");
-
-        if current_height >= target_height {
-            break;
-        }
-    }
-
-    // Stop mining
-    let _ = client.rpc("setgenerate", json!([false])).await;
-}
-
-/** Initialize a container with 2 komodod nodes and their respective clients.
-Mines all blocks to CHARLIE_KMD_KEY including the premine amount of 10,000,000,000 coins
-Imports CHARLIE_KMD_KEY.wif to miner node then funds funded_key.address with 1,000,000 coins
-Imports funded_key.address to miner node and unfunded_key.address to nonminer node
-
-Returns the container and both clients.
-The docker container will run until this container falls out of scope.
-**/
-pub async fn init_komodod_clients(
-    funded_key: TestKeyPair<'_>,
-    unfunded_key: TestKeyPair<'_>,
-) -> (ContainerAsync<GenericImage>, (KomododClient, KomododClient)) {
-    let (container, port) = init_komodod_container().await;
-
+/// Connects to the the already initilized komodod container (running MYCOIN) and funds `funded_key` with some coins.
+/// Also imports both `funded_key` and `unfunded_key` addresses into the node.
+pub async fn get_komodod_client(funded_key: TestKeyPair<'_>, unfunded_key: TestKeyPair<'_>) -> KomododClient {
     let conf = KomododClientConf {
+        // This is where MYCOIN node runs.
+        // TODO: make a global constant for this.
         ip: IpAddr::from([127, 0, 0, 1]),
-        port,
+        port: 7000,
         rpcuser: "test".to_string(),
         rpcpassword: "test".to_string(),
         timeout: None,
@@ -706,17 +608,7 @@ pub async fn init_komodod_clients(
     let _ = client.rpc("importaddress", json!([funded_key.address])).await;
     let _ = client.rpc("importaddress", json!([unfunded_key.address])).await;
 
-    // Just a temporary clone until testing is complete.
-    let conf_clone = KomododClientConf {
-        ip: IpAddr::from([127, 0, 0, 1]),
-        port,
-        rpcuser: "test".to_string(),
-        rpcpassword: "test".to_string(),
-        timeout: None,
-    };
-    let client_clone = KomododClient::new(conf_clone).await;
-
-    (container, (client, client_clone))
+    client
 }
 
 // Wait for `ctx.rpc_started.is_some()` or timeout

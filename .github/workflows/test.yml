@@ -292,4 +292,4 @@ jobs:
 
       - name: Sia functional tests - short locktime
         run: |
-          _KDF_NO_UTXO_DOCKER= _KDF_NO_QTUM_DOCKER= _KDF_NO_SLP_DOCKER= _KDF_NO_ETH_DOCKER= _KDF_NO_COSMOS_DOCKER= _KDF_NO_ZOMBIE_DOCKER= cargo test --test 'docker_tests_main' --features run-docker-tests,enable-sia --no-fail-fast sia
+          _KDF_NO_QTUM_DOCKER= _KDF_NO_SLP_DOCKER= _KDF_NO_ETH_DOCKER= _KDF_NO_COSMOS_DOCKER= _KDF_NO_ZOMBIE_DOCKER= cargo test --test 'docker_tests_main' --features run-docker-tests,enable-sia --no-fail-fast sia

@@ -47,15 +47,15 @@ async fn test_bob_sells_dsia_for_dutxo_alice_fails_to_lock() {
     let netid = get_unique_netid();
 
     // Start the Utxo nodes container with Alice as miner
-    let (_utxo_container, (alice_client, bob_client)) = init_komodod_clients(ALICE_KMD_KEY, BOB_KMD_KEY).await;
+    let client = get_komodod_client(ALICE_KMD_KEY, BOB_KMD_KEY).await;
 
     // Start the Sia container and mine 155 blocks to Bob
     let dsia = get_global_walletd_container().await;
     dsia.client.mine_blocks(155, &BOB_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
-    let (_ctx_bob, mut mm_bob) = init_bob(&temp_dir, netid, Some(bob_client.conf.port)).await;
-    let (ctx_alice, mut mm_alice) = init_alice(&temp_dir, netid, Some(alice_client.conf.port)).await;
+    let (_ctx_bob, mut mm_bob) = init_bob(&temp_dir, netid, Some(client.conf.port)).await;
+    let (ctx_alice, mut mm_alice) = init_alice(&temp_dir, netid, Some(client.conf.port)).await;
 
     // Enable DSIA coin for Alice and Bob
     let _ = enable_dsia(&mm_bob, dsia.host_port).await;
@@ -108,15 +108,15 @@ async fn bob_sells_dsia_for_dutxo_bob_fails_to_spend() {
     let netid = get_unique_netid();
 
     // Start the Utxo nodes container with Alice as miner
-    let (_utxo_container, (alice_client, bob_client)) = init_komodod_clients(ALICE_KMD_KEY, BOB_KMD_KEY).await;
+    let client = get_komodod_client(ALICE_KMD_KEY, BOB_KMD_KEY).await;
 
     // Start the Sia container and mine 155 blocks to Bob
     let dsia = get_global_walletd_container().await;
     dsia.client.mine_blocks(155, &BOB_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
-    let (ctx_bob, mut mm_bob) = init_bob(&temp_dir, netid, Some(bob_client.conf.port)).await;
-    let (_ctx_alice, mut mm_alice) = init_alice(&temp_dir, netid, Some(alice_client.conf.port)).await;
+    let (ctx_bob, mut mm_bob) = init_bob(&temp_dir, netid, Some(client.conf.port)).await;
+    let (_ctx_alice, mut mm_alice) = init_alice(&temp_dir, netid, Some(client.conf.port)).await;
 
     // Enable DSIA coin for Alice and Bob
     let _ = enable_dsia(&mm_bob, dsia.host_port).await;
@@ -140,14 +140,6 @@ async fn bob_sells_dsia_for_dutxo_bob_fails_to_spend() {
 
     let dsia_port = dsia.host_port;
 
-    // Mine a block every 10 seconds to progress DSIA chain
-    tokio::spawn(async move {
-        loop {
-            dsia.client.mine_blocks(1, &CHARLIE_SIA_ADDRESS).await.unwrap();
-            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-        }
-    });
-
     // Stop Bob before he spends Alice's payment
     wait_until_event(&mm_bob, &uuid, "MakerPaymentSent", 600).await;
     ctx_bob.stop().await.unwrap();
@@ -156,7 +148,7 @@ async fn bob_sells_dsia_for_dutxo_bob_fails_to_spend() {
     wait_until_event(&mm_alice, &uuid, "TakerPaymentRefundFinished", 600).await;
 
     // Restart Bob and activate coins
-    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, Some(bob_client.conf.port)).await;
+    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, Some(client.conf.port)).await;
     let _ = enable_dsia(&mm_bob, dsia_port).await;
     let _ = enable_dutxo(&mm_bob).await;
 
@@ -179,15 +171,15 @@ async fn bob_sells_dutxo_for_dsia_bob_fails_to_spend() {
     let netid = get_unique_netid();
 
     // Start the Utxo nodes container with Bob as funded key
-    let (_utxo_container, (bob_client, alice_client)) = init_komodod_clients(BOB_KMD_KEY, ALICE_KMD_KEY).await;
+    let client = get_komodod_client(BOB_KMD_KEY, ALICE_KMD_KEY).await;
 
     // Start the Sia container and mine 155 blocks to Alice
     let dsia = get_global_walletd_container().await;
     dsia.client.mine_blocks(155, &ALICE_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
-    let (ctx_bob, mut mm_bob) = init_bob(&temp_dir, netid, Some(bob_client.conf.port)).await;
-    let (_ctx_alice, mut mm_alice) = init_alice(&temp_dir, netid, Some(alice_client.conf.port)).await;
+    let (ctx_bob, mut mm_bob) = init_bob(&temp_dir, netid, Some(client.conf.port)).await;
+    let (_ctx_alice, mut mm_alice) = init_alice(&temp_dir, netid, Some(client.conf.port)).await;
 
     // Enable DSIA coin for Alice and Bob
     let _ = enable_dsia(&mm_bob, dsia.host_port).await;
@@ -211,14 +203,6 @@ async fn bob_sells_dutxo_for_dsia_bob_fails_to_spend() {
 
     let dsia_port = dsia.host_port;
 
-    // Mine a block every 10 seconds to progress DSIA chain
-    tokio::spawn(async move {
-        loop {
-            dsia.client.mine_blocks(1, &CHARLIE_SIA_ADDRESS).await.unwrap();
-            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-        }
-    });
-
     // Stop Bob before he spends Alice's payment
     wait_until_event(&mm_bob, &uuid, "MakerPaymentSent", 600).await;
     ctx_bob.stop().await.unwrap();
@@ -227,7 +211,7 @@ async fn bob_sells_dutxo_for_dsia_bob_fails_to_spend() {
     wait_until_event(&mm_alice, &uuid, "TakerPaymentRefundFinished", 600).await;
 
     // Restart Bob and activate coins
-    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, Some(bob_client.conf.port)).await;
+    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, Some(client.conf.port)).await;
     let _ = enable_dsia(&mm_bob, dsia_port).await;
     let _ = enable_dutxo(&mm_bob).await;
 
