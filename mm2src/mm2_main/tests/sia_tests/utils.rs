@@ -29,7 +29,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use testcontainers::core::{ContainerAsync, Mount, WaitFor};
 use testcontainers::runners::AsyncRunner;
-use testcontainers::{GenericImage, RunnableImage};
+use testcontainers::GenericImage;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt};
 use tokio::sync::OnceCell;
 use url::Url; // for read_line()
@@ -88,7 +88,7 @@ pub const WALLETD_NETWORK_CONFIG: &str = r#"{
             "failsafeAddress": "000000000000000000000000000000000000000000000000000000000000000089eb0d6a8a69"
         },
         "hardforkV2": {
-            "allowHeight": 40,
+            "allowHeight": 0,
             "requireHeight": 7777777,
             "finalCutHeight": 8888888
         }
@@ -141,12 +141,6 @@ pub const CHARLIE_KMD_KEY: TestKeyPair = TestKeyPair {
     pubkey: "0363bee6428ce79a60ff905573e8358b3ba827aac455f3377b495a020035ce9d30",
     wif: "UtZxep1DqSk1UhizSmNktbZeoMqR3xkafRLXmgdwSKD7cVXE7TWP",
 };
-
-/// A single global walletd container that is shared between any test that uses init_global_walletd_container()
-pub static DSIA_GLOBAL_CONTAINER: OnceCell<Arc<SiaTestnetContainer>> = OnceCell::const_new();
-
-/// Used to ensure the mining thread is only started once globally
-pub static DSIA_MINING_THREAD_INIT: OnceCell<()> = OnceCell::const_new();
 
 /// A new temporary directory created by init_test_dir() each time a test or group of tests is ran.
 /// eg, /tmp/kdf_tests_2025-02-18_11-36-21-802/ which might include subdirectories for each test.
@@ -276,10 +270,6 @@ pub async fn pipe_buf_to_stdout(mut reader: Pin<Box<dyn AsyncBufRead + Send>>) {
 /// eg,
 /// let _leaked = Box::leak(Box::new(container));
 pub struct SiaTestnetContainer {
-    /// Docker container running walletd.
-    // Todo: check why this field was added
-    #[allow(dead_code)]
-    pub container: ContainerAsync<GenericImage>,
     /// SiaClient to interact with the walletd API within the container
     pub client: SiaClient,
     /// Port on the host that walletd API is bound to
@@ -310,35 +300,17 @@ pub async fn fund_address(client: &SiaClient, address: &Address, amount: Currenc
 
     // Broadcast the transaction
     client.broadcast_transaction(&tx).await.unwrap();
+    // Mine some blocks to confirm the transaction
+    client.mine_blocks(10, &CHARLIE_SIA_ADDRESS).await.unwrap();
 }
 
-/// Initialize the global walletd container and begin mining blocks every 10 seconds.
-pub async fn init_global_walletd_container() -> Arc<SiaTestnetContainer> {
-    let temp_dir = init_test_dir(current_function_name!(), true).await;
-
-    let container = DSIA_GLOBAL_CONTAINER
-        .get_or_init(|| async { Arc::new(init_walletd_container(&temp_dir).await) })
-        .await
-        .clone();
-
-    // Start a task to mine a block every 10 seconds
-    DSIA_MINING_THREAD_INIT
-        .get_or_init(|| async {
-            let client = container.client.clone();
-            common::log::debug!("Starting global DSIA mining thread");
-            tokio::spawn(async move {
-                // Mine 155 blocks to begin because coinbase maturity is 150
-                client.mine_blocks(155, &CHARLIE_SIA_ADDRESS).await.unwrap();
-                loop {
-                    tokio::time::sleep(Duration::from_secs(10)).await;
-                    client.mine_blocks(1, &CHARLIE_SIA_ADDRESS).await.unwrap();
-                    common::log::debug!("Mined 1 block on global DSIA container");
-                }
-            });
-        })
-        .await;
-
-    container
+/// Get the global walletd container
+pub async fn get_global_walletd_container() -> Arc<SiaTestnetContainer> {
+    let client = init_sia_client().await.unwrap();
+    Arc::new(SiaTestnetContainer {
+        host_port: client.base_url.port().unwrap(),
+        client,
+    })
 }
 
 pub struct TestKeyPair<'a> {
@@ -588,7 +560,8 @@ pub async fn init_bob(kdf_dir: &Path, netid: u16, utxo_rpc_port: Option<u16>) ->
 /// Initialize a Sia standalone SiaClient.
 /// This is useful to interact with a Sia testnet container for commands that are not from Alice or
 /// Bob. Eg, mining blocks to progress the chain.
-pub async fn init_sia_client(ip: &str, port: u16, password: &str) -> Result<SiaClient, String> {
+pub async fn init_sia_client() -> Result<SiaClient, String> {
+    let (ip, port, password) = SIA_RPC_PARAMS;
     let conf = SiaClientConf {
         server_url: Url::parse(&format!("http://{}:{}/", ip, port)).unwrap(),
         password: Some(password.to_string()),
@@ -597,16 +570,17 @@ pub async fn init_sia_client(ip: &str, port: u16, password: &str) -> Result<SiaC
     SiaClient::new(conf).await.map_err(|e| e.to_string())
 }
 
-#[cfg(feature = "enable-sia")]
+/// Wait for the global Dsia node to be ready by polling the current_height endpoint.
+/// Panics if the node is not ready after several attempts.
+/// Spawns a mining thread that will mine blocks every 10 seconds to advance the chain.
 pub async fn wait_for_dsia_node_ready() {
-    let (ip, port, password) = SIA_RPC_PARAMS;
     let mut attempts = 0;
     loop {
         if attempts >= 5 {
             panic!("Failed to connect to Dsia node after several attempts.");
         }
 
-        match init_sia_client(ip, port, password).await {
+        match init_sia_client().await {
             Ok(client) => match client.current_height().timeout(Duration::from_secs(6)).await {
                 Ok(Ok(block_number)) => {
                     log!("Dsia node is ready, latest block number: {:?}", block_number);
@@ -627,61 +601,20 @@ pub async fn wait_for_dsia_node_ready() {
         attempts += 1;
         Timer::sleep(1.).await;
     }
-}
 
-/// Initialize a walletd docker container with walletd API bound to a random port on the host.
-/// Returns the container and the host port it is bound to.
-/// The container will run until it falls out of scope.
-pub async fn init_walletd_container(temp_dir: &Path) -> SiaTestnetContainer {
-    // Create a directory within the shared temp directory to mount as the /config within the container
-    // eg, /tmp/kdf_tests_2025-02-18_11-36-21-802/walletd_config
-    let config_dir = temp_dir.join("walletd_config");
-    std::fs::create_dir_all(&config_dir).unwrap();
+    let client = init_sia_client().await.unwrap();
+    // Mine 155 blocks to begin because coinbase maturity is 150
+    client.mine_blocks(155, &CHARLIE_SIA_ADDRESS).await.unwrap();
 
-    // Write walletd.yml
-    std::fs::write(config_dir.join("walletd.yml"), WALLETD_CONFIG).expect("failed to write walletd.yml");
-
-    // Write ci_network.json
-    std::fs::write(config_dir.join("ci_network.json"), WALLETD_NETWORK_CONFIG)
-        .expect("failed to write ci_network.json");
-
-    // Define the Docker image with a tag
-    let image = GenericImage::new("ghcr.io/siafoundation/walletd", "master")
-        .with_exposed_port(9980)
-        .with_env_var("WALLETD_CONFIG_FILE", "/config/walletd.yml")
-        .with_wait_for(WaitFor::message_on_stdout("node started"))
-        .with_mount(Mount::bind_mount(
-            config_dir.to_str().expect("config path is invalid"),
-            "/config",
-        ));
-    let walletd_args = vec!["-network=/config/ci_network.json".to_string(), "-debug".to_string()];
-
-    // Wrap the image in `RunnableImage` to allow custom port mapping to an available host port
-    // 0 indicates that the host port will be automatically assigned to an available port
-    let runnable_image = RunnableImage::from((image, walletd_args)).with_mapped_port((0, 9980));
-
-    // Start the container. It will run until `Container` falls out of scope
-    let container = runnable_image.start().await.unwrap();
-
-    // Retrieve the host port that is mapped to the container's 9980 port
-    let host_port = container.get_host_port_ipv4(9980).await.unwrap();
-
-    // Initialize a SiaClient to interact with the walletd API
-    while let Err(error) = (1..=5)
-        .map(|_| init_sia_client("127.0.0.1", host_port, "password"))
-        .next()
-        .expect("couldn't connect to sia client within 5 attempts")
-        .await
-    {
-        log!("Waiting for walletd SiaClient to be ready: {error}");
-        Timer::sleep(1.).await;
-    }
-    let client = init_sia_client("127.0.0.1", host_port, "password").await.unwrap();
-    SiaTestnetContainer {
-        container,
-        client,
-        host_port,
-    }
+    // Spawn a loop that will keep mining blocks every 10 seconds to advance the chain
+    // and get the swap tests running.
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(10)).await;
+            client.mine_blocks(1, &CHARLIE_SIA_ADDRESS).await.unwrap();
+            common::log::debug!("Mined 1 block on global DSIA container");
+        }
+    });
 }
 
 // Initialize a container with 2 komodod nodes.

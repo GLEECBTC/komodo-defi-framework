@@ -50,7 +50,7 @@ async fn test_bob_sells_dsia_for_dutxo_alice_fails_to_lock() {
     let (_utxo_container, (alice_client, bob_client)) = init_komodod_clients(ALICE_KMD_KEY, BOB_KMD_KEY).await;
 
     // Start the Sia container and mine 155 blocks to Bob
-    let dsia = init_walletd_container(&temp_dir).await;
+    let dsia = get_global_walletd_container().await;
     dsia.client.mine_blocks(155, &BOB_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
@@ -111,7 +111,7 @@ async fn bob_sells_dsia_for_dutxo_bob_fails_to_spend() {
     let (_utxo_container, (alice_client, bob_client)) = init_komodod_clients(ALICE_KMD_KEY, BOB_KMD_KEY).await;
 
     // Start the Sia container and mine 155 blocks to Bob
-    let dsia = init_walletd_container(&temp_dir).await;
+    let dsia = get_global_walletd_container().await;
     dsia.client.mine_blocks(155, &BOB_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
@@ -182,7 +182,7 @@ async fn bob_sells_dutxo_for_dsia_bob_fails_to_spend() {
     let (_utxo_container, (bob_client, alice_client)) = init_komodod_clients(BOB_KMD_KEY, ALICE_KMD_KEY).await;
 
     // Start the Sia container and mine 155 blocks to Alice
-    let dsia = init_walletd_container(&temp_dir).await;
+    let dsia = get_global_walletd_container().await;
     dsia.client.mine_blocks(155, &ALICE_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances

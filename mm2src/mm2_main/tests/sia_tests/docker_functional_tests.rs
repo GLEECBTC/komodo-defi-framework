@@ -6,26 +6,6 @@ use mm2_test_helpers::for_tests::{enable_utxo_v2_electrum, start_swaps, wait_for
 
 use std::str::FromStr;
 
-// FIXME Alright - WIP stub to demonstrate used of a shared DSIA container amongst multiple tokio tests.
-#[tokio::test]
-#[ignore]
-async fn test_shared_dsia_container_wip() {
-    let container = init_global_walletd_container().await;
-    let sia_client = &container.client;
-    println!(
-        "first test height before : {}",
-        sia_client.current_height().await.unwrap()
-    );
-
-    fund_address(sia_client, &ALICE_SIA_ADDRESS, Currency::COIN * 10).await;
-
-    loop {
-        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-        let bal_resp = sia_client.address_balance(ALICE_SIA_ADDRESS.clone()).await.unwrap();
-        println!("first test balance: {:?}", bal_resp);
-    }
-}
-
 /// Not a real test, useful to start a DSIA container with identical parameters as the one used in
 /// other tests.
 /// Starts a new DSIA container and prints the port walletd is bound to on the host.
@@ -33,25 +13,22 @@ async fn test_shared_dsia_container_wip() {
 /// The container must be manually stopped.
 #[tokio::test]
 async fn debug_init_walletd_container() {
-    use std::mem;
-    let temp_dir = init_test_dir(current_function_name!(), true).await;
-    let dsia = init_walletd_container(&temp_dir).await;
-    println!("DSIA host port: {}", dsia.host_port);
+    let dsia = get_global_walletd_container().await;
+    log!("DSIA host port: {}", dsia.host_port);
 
     let address =
-        Address::from_str("591fcf237f8854b5653d1ac84ae4c107b37f148c3c7b413f292d48db0c25a8840be0653e411f").unwrap();
+        Address::from_str("439536d27e5cbf46b0ff873056fa8ef5424fd3f574e5ed694450c8dc4323fe6062d40a11fbc9").unwrap();
 
     let response = dsia.client.address_balance(address.clone()).await.unwrap();
-    println!("Address balance: {:?}", response);
+    log!("Address balance: {:?}", response);
+    assert_eq!(response.siacoins, Currency(0));
 
-    dsia.client.mine_blocks(1, &address).await.unwrap();
+    fund_address(&dsia.client, &address, Currency(10)).await;
 
     let response = dsia.client.address_balance(address).await.unwrap();
-    println!("Address balance: {:?}", response);
-    assert_eq!(response.immature_siacoins, Currency(299999000000000000000000000000));
+    log!("Address balance: {:?}", response);
 
-    // Prevent automatic testcontainers cleanup
-    mem::forget(dsia);
+    assert_eq!(response.siacoins, Currency(10));
 }
 
 /// Initialize Alice KDF instance
@@ -89,7 +66,7 @@ async fn test_init_alice_and_bob() {
 #[tokio::test]
 async fn test_alice_and_bob_enable_dsia() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
-    let dsia = init_walletd_container(&temp_dir).await;
+    let dsia = get_global_walletd_container().await;
     let netid = get_unique_netid();
 
     let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, None).await;
@@ -124,7 +101,7 @@ async fn test_bob_sells_doc_for_dsia() {
     let netid = get_unique_netid();
 
     // Start the Sia container
-    let dsia = init_walletd_container(&temp_dir).await;
+    let dsia = get_global_walletd_container().await;
 
     // Mine blocks to give Alice some funds. Coinbase maturity requires >150 confirmations.
     dsia.client.mine_blocks(155, &ALICE_SIA_ADDRESS).await.unwrap();
@@ -176,7 +153,7 @@ async fn test_bob_sells_dsia_for_doc() {
     let netid = get_unique_netid();
 
     // Start the Sia container
-    let dsia = init_walletd_container(&temp_dir).await;
+    let dsia = get_global_walletd_container().await;
 
     // Mine blocks to give Bob some funds. Coinbase maturity requires >150 confirmations.
     dsia.client.mine_blocks(155, &BOB_SIA_ADDRESS).await.unwrap();
@@ -236,7 +213,7 @@ async fn test_bob_sells_dsia_for_dutxo() {
     });
 
     // Start the Sia container and mine 155 blocks to Bob
-    let dsia = init_walletd_container(&temp_dir).await;
+    let dsia = get_global_walletd_container().await;
     dsia.client.mine_blocks(155, &BOB_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
@@ -290,7 +267,7 @@ async fn test_bob_sells_dutxo_for_dsia() {
         init_komodod_clients(BOB_KMD_KEY, ALICE_KMD_KEY).await;
 
     // Start the Sia container and mine 155 blocks to Alice
-    let dsia = init_walletd_container(&temp_dir).await;
+    let dsia = get_global_walletd_container().await;
     dsia.client.mine_blocks(155, &ALICE_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
