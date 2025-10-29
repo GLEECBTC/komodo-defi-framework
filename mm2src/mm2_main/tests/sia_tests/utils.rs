@@ -618,13 +618,11 @@ pub async fn wait_for_dsia_node_ready() {
 }
 
 // Initialize a container with 2 komodod nodes.
-// Binds "main" node(has address imported and mines blocks) to `port`
-// Binds additional node to `port` - 1
-// Auth for both nodes is "test:test"
-pub async fn init_komodod_container() -> (ContainerAsync<GenericImage>, u16, u16) {
-    // the ports komodod will listen on the container's network interface
-    let mining_node_port = 10000;
-    let nonmining_node_port = mining_node_port - 1;
+// First node is inaccisible via some port and used for mining only.
+// The second node is accisible via `port` and auth "test:test"
+pub async fn init_komodod_container() -> (ContainerAsync<GenericImage>, u16) {
+    // the port komodod will listen on the container's network interface
+    let port = 10000;
     let image = GenericImage::new("docker.io/artempikulin/testblockchain", "multiarch")
         .with_env_var("CLIENTS", "2")
         .with_env_var("CHAIN", "ANYTHING")
@@ -633,19 +631,17 @@ pub async fn init_komodod_container() -> (ContainerAsync<GenericImage>, u16, u16
         .with_env_var("TEST_PUBKEY", CHARLIE_KMD_KEY.pubkey)
         .with_env_var("DAEMON_URL", "http://test:test@127.0.0.1:7000")
         .with_env_var("COIN", "Komodo")
-        .with_env_var("COIN_RPC_PORT", nonmining_node_port.to_string())
+        .with_env_var("COIN_RPC_PORT", port.to_string())
         //.with_wait_for(WaitFor::message_on_stdout("'name': 'ANYTHING'"))
         .with_wait_for(WaitFor::seconds(20))
-        .with_exposed_port(mining_node_port)
-        .with_exposed_port(nonmining_node_port)
+        .with_exposed_port(port)
         .with_mount(Mount::bind_mount(
             zcash_params_path().display().to_string(),
             "/root/.zcash-params",
         ));
     let container = image.start().await.unwrap();
-    let mining_host_port = container.get_host_port_ipv4(mining_node_port).await.unwrap();
-    let nonmining_host_port = container.get_host_port_ipv4(nonmining_node_port).await.unwrap();
-    (container, mining_host_port, nonmining_host_port)
+    let host_side_port = container.get_host_port_ipv4(port).await.unwrap();
+    (container, host_side_port)
 }
 
 // this is imprecise because it relies on polling the block height every 2 seconds
@@ -692,37 +688,35 @@ pub async fn init_komodod_clients(
     funded_key: TestKeyPair<'_>,
     unfunded_key: TestKeyPair<'_>,
 ) -> (ContainerAsync<GenericImage>, (KomododClient, KomododClient)) {
-    let (container, funded_port, unfunded_port) = init_komodod_container().await;
-    let miner_client_conf = KomododClientConf {
+    let (container, port) = init_komodod_container().await;
+
+    let conf = KomododClientConf {
         ip: IpAddr::from([127, 0, 0, 1]),
-        port: funded_port,
+        port,
         rpcuser: "test".to_string(),
         rpcpassword: "test".to_string(),
         timeout: None,
     };
+    let client = KomododClient::new(conf).await;
 
-    let nonminer_client_conf = KomododClientConf {
+    // Send 1,000,000 coins to funded_key.address
+    let _ = client.rpc("sendtoaddress", json!([funded_key.address, 1000000])).await;
+
+    // Import both addresses to our node.
+    let _ = client.rpc("importaddress", json!([funded_key.address])).await;
+    let _ = client.rpc("importaddress", json!([unfunded_key.address])).await;
+
+    // Just a temporary clone until testing is complete.
+    let conf_clone = KomododClientConf {
         ip: IpAddr::from([127, 0, 0, 1]),
-        port: unfunded_port,
+        port,
         rpcuser: "test".to_string(),
         rpcpassword: "test".to_string(),
         timeout: None,
     };
+    let client_clone = KomododClient::new(conf_clone).await;
 
-    let miner = KomododClient::new(miner_client_conf).await;
-    let nonminer = KomododClient::new(nonminer_client_conf).await;
-
-    // import Charlie's private key to miner node to allow spending the premined coins
-    let _ = miner.rpc("importprivkey", json!([CHARLIE_KMD_KEY.wif])).await;
-
-    // Send 1,000,000 coins from Charlie to funded_key.address
-    let _ = miner.rpc("sendtoaddress", json!([funded_key.address, 1000000])).await;
-
-    // Import funded_key.address to miner node and unfunded_key.address to nonminer node
-    let _ = miner.rpc("importaddress", json!([funded_key.address])).await;
-    let _ = nonminer.rpc("importaddress", json!([unfunded_key.address])).await;
-
-    (container, (miner, nonminer))
+    (container, (client, client_clone))
 }
 
 // Wait for `ctx.rpc_started.is_some()` or timeout
