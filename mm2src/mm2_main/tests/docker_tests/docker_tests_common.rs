@@ -474,8 +474,7 @@ pub fn sia_docker_node(ticker: &'static str, port: u16) -> DockerNode {
     let args = vec!["-network=/config/ci_network.json".to_string(), "-debug".to_string()];
     let image = RunnableImage::from(image)
         .with_mapped_port((port, port))
-        .with_args(args)
-        .with_container_name("sia-docker");
+        .with_args(args);
 
     let container = image.start().expect("Failed to start Sia docker node");
     DockerNode {
