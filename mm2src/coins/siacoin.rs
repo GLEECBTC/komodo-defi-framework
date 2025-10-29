@@ -735,10 +735,11 @@ impl MarketCoinOps for SiaCoin {
     }
 
     // Todo: Implement in this PR, this was added to dev while work in this code was being done
-    fn address_from_pubkey(&self, _pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
-        MmError::err(AddressFromPubkeyError::InternalError(
-            "SiaCoin::address_from_pubkey: Unsupported".to_string(),
-        ))
+    fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
+        let pubkey_bytes = &pubkey.0[..32];
+        let pubkey =
+            PublicKey::from_bytes(pubkey_bytes).map_err(|e| AddressFromPubkeyError::InternalError(e.to_string()))?;
+        Ok(pubkey.address().to_string())
     }
 
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {

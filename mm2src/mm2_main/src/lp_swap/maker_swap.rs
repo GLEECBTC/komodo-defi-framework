@@ -2307,18 +2307,6 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
                         .dispatch_async(ctx.clone(), LpEvents::MakerSwapStatusChanged(event_to_send))
                         .await;
                     drop(dispatcher);
-                    // Send a notification to the swap status streamer about a new event.
-                    ctx.event_stream_manager
-                        .send_fn(&SwapStatusStreamer::derive_streamer_id(()), || {
-                            SwapStatusEvent::MakerV1 {
-                                uuid: running_swap.uuid,
-                                event: to_save.clone(),
-                            }
-                        })
-                        .ok();
-                    save_my_maker_swap_event(&ctx, &running_swap, to_save)
-                        .await
-                        .expect("!save_my_maker_swap_event");
                     if event.should_ban_taker() {
                         ban_pubkey_on_failed_swap(
                             &ctx,
@@ -2334,6 +2322,19 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
 
                     status.status(swap_tags!(), &event.status_str());
                     running_swap.apply_event(event);
+
+                    // Send a notification to the swap status streamer about a new event.
+                    ctx.event_stream_manager
+                        .send_fn(&SwapStatusStreamer::derive_streamer_id(()), || {
+                            SwapStatusEvent::MakerV1 {
+                                uuid: running_swap.uuid,
+                                event: to_save.clone(),
+                            }
+                        })
+                        .ok();
+                    save_my_maker_swap_event(&ctx, &running_swap, to_save)
+                        .await
+                        .expect("!save_my_maker_swap_event");
                 }
                 match res.0 {
                     Some(c) => {

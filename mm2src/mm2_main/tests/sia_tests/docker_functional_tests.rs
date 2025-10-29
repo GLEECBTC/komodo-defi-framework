@@ -196,7 +196,6 @@ async fn test_bob_sells_dsia_for_doc() {
 /// Initialize Alice and Bob, initialize Sia testnet container, initialize UTXO testnet container,
 /// Bob sells DSIA for Alice's DUTXO
 #[tokio::test]
-#[ignore]
 async fn test_bob_sells_dsia_for_dutxo() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
     let netid = get_unique_netid();

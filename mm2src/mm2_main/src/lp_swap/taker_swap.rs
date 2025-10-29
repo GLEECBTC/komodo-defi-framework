@@ -498,18 +498,6 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
                         event: event.clone(),
                     };
 
-                    // Send a notification to the swap status streamer about a new event.
-                    ctx.event_stream_manager
-                        .send_fn(&SwapStatusStreamer::derive_streamer_id(()), || {
-                            SwapStatusEvent::TakerV1 {
-                                uuid: running_swap.uuid,
-                                event: to_save.clone(),
-                            }
-                        })
-                        .ok();
-                    save_my_taker_swap_event(&ctx, &running_swap, to_save)
-                        .await
-                        .expect("!save_my_taker_swap_event");
                     if event.should_ban_maker() {
                         ban_pubkey_on_failed_swap(
                             &ctx,
@@ -525,6 +513,19 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
 
                     status.status(&[&"swap", &("uuid", uuid_str.as_str())], &event.status_str());
                     running_swap.apply_event(event);
+
+                    // Send a notification to the swap status streamer about a new event.
+                    ctx.event_stream_manager
+                        .send_fn(&SwapStatusStreamer::derive_streamer_id(()), || {
+                            SwapStatusEvent::TakerV1 {
+                                uuid: running_swap.uuid,
+                                event: to_save.clone(),
+                            }
+                        })
+                        .ok();
+                    save_my_taker_swap_event(&ctx, &running_swap, to_save)
+                        .await
+                        .expect("!save_my_taker_swap_event");
                 }
                 match res.0 {
                     Some(c) => {
