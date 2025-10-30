@@ -19,7 +19,7 @@ use common::executor::abortable_queue::{AbortableQueue, WeakSpawner};
 use common::jsonrpc_client::{JsonRpcBatchClient, JsonRpcClient, JsonRpcError, JsonRpcErrorType, JsonRpcId,
                              JsonRpcMultiClient, JsonRpcRemoteAddr, JsonRpcRequest, JsonRpcRequestEnum,
                              JsonRpcResponseEnum, JsonRpcResponseFut, RpcRes};
-use common::log::warn;
+use common::log::{info, warn};
 use common::{median, OrdRange};
 use keys::hash::H256;
 use keys::Address;
@@ -319,22 +319,55 @@ impl ElectrumClient {
             Ok(response) => Ok(response),
             // If we failed the request using only the active connections, try again using all connections.
             Err(_) if !send_to_all => {
-                warn!(
-                    "[coin={}] Failed to send the request using active connections, trying all connections.",
-                    self.coin_ticker()
-                );
+                let max_connected = self.connection_manager.config().max_connected;
+                let min_connected = self.connection_manager.config().min_connected;
+                let active_conns = self.connection_manager.get_active_connections().len();
                 let connections = self.connection_manager.get_all_connections();
-                // At this point we should have all the connections disconnected since all
-                // the active connections failed (and we disconnected them in the process).
-                // So use a higher concurrency to speed up the response time.
-                //
-                // Note that a side effect of this is that we might break the `max_connected` threshold for
-                // a short time since the connection manager's background task will be trying to establish
-                // connections at the same time. This is not as bad though since the manager's background task
-                // tries connections sequentially and we are expected for finish much quicker due to parallelizing.
-                let concurrency = self.connection_manager.config().max_connected;
+                let all_conns = connections.len();
+                
+                warn!(
+                    "[coin={}] FALLBACK: Failed to send request using active connections, trying all connections. \
+                     Config: max_connected={}, min_connected={}, active_conns={}, all_conns={}",
+                    self.coin_ticker(),
+                    max_connected,
+                    min_connected,
+                    active_conns,
+                    all_conns
+                );
+                
+                // For strict single-connection mode (max_connected=1), we need to ensure only one connection
+                // is established at any time. Use concurrency=1 to try servers strictly sequentially.
+                let concurrency = if max_connected == 1 {
+                    info!(
+                        "[coin={}] FALLBACK: Strict single-connection mode enabled, trying servers sequentially",
+                        self.coin_ticker()
+                    );
+                    1
+                } else {
+                    max_connected
+                };
+                
                 match self.send_request_using(&request, connections, false, concurrency).await {
-                    Ok(response) => Ok(response),
+                    Ok(response) => {
+                        // In strict single-connection mode, ensure we only have one maintained connection
+                        if max_connected == 1 {
+                            let maintained = self.connection_manager.get_active_connections();
+                            if maintained.len() > 1 {
+                                warn!(
+                                    "[coin={}] FALLBACK: After success, found {} maintained connections in strict mode, pruning extras",
+                                    self.coin_ticker(),
+                                    maintained.len()
+                                );
+                                for (idx, conn) in maintained.iter().enumerate() {
+                                    if idx > 0 {
+                                        self.connection_manager.not_needed(conn.address());
+                                        conn.disconnect(None);
+                                    }
+                                }
+                            }
+                        }
+                        Ok(response)
+                    },
                     Err(err_vec) => Err(JsonRpcErrorType::Internal(format!("All servers errored: {err_vec:?}"))),
                 }
             },

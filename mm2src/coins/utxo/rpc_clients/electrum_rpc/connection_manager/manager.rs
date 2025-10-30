@@ -9,7 +9,7 @@ use super::connection_context::ConnectionContext;
 use crate::utxo::rpc_clients::UtxoRpcClientOps;
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{AbortableSystem, SpawnFuture, Timer};
-use common::log::{debug, error, LogOnError};
+use common::log::{debug, error, info, warn, LogOnError};
 use common::notifier::{Notifiee, Notifier};
 use common::now_ms;
 use keys::Address;
@@ -430,6 +430,14 @@ impl ConnectionManager {
             if maintained_connections_size < self.config().max_connected
                 || connection_id < lowest_priority_connection_id
             {
+                info!(
+                    "BACKGROUND_TASK: Attempting to establish connection to {} (maintained={}, max={}, strict_mode={})",
+                    address,
+                    maintained_connections_size,
+                    self.config().max_connected,
+                    self.config().max_connected == 1
+                );
+                
                 // Now that we know the connection is good to be inserted, try to establish it.
                 if let Err(e) = connection.establish_connection_loop(client.clone()).await {
                     if log_errors {
@@ -441,7 +449,13 @@ impl ConnectionManager {
                     }
                     continue;
                 }
-                self.maintain(connection_id, address);
+                self.maintain(connection_id, address.clone());
+                
+                info!(
+                    "BACKGROUND_TASK: Successfully maintained connection to {} (total_maintained={})",
+                    address,
+                    self.read_maintained_connections().len()
+                );
             } else {
                 // If any of the two conditions on the `if` statement above are not met, there is nothing to do.
                 // At this point we have already collected `max_connected` connections and also the current connection
@@ -486,8 +500,15 @@ impl ConnectionManager {
         maintained_connections.insert(id, server_address);
         // If we have reached the `max_connected` threshold then remove the lowest priority connection.
         if maintained_connections.len() > self.config().max_connected {
+            warn!(
+                "PRUNING: maintained_connections={} exceeds max_connected={}, removing lowest priority connection",
+                maintained_connections.len(),
+                self.config().max_connected
+            );
             let lowest_priority_connection_id = *maintained_connections.keys().next_back().unwrap_or(&u32::MAX);
-            maintained_connections.remove(&lowest_priority_connection_id);
+            if let Some(removed_addr) = maintained_connections.remove(&lowest_priority_connection_id) {
+                info!("PRUNING: Removed connection to {} (id={})", removed_addr, lowest_priority_connection_id);
+            }
         }
     }
 
