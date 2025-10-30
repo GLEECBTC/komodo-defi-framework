@@ -37,7 +37,6 @@ can use the default of 900 seconds (CUSTOM_PAYMENT_LOCKTIME_DEFAULT).
 /// Bob sells DSIA for Alice's DUTXO
 /// Alice pays fee, Bob locks payment, Alice disappears prior to locking her payment
 #[tokio::test]
-#[ignore]
 async fn test_bob_sells_dsia_for_dutxo_alice_fails_to_lock() {
     // set payment locktime to 60 seconds
     // FIXME this is a global setting and will affect other tests
@@ -77,14 +76,6 @@ async fn test_bob_sells_dsia_for_dutxo_alice_fails_to_lock() {
         .cloned()
         .unwrap();
 
-    // Mine a block every 10 seconds to progress DSIA chain
-    tokio::spawn(async move {
-        loop {
-            dsia.client.mine_blocks(1, &CHARLIE_SIA_ADDRESS).await.unwrap();
-            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-        }
-    });
-
     // Stop Alice before she locks her payment
     wait_until_event(&mm_alice, &uuid, "TakerFeeSent", 600).await;
     ctx_alice.stop().await.unwrap();
@@ -98,7 +89,6 @@ async fn test_bob_sells_dsia_for_dutxo_alice_fails_to_lock() {
 /// Alice pays fee, Bob locks payment, Alice locks payment, Bob disappears prior to spending Alice's
 /// payment, Alice refunds her payment, Bob refunds his payment
 #[tokio::test]
-#[ignore]
 async fn bob_sells_dsia_for_dutxo_bob_fails_to_spend() {
     // set payment locktime to 60 seconds
     // FIXME this is a global setting and will affect other tests
@@ -161,7 +151,6 @@ async fn bob_sells_dsia_for_dutxo_bob_fails_to_spend() {
 /// Alice pays fee, Bob locks payment, Alice locks payment, Bob disappears prior to spending Alice's
 /// payment, Alice refunds her payment, Bob refunds his payment
 #[tokio::test]
-#[ignore]
 async fn bob_sells_dutxo_for_dsia_bob_fails_to_spend() {
     // set payment locktime to 60 seconds
     // FIXME this is a global setting and will affect other tests
