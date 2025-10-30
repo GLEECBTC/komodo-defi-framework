@@ -292,4 +292,5 @@ jobs:
 
       - name: Sia functional tests - short locktime
         run: |
+          wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/v0.8.1//zcutil/fetch-params-alt.sh | bash
           _KDF_NO_QTUM_DOCKER= _KDF_NO_SLP_DOCKER= _KDF_NO_ETH_DOCKER= _KDF_NO_COSMOS_DOCKER= _KDF_NO_ZOMBIE_DOCKER= cargo test --test 'docker_tests_main' --features run-docker-tests,enable-sia --no-fail-fast sia
