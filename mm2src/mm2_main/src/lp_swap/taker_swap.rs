@@ -1847,7 +1847,7 @@ impl TakerSwap {
     }
 
     async fn wait_for_taker_payment_spend(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        const BROADCAST_MSG_INTERVAL_SEC: f64 = 600.;
+        const BROADCAST_MSG_INTERVAL_SEC: f64 = 10.;
 
         let tx_hex = self.r().taker_payment.as_ref().unwrap().tx_hex.clone();
         let mut watcher_broadcast_abort_handle = None;
