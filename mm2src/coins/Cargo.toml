@@ -85,7 +85,7 @@ mm2_io = { path = "../mm2_io" }
 mm2_metrics = { path = "../mm2_metrics" }
 mm2_net = { path = "../mm2_net" }
 mm2_number = { path = "../mm2_number"}
-mm2_p2p = { path = "../mm2_p2p", features = ["application"] }
+mm2_p2p = { path = "../mm2_p2p", default-features = false }
 mm2_rpc = { path = "../mm2_rpc" }
 mm2_state_machine = { path = "../mm2_state_machine" }
 mocktopus = { workspace =  true, optional = true }
@@ -118,7 +118,6 @@ sha3.workspace = true
 utxo_signer = { path = "utxo_signer" }
 # using the same version as cosmrs
 tendermint-rpc.workspace = true
-tokio-tungstenite-wasm = { workspace = true, features = ["rustls-tls-native-roots"]}
 url.workspace = true
 uuid.workspace = true
 # One of web3 dependencies is the old `tokio-uds 0.1.7` which fails cross-compiling to ARM.
@@ -176,16 +175,23 @@ timed-map = { workspace = true, features = ["rustc-hash"] }
 tokio.workspace = true
 tokio-rustls.workspace = true
 tonic = { workspace = true, features = ["codegen", "prost", "gzip", "tls", "tls-webpki-roots"] }
-webpki-roots.workspace = true
 zcash_client_sqlite.workspace = true
 zcash_proofs = { workspace = true, features = ["local-prover", "multicore"] }
+
+[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))'.dependencies]
+webpki-roots.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 winapi.workspace = true
 
-# iOS-specific dependencies to fix certificate validation issues
+# iOS-specific dependencies to fix certificate validation issues with Let's Encrypt ECDSA certificates
 [target.'cfg(target_os = "ios")'.dependencies]
-tokio-tungstenite-wasm = { workspace = true, features = ["rustls-tls-webpki-roots"]}
+tokio-tungstenite-wasm = { workspace = true, features = ["rustls-tls-webpki-roots"] }
+webpki-roots = "0.26"
+
+# Non-iOS platforms use native certificate roots
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+tokio-tungstenite-wasm = { workspace = true, features = ["rustls-tls-native-roots"] }
 
 [dev-dependencies]
 mm2_test_helpers = { path = "../mm2_test_helpers" }

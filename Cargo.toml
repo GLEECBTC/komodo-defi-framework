@@ -197,7 +197,7 @@ time = "0.3.36"
 timed-map = { version = "1.5", features = ["rustc-hash", "serde", "wasm"] }
 tokio = { version = "1.47",  default-features = false }
 tokio-rustls = { version = "0.24", default-features = false }
-tokio-tungstenite-wasm = { git = "https://github.com/KomodoPlatform/tokio-tungstenite-wasm", rev = "8fc7e2f", default-features = false, features = ["rustls-tls-native-roots"]}
+tokio-tungstenite-wasm = { git = "https://github.com/KomodoPlatform/tokio-tungstenite-wasm", rev = "8fc7e2f", default-features = false }
 tonic = { version = "0.10", default-features = false }
 tonic-build = { version = "0.10", default-features = false, features = ["prost"] }
 tower-service = "0.3"
@@ -212,7 +212,7 @@ wasm-bindgen = "0.2.100"
 wasm-bindgen-futures = "0.4.50"
 wasm-bindgen-test = "0.3.50"
 wc_common = { git = "https://github.com/komodoplatform/walletconnectrust", tag = "k-0.1.3" }
-webpki-roots = "0.26"
+webpki-roots = "0.25"
 web-sys = {version = "0.3.55", default-features = false }
 # we don't need the default web3 features at all since we added our own web3 transport using shared httparse.workspace = true instance.
 # one of web3 dependencies is the old `tokio-uds 0.1.7` which fails cross-compiling to arm.

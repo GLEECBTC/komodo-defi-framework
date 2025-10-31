@@ -1067,6 +1067,7 @@ dependencies = [
  "web-sys",
  "web-time",
  "web3",
+ "webpki-roots 0.25.4",
  "webpki-roots 0.26.11",
  "winapi",
  "zbase32",
