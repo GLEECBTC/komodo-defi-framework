@@ -81,25 +81,19 @@ fn rustls_client_config(unsafe_conf: bool) -> Arc<ClientConfig> {
     let mut cert_store = RootCertStore::empty();
 
     #[cfg(target_os = "ios")]
-    cert_store.add_trust_anchors(
-        TLS_SERVER_ROOTS
-            .iter()
-            .map(|ta| OwnedTrustAnchor::from_subject_spki_name_constraints(
-                ta.subject.to_vec(), 
-                ta.subject_public_key_info.to_vec(), 
-                ta.name_constraints.as_ref().map(|nc| nc.to_vec())
-            )),
-    );
+    cert_store.add_trust_anchors(TLS_SERVER_ROOTS.iter().map(|ta| {
+        OwnedTrustAnchor::from_subject_spki_name_constraints(
+            ta.subject.to_vec(),
+            ta.subject_public_key_info.to_vec(),
+            ta.name_constraints.as_ref().map(|nc| nc.to_vec()),
+        )
+    }));
 
     #[cfg(not(target_os = "ios"))]
     cert_store.add_trust_anchors(
         TLS_SERVER_ROOTS
             .iter()
-            .map(|ta| OwnedTrustAnchor::from_subject_spki_name_constraints(
-                ta.subject, 
-                ta.spki, 
-                ta.name_constraints
-            )),
+            .map(|ta| OwnedTrustAnchor::from_subject_spki_name_constraints(ta.subject, ta.spki, ta.name_constraints)),
     );
 
     let mut tls_config = rustls::ClientConfig::builder()
