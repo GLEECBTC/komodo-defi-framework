@@ -397,19 +397,14 @@ impl RpcCommonOps for TendermintCoin {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(Default, PartialEq)]
 pub enum TendermintWalletConnectionType {
     Wc(kdf_walletconnect::WcTopic),
     WcLedger(kdf_walletconnect::WcTopic),
     KeplrLedger,
     Keplr,
+    #[default]
     Native,
-}
-
-impl Default for TendermintWalletConnectionType {
-    fn default() -> Self {
-        Self::Native
-    }
 }
 
 pub struct TendermintCoinImpl {
