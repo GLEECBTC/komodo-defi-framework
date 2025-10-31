@@ -118,7 +118,7 @@ sha3.workspace = true
 utxo_signer = { path = "utxo_signer" }
 # using the same version as cosmrs
 tendermint-rpc.workspace = true
-tokio-tungstenite-wasm = { workspace = true, features = ["rustls-tls-webpki-roots"]}
+tokio-tungstenite-wasm = { workspace = true, features = ["rustls-tls-native-roots"]}
 url.workspace = true
 uuid.workspace = true
 # One of web3 dependencies is the old `tokio-uds 0.1.7` which fails cross-compiling to ARM.
@@ -182,6 +182,10 @@ zcash_proofs = { workspace = true, features = ["local-prover", "multicore"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi.workspace = true
+
+# iOS-specific dependencies to fix certificate validation issues
+[target.'cfg(target_os = "ios")'.dependencies]
+tokio-tungstenite-wasm = { workspace = true, features = ["rustls-tls-webpki-roots"]}
 
 [dev-dependencies]
 mm2_test_helpers = { path = "../mm2_test_helpers" }
