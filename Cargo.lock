@@ -1067,7 +1067,7 @@ dependencies = [
  "web-sys",
  "web-time",
  "web3",
- "webpki-roots 0.25.4",
+ "webpki-roots 0.26.11",
  "winapi",
  "zbase32",
  "zcash_client_backend",
@@ -8616,6 +8616,7 @@ dependencies = [
  "tokio-rustls 0.23.2",
  "tungstenite",
  "webpki",
+ "webpki-roots 0.22.3",
 ]
 
 [[package]]
@@ -9441,6 +9442,15 @@ name = "webpki-roots"
 version = "0.25.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f20c57d8d7db6d3b86154206ae5d8fba62dd39573114de97c2cb0578251f8e1"
+
+[[package]]
+name = "webpki-roots"
+version = "0.26.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "521bc38abb08001b01866da9f51eb7c5d647a19260e00054a8c7fd5f9e57f7a9"
+dependencies = [
+ "webpki-roots 1.0.2",
+]
 
 [[package]]
 name = "webpki-roots"
