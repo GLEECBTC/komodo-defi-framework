@@ -19,16 +19,18 @@ use libp2p::request_response::ResponseChannel;
 use libp2p::swarm::{ConnectionDenied, ConnectionId, NetworkBehaviour, SwarmEvent, ToSwarm};
 use libp2p::{identity, noise, PeerId, Swarm};
 use libp2p::{Multiaddr, Transport};
+use libp2p_allow_block_list::{Behaviour as AllowBlockListBehaviour, BlockedPeers};
 use log::{debug, error, info};
 use mm2_net::ip_addr::is_global_ipv4;
 use rand::seq::SliceRandom;
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::net::IpAddr;
 use std::sync::{Mutex, MutexGuard};
 use std::task::{Context, Poll};
 use timed_map::{MapKind, TimedMap};
+use void::Void;
 
 use super::peers_exchange::{PeerAddresses, PeersExchange, PeersExchangeRequest, PeersExchangeResponse};
 use super::ping::AdexPing;
@@ -39,11 +41,14 @@ use crate::application::request_response::network_info::NetworkInfoRequest;
 use crate::application::request_response::P2PRequest;
 use crate::relay_address::{RelayAddress, RelayAddressError};
 use crate::swarm_runtime::SwarmRuntime;
-use crate::{decode_message, encode_message, NetworkInfo, NetworkPorts, RequestResponseBehaviourEvent};
+use crate::{
+    ban_reason, decode_message, encode_message, remove_ban_reason, BanReason, NetworkInfo, NetworkPorts,
+    RequestResponseBehaviourEvent,
+};
 
 pub use libp2p::gossipsub::{Behaviour as Gossipsub, IdentTopic, MessageAuthenticity, MessageId, Topic, TopicHash};
 pub use libp2p::gossipsub::{
-    ConfigBuilder as GossipsubConfigBuilder, Event as GossipsubEvent, Message as GossipsubMessage,
+    ConfigBuilder as GossipsubConfigBuilder, Event as GossipsubEvent, Message as GossipsubMessage, MessageAcceptance,
 };
 
 pub type AdexCmdTx = Sender<AdexBehaviourCmd>;
@@ -184,9 +189,18 @@ pub enum AdexBehaviourCmd {
         peer: PeerId,
         addresses: PeerAddresses,
     },
-    PropagateMessage {
-        message_id: MessageId,
+    /// Report gossipsub message validation result (Accept/Reject/Ignore).
+    ReportMessageValidation {
         propagation_source: PeerId,
+        message_id: MessageId,
+        acceptance: MessageAcceptance,
+    },
+    TempBanPeer {
+        peer: PeerId,
+        duration: Duration,
+    },
+    UnbanPeer {
+        peer: PeerId,
     },
 }
 
@@ -367,6 +381,7 @@ pub struct AtomicDexBehaviour {
     runtime: SwarmRuntime,
     cmd_rx: Receiver<AdexBehaviourCmd>,
     netid: u16,
+    banned_peers: TimedMap<PeerId, ()>,
 }
 
 #[derive(NetworkBehaviour)]
@@ -376,6 +391,7 @@ pub struct CoreBehaviour {
     peers_exchange: PeersExchange,
     ping: AdexPing,
     request_response: RequestResponseBehaviour,
+    banlist: AllowBlockListBehaviour<BlockedPeers>,
 }
 
 #[derive(Debug)]
@@ -385,6 +401,7 @@ pub enum AdexBehaviourEvent {
     PeersExchange(libp2p::request_response::Event<PeersExchangeRequest, PeersExchangeResponse>),
     Ping(libp2p::ping::Event),
     RequestResponse(RequestResponseBehaviourEvent),
+    Banlist(Void),
 }
 
 impl From<CoreBehaviourEvent> for AdexBehaviourEvent {
@@ -395,6 +412,7 @@ impl From<CoreBehaviourEvent> for AdexBehaviourEvent {
             CoreBehaviourEvent::PeersExchange(event) => AdexBehaviourEvent::PeersExchange(event),
             CoreBehaviourEvent::Ping(event) => AdexBehaviourEvent::Ping(event),
             CoreBehaviourEvent::RequestResponse(event) => AdexBehaviourEvent::RequestResponse(event),
+            CoreBehaviourEvent::Banlist(event) => AdexBehaviourEvent::Banlist(event),
         }
     }
 }
@@ -552,13 +570,23 @@ impl AtomicDexBehaviour {
                     .peers_exchange
                     .add_peer_addresses_to_reserved_peers(&peer, addresses);
             },
-            AdexBehaviourCmd::PropagateMessage {
-                message_id,
+            AdexBehaviourCmd::ReportMessageValidation {
                 propagation_source,
+                message_id,
+                acceptance,
             } => {
                 self.core
                     .gossipsub
-                    .propagate_message(&message_id, &propagation_source)?;
+                    .report_message_validation_result(&message_id, &propagation_source, acceptance)?;
+            },
+            AdexBehaviourCmd::TempBanPeer { peer, duration } => {
+                self.core.banlist.block_peer(peer);
+                self.banned_peers.insert_expirable(peer, (), duration);
+                self.core.gossipsub.remove_explicit_peer(&peer);
+            },
+            AdexBehaviourCmd::UnbanPeer { peer } => {
+                self.core.banlist.unblock_peer(peer);
+                self.banned_peers.remove(&peer);
             },
         }
 
@@ -584,6 +612,11 @@ impl AtomicDexBehaviour {
 
     pub fn connected_peers_len(&self) -> usize {
         self.core.gossipsub.get_num_peers()
+    }
+
+    #[inline]
+    fn is_peer_temp_banned(&self, peer: &PeerId) -> bool {
+        self.banned_peers.contains_key(peer)
     }
 }
 
@@ -716,6 +749,33 @@ fn start_gossipsub(
         // to set default parameters for gossipsub use:
         // let gossipsub_config = gossipsub::GossipsubConfig::default();
 
+        // TODO(message-id/dedup):
+        // - Switch to a stable, content-derived MessageId.
+        //   Hash choice: BLAKE3 (very fast) or SHA-256 (ubiquitous); both are collision-resistant.
+        // - Why: `DefaultHasher` varies across Rust versions/targets and is randomized per process,
+        //   making it unsuitable for cross-run/impl dedup. A content-derived id also improves IHAVE/IWANT
+        //   behavior, reduces replays, and makes ops/memory usage more predictable.
+        // - Core rules:
+        //   * While we rely on app-layer signatures embedded in the payload, hash the canonical application
+        //     payload bytes only (exclude `sequence_number`, author/pubkey, per-peer metadata, or other
+        //     ephemeral fields).
+        //   * Emit a fixed-size ID (32 bytes); use the raw digest bytes as `MessageId`.
+        //   * Apply domain separation to avoid cross-topic collisions
+        //     (e.g., hash(topic_hash.as_str() || 0x00 || payload_bytes_pre_sign)).
+        //   * After migrating to libp2p Strict (author+seqno signatures), include the author pubkey
+        //     in the digest (and optionally the seqno) to preserve per-publisher identity and avoid
+        //     cross-publisher dedup (e.g., hash(topic || 0x00 || author_pubkey || 0x01 || payload_pre_sign
+        //     [|| 0x02 || seqno])).
+        // - Integration:
+        //   * Keep `ValidationMode::Permissive` during rollout. Plan migration to libp2p-level signing:
+        //     move signing/verification into libp2p’s signature path (author pubkey + per-sender seqno).
+        //     Once all publishers attach libp2p signatures and peers verify them, enable `Strict` and
+        //     update the MessageId input as above; deprecate the app-layer signature wrapper (or keep as
+        //     defense-in-depth).
+        //   * Duplicate-cache TTL: libp2p defaults to ~60s; consider pinning and logging it at startup.
+        // - Security: prefer cryptographic hashes (BLAKE3 or SHA-256); avoid non-crypto hashes in adversarial settings.
+        // - MessageId is for dedup only; authenticity is enforced by signatures (libp2p `Strict` once migrated).
+
         // To content-address message, we can take the hash of message and use it as an ID.
         let message_id_fn = |message: &GossipsubMessage| {
             let mut s = DefaultHasher::new();
@@ -732,6 +792,7 @@ fn start_gossipsub(
             .mesh_n(mesh_n)
             .mesh_n_high(mesh_n_high)
             .validate_messages()
+            // TODO(signing): switch to Strict after revising how signing is done
             .validation_mode(ValidationMode::Permissive)
             .max_transmit_size(MAX_BUFFER_SIZE)
             .build()
@@ -757,6 +818,7 @@ fn start_gossipsub(
             peers_exchange,
             request_response,
             ping,
+            banlist: Default::default(),
         };
 
         let adex_behavior = AtomicDexBehaviour {
@@ -765,6 +827,7 @@ fn start_gossipsub(
             runtime: config.runtime.clone(),
             cmd_rx,
             netid: config.netid,
+            banned_peers: TimedMap::new_with_map_kind(MapKind::FxHashMap),
         };
 
         libp2p::swarm::SwarmBuilder::with_executor(transport, adex_behavior, local_peer_id, config.runtime.clone())
@@ -818,9 +881,9 @@ fn start_gossipsub(
 
     drop(recently_dialed_peers);
 
+    let mut ban_cleanup_interval = Ticker::new(Duration::from_secs(10));
     let mut check_connected_relays_interval =
         Ticker::new_with_next(CONNECTED_RELAYS_CHECK_INTERVAL, CONNECTED_RELAYS_CHECK_INTERVAL);
-
     let mut announce_interval = Ticker::new_with_next(ANNOUNCE_INTERVAL, ANNOUNCE_INITIAL_DELAY);
     let mut listening = false;
 
@@ -882,14 +945,24 @@ fn start_gossipsub(
             }
         }
 
-        if swarm.behaviour().core.gossipsub.is_relay() {
-            while let Poll::Ready(Some(_)) = announce_interval.poll_next_unpin(cx) {
-                announce_my_addresses(&mut swarm);
+        while let Poll::Ready(Some(_)) = ban_cleanup_interval.poll_next_unpin(cx) {
+            let expired = swarm.behaviour_mut().banned_peers.drop_expired_entries();
+            for (peer, _) in expired {
+                {
+                    swarm.behaviour_mut().core.banlist.unblock_peer(peer);
+                    remove_ban_reason(&peer);
+                }
             }
         }
 
         while let Poll::Ready(Some(_)) = check_connected_relays_interval.poll_next_unpin(cx) {
             maintain_connection_to_relays(&mut swarm, &bootstrap);
+        }
+
+        if swarm.behaviour().core.gossipsub.is_relay() {
+            while let Poll::Ready(Some(_)) = announce_interval.poll_next_unpin(cx) {
+                announce_my_addresses(&mut swarm);
+            }
         }
 
         if !listening && i_am_relay {
@@ -906,19 +979,114 @@ fn start_gossipsub(
     Ok((cmd_tx, event_rx, local_peer_id))
 }
 
+/// Select temporary banned peers eligible for connectivity recovery, ordered by the earliest expiry,
+/// unban them just-in-time, and return as {peer -> dial addresses}.
+/// Only peers explicitly marked with BanReason::Connectivity are eligible.
+fn top_up_from_banned(
+    swarm: &mut AtomicDexSwarm,
+    needed: usize,
+    connected_len: usize,
+    target_mesh_n: usize,
+) -> HashMap<PeerId, HashSet<Multiaddr>> {
+    if needed == 0 {
+        return HashMap::new();
+    }
+
+    // Collect connectivity-related bans and order by the earliest expiry.
+    let mut candidates: Vec<(PeerId, Duration)> = {
+        let behaviour = swarm.behaviour();
+        let banned = &behaviour.banned_peers;
+
+        banned
+            .iter()
+            .filter(|(peer, _)| matches!(ban_reason(peer), Some(BanReason::Connectivity)))
+            .map(|(peer, _)| {
+                let remaining_duration = banned
+                    .get_remaining_duration(peer)
+                    .unwrap_or_else(|| Duration::from_secs(u64::MAX));
+                (*peer, remaining_duration)
+            })
+            .collect()
+    };
+    candidates.sort_unstable_by_key(|&(_, rem)| rem);
+
+    let mut selected: HashMap<PeerId, HashSet<Multiaddr>> = HashMap::new();
+
+    for (peer, _) in candidates.into_iter() {
+        if selected.len() >= needed {
+            break;
+        }
+
+        // 1) Gather known addresses for the peer
+        let addrs: Vec<Multiaddr> = {
+            let behaviour_mut = swarm.behaviour_mut();
+            behaviour_mut
+                .core
+                .peers_exchange
+                .request_response
+                .addresses_of_peer(&peer)
+        };
+        if addrs.is_empty() {
+            continue;
+        }
+
+        // 2) Skip if we're already connected to any known address.
+        let already_connected = {
+            let behaviour = swarm.behaviour();
+            addrs.iter().any(|a| behaviour.core.gossipsub.is_connected_to_addr(a))
+        };
+        if already_connected {
+            continue;
+        }
+
+        // 3) Deduplicate dials with a short critical section on the "recently dialed" map.
+        let to_dial: Vec<Multiaddr> = {
+            let mut recent = RECENTLY_DIALED_PEERS.lock().unwrap();
+            addrs
+                .into_iter()
+                .filter(|addr| check_and_mark_dialed(&mut recent, addr))
+                .collect()
+        };
+
+        if to_dial.is_empty() {
+            continue;
+        }
+
+        // 4) Just-in-time unban before dialing, then clear the auxiliary reason tag.
+        {
+            let behaviour_mut = swarm.behaviour_mut();
+            behaviour_mut.core.banlist.unblock_peer(peer);
+            behaviour_mut.banned_peers.remove(&peer);
+        }
+        remove_ban_reason(&peer);
+
+        info!(
+            "Auto-unban: peer {} (reason=Connectivity) to restore relay mesh (connected={}, target={})",
+            peer, connected_len, target_mesh_n
+        );
+
+        selected.insert(peer, to_dial.into_iter().collect());
+    }
+
+    selected
+}
+
 fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses: &[Multiaddr]) {
     let behaviour = swarm.behaviour();
     let connected_relays = behaviour.core.gossipsub.connected_relays();
-    let mesh_n_low = behaviour.core.gossipsub.get_config().mesh_n_low();
-    let mesh_n = behaviour.core.gossipsub.get_config().mesh_n();
+    let connected_len = connected_relays.len();
+
+    let cfg = behaviour.core.gossipsub.get_config();
+    let mesh_n_low = cfg.mesh_n_low();
+    let mesh_n = cfg.mesh_n();
     // allow 2 * mesh_n_high connections to other nodes
-    let max_n = behaviour.core.gossipsub.get_config().mesh_n_high() * 2;
+    let max_n = cfg.mesh_n_high() * 2;
 
     let mut rng = rand::thread_rng();
-    if connected_relays.len() < mesh_n_low {
-        let mut recently_dialed_peers = RECENTLY_DIALED_PEERS.lock().unwrap();
-        let to_connect_num = mesh_n - connected_relays.len();
-        let to_connect =
+    if connected_len < mesh_n_low {
+        let to_connect_num = mesh_n - connected_len;
+        let mut to_connect = {
+            let mut recently_dialed_peers = RECENTLY_DIALED_PEERS.lock().unwrap();
             swarm
                 .behaviour_mut()
                 .core
@@ -928,11 +1096,21 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
                         && addresses
                             .iter()
                             .any(|addr| check_and_mark_dialed(&mut recently_dialed_peers, addr))
-                });
+                })
+        };
+        to_connect.retain(|peer, _| !swarm.behaviour().is_peer_temp_banned(peer));
 
-        // choose some random bootstrap addresses to connect if peers exchange returned not enough peers
+        // If still short, iteratively top up from earliest-expiring banned peers
+        let deficit = to_connect_num.saturating_sub(to_connect.len());
+        if deficit > 0 {
+            let recovered = top_up_from_banned(swarm, deficit, connected_len, mesh_n);
+            to_connect.extend(recovered);
+        }
+
+        // If still short, use bootstrap addresses to fill the remaining deficit
         if to_connect.len() < to_connect_num {
             let connect_bootstrap_num = to_connect_num - to_connect.len();
+            let mut recently_dialed_peers = RECENTLY_DIALED_PEERS.lock().unwrap();
             for addr in bootstrap_addresses
                 .iter()
                 .filter(|addr| {
@@ -958,11 +1136,10 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
                 }
             }
         }
-        drop(recently_dialed_peers);
     }
 
-    if connected_relays.len() > max_n {
-        let to_disconnect_num = connected_relays.len() - max_n;
+    if connected_len > max_n {
+        let to_disconnect_num = connected_len - max_n;
         let relays_mesh = swarm.behaviour().core.gossipsub.get_relay_mesh();
         let not_in_mesh: Vec<_> = connected_relays
             .iter()

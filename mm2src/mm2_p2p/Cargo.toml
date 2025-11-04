@@ -19,6 +19,7 @@ futures.workspace = true
 futures-ticker.workspace = true
 hex.workspace = true
 lazy_static.workspace = true
+libp2p-allow-block-list.workspace = true
 log.workspace = true
 mm2_core = { path = "../mm2_core" }
 mm2_event_stream = { path = "../mm2_event_stream" }
@@ -48,6 +49,6 @@ libp2p = { workspace = true, features = ["identify", "floodsub", "noise", "gossi
 timed-map = { workspace = true, features = ["rustc-hash", "wasm"] }
 
 [dev-dependencies]
-async-std.workspace = true 
+async-std.workspace = true
 env_logger.workspace = true
 common = { path = "../common", features = ["for-tests"] }

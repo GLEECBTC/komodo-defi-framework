@@ -1444,7 +1444,7 @@ fn should_process_request_only_once() {
     let request: TakerRequest = json::from_str(
         r#"{"base":"ETH","rel":"JST","base_amount":"0.1","base_amount_rat":[[1,[1]],[1,[10]]],"rel_amount":"0.2","rel_amount_rat":[[1,[1]],[1,[5]]],"action":"Buy","uuid":"2f9afe84-7a89-4194-8947-45fba563118f","method":"request","sender_pubkey":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3","dest_pub_key":"0000000000000000000000000000000000000000000000000000000000000000","match_by":{"type":"Any"}}"#,
     ).unwrap();
-    block_on(process_taker_request(ctx, Default::default(), request));
+    block_on(process_taker_request(ctx, request));
     let maker_orders = &ordermatch_ctx.maker_orders_ctx.lock().orders;
     let order = block_on(maker_orders.get(&uuid).unwrap().lock());
     // when new request is processed match is replaced with new instance resetting
@@ -2479,7 +2479,7 @@ fn test_process_sync_pubkey_orderbook_state_after_new_orders_added() {
         insert_or_update_order(&ctx, order.clone());
     }
 
-    let mut result = process_sync_pubkey_orderbook_state(ctx.clone(), pubkey.clone(), prev_pairs_state)
+    let mut result = process_sync_pubkey_orderbook_state(ctx.clone(), pubkey.clone(), prev_pairs_state, None)
         .unwrap()
         .unwrap();
 
@@ -2556,7 +2556,7 @@ fn test_process_sync_pubkey_orderbook_state_after_orders_removed() {
         remove_order(&ctx, order.uuid);
     }
 
-    let mut result = process_sync_pubkey_orderbook_state(ctx.clone(), pubkey.clone(), prev_pairs_state)
+    let mut result = process_sync_pubkey_orderbook_state(ctx.clone(), pubkey.clone(), prev_pairs_state, None)
         .unwrap()
         .unwrap();
 
@@ -2620,6 +2620,7 @@ fn test_orderbook_pubkey_sync_request() {
         OrderbookRequestingState::Requested,
     );
     let pubkey = "pubkey";
+    let propagated_from = "propagated_from";
 
     let mut trie_roots = HashMap::new();
     trie_roots.insert("C1:C2".to_owned(), [1; 8]);
@@ -2630,17 +2631,11 @@ fn test_orderbook_pubkey_sync_request() {
         timestamp: now_sec(),
     };
 
-    let request = orderbook.process_keep_alive(pubkey, message, false).unwrap();
-    match request {
-        OrdermatchRequest::SyncPubkeyOrderbookState {
-            trie_roots: pairs_trie_roots,
-            ..
-        } => {
-            assert!(pairs_trie_roots.contains_key("C1:C2"));
-            assert!(!pairs_trie_roots.contains_key("C2:C3"));
-        },
-        _ => panic!("Invalid request {:?}", request),
-    }
+    let pairs_trie_roots = orderbook
+        .process_keep_alive(pubkey, message, false, propagated_from)
+        .unwrap();
+    assert!(pairs_trie_roots.contains_key("C1:C2"));
+    assert!(!pairs_trie_roots.contains_key("C2:C3"));
 }
 
 #[test]
@@ -2651,6 +2646,7 @@ fn test_orderbook_pubkey_sync_request_relay() {
         OrderbookRequestingState::Requested,
     );
     let pubkey = "pubkey";
+    let propagated_from = "propagated_from";
 
     let mut trie_roots = HashMap::new();
     trie_roots.insert("C1:C2".to_owned(), [1; 8]);
@@ -2661,17 +2657,11 @@ fn test_orderbook_pubkey_sync_request_relay() {
         timestamp: now_sec(),
     };
 
-    let request = orderbook.process_keep_alive(pubkey, message, true).unwrap();
-    match request {
-        OrdermatchRequest::SyncPubkeyOrderbookState {
-            trie_roots: pairs_trie_roots,
-            ..
-        } => {
-            assert!(pairs_trie_roots.contains_key("C1:C2"));
-            assert!(pairs_trie_roots.contains_key("C2:C3"));
-        },
-        _ => panic!("Invalid request {:?}", request),
-    }
+    let pairs_trie_roots = orderbook
+        .process_keep_alive(pubkey, message, true, propagated_from)
+        .unwrap();
+    assert!(pairs_trie_roots.contains_key("C1:C2"));
+    assert!(pairs_trie_roots.contains_key("C2:C3"));
 }
 
 #[test]
@@ -2773,7 +2763,7 @@ fn test_process_sync_pubkey_orderbook_state_points_to_not_uptodate_trie_root() {
 
     let SyncPubkeyOrderbookStateRes {
         mut pair_orders_diff, ..
-    } = process_sync_pubkey_orderbook_state(ctx, pubkey, roots)
+    } = process_sync_pubkey_orderbook_state(ctx, pubkey, roots, None)
         .expect("!process_sync_pubkey_orderbook_state")
         .expect("Expected MORTY:RICK delta, returned None");
 
@@ -3509,4 +3499,71 @@ fn test_maker_order_balance_loops() {
     maker_orders_ctx.remove_order(&morty_order.uuid);
     assert!(!maker_orders_ctx.balance_loop_exists(morty_ticker));
     assert_eq!(*maker_orders_ctx.count_by_tickers.get(morty_ticker).unwrap(), 0);
+}
+
+#[test]
+fn process_orders_keep_alive_with_null_root_clears_pair_and_does_not_request() {
+    let (ctx, _our_pubkey, _our_secret) = make_ctx_for_tests();
+    let (maker_pubkey, maker_secret) = pubkey_and_secret_for_test("maker-passphrase");
+
+    // Build one remote order from maker_pubkey for RICK/MORTY and insert it locally.
+    let mut orders = make_random_orders(maker_pubkey.clone(), &maker_secret, "RICK".into(), "MORTY".into(), 1);
+    let order = orders.pop().expect("one order generated");
+    let inserted_uuid = order.uuid;
+
+    {
+        let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
+        let mut orderbook = ordermatch_ctx.orderbook.lock();
+
+        // Mark the pair as subscribed so keep-alive handling considers it.
+        orderbook.topics_subscribed_to.insert(
+            orderbook_topic_from_base_rel("RICK", "MORTY"),
+            OrderbookRequestingState::Requested,
+        );
+
+        // Insert as if it came from the network; this updates trie state as well.
+        orderbook.insert_or_update_order_update_trie(order);
+
+        // Sanity: the order is present.
+        assert!(
+            orderbook.order_set.contains_key(&inserted_uuid),
+            "precondition: order must be present"
+        );
+    }
+
+    // Craft a keep-alive that advertises a null/empty root for (maker_pubkey, alb_pair).
+    let alb_pair = alb_ordered_pair("RICK", "MORTY");
+    let keep_alive = PubkeyKeepAlive {
+        trie_roots: HashMap::from_iter(std::iter::once((alb_pair.clone(), [0u8; 8]))),
+        timestamp: now_sec(),
+    };
+
+    // For a null root, we must clear the pair locally and NOT request a sync.
+    let res = block_on(process_orders_keep_alive(
+        ctx.clone(),
+        "dummy_peer".to_string(),
+        maker_pubkey.clone(),
+        keep_alive,
+        false,
+    ));
+    assert!(res.is_ok(), "process_orders_keep_alive returned error");
+
+    // The order must be gone now.
+    let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
+    let orderbook = ordermatch_ctx.orderbook.lock();
+    assert!(
+        !orderbook.order_set.contains_key(&inserted_uuid),
+        "orders for (pubkey, pair) must be cleared by null-root keep-alive"
+    );
+
+    // And the remembered trie root for that pair should be the null root.
+    let state = orderbook
+        .pubkeys_state
+        .get(&maker_pubkey)
+        .expect("pubkey state missing");
+    assert_eq!(
+        state.trie_roots.get(&alb_pair).copied(),
+        Some([0u8; 8]),
+        "null root should be remembered in pubkey state"
+    );
 }

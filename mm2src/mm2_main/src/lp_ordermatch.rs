@@ -134,9 +134,9 @@ pub mod ordermatch_tests;
 mod ordermatch_wasm_db;
 
 pub const ORDERBOOK_PREFIX: TopicPrefix = "orbk";
-#[cfg(not(test))]
+#[cfg(not(any(test, feature = "for-tests")))]
 pub const MIN_ORDER_KEEP_ALIVE_INTERVAL: u64 = 30;
-#[cfg(test)]
+#[cfg(any(test, feature = "for-tests"))]
 pub const MIN_ORDER_KEEP_ALIVE_INTERVAL: u64 = 5;
 const BALANCE_REQUEST_INTERVAL: f64 = 30.;
 const MAKER_ORDER_TIMEOUT: u64 = MIN_ORDER_KEEP_ALIVE_INTERVAL * 3;
@@ -158,7 +158,15 @@ const SWAP_VERSION_DEFAULT: u8 = 2;
 
 pub type OrderbookP2PHandlerResult = Result<(), MmError<OrderbookP2PHandlerError>>;
 
-#[derive(Display)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SyncFailureCause {
+    /// Peer was unavailable: no response, timeout, or transport failure to SyncPubkeyOrderbookState.
+    Unavailable,
+    /// Peer responded but validation failed or did not resolve all requested pairs.
+    InvalidOrIncomplete,
+}
+
+#[derive(Debug, Display)]
 pub enum OrderbookP2PHandlerError {
     #[display(fmt = "'{_0}' is an invalid topic for the orderbook handler.")]
     InvalidTopic(String),
@@ -176,12 +184,25 @@ pub enum OrderbookP2PHandlerError {
     OrderNotFound(Uuid),
 
     Internal(String),
-}
 
-impl OrderbookP2PHandlerError {
-    pub(crate) fn is_warning(&self) -> bool {
-        matches!(self, OrderbookP2PHandlerError::OrderNotFound(_))
-    }
+    #[display(
+        fmt = "Received stale keep alive from pubkey '{from_pubkey}' propagated from '{propagated_from}' (delay: {delay}s), will ignore it"
+    )]
+    StaleKeepAlive {
+        from_pubkey: String,
+        propagated_from: String,
+        delay: u64,
+    },
+
+    #[display(
+        fmt = "Sync failure for pubkey '{from_pubkey}' via '{propagated_from}'; unresolved pairs: {unresolved_pairs:?}; cause: {cause:?}"
+    )]
+    SyncFailure {
+        from_pubkey: String,
+        propagated_from: String,
+        unresolved_pairs: Vec<String>,
+        cause: SyncFailureCause,
+    },
 }
 
 impl From<P2PRequestError> for OrderbookP2PHandlerError {
@@ -310,50 +331,249 @@ fn process_trie_delta(
     new_root
 }
 
+#[derive(Clone, Copy, Debug)]
+struct SyncPlan {
+    from: H64,
+    to: H64,
+}
+
+fn apply_pair_orders_diff(
+    orderbook: &mut Orderbook,
+    from_pubkey: &str,
+    pair: &AlbOrderedOrderbookPair,
+    diff: DeltaOrFullTrie<Uuid, OrderbookP2PItem>,
+    protocol_infos: &HashMap<Uuid, BaseRelProtocolInfo>,
+    conf_infos: &HashMap<Uuid, OrderConfirmationsSettings>,
+) -> H64 {
+    let params = ProcessTrieParams {
+        pubkey: from_pubkey,
+        alb_pair: pair,
+        protocol_infos,
+        conf_infos,
+    };
+    match diff {
+        DeltaOrFullTrie::Delta(delta) => process_trie_delta(orderbook, delta, params),
+        DeltaOrFullTrie::FullTrie(values) => process_pubkey_full_trie(orderbook, values, params),
+    }
+}
+
+// TODO(sync-v2): Validate protocol_infos/conf_infos after binding them to a signature from the maker.
+#[allow(clippy::too_many_arguments)]
+fn apply_pair_sync_with_validation(
+    orderbook: &mut Orderbook,
+    from_pubkey: &str,
+    peer: &str,
+    pair: AlbOrderedOrderbookPair,
+    diff: DeltaOrFullTrie<Uuid, OrderbookP2PItem>,
+    expected_pair_roots: &HashMap<AlbOrderedOrderbookPair, H64>,
+    pending_pairs: &mut HashSet<AlbOrderedOrderbookPair>,
+    keep_alive_timestamp: u64,
+    protocol_infos: &HashMap<Uuid, BaseRelProtocolInfo>,
+    conf_infos: &HashMap<Uuid, OrderConfirmationsSettings>,
+) {
+    // Ignore unsolicited pairs we didn't request to prevent state poisoning.
+    if !pending_pairs.contains(&pair) {
+        return;
+    }
+
+    // Snapshot the current state for this (pubkey, pair) to allow non-destructive validation.
+    let snapshot_orders: Vec<OrderbookItem> = orderbook
+        .order_set
+        .values()
+        .filter(|o| o.pubkey == from_pubkey && alb_ordered_pair(&o.base, &o.rel) == pair)
+        .cloned()
+        .collect();
+
+    let (prev_pair_last_seen, prev_latest_root_ts) = {
+        let prev_state = orderbook.pubkeys_state.get(from_pubkey);
+        let prev_seen = prev_state.and_then(|s| s.pair_last_seen_local.get(&pair).copied());
+        let prev_ts = prev_state.and_then(|s| s.latest_root_timestamp_by_pair.get(&pair).copied());
+        (prev_seen, prev_ts)
+    };
+
+    // Apply diff and compute the new root.
+    let new_root = apply_pair_orders_diff(orderbook, from_pubkey, &pair, diff, protocol_infos, conf_infos);
+
+    if let Some(expected) = expected_pair_roots.get(&pair) {
+        if &new_root == expected {
+            // Accept: refresh maker timestamp floor and liveness.
+            pending_pairs.remove(&pair);
+            let state = pubkey_state_mut(&mut orderbook.pubkeys_state, from_pubkey);
+            state
+                .latest_root_timestamp_by_pair
+                .insert(pair.clone(), keep_alive_timestamp);
+            state.pair_last_seen_local.insert(pair.clone(), now_sec());
+        } else {
+            // Validation failed: revert to the snapshot non-destructively.
+            warn!(
+                "Sync validation failed for pubkey {} pair {} from {}: expected {:?}, got {:?}. Reverting pair.",
+                from_pubkey, pair, peer, expected, new_root
+            );
+
+            // Clear current pair state.
+            remove_pubkey_pair_orders(orderbook, from_pubkey, &pair);
+
+            // Restore orders from the snapshot.
+            for order in snapshot_orders {
+                orderbook.insert_or_update_order_update_trie(order);
+            }
+
+            // Restore timestamps as they were prior to applying the diff.
+            let state = pubkey_state_mut(&mut orderbook.pubkeys_state, from_pubkey);
+            match prev_pair_last_seen {
+                Some(ts) => {
+                    state.pair_last_seen_local.insert(pair.clone(), ts);
+                },
+                None => {
+                    state.pair_last_seen_local.remove(&pair);
+                },
+            }
+            match prev_latest_root_ts {
+                Some(ts) => {
+                    state.latest_root_timestamp_by_pair.insert(pair.clone(), ts);
+                },
+                None => {
+                    state.latest_root_timestamp_by_pair.remove(&pair);
+                },
+            }
+        }
+    }
+}
+
+fn apply_and_validate_pubkey_state_sync_response(
+    orderbook_mutex: &PaMutex<Orderbook>,
+    from_pubkey: &str,
+    peer: &str,
+    response: SyncPubkeyOrderbookStateRes,
+    expected_pair_roots: &HashMap<AlbOrderedOrderbookPair, H64>,
+    pending_pairs: &mut HashSet<AlbOrderedOrderbookPair>,
+    keep_alive_timestamp: u64,
+) {
+    let SyncPubkeyOrderbookStateRes {
+        last_signed_pubkey_payload: _,
+        pair_orders_diff,
+        protocol_infos,
+        conf_infos,
+    } = response;
+    let mut orderbook = orderbook_mutex.lock();
+    for (pair, diff) in pair_orders_diff {
+        // delegate per-pair apply/validate to a helper to keep nesting shallow
+        apply_pair_sync_with_validation(
+            &mut orderbook,
+            from_pubkey,
+            peer,
+            pair,
+            diff,
+            expected_pair_roots,
+            pending_pairs,
+            keep_alive_timestamp,
+            &protocol_infos,
+            &conf_infos,
+        );
+    }
+}
+
 async fn process_orders_keep_alive(
     ctx: MmArc,
-    propagated_from_peer: String,
+    propagated_from: String,
     from_pubkey: String,
     keep_alive: new_protocol::PubkeyKeepAlive,
     i_am_relay: bool,
 ) -> OrderbookP2PHandlerResult {
+    let keep_alive_timestamp = keep_alive.timestamp;
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("from_ctx failed");
-    let to_request = ordermatch_ctx
-        .orderbook
-        .lock()
-        .process_keep_alive(&from_pubkey, keep_alive, i_am_relay);
 
-    let req = match to_request {
-        Some(req) => req,
-        // The message was processed, simply forward it
-        None => return Ok(()),
+    // Update local state and decide whether to sync.
+    let plan_by_pair =
+        ordermatch_ctx
+            .orderbook
+            .lock()
+            .process_keep_alive(&from_pubkey, keep_alive, i_am_relay, &propagated_from)?;
+
+    if plan_by_pair.is_empty() {
+        // The message was processed, return Ok to forward it
+        return Ok(());
+    }
+
+    // Separate what we need for the request (from roots) and for validation (expected to roots)
+    let mut pending_pairs: HashSet<AlbOrderedOrderbookPair> = HashSet::new();
+    let mut from_roots_by_pair: HashMap<AlbOrderedOrderbookPair, H64> = HashMap::new();
+    let mut expected_pair_roots: HashMap<AlbOrderedOrderbookPair, H64> = HashMap::new();
+
+    for (pair, plan) in plan_by_pair {
+        pending_pairs.insert(pair.clone());
+        from_roots_by_pair.insert(pair.clone(), plan.from);
+        expected_pair_roots.insert(pair, plan.to);
+    }
+
+    // Build the V2 request using our local "from" roots and the keep-alive "to_root"
+    // values we intend to land on. This requests an exact diff targeted at our state,
+    // even if the responder advanced after propagating the keep-alive. This should reduce
+    // false InvalidOrIncomplete classifications and unnecessary bans.
+    // Backward-compatibility: legacy peers ignore `expected_roots` optional field.
+    // TODO(tests/serde-interop):
+    // - Old -> new: new node tolerates missing `expected_roots` (#[serde(default)]).
+    // - New -> old: legacy peer ignores `expected_roots` without failing.
+    // - New -> new: exact path works when history is present (serve/apply Delta landing on the expected to-root).
+    let current_req = OrdermatchRequest::SyncPubkeyOrderbookState {
+        pubkey: from_pubkey.clone(),
+        trie_roots: from_roots_by_pair,
+        expected_roots: Some(expected_pair_roots.clone()),
     };
 
-    let response = request_one_peer::<SyncPubkeyOrderbookStateRes>(
+    let mut had_response = false;
+
+    match request_one_peer::<SyncPubkeyOrderbookStateRes>(
         ctx.clone(),
-        P2PRequest::Ordermatch(req),
-        propagated_from_peer.clone(),
+        P2PRequest::Ordermatch(current_req),
+        propagated_from.clone(),
     )
     .await
-    .map_mm_err()?
-    .ok_or_else(|| {
-        MmError::new(OrderbookP2PHandlerError::P2PRequestError(format!(
-            "No response was received from peer {propagated_from_peer} for SyncPubkeyOrderbookState request!"
-        )))
-    })?;
+    {
+        Ok(Some(resp)) => {
+            had_response = true;
+            apply_and_validate_pubkey_state_sync_response(
+                &ordermatch_ctx.orderbook,
+                &from_pubkey,
+                &propagated_from,
+                resp,
+                &expected_pair_roots,
+                &mut pending_pairs,
+                keep_alive_timestamp,
+            );
+        },
+        Ok(None) => {
+            // Peer responded but returned None for a diff request; classify as InvalidOrIncomplete.
+            // This is unexpected for SyncPubkeyOrderbookState.
+            had_response = true;
+            warn!(
+                "SyncPubkeyOrderbookState request to {} returned None; treating as InvalidOrIncomplete",
+                propagated_from
+            );
+        },
+        Err(e) => {
+            // Transport/timeout or other request error; treat as Unavailable.
+            warn!(
+                "SyncPubkeyOrderbookState request to {} failed: {}; treating as Unavailable",
+                propagated_from, e
+            );
+        },
+    }
 
-    let mut orderbook = ordermatch_ctx.orderbook.lock();
-    for (pair, diff) in response.pair_orders_diff {
-        let params = ProcessTrieParams {
-            pubkey: &from_pubkey,
-            alb_pair: &pair,
-            protocol_infos: &response.protocol_infos,
-            conf_infos: &response.conf_infos,
+    // If anything remains unresolved, treat as sync failure
+    if !pending_pairs.is_empty() {
+        let unresolved_pairs = pending_pairs.into_iter().collect::<Vec<_>>();
+        let cause = if had_response {
+            SyncFailureCause::InvalidOrIncomplete
+        } else {
+            SyncFailureCause::Unavailable
         };
-        let _new_root = match diff {
-            DeltaOrFullTrie::Delta(delta) => process_trie_delta(&mut orderbook, delta, params),
-            DeltaOrFullTrie::FullTrie(values) => process_pubkey_full_trie(&mut orderbook, values, params),
-        };
+        return MmError::err(OrderbookP2PHandlerError::SyncFailure {
+            from_pubkey,
+            propagated_from,
+            unresolved_pairs,
+            cause,
+        });
     }
 
     Ok(())
@@ -395,27 +615,37 @@ fn process_maker_order_cancelled(ctx: &MmArc, from_pubkey: String, cancelled_msg
     orderbook
         .recently_cancelled
         .insert_expirable(uuid, from_pubkey.clone(), RECENTLY_CANCELLED_TIMEOUT);
-    if let Some(order) = orderbook.order_set.get(&uuid) {
-        if order.pubkey == from_pubkey {
-            orderbook.remove_order_trie_update(uuid);
+
+    let maybe_pair = orderbook
+        .order_set
+        .get(&uuid)
+        .filter(|o| o.pubkey == from_pubkey)
+        .map(|o| alb_ordered_pair(&o.base, &o.rel));
+
+    if let Some(alb_pair) = maybe_pair {
+        orderbook.remove_order_trie_update(uuid);
+
+        // Advance the per-pair maker timestamp floor to the cancel timestamp
+        // so any earlier keep-alive for this pair will be rejected as stale.
+        //
+        // Note: we do NOT refresh liveness (pair_last_seen_local) here.
+        // Liveness is refreshed only when we accept state-carrying messages
+        // (e.g., a keep-alive that matches the expected root, a validated sync,
+        // a MakerOrderCreated/Updated, or a full-trie fill), not on cancel.
+        let state = pubkey_state_mut(&mut orderbook.pubkeys_state, &from_pubkey);
+        state
+            .latest_root_timestamp_by_pair
+            .insert(alb_pair.clone(), cancelled_msg.timestamp);
+
+        // If this cancel emptied the pair (root is zero/hashed-null), drop liveness for this pair.
+        // This mirrors the zero-root keep-alive path and allows faster GC of empty pairs.
+        if let Some(&pair_root) = state.trie_roots.get(&alb_pair) {
+            if pair_root == H64::default() || pair_root == hashed_null_node::<Layout>() {
+                state.pair_last_seen_local.remove(&alb_pair);
+            }
         }
     }
 }
-
-// fn verify_pubkey_orderbook(orderbook: &GetOrderbookPubkeyItem) -> Result<(), String> {
-//     let keys: Vec<(_, _)> = orderbook
-//         .orders
-//         .iter()
-//         .map(|(uuid, order)| {
-//             let order_bytes = rmp_serde::to_vec(&order).expect("Serialization should never fail");
-//             (uuid.as_bytes(), Some(order_bytes))
-//         })
-//         .collect();
-//     let (orders_root, proof) = &orderbook.pair_orders_trie_root;
-//     verify_trie_proof::<Layout, _, _, _>(orders_root, proof, &keys)
-//         .map_err(|e| ERRL!("Error on pair_orders_trie_root verification: {}", e))?;
-//     Ok(())
-// }
 
 // Some coins, for example ZHTLC, have privacy features like random keypair to sign P2P messages per every order.
 // So, each order of such coin has unique «pubkey» field that doesn’t match node persistent pubkey derived from passphrase.
@@ -496,6 +726,9 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
             conf_infos: &conf_infos,
         };
         let _new_root = process_pubkey_full_trie(&mut orderbook, orders, params);
+
+        let state = pubkey_state_mut(&mut orderbook.pubkeys_state, &pubkey);
+        state.pair_last_seen_local.insert(alb_pair.clone(), now_sec());
     }
 
     let topic = orderbook_topic_from_base_rel(base, rel);
@@ -600,6 +833,15 @@ pub async fn handle_orderbook_msg(
 pub async fn process_msg(ctx: MmArc, from_peer: String, msg: &[u8], i_am_relay: bool) -> OrderbookP2PHandlerResult {
     match decode_signed::<new_protocol::OrdermatchMessage>(msg) {
         Ok((message, _sig, pubkey)) => {
+            {
+                let my_persistent = mm2_internal_pubkey_hex(&ctx, String::from).ok().flatten();
+                let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("from_ctx failed");
+                let my_p2p = &ordermatch_ctx.orderbook.lock().my_p2p_pubkeys;
+                if is_my_order(&pubkey.to_hex(), &my_persistent, my_p2p) {
+                    return Ok(());
+                }
+            }
+
             if is_pubkey_banned(&ctx, &pubkey.unprefixed().into()) {
                 return MmError::err(OrderbookP2PHandlerError::PubkeyNotAllowed(pubkey.to_hex()));
             }
@@ -614,14 +856,14 @@ pub async fn process_msg(ctx: MmArc, from_peer: String, msg: &[u8], i_am_relay: 
                 },
                 new_protocol::OrdermatchMessage::TakerRequest(taker_request) => {
                     let msg = TakerRequest::from_new_proto_and_pubkey(taker_request, pubkey.unprefixed().into());
-                    process_taker_request(ctx, pubkey.unprefixed().into(), msg).await;
+                    process_taker_request(ctx, msg).await;
                     Ok(())
                 },
                 new_protocol::OrdermatchMessage::MakerReserved(maker_reserved) => {
                     let msg = MakerReserved::from_new_proto_and_pubkey(maker_reserved, pubkey.unprefixed().into());
                     // spawn because process_maker_reserved may take significant time to run
                     let spawner = ctx.spawner();
-                    spawner.spawn(process_maker_reserved(ctx, pubkey.unprefixed().into(), msg));
+                    spawner.spawn(process_maker_reserved(ctx, msg));
                     Ok(())
                 },
                 new_protocol::OrdermatchMessage::TakerConnect(taker_connect) => {
@@ -688,8 +930,12 @@ impl TryFromBytes for Uuid {
 pub fn process_peer_request(ctx: MmArc, request: OrdermatchRequest) -> Result<Option<Vec<u8>>, String> {
     match request {
         OrdermatchRequest::GetOrderbook { base, rel } => process_get_orderbook_request(ctx, base, rel),
-        OrdermatchRequest::SyncPubkeyOrderbookState { pubkey, trie_roots } => {
-            let response = process_sync_pubkey_orderbook_state(ctx, pubkey, trie_roots);
+        OrdermatchRequest::SyncPubkeyOrderbookState {
+            pubkey,
+            trie_roots,
+            expected_roots,
+        } => {
+            let response = process_sync_pubkey_orderbook_state(ctx, pubkey, trie_roots, expected_roots);
             response.map(|res| res.map(|r| encode_message(&r).expect("Serialization failed")))
         },
         OrdermatchRequest::BestOrders { coin, action, volume } => {
@@ -799,8 +1045,10 @@ fn process_get_orderbook_request(ctx: MmArc, base: String, rel: String) -> Resul
                 pubkey
             ))?;
 
+            let pubkey_last_seen = pubkey_state.pair_last_seen_local.values().max().copied().unwrap_or(0);
+
             let item = GetOrderbookPubkeyItem {
-                last_keep_alive: pubkey_state.last_keep_alive,
+                last_keep_alive: pubkey_last_seen,
                 orders,
                 // TODO save last signed payload to pubkey state
                 last_signed_pubkey_payload: vec![],
@@ -912,10 +1160,9 @@ impl<Key: Clone + Eq + std::hash::Hash + TryFromBytes, Value: Clone> DeltaOrFull
                 return Ok(DeltaOrFullTrie::Delta(total_delta));
             }
 
-            log::warn!(
+            warn!(
                 "History started from {:?} ends with not up-to-date trie root {:?}",
-                from_hash,
-                actual_trie_root
+                from_hash, actual_trie_root
             );
         }
 
@@ -939,7 +1186,21 @@ fn process_sync_pubkey_orderbook_state(
     ctx: MmArc,
     pubkey: String,
     trie_roots: HashMap<AlbOrderedOrderbookPair, H64>,
+    expected_roots: Option<HashMap<AlbOrderedOrderbookPair, H64>>,
 ) -> Result<Option<SyncPubkeyOrderbookStateRes>, String> {
+    if let Some(exp) = expected_roots.as_ref() {
+        if exp.len() != trie_roots.len() || trie_roots.keys().any(|pair| !exp.contains_key(pair)) {
+            // TODO(rate-limit/ban): accept at most one SyncPubkeyOrderbookState per peer we sent a KeepAlive to.
+            // Note: this is considered as an unavailable error on the requester side, not InvalidOrIncomplete. But this is fine for now.
+            return ERR!(
+                "Rejecting SyncPubkeyOrderbookState for pubkey {}: expected_roots keys mismatch vs trie_roots (expected_roots: {}, trie_roots: {})",
+                pubkey,
+                exp.len(),
+                trie_roots.len()
+            );
+        }
+    }
+
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     let orderbook = ordermatch_ctx.orderbook.lock();
     let pubkey_state = some_or_return_ok_none!(orderbook.pubkeys_state.get(&pubkey));
@@ -947,19 +1208,38 @@ fn process_sync_pubkey_orderbook_state(
     let order_getter = |uuid: &Uuid| orderbook.order_set.get(uuid).cloned();
     let pair_orders_diff: Result<HashMap<_, _>, _> = trie_roots
         .into_iter()
-        .map(|(pair, root)| {
-            let actual_pair_root = pubkey_state
+        .map(|(pair, from_root)| {
+            let latest_known_root = pubkey_state
                 .trie_roots
                 .get(&pair)
                 .ok_or(ERRL!("No pair trie root for {}", pair))?;
 
+            // Determine the target (to) root:
+            // - exact v2 sync: use the requester’s expected root
+            // - legacy sync: use our latest known root
+            let maybe_expected = expected_roots.as_ref().and_then(|roots| roots.get(&pair));
+            let target_root = maybe_expected.unwrap_or(latest_known_root);
+
+            // NOTE(exact-sync): We allow FullTrie fallback even when `expected_roots` is present.
+            // Rationale: `from_root` may originate from GetOrderbook or other flows and is not
+            // verifiable today if the sender was malicious; an exact delta chain from `from_root`
+            // to `target_root` might be unavailable. Falling back to a FullTrie at `target_root`
+            // still lets the requester land exactly on the expected root and pass the apply gate.
+            //
+            // TODO(exact-sync, removal conditions):
+            // - Persist the last KeepAlive root per pubkey and include it with GetOrderbook so
+            //   the requester’s `from_root` can be anchored/validated against a recent KA.
+            // - Once `from_root` is verifiable, change exact mode to error (no fallback) when
+            //   history cannot reconstruct the from→to chain.
+            // - Consider TRIE_STATE_HISTORY_TIMEOUT tuning: larger window ⇒ fewer missing chains;
+            //   smaller window ⇒ more missing chains but lower memory. Coordinate with gossipsub
+            //   dedup (~60s) so alternate-source retries are effective within the history window.
+
             let delta_result = match pubkey_state.order_pairs_trie_state_history.get(&pair) {
                 Some(history) => {
-                    DeltaOrFullTrie::from_history(history, root, *actual_pair_root, &orderbook.memory_db, order_getter)
+                    DeltaOrFullTrie::from_history(history, from_root, *target_root, &orderbook.memory_db, order_getter)
                 },
-                None => {
-                    get_full_trie(actual_pair_root, &orderbook.memory_db, order_getter).map(DeltaOrFullTrie::FullTrie)
-                },
+                None => get_full_trie(target_root, &orderbook.memory_db, order_getter).map(DeltaOrFullTrie::FullTrie),
             };
 
             let delta = try_s!(delta_result);
@@ -1153,7 +1433,7 @@ impl BalanceTradeFeeUpdatedHandler for BalanceUpdateOrdermatchHandler {
             None => return,
         };
         if coin.wallet_only(&ctx) {
-            log::warn!(
+            warn!(
                 "coin: {} is wallet only, skip BalanceTradeFeeUpdatedHandler",
                 coin.ticker()
             );
@@ -1165,7 +1445,7 @@ impl BalanceTradeFeeUpdatedHandler for BalanceUpdateOrdermatchHandler {
             Ok(vol_info) => vol_info.volume,
             Err(e) if e.get_inner().not_sufficient_balance() => MmNumber::from(0),
             Err(e) => {
-                log::warn!("Couldn't handle the 'balance_updated' event: {}", e);
+                warn!("Couldn't handle the 'balance_updated' event: {}", e);
                 return;
             },
         };
@@ -2435,10 +2715,6 @@ fn broadcast_keep_alive_for_pub(ctx: &MmArc, pubkey: &str, orderbook: &Orderbook
     };
 
     for (alb_pair, root) in state.trie_roots.iter() {
-        if *root == H64::default() && *root == hashed_null_node::<Layout>() {
-            continue;
-        }
-
         let message = new_protocol::PubkeyKeepAlive {
             trie_roots: HashMap::from([(alb_pair.clone(), *root)]),
             timestamp: now_sec(),
@@ -2573,8 +2849,20 @@ impl<Key, Value> TrieDiffHistory<Key, Value> {
 type TrieOrderHistory = TrieDiffHistory<Uuid, OrderbookItem>;
 
 struct OrderbookPubkeyState {
-    /// Timestamp of the latest keep alive message received
-    last_keep_alive: u64,
+    /// Monotonic maker-published timestamp for the last accepted root per pair.
+    /// Used to ignore out-of-order or replayed keep-alive roots for specific pairs.
+    ///
+    /// Retention policy:
+    /// We intentionally retain entries even after a pair is pruned by inactivity GC to defend against
+    /// stale replays resurrecting old state. These entries are dropped only when the entire pubkey
+    /// state is removed.
+    latest_root_timestamp_by_pair: HashMap<AlbOrderedOrderbookPair, u64>,
+    /// Local receive time (seconds) of the last accepted keep‑alive per alphabetically ordered pair
+    /// owned by this pubkey. This is the authoritative liveness signal used by inactivity GC and
+    /// trie‑state pruning. Pairs not updated within the timeout are purged; if all pairs are stale,
+    /// the entire pubkey state is removed.
+    /// Key: `AlbOrderedOrderbookPair` ("BASE:REL"), Value: local Unix time in seconds.
+    pair_last_seen_local: HashMap<AlbOrderedOrderbookPair, u64>,
     /// The map storing historical data about specific pair subtrie changes
     /// Used to get diffs of orders of pair between specific root hashes
     order_pairs_trie_state_history: TimedMap<AlbOrderedOrderbookPair, TrieOrderHistory>,
@@ -2587,7 +2875,8 @@ struct OrderbookPubkeyState {
 impl OrderbookPubkeyState {
     pub fn new() -> OrderbookPubkeyState {
         OrderbookPubkeyState {
-            last_keep_alive: now_sec(),
+            latest_root_timestamp_by_pair: HashMap::default(),
+            pair_last_seen_local: HashMap::default(),
             order_pairs_trie_state_history: TimedMap::new_with_map_kind(MapKind::FxHashMap),
             orders_uuids: HashSet::default(),
             trie_roots: HashMap::default(),
@@ -2713,6 +3002,8 @@ impl Orderbook {
         let alb_ordered = alb_ordered_pair(&order.base, &order.rel);
         let pair_root = order_pair_root_mut(&mut pubkey_state.trie_roots, &alb_ordered);
         let prev_root = *pair_root;
+
+        pubkey_state.pair_last_seen_local.insert(alb_ordered.clone(), now_sec());
 
         pubkey_state.orders_uuids.insert((order.uuid, alb_ordered.clone()));
 
@@ -2892,15 +3183,102 @@ impl Orderbook {
         self.topics_subscribed_to.contains_key(topic)
     }
 
+    /// Processes a [`new_protocol::PubkeyKeepAlive`] for `from_pubkey`, updating per‑pair state and
+    /// deciding whether a state sync is required.
+    ///
+    /// This function performs only local state transitions; it does no I/O.
+    /// It may:
+    /// - Accept the announcement (per pair) and refresh timestamps if the announced root matches the
+    ///   local root.
+    /// - Clear a pair if the announced root is null/empty (remove all orders, remember the null root,
+    ///   update the maker timestamp floor, and drop the local “last seen” so GC can prune it).
+    /// - Detect divergence and return the set of pairs that must be synced to the announced roots.
+    ///
+    /// Invariants and validation:
+    /// - Maker timestamps are checked per pair and must be strictly increasing. If any pair is stale
+    ///   (announced timestamp ≤ the last accepted maker timestamp for that pair), the function returns
+    ///   [`OrderbookP2PHandlerError::StaleKeepAlive`] and no state is advanced for that message. Callers
+    ///   must not propagate such a message.
+    /// - We update `pair_last_seen_local` only for pairs that are accepted/in‑sync. Divergent pairs do
+    ///   not refresh liveness until validated to the expected root.
+    ///
+    /// Subscription policy:
+    /// - Pairs we are not subscribed to are ignored unless this node acts as a relay (`i_am_relay`).
+    ///
+    /// Returns:
+    /// - A map of `"BASE:REL"` to the expected roots (as announced) for which local state diverges and
+    ///   a sync is required. An empty map means no sync is needed and the message may be propagated.
+    ///
+    /// Caller responsibilities:
+    /// - If the returned map is non‑empty, fetch trie diffs from the peer that propagated the keep‑alive
+    ///   (`propagated_from`), validate them to the expected roots, apply, and only then consider forwarding
+    ///   the keep‑alive.
+    ///
+    /// Errors:
+    /// - [`OrderbookP2PHandlerError::StaleKeepAlive`] if any per‑pair maker timestamp regresses or repeats.
+    /// - Other variants for malformed or otherwise invalid data.
+    ///
+    /// Notes:
+    /// - Maker timestamps are used for monotonicity/anti‑replay; GC uses local receive times.
+    /// - The caller must ignore Unsolicited pairs in sync responses when applying the response.
+    // TODO(message-id/dedup):
+    // - We occasionally see “stale” keep-alives reappear, one reason maybe be peers re-broadcasting identical
+    //   payloads with different gossipsub sequence numbers. We currently reject these at the
+    //   application layer based on maker timestamps.
+    // - Potential improvement: use a stable, content-derived MessageId to reduce duplicates. We can then ban
+    //  peers that send the same message twice within the dedup cache ttl. Maker timestamps would still be checked
+    //  per pair to prevent any type of replays,  so this is purely an optimization to reduce redundant processing.
+    // - Note: app-layer signatures still prevent hijacking; this is purely for dedup/content-addressing.
     fn process_keep_alive(
         &mut self,
         from_pubkey: &str,
         message: new_protocol::PubkeyKeepAlive,
         i_am_relay: bool,
-    ) -> Option<OrdermatchRequest> {
-        let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
-        pubkey_state.last_keep_alive = now_sec();
-        let mut trie_roots_to_request = HashMap::new();
+        propagated_from: &str,
+    ) -> Result<HashMap<AlbOrderedOrderbookPair, SyncPlan>, MmError<OrderbookP2PHandlerError>> {
+        // TODO(rate-limit):
+        // Add a single, shared in‑process rate limiter for OrdermatchMessage
+        // types (e.g., a module in mm2_p2p or lp_network).
+        // For keep-alive, enforce a minimum interval per pubkey (>= 20–30s) or X messages/minute.
+        // When throttled, early‑return without syncing/propagating, before any state mutation.
+        // Temp ban peers that exceed their limits.
+
+        // Pre-scan: if any single pair is stale => treat the whole message as stale.
+        // Note: We currently send keep-alives per pair (trie_roots has a single entry),
+        // so this is equivalent to checking that one pair. If multi-pair keep-alives return,
+        // demote only stale pairs instead of rejecting the whole message.
+        {
+            // Read-only pre-scan: do not create a pubkey state for messages that will be rejected as stale.
+            let existing_state = self.pubkeys_state.get(from_pubkey);
+            for (alb_pair, _) in message.trie_roots.iter() {
+                let subscribed = self
+                    .topics_subscribed_to
+                    .contains_key(&orderbook_topic_from_ordered_pair(alb_pair));
+                if !subscribed && !i_am_relay {
+                    continue;
+                }
+
+                let last_pair_timestamp = existing_state
+                    .and_then(|s| s.latest_root_timestamp_by_pair.get(alb_pair).copied())
+                    .unwrap_or(0);
+
+                if message.timestamp <= last_pair_timestamp {
+                    log::debug!(
+                        "Ignoring a stale PubkeyKeepAlive from {} for pair {}: message.timestamp={} <= last_pair_timestamp={}",
+                        from_pubkey, alb_pair, message.timestamp, last_pair_timestamp
+                    );
+                    let delay = last_pair_timestamp.saturating_sub(message.timestamp);
+                    return MmError::err(OrderbookP2PHandlerError::StaleKeepAlive {
+                        from_pubkey: from_pubkey.to_owned(),
+                        propagated_from: propagated_from.to_owned(),
+                        delay,
+                    });
+                }
+            }
+        }
+
+        let mut plan_by_pair = HashMap::new();
+
         for (alb_pair, trie_root) in message.trie_roots {
             let subscribed = self
                 .topics_subscribed_to
@@ -2909,6 +3287,8 @@ impl Orderbook {
                 continue;
             }
 
+            // Empty/null root: clear local orders for (pubkey, pair),
+            // remember the null root, and don't request a sync.
             if trie_root == H64::default() || trie_root == hashed_null_node::<Layout>() {
                 log::debug!(
                     "Received zero or hashed_null_node pair {} trie root from pub {}",
@@ -2916,22 +3296,45 @@ impl Orderbook {
                     from_pubkey
                 );
 
+                // Clear local orders for this pubkey/pair.
+                remove_pubkey_pair_orders(self, from_pubkey, &alb_pair);
+
+                // Remember that the latest known root for this pair is null/empty.
+                {
+                    let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
+                    pubkey_state.trie_roots.insert(alb_pair.clone(), trie_root);
+                    pubkey_state
+                        .latest_root_timestamp_by_pair
+                        .insert(alb_pair.clone(), message.timestamp);
+                    pubkey_state.pair_last_seen_local.remove(&alb_pair);
+                }
+
                 continue;
             }
-            let actual_trie_root = order_pair_root_mut(&mut pubkey_state.trie_roots, &alb_pair);
-            if *actual_trie_root != trie_root {
-                trie_roots_to_request.insert(alb_pair, trie_root);
+
+            // For non-null roots, compare with our current view and request sync if it differs.
+            let current_root = {
+                let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
+                *order_pair_root_mut(&mut pubkey_state.trie_roots, &alb_pair)
+            };
+            if current_root != trie_root {
+                plan_by_pair.insert(
+                    alb_pair.clone(),
+                    SyncPlan {
+                        from: current_root,
+                        to: trie_root,
+                    },
+                );
+                continue;
             }
+            let state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
+            state
+                .latest_root_timestamp_by_pair
+                .insert(alb_pair.clone(), message.timestamp);
+            state.pair_last_seen_local.insert(alb_pair, now_sec());
         }
 
-        if trie_roots_to_request.is_empty() {
-            return None;
-        }
-
-        Some(OrdermatchRequest::SyncPubkeyOrderbookState {
-            pubkey: from_pubkey.to_owned(),
-            trie_roots: trie_roots_to_request,
-        })
+        Ok(plan_by_pair)
     }
 
     fn orderbook_item_with_proof(&self, order: OrderbookItem) -> OrderbookItemWithProof {
@@ -3660,7 +4063,6 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
         .expect("CryptoCtx not available")
         .mm2_internal_pubkey_hex();
 
-    let maker_order_timeout = ctx.conf["maker_order_timeout"].as_u64().unwrap_or(MAKER_ORDER_TIMEOUT);
     loop {
         if ctx.is_stopping() {
             break;
@@ -3685,26 +4087,78 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
         }
 
         {
-            // remove "timed out" pubkeys states with their orders from orderbook
             let mut orderbook = ordermatch_ctx.orderbook.lock();
-            let mut uuids_to_remove = vec![];
-            let mut pubkeys_to_remove = vec![];
+
+            let deadline = now_sec().saturating_sub(MAKER_ORDER_TIMEOUT);
+
+            let mut pairs_to_prune = Vec::new();
+            let mut pubkeys_to_remove = Vec::new();
+
             for (pubkey, state) in orderbook.pubkeys_state.iter() {
-                let is_ours = orderbook.my_p2p_pubkeys.contains(pubkey);
-                let to_keep =
-                    pubkey == &my_pubsecp || is_ours || state.last_keep_alive + maker_order_timeout > now_sec();
-                if !to_keep {
-                    for (uuid, _) in &state.orders_uuids {
-                        uuids_to_remove.push(*uuid);
-                    }
+                // Skip our own pubkeys; local order lifecycle manages them.
+                if pubkey == &my_pubsecp || orderbook.my_p2p_pubkeys.contains(pubkey) {
+                    continue;
+                }
+
+                // Remove the pubkey if no pair has been seen recently.
+                let any_recent_pair = state
+                    .trie_roots
+                    .keys()
+                    .any(|pair| state.pair_last_seen_local.get(pair).copied().unwrap_or(0) > deadline);
+
+                if !any_recent_pair {
                     pubkeys_to_remove.push(pubkey.clone());
+                    continue;
+                }
+
+                // Otherwise keep the pubkey and prune only its stale pairs.
+                let stale_pairs: Vec<_> = state
+                    .trie_roots
+                    .keys()
+                    .filter_map(|pair| {
+                        let last_seen = state.pair_last_seen_local.get(pair).copied().unwrap_or(0);
+                        (last_seen <= deadline).then(|| pair.clone())
+                    })
+                    .collect();
+
+                if !stale_pairs.is_empty() {
+                    pairs_to_prune.push((pubkey.clone(), stale_pairs));
                 }
             }
 
-            for uuid in uuids_to_remove {
-                orderbook.remove_order_trie_update(uuid);
+            // Prune stale pairs for pubkeys we keep.
+            for (pubkey, pairs) in pairs_to_prune {
+                for pair in pairs {
+                    remove_pubkey_pair_orders(&mut orderbook, &pubkey, &pair);
+                    if let Some(state) = orderbook.pubkeys_state.get_mut(&pubkey) {
+                        state.pair_last_seen_local.remove(&pair);
+                    }
+                }
             }
+
+            // Remove fully expired pubkeys: delete their remaining orders first, then the state.
+            // GC: remove orders while the pubkey state still exists to avoid lazy re-creation inside `remove_order_trie_update`.
             for pubkey in pubkeys_to_remove {
+                if let Some(orders) = orderbook
+                    .pubkeys_state
+                    .get_mut(&pubkey)
+                    .map(|state| std::mem::take(&mut state.orders_uuids))
+                {
+                    for (uuid, _) in orders {
+                        orderbook.remove_order_trie_update(uuid);
+                    }
+                }
+
+                // TODO(pubkey_replay_guard):
+                // Block stale replays after full pubkey timeout (incl. restarts).
+                // - On full pubkey removal: store pubkey -> max maker_ts (write-once HashMap<String,u64>).
+                // - On keep-alive intake: before creating state, drop if maker_ts <= stored floor.
+                // - Restarts: persist this map (and ideally per-pair last_maker_ts); until persisted, enforce
+                //   sanity bounds: maker_ts > now + MAX_MAKER_FUTURE_SKEW or now - maker_ts > MAX_MAKER_PAST_AGE => reject.
+                // - Liveness: keep GC driven by local time; optionally prune when maker_stale || local_stale;
+                //   do not rely solely on maker clock.
+                // - Cleanup: pre-scan without creating state; centralize timestamp checks/logging; never sync
+                //   origin for messages rejected by guards; add unit tests.
                 orderbook.pubkeys_state.remove(&pubkey);
             }
 
@@ -3954,7 +4408,7 @@ async fn handle_timed_out_maker_matches(ctx: MmArc, ordermatch_ctx: &OrdermatchC
     }
 }
 
-async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg: MakerReserved) {
+async fn process_maker_reserved(ctx: MmArc, reserved_msg: MakerReserved) {
     log::debug!("Processing MakerReserved {:?}", reserved_msg);
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     {
@@ -3962,15 +4416,6 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
         if !my_taker_orders.contains_key(&reserved_msg.taker_order_uuid) {
             return;
         }
-    }
-
-    // Taker order existence is checked previously - it can't be created if CryptoCtx is not initialized
-    let our_public_id = CryptoCtx::from_ctx(&ctx)
-        .expect("'CryptoCtx' must be initialized already")
-        .mm2_internal_public_id();
-    if our_public_id.bytes == from_pubkey.0 {
-        log::warn!("Skip maker reserved from our pubkey");
-        return;
     }
 
     let uuid = reserved_msg.taker_order_uuid;
@@ -4033,6 +4478,9 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
                     false,
                 )
             {
+                let our_public_id = CryptoCtx::from_ctx(&ctx)
+                    .expect("'CryptoCtx' must be initialized already")
+                    .mm2_internal_public_id();
                 let connect = TakerConnect {
                     sender_pubkey: H256Json::from(our_public_id.bytes),
                     dest_pub_key: reserved_msg.sender_pubkey,
@@ -4071,17 +4519,6 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: PublicKey, connected: 
     log::debug!("Processing MakerConnected {:?}", connected);
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
 
-    let our_public_id = match CryptoCtx::from_ctx(&ctx) {
-        Ok(ctx) => ctx.mm2_internal_public_id(),
-        Err(_) => return,
-    };
-
-    let unprefixed_from = from_pubkey.unprefixed();
-    if our_public_id.bytes == unprefixed_from {
-        log::warn!("Skip maker connected from our pubkey");
-        return;
-    }
-
     let mut my_taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
     let my_order_entry = match my_taker_orders.entry(connected.taker_order_uuid) {
         Entry::Occupied(e) => e,
@@ -4090,7 +4527,7 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: PublicKey, connected: 
     let order_match = match my_order_entry.get().matches.get(&connected.maker_order_uuid) {
         Some(o) => o,
         None => {
-            log::warn!(
+            warn!(
                 "Our node doesn't have the match with uuid {}",
                 connected.maker_order_uuid
             );
@@ -4098,7 +4535,7 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: PublicKey, connected: 
         },
     };
 
-    if order_match.reserved.sender_pubkey != unprefixed_from.into() {
+    if order_match.reserved.sender_pubkey != from_pubkey.unprefixed().into() {
         error!("Connected message sender pubkey != reserved message sender pubkey");
         return;
     }
@@ -4124,17 +4561,13 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: PublicKey, connected: 
         .ok();
 }
 
-async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request: TakerRequest) {
+async fn process_taker_request(ctx: MmArc, taker_request: TakerRequest) {
+    log::debug!("Processing request {:?}", taker_request);
+
     let our_public_id: H256Json = match CryptoCtx::from_ctx(&ctx) {
         Ok(ctx) => ctx.mm2_internal_public_id().bytes.into(),
         Err(_) => return,
     };
-
-    if our_public_id == from_pubkey {
-        log::warn!("Skip the request originating from our pubkey");
-        return;
-    }
-    log::debug!("Processing request {:?}", taker_request);
 
     if !taker_request.can_match_with_maker_pubkey(&our_public_id) {
         return;
@@ -4240,17 +4673,6 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: PublicKey, connect_msg
     log::debug!("Processing TakerConnect {:?}", connect_msg);
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
 
-    let our_public_id = match CryptoCtx::from_ctx(&ctx) {
-        Ok(ctx) => ctx.mm2_internal_public_id(),
-        Err(_) => return,
-    };
-
-    let sender_unprefixed = sender_pubkey.unprefixed();
-    if our_public_id.bytes == sender_unprefixed {
-        log::warn!("Skip taker connect from our pubkey");
-        return;
-    }
-
     let order_mutex = {
         match ordermatch_ctx
             .maker_orders_ctx
@@ -4266,19 +4688,23 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: PublicKey, connect_msg
     let order_match = match my_order.matches.get_mut(&connect_msg.taker_order_uuid) {
         Some(o) => o,
         None => {
-            log::warn!(
+            warn!(
                 "Our node doesn't have the match with uuid {}",
                 connect_msg.taker_order_uuid
             );
             return;
         },
     };
-    if order_match.request.sender_pubkey != sender_unprefixed.into() {
-        log::warn!("Connect message sender pubkey != request message sender pubkey");
+    if order_match.request.sender_pubkey != sender_pubkey.unprefixed().into() {
+        warn!("Connect message sender pubkey != request message sender pubkey");
         return;
     }
 
     if order_match.connected.is_none() && order_match.connect.is_none() {
+        // Taker order existence is checked previously - it can't be created if CryptoCtx is not initialized
+        let our_public_id = CryptoCtx::from_ctx(&ctx)
+            .expect("'CryptoCtx' must be initialized already")
+            .mm2_internal_public_id();
         let connected = MakerConnected {
             sender_pubkey: our_public_id.bytes.into(),
             dest_pub_key: connect_msg.sender_pubkey,
@@ -5607,7 +6033,7 @@ pub async fn orders_history_by_filter(ctx: MmArc, req: Json) -> Result<Response<
                         "Order details for Uuid {} were skipped because uuid could not be parsed",
                         order.uuid
                     );
-                    log::warn!("{}, error {}", warning, e);
+                    warn!("{}, error {}", warning, e);
                     warnings.push(UuidParseError {
                         uuid: order.uuid.clone(),
                         warning,

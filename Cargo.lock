@@ -4542,6 +4542,7 @@ dependencies = [
  "hex",
  "lazy_static",
  "libp2p",
+ "libp2p-allow-block-list",
  "log",
  "mm2_core",
  "mm2_event_stream",

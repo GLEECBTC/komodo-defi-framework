@@ -127,6 +127,7 @@ jsonrpc-core = "18.0.0"
 lazy_static = "1.4"
 libc = "0.2"
 libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.12", default-features = false }
+libp2p-allow-block-list = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.12" }
 lightning = "0.0.113"
 lightning-background-processor = "0.0.113"
 lightning-invoice = { version = "0.21.0", features = ["serde"] }
