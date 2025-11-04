@@ -53,8 +53,8 @@ async fn test_bob_sells_dsia_for_dutxo_alice_fails_to_lock() {
     dsia.client.mine_blocks(155, &BOB_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
-    let (_ctx_bob, mut mm_bob) = init_bob(&temp_dir, netid, Some(client.conf.port)).await;
-    let (ctx_alice, mut mm_alice) = init_alice(&temp_dir, netid, Some(client.conf.port)).await;
+    let mut mm_bob = init_bob(&temp_dir, netid, Some(client.conf.port)).await;
+    let mut mm_alice = init_alice(&temp_dir, netid, Some(client.conf.port)).await;
 
     // Enable DSIA coin for Alice and Bob
     let _ = enable_dsia(&mm_bob, dsia.host_port).await;
@@ -78,7 +78,7 @@ async fn test_bob_sells_dsia_for_dutxo_alice_fails_to_lock() {
 
     // Stop Alice before she locks her payment
     wait_until_event(&mm_alice, &uuid, "TakerFeeSent", 600).await;
-    ctx_alice.stop().await.unwrap();
+    mm_alice.stop().await.unwrap();
 
     // Wait for the swap to complete
     wait_until_event(&mm_bob, &uuid, "MakerPaymentRefundFinished", 600).await;
@@ -105,8 +105,8 @@ async fn bob_sells_dsia_for_dutxo_bob_fails_to_spend() {
     dsia.client.mine_blocks(155, &BOB_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
-    let (ctx_bob, mut mm_bob) = init_bob(&temp_dir, netid, Some(client.conf.port)).await;
-    let (_ctx_alice, mut mm_alice) = init_alice(&temp_dir, netid, Some(client.conf.port)).await;
+    let mut mm_bob = init_bob(&temp_dir, netid, Some(client.conf.port)).await;
+    let mut mm_alice = init_alice(&temp_dir, netid, Some(client.conf.port)).await;
 
     // Enable DSIA coin for Alice and Bob
     let _ = enable_dsia(&mm_bob, dsia.host_port).await;
@@ -132,13 +132,13 @@ async fn bob_sells_dsia_for_dutxo_bob_fails_to_spend() {
 
     // Stop Bob before he spends Alice's payment
     wait_until_event(&mm_bob, &uuid, "MakerPaymentSent", 600).await;
-    ctx_bob.stop().await.unwrap();
+    mm_bob.stop().await.unwrap();
 
     // Wait for Alice to refund alice_payment
     wait_until_event(&mm_alice, &uuid, "TakerPaymentRefundFinished", 600).await;
 
     // Restart Bob and activate coins
-    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, Some(client.conf.port)).await;
+    let mm_bob = init_bob(&temp_dir, netid, Some(client.conf.port)).await;
     let _ = enable_dsia(&mm_bob, dsia_port).await;
     let _ = enable_dutxo(&mm_bob).await;
 
@@ -167,8 +167,8 @@ async fn bob_sells_dutxo_for_dsia_bob_fails_to_spend() {
     dsia.client.mine_blocks(155, &ALICE_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
-    let (ctx_bob, mut mm_bob) = init_bob(&temp_dir, netid, Some(client.conf.port)).await;
-    let (_ctx_alice, mut mm_alice) = init_alice(&temp_dir, netid, Some(client.conf.port)).await;
+    let mut mm_bob = init_bob(&temp_dir, netid, Some(client.conf.port)).await;
+    let mut mm_alice = init_alice(&temp_dir, netid, Some(client.conf.port)).await;
 
     // Enable DSIA coin for Alice and Bob
     let _ = enable_dsia(&mm_bob, dsia.host_port).await;
@@ -194,13 +194,13 @@ async fn bob_sells_dutxo_for_dsia_bob_fails_to_spend() {
 
     // Stop Bob before he spends Alice's payment
     wait_until_event(&mm_bob, &uuid, "MakerPaymentSent", 600).await;
-    ctx_bob.stop().await.unwrap();
+    mm_bob.stop().await.unwrap();
 
     // Wait for Alice to refund alice_payment
     wait_until_event(&mm_alice, &uuid, "TakerPaymentRefundFinished", 600).await;
 
     // Restart Bob and activate coins
-    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, Some(client.conf.port)).await;
+    let mm_bob = init_bob(&temp_dir, netid, Some(client.conf.port)).await;
     let _ = enable_dsia(&mm_bob, dsia_port).await;
     let _ = enable_dutxo(&mm_bob).await;
 

@@ -375,7 +375,7 @@ alongside other unrelated tests.
 
 All configurations other than rpc_port and netid are hardcoded for simplicity.
 **/
-pub async fn init_alice(kdf_dir: &Path, netid: u16, utxo_rpc_port: Option<u16>) -> (MmArc, MarketMakerIt) {
+pub async fn init_alice(kdf_dir: &Path, netid: u16, utxo_rpc_port: Option<u16>) -> MarketMakerIt {
     let alice_db_dir = kdf_dir.join("DB_alice");
     let test_case_string = kdf_dir.to_str().unwrap().to_string();
     let datetime = "init_alice".to_string();
@@ -429,16 +429,14 @@ pub async fn init_alice(kdf_dir: &Path, netid: u16, utxo_rpc_port: Option<u16>) 
         .unwrap();
     let rpc_port = *ctx_clone.rpc_port.get().unwrap();
 
-    let mm_alice = MarketMakerIt {
+    MarketMakerIt {
         folder: alice_db_dir,
         ip,
         rpc_port: Some(rpc_port),
         log_path: kdf_dir.join(LOG_FILENAME),
         pc: None,
         userpass: "password".to_string(),
-    };
-
-    (ctx_clone, mm_alice)
+    }
 }
 
 /**
@@ -462,7 +460,7 @@ alongside other unrelated tests.
 
 All configurations other than rpc_port and netid are hardcoded for simplicity.
 **/
-pub async fn init_bob(kdf_dir: &Path, netid: u16, utxo_rpc_port: Option<u16>) -> (MmArc, MarketMakerIt) {
+pub async fn init_bob(kdf_dir: &Path, netid: u16, utxo_rpc_port: Option<u16>) -> MarketMakerIt {
     let bob_db_dir = kdf_dir.join("DB_bob");
     let test_case_string = kdf_dir.to_str().unwrap().to_string();
     let datetime = "init_bob".to_string();
@@ -515,16 +513,14 @@ pub async fn init_bob(kdf_dir: &Path, netid: u16, utxo_rpc_port: Option<u16>) ->
 
     let rpc_port = *ctx_clone.rpc_port.get().unwrap();
 
-    let mm_bob = MarketMakerIt {
+    MarketMakerIt {
         folder: bob_db_dir,
         ip,
         rpc_port: Some(rpc_port),
         log_path: kdf_dir.join(LOG_FILENAME),
         pc: None,
         userpass: "password".to_string(),
-    };
-
-    (ctx_clone, mm_bob)
+    }
 }
 
 /// Initialize a Sia standalone SiaClient.

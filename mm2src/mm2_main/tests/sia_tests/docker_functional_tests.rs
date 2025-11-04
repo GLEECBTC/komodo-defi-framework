@@ -36,7 +36,7 @@ async fn debug_init_walletd_container() {
 async fn test_init_alice() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
     let netid = get_unique_netid();
-    let (_, _) = init_alice(&temp_dir, netid, None).await;
+    let _ = init_alice(&temp_dir, netid, None).await;
 }
 
 /// Initialize Bob KDF instance
@@ -44,7 +44,7 @@ async fn test_init_alice() {
 async fn test_init_bob() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
     let netid = get_unique_netid();
-    let (_, _) = init_bob(&temp_dir, netid, None).await;
+    let _ = init_bob(&temp_dir, netid, None).await;
 }
 
 /// Initialize Alice and Bob, check that they connected via p2p network
@@ -54,8 +54,8 @@ async fn test_init_alice_and_bob() {
     let netid = get_unique_netid();
 
     // initialize Bob first because he acts as a seed node
-    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, None).await;
-    let (_ctx_alice, mm_alice) = init_alice(&temp_dir, netid, None).await;
+    let mm_bob = init_bob(&temp_dir, netid, None).await;
+    let mm_alice = init_alice(&temp_dir, netid, None).await;
 
     wait_for_peers_connected(&mm_alice, &mm_bob, std::time::Duration::from_secs(30))
         .await
@@ -69,8 +69,8 @@ async fn test_alice_and_bob_enable_dsia() {
     let dsia = get_global_walletd_container().await;
     let netid = get_unique_netid();
 
-    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, None).await;
-    let (_ctx_alice, mm_alice) = init_alice(&temp_dir, netid, None).await;
+    let mm_bob = init_bob(&temp_dir, netid, None).await;
+    let mm_alice = init_alice(&temp_dir, netid, None).await;
 
     let _bob_enable_sia_resp = enable_dsia(&mm_alice, dsia.host_port).await;
     let _alice_enable_sia_resp = enable_dsia(&mm_bob, dsia.host_port).await;
@@ -105,8 +105,8 @@ async fn test_bob_sells_doc_for_dsia() {
     dsia.client.mine_blocks(155, &ALICE_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
-    let (_ctx_bob, mut mm_bob) = init_bob(&temp_dir, netid, None).await;
-    let (_ctx_alice, mut mm_alice) = init_alice(&temp_dir, netid, None).await;
+    let mut mm_bob = init_bob(&temp_dir, netid, None).await;
+    let mut mm_alice = init_alice(&temp_dir, netid, None).await;
 
     // Enable DOC coin via electrum for Alice and Bob
     let _ = enable_utxo_v2_electrum(&mm_bob, "DOC", doc_electrums(), None, 60, None).await;
@@ -157,8 +157,8 @@ async fn test_bob_sells_dsia_for_doc() {
     dsia.client.mine_blocks(155, &BOB_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
-    let (_ctx_bob, mut mm_bob) = init_bob(&temp_dir, netid, None).await;
-    let (_ctx_alice, mut mm_alice) = init_alice(&temp_dir, netid, None).await;
+    let mut mm_bob = init_bob(&temp_dir, netid, None).await;
+    let mut mm_alice = init_alice(&temp_dir, netid, None).await;
 
     // Enable DOC coin via electrum for Alice and Bob
     let _ = enable_utxo_v2_electrum(&mm_bob, "DOC", doc_electrums(), None, 60, None).await;
@@ -208,8 +208,8 @@ async fn test_bob_sells_dsia_for_dutxo() {
     dsia.client.mine_blocks(155, &BOB_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
-    let (_ctx_bob, mut mm_bob) = init_bob(&temp_dir, netid, Some(client.conf.port)).await;
-    let (_ctx_alice, mut mm_alice) = init_alice(&temp_dir, netid, Some(client.conf.port)).await;
+    let mut mm_bob = init_bob(&temp_dir, netid, Some(client.conf.port)).await;
+    let mut mm_alice = init_alice(&temp_dir, netid, Some(client.conf.port)).await;
 
     // Enable DSIA coin for Alice and Bob
     let _ = enable_dsia(&mm_bob, dsia.host_port).await;
@@ -260,8 +260,8 @@ async fn test_bob_sells_dutxo_for_dsia() {
     dsia.client.mine_blocks(155, &ALICE_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
-    let (_ctx_bob, mut mm_bob) = init_bob(&temp_dir, netid, Some(client.conf.port)).await;
-    let (_ctx_alice, mut mm_alice) = init_alice(&temp_dir, netid, Some(client.conf.port)).await;
+    let mut mm_bob = init_bob(&temp_dir, netid, Some(client.conf.port)).await;
+    let mut mm_alice = init_alice(&temp_dir, netid, Some(client.conf.port)).await;
 
     // Enable DSIA coin for Alice and Bob
     let _ = enable_dsia(&mm_bob, dsia.host_port).await;
