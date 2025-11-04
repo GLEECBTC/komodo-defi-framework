@@ -1,31 +1,22 @@
 pub use coins::siacoin::sia_rust::types::{Address, Currency, Keypair};
 pub use coins::siacoin::sia_rust::utils::V2TransactionBuilder;
-use mm2_main::lp_native_dex::lp_init;
-use mm2_main::lp_network::MAX_NETID;
 
 use coins::siacoin::{ApiClientHelpers, SiaApiClient, SiaClient, SiaClientConf};
 
 use crate::docker_tests::docker_tests_common::SIA_RPC_PARAMS;
 use common::custom_futures::timeout::FutureTimerExt;
 use common::executor::Timer;
-use common::log::{LogLevel, UnifiedLoggerBuilder};
-use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_rpc::data::legacy::CoinInitResponse;
-use mm2_test_helpers::for_tests::MarketMakerIt;
+use mm2_test_helpers::for_tests::{MarketMakerIt, Mm2TestConf};
 
-use chrono::Local;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::collections::HashMap;
-use std::io::Write;
 use std::net::IpAddr;
-use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::OnceCell;
 use url::Url; // for read_line()
 
 mod komodod_client;
@@ -112,10 +103,6 @@ pub const WALLETD_NETWORK_CONFIG: &str = r#"{
     }
 }"#;
 
-/// Filename for the log file for each test utilizing `init_test_dir()`
-/// Each MarketMaker instance will log to <temp directory>/kdf.log generally.
-const LOG_FILENAME: &str = "kdf.log";
-
 pub const ALICE_SIA_ADDRESS_STR: &str = "a0cfbc1089d129f52d00bc0b0fac190d4d87976a1d7f34da7ca0c295c99a628de344d19ad469";
 pub const ALICE_KMD_KEY: TestKeyPair = TestKeyPair {
     address: "RNa3bJJC2L3UUCGQ9WY5fhCSzSd5ExiAWr",
@@ -130,13 +117,6 @@ pub const BOB_KMD_KEY: TestKeyPair = TestKeyPair {
     wif: "UvU3bn2bucriZVDaSSB51aGGu9emUbmf9ZK72sdRjrD2Vb4smQ8T",
 };
 
-/// A new temporary directory created by init_test_dir() each time a test or group of tests is ran.
-/// eg, /tmp/kdf_tests_2025-02-18_11-36-21-802/ which might include subdirectories for each test.
-pub static SHARED_TEMP_DIR: OnceCell<PathBuf> = OnceCell::const_new();
-
-/// Atomic counter used to generate a unique netid per test.
-static NEXT_NETID: AtomicU16 = AtomicU16::new(1);
-
 lazy_static! {
     pub static ref COINS: Json = json!(
         [
@@ -150,25 +130,15 @@ lazy_static! {
                 }
             },
             // Dockerized UTXO coin
-            // init_alice and init_bob both rely on this being COINS[1] while setting 'confpath'
             {
-                "coin": "DUTXO",
-                "asset": "DUTXO",
-                "fname": "DUTXO",
-                "rpcport": 10001,
-                "txversion": 4,
-                "overwintered": 1,
+                "coin":"MYCOIN",
+                "asset":"MYCOIN",
                 "mm2": 1,
-                "sign_message_prefix": "Komodo Signed Message:\n",
-                "is_testnet": true,
-                "required_confirmations": 1,
-                "requires_notarization": false,
-                "avg_blocktime": 60,
-                "protocol": {
-                "type": "UTXO"
-                },
-                "derivation_path": "m/44'/141'",
-                "trezor_coin": "Komodo"
+                "txversion":4,
+                "overwintered":1,
+                "protocol":{
+                    "type":"UTXO"
+                }
             },
             {
                 "coin": "DOC",
@@ -211,26 +181,6 @@ lazy_static! {
     pub static ref CHARLIE_SIA_ADDRESS: Address = CHARLIE_SIA_KEYPAIR.public().address();
 }
 
-/// Used inconjunction with init_test_dir() to create a unique directory for each test
-/// Not intended to be used otherwise due to hardcoded suffix value.
-#[macro_export]
-macro_rules! current_function_name {
-    () => {{
-        fn f() {}
-        fn type_name_of<T>(_: T) -> &'static str {
-            std::any::type_name::<T>()
-        }
-        let name = type_name_of(f);
-        name.strip_suffix("::{{closure}}::f")
-            .unwrap()
-            .rsplit("::")
-            .next()
-            .unwrap()
-    }};
-}
-
-pub(crate) use current_function_name;
-
 /// A container running a Sia walletd instance.
 /// The container will run until the `Container` falls out of scope. It will then be stopped and removed.
 /// It is sometimes useful while debugging to leave a container running after a test executes.
@@ -242,15 +192,6 @@ pub struct SiaTestnetContainer {
     pub client: SiaClient,
     /// Port on the host that walletd API is bound to
     pub host_port: u16,
-}
-
-/// Get a unique netid for each test.
-pub fn get_unique_netid() -> u16 {
-    let netid = NEXT_NETID.fetch_add(1, Ordering::Relaxed);
-    if netid > MAX_NETID {
-        panic!("get_unique_netid: Exceeded maximum netid value")
-    }
-    netid
 }
 
 /// Send coins from Charlie to the given address.
@@ -311,44 +252,14 @@ pub async fn enable_dsia(mm: &MarketMakerIt, walletd_port: u16) -> CoinInitRespo
     .unwrap()
 }
 
-pub async fn enable_dutxo(mm: &MarketMakerIt) -> CoinInitResponse {
+pub async fn enable_mycoin(mm: &MarketMakerIt) -> CoinInitResponse {
     mm.rpc_typed::<CoinInitResponse>(&json!({
         "method": "enable",
-        "coin": "DUTXO",
+        "coin": "MYCOIN",
         "tx_history": true
     }))
     .await
     .unwrap()
-}
-
-/// Create a temporary directory to be shared amongst all tests ran at the same time.
-/// Utilizes `std::env::temp_dir()` so each OS will handle this differently.
-/// We assume the OS will eventually prune these direcotories.
-/// Note: Windows machines may never prune these directories so be cautious.
-/// env var $TMPDIR can be set to change the location of the temp directory on most unix-like OSes.
-/// This is async only to avoid an additional import of a non-async OnceCell implementation.
-pub async fn init_test_dir(fn_path: &str, silent_console: bool) -> PathBuf {
-    // initialize a shared temp directory and global logger if they haven't been already
-    let shared_dir = SHARED_TEMP_DIR
-        .get_or_init(|| async {
-            let init_time = Local::now().format("%Y-%m-%d_%H-%M-%S-%3f").to_string();
-
-            // Initialize env_logger that is shared amongst all KDF instances
-            UnifiedLoggerBuilder::new().silent_console(silent_console).init();
-
-            // eg, /tmp/kdf_tests_2025-02-18_11-36-21-802/
-            let tests_group = format!("kdf_tests_{}", init_time);
-
-            std::env::temp_dir().join(tests_group)
-        })
-        .await;
-
-    // eg, /tmp/kdf_tests_2025-02-18_11-36-21-802/test_something/
-    let test_dir = shared_dir.join(fn_path);
-    common::log::debug!("Using temporary directory: {}", test_dir.display());
-
-    std::fs::create_dir_all(&test_dir).unwrap();
-    test_dir
 }
 
 /**
@@ -357,86 +268,23 @@ Initialize a MarketMaker instance with a configuration suitable for the taker ak
 Intended to be used in conjunction with `init_bob` to create a taker/maker setup.
 
 This node will not act as a seed node and will not listen on the p2p port.
-
-This node will attempt to connect to a seed node on the host that is using the same
-`netid` value. ie, `localhost:<p2p_port>` where <p2p_port> is influenced by the `netid` value.
-
-`rpc_port` - The port the MarketMaker instance will listen on for RPC commands.
-`netid` - The network id for the MarketMaker instance. This directly influences the p2p port
-          used to comminucate with other MarketMaker instances. This is not the literal port number
-          but rather the input to the function `mm2_main::lp_network::lp_ports`.
-`utxo_rpc_port` - If set, enables the marketmaker instance to connect to a native UTXO node at the given
-    port. This is only needed if multiple *native UTXO nodes for the same coin* are being used.
-    Eg, Alice's personal DUTXO node http://test:test@127.0.0.1:10001/
-        and Bob's http://test:test@127.0.0.1:10000/
-
-Use unique values for `rpc_port`` and `netid`` for each test if they are intended to run concurrently
-alongside other unrelated tests.
-
-All configurations other than rpc_port and netid are hardcoded for simplicity.
 **/
-pub async fn init_alice(kdf_dir: &Path, netid: u16, utxo_rpc_port: Option<u16>) -> MarketMakerIt {
-    let alice_db_dir = kdf_dir.join("DB_alice");
-    let test_case_string = kdf_dir.to_str().unwrap().to_string();
-    let datetime = "init_alice".to_string();
-    let ip = IpAddr::from([127, 0, 0, 1]);
+pub async fn init_alice(seednode_ip: &IpAddr, custom_locktime: Option<u64>) -> MarketMakerIt {
+    let coins = COINS.clone();
 
-    // `enable` method using native UTXO node is too stupid to allow setting the rpc credentials anywhere
-    // other than a config file specified in the coins json. So using different UTXO nodes for Alice
-    // and Bob means we need a unique coins json for each. If `utxo_rpc_port` is set, we create the
-    // equivalent of `~/.komodo/DUTXO/DUTXO.conf` that would typically be created by Komodod and set
-    // DUTXO['confpath'] to that file.
-    let alice_coins = match utxo_rpc_port {
-        Some(utxo_port) => {
-            let mut coins = COINS.clone();
-            let file_contents = format!("rpcuser=test\nrpcpassword=test\nrpcport={}\n", utxo_port);
-            let utxo_conf_file_path = kdf_dir.join("ALICE_DUTXO.conf");
-            let mut conf_file = std::fs::File::create(&utxo_conf_file_path).unwrap();
-            conf_file.write_all(file_contents.as_bytes()).unwrap();
-            coins[1]["confpath"] = json!(utxo_conf_file_path);
-            coins
-        },
-        None => COINS.clone(),
-    };
-
-    let alice_conf = json!({
-        "gui": format!("{}_alice", test_case_string),
-        "netid": netid,
-        "passphrase": "buyer buyer buyer buyer buyer buyer buyer buyer buyer buyer buyer cabin",
-        "coins": alice_coins,
-        "myipaddr": ip.to_string(),
-        "rpc_password": "password",
-        "rpcport": 0, // 0 value will assign an available port that can be read from ctx.rpc_started
-        "i_am_seed": false,
-        "enable_hd": false,
-        "dbdir": alice_db_dir.to_str().unwrap(),
-        "seednodes": [
-            "127.0.0.1"
-        ]
-    });
-
-    let ctx = MmCtxBuilder::new()
-        .with_conf(alice_conf)
-        .with_log_level(LogLevel::Debug)
-        .with_version(test_case_string.clone())
-        .with_datetime(datetime.clone())
-        .into_mm_arc();
-    let ctx_clone = ctx.clone();
-    tokio::spawn(async move { lp_init(ctx, test_case_string, datetime).await.unwrap() });
-
-    wait_for_rpc_started(ctx_clone.clone(), Duration::from_secs(20))
+    let seed = "buyer buyer buyer buyer buyer buyer buyer buyer buyer buyer buyer cabin";
+    let mut conf = Mm2TestConf::light_node(seed, &coins, &[&seednode_ip.to_string()]);
+    if let Some(lt) = custom_locktime {
+        conf.conf["payment_locktime"] = lt.into();
+    }
+    let mm = MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)
         .await
         .unwrap();
-    let rpc_port = *ctx_clone.rpc_port.get().unwrap();
 
-    MarketMakerIt {
-        folder: alice_db_dir,
-        ip,
-        rpc_port: Some(rpc_port),
-        log_path: kdf_dir.join(LOG_FILENAME),
-        pc: None,
-        userpass: "password".to_string(),
-    }
+    //let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!("alice's log path: {}", mm.log_path.display());
+
+    mm
 }
 
 /**
@@ -445,82 +293,23 @@ Initialize a MarketMaker instance with a configuration suitable for the maker ak
 Intended to be used in conjunction with `init_alice` to create a taker/maker setup.
 
 This node will act as a seed node and will listen on the p2p port.
-
-`rpc_port` - The port the MarketMaker instance will listen on for RPC commands.
-`netid` - The network id for the MarketMaker instance. This directly influences the p2p port
-          used to comminucate with other MarketMaker instances. This is not the literal port number
-          but rather the input to the function `mm2_main::lp_network::lp_ports`.
-`utxo_rpc_port` - If set, enables the marketmaker instance to connect to a native UTXO node at the given
-    port. This is only needed if multiple *native UTXO nodes for the same coin* are being used.
-    Eg, Alice's personal DUTXO node http://test:test@127.0.0.1:10001/
-        and Bob's http://test:test@127.0.0.1:10000/
-
-Use unique values for `rpc_port`` and `netid`` for each test if they are intended to run concurrently
-alongside other unrelated tests.
-
-All configurations other than rpc_port and netid are hardcoded for simplicity.
 **/
-pub async fn init_bob(kdf_dir: &Path, netid: u16, utxo_rpc_port: Option<u16>) -> MarketMakerIt {
-    let bob_db_dir = kdf_dir.join("DB_bob");
-    let test_case_string = kdf_dir.to_str().unwrap().to_string();
-    let datetime = "init_bob".to_string();
-    let ip = IpAddr::from([127, 0, 0, 1]);
+pub async fn init_bob(custom_locktime: Option<u64>) -> MarketMakerIt {
+    let coins = COINS.clone();
 
-    // `enable` method using native UTXO node is too stupid to allow setting the rpc credentials anywhere
-    // other than a config file specified in the coins json. So using different UTXO nodes for Alice
-    // and Bob means we need a unique coins json for each. If `utxo_rpc_port` is set, we create the
-    // equivalent of `~/.komodo/DUTXO/DUTXO.conf` that would typically be created by Komodod and set
-    // DUTXO['confpath'] to that file.
-    let coins = match utxo_rpc_port {
-        Some(utxo_port) => {
-            let mut coins = COINS.clone();
-            let file_contents = format!("rpcuser=test\nrpcpassword=test\nrpcport={}\n", utxo_port);
-            let utxo_conf_file_path = kdf_dir.join("BOB_DUTXO.conf");
-            let mut conf_file = std::fs::File::create(&utxo_conf_file_path).unwrap();
-            conf_file.write_all(file_contents.as_bytes()).unwrap();
-            coins[1]["confpath"] = json!(utxo_conf_file_path);
-            coins
-        },
-        None => COINS.clone(),
-    };
-
-    let bob_conf = json!({
-        "gui": format!("{}_bob", test_case_string),
-        "netid": netid,
-        "passphrase": "sell sell sell sell sell sell sell sell sell sell sell sell",
-        "coins": coins,
-        "myipaddr": ip.to_string(),
-        "rpc_password": "password",
-        "rpcport": 0, // 0 value will assign an available port that can be read from ctx.rpc_started
-        "i_am_seed": true,
-        "is_bootstrap_node": true,
-        "enable_hd": false,
-        "dbdir": bob_db_dir.to_str().unwrap(),
-    });
-
-    let ctx = MmCtxBuilder::new()
-        .with_conf(bob_conf)
-        .with_log_level(LogLevel::Debug)
-        .with_version(test_case_string.clone())
-        .with_datetime(datetime.clone())
-        .into_mm_arc();
-    let ctx_clone = ctx.clone();
-    tokio::spawn(async move { lp_init(ctx, test_case_string, datetime).await.unwrap() });
-
-    wait_for_rpc_started(ctx_clone.clone(), Duration::from_secs(20))
+    let seed = "sell sell sell sell sell sell sell sell sell sell sell sell";
+    let mut conf = Mm2TestConf::seednode(seed, &coins);
+    if let Some(lt) = custom_locktime {
+        conf.conf["payment_locktime"] = lt.into();
+    }
+    let mm = MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)
         .await
         .unwrap();
 
-    let rpc_port = *ctx_clone.rpc_port.get().unwrap();
+    //let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!("bob's log path: {}", mm.log_path.display());
 
-    MarketMakerIt {
-        folder: bob_db_dir,
-        ip,
-        rpc_port: Some(rpc_port),
-        log_path: kdf_dir.join(LOG_FILENAME),
-        pc: None,
-        userpass: "password".to_string(),
-    }
+    mm
 }
 
 /// Initialize a Sia standalone SiaClient.
@@ -605,27 +394,6 @@ pub async fn get_komodod_client(funded_key: TestKeyPair<'_>, unfunded_key: TestK
     let _ = client.rpc("importaddress", json!([unfunded_key.address])).await;
 
     client
-}
-
-// Wait for `ctx.rpc_started.is_some()` or timeout
-pub async fn wait_for_rpc_started(ctx: MmArc, timeout_duration: Duration) -> Result<(), String> {
-    let start_time = tokio::time::Instant::now();
-    common::log::debug!("Waiting for RPC to start");
-    loop {
-        {
-            if ctx.rpc_port.get().is_some() {
-                return Ok(());
-            }
-        }
-
-        // Check if we've reached the timeout
-        if start_time.elapsed() >= timeout_duration {
-            common::log::debug!("Timed out waiting for RPC to start");
-            return Err("Timed out waiting for RPC to start".to_string());
-        }
-
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-    }
 }
 
 // Wait until Alice connects to Bob as a peer or timeout

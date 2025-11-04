@@ -22,7 +22,6 @@ pub struct KomododClientConf {
 
 pub struct KomododClient {
     pub client: ReqwestClient,
-    pub conf: KomododClientConf,
     pub url: Url,
 }
 
@@ -53,7 +52,7 @@ impl KomododClient {
             .build()
             .unwrap();
 
-        let client = KomododClient { client, conf, url };
+        let client = KomododClient { client, url };
 
         let _getinfo = client.rpc("getinfo", json!([])).await;
         client
