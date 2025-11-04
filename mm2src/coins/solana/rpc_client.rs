@@ -82,12 +82,11 @@ impl RpcClient {
         owner: &Pubkey,
         filter: RpcTokenAccountsFilter,
     ) -> ClientResult<()> {
-        self.send::<Value>(
+        self.send(
             RpcRequest::GetTokenAccountsByOwner,
             json!([owner.to_string(), filter, { "encoding": "jsonParsed" }]),
         )
         .await
-        .map(|_| ())
     }
 
     pub async fn get_token_account_balance(&self, account: &Pubkey) -> ClientResult<UiTokenAmount> {

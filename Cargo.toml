@@ -197,7 +197,7 @@ time = "0.3.36"
 timed-map = { version = "1.5", features = ["rustc-hash", "serde", "wasm"] }
 tokio = { version = "1.47",  default-features = false }
 tokio-rustls = { version = "0.24", default-features = false }
-tokio-tungstenite-wasm = { git = "https://github.com/KomodoPlatform/tokio-tungstenite-wasm", rev = "8fc7e2f", default-features = false, features = ["rustls-tls-native-roots"]}
+tokio-tungstenite-wasm = { git = "https://github.com/KomodoPlatform/tokio-tungstenite-wasm", rev = "8fc7e2f", default-features = false }
 tonic = { version = "0.10", default-features = false }
 tonic-build = { version = "0.10", default-features = false, features = ["prost"] }
 tower-service = "0.3"

@@ -106,7 +106,6 @@ utxo_signer = { path = "utxo_signer" }
 # using the same version as cosmrs
 tendermint-rpc.workspace = true
 thiserror.workspace = true
-tokio-tungstenite-wasm = { workspace = true, features = ["rustls-tls-native-roots"]}
 url.workspace = true
 uuid.workspace = true
 # One of web3 dependencies is the old `tokio-uds 0.1.7` which fails cross-compiling to ARM.
@@ -168,12 +167,23 @@ timed-map = { workspace = true, features = ["rustc-hash"] }
 tokio.workspace = true
 tokio-rustls.workspace = true
 tonic = { workspace = true, features = ["codegen", "prost", "gzip", "tls", "tls-webpki-roots"] }
-webpki-roots.workspace = true
 zcash_client_sqlite.workspace = true
 zcash_proofs = { workspace = true, features = ["local-prover", "multicore"] }
 
+[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))'.dependencies]
+webpki-roots.workspace = true
+
 [target.'cfg(windows)'.dependencies]
 winapi.workspace = true
+
+# iOS-specific dependencies to fix certificate validation issues with Let's Encrypt ECDSA certificates
+[target.'cfg(target_os = "ios")'.dependencies]
+tokio-tungstenite-wasm = { workspace = true, features = ["rustls-tls-webpki-roots"] }
+webpki-roots = "0.26"
+
+# Non-iOS platforms use native certificate roots
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+tokio-tungstenite-wasm = { workspace = true, features = ["rustls-tls-native-roots"] }
 
 [dev-dependencies]
 mm2_test_helpers = { path = "../mm2_test_helpers" }
