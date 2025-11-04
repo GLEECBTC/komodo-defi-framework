@@ -2978,6 +2978,7 @@ impl TrieStore {
 }
 
 fn spawn_trie_store_worker(ctx: &MmArc, trie_store: Arc<PaMutex<TrieStore>>) -> UnboundedSender<Vec<TrieOp>> {
+    // TODO(rate-limiting): when implementing rate-limiting for orderbook messages we can have a bounded channel here if needed
     let (tx, mut rx) = unbounded::<Vec<TrieOp>>();
     let spawner = ctx.spawner();
     spawner.spawn(async move {
