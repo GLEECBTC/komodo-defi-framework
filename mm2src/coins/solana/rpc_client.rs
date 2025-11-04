@@ -103,7 +103,7 @@ impl RpcClient {
     }
 
     pub async fn get_fee_for_message(&self, message: &Message) -> ClientResult<u64> {
-        let encoded = encode_bincode_base64(message, "message")?;
+        let encoded = encode_bincode_base64(message)?;
         let response: Response<Option<u64>> = self.send(RpcRequest::GetFeeForMessage, json!([encoded])).await?;
         let value = response.value;
         value.ok_or_else(|| ClientErrorKind::Custom("Fee unavailable for provided message".to_string()).into())
@@ -142,7 +142,7 @@ impl RpcClient {
     }
 
     pub async fn send_transaction(&self, transaction: &Transaction) -> ClientResult<Signature> {
-        let encoded = encode_bincode_base64(transaction, "transaction")?;
+        let encoded = encode_bincode_base64(transaction)?;
         let signature: String = self
             .send(
                 RpcRequest::SendTransaction,
@@ -201,10 +201,8 @@ impl RpcClient {
     }
 }
 
-fn encode_bincode_base64<T: Serialize>(value: &T, entity_name: &'static str) -> ClientResult<String> {
+fn encode_bincode_base64<T: Serialize + std::fmt::Debug>(value: &T) -> ClientResult<String> {
     serialize(value)
         .map(|bytes| STANDARD.encode(bytes))
-        .map_err(|e| -> ClientError {
-            ClientErrorKind::Parse(format!("Failed to serialize {entity_name}: {e}")).into()
-        })
+        .map_err(|e| -> ClientError { ClientErrorKind::Parse(format!("{e}: failed to serialize: {value:?}")).into() })
 }
