@@ -1,6 +1,4 @@
-use crate::docker_tests::docker_tests_common::{
-    fund_privkey_utxo, generate_utxo_coin_with_privkey, random_secp256k1_secret,
-};
+use crate::docker_tests::docker_tests_common::{fund_privkey_utxo, random_secp256k1_secret};
 
 use super::utils::*;
 
@@ -49,11 +47,19 @@ async fn test_alice_and_bob_enable_dsia() {
 /// Test komodo client and it's connectivity to the komodod (mycoin) global container.
 /// Validate Alice and Bob's addresses were imported via `importaddress`
 #[tokio::test]
-async fn test_init_utxo_container_and_client() {
-    let client = get_komodod_client(ALICE_KMD_KEY, BOB_KMD_KEY).await;
+async fn test_utxo_container_and_client() {
+    let client = get_komodod_client(
+        "RNa3bJJC2L3UUCGQ9WY5fhCSzSd5ExiAWr",
+        "RLHqXM7q689D1PZvt9nH5nmouSPMG9sopG",
+    )
+    .await;
 
-    let alice_validate_address_resp = client.rpc("validateaddress", json!([ALICE_KMD_KEY.address])).await;
-    let bob_validate_address_resp = client.rpc("validateaddress", json!([BOB_KMD_KEY.address])).await;
+    let alice_validate_address_resp = client
+        .rpc("validateaddress", json!(["RNa3bJJC2L3UUCGQ9WY5fhCSzSd5ExiAWr"]))
+        .await;
+    let bob_validate_address_resp = client
+        .rpc("validateaddress", json!(["RLHqXM7q689D1PZvt9nH5nmouSPMG9sopG"]))
+        .await;
 
     assert_eq!(alice_validate_address_resp["result"]["iswatchonly"], true);
     assert_eq!(bob_validate_address_resp["result"]["iswatchonly"], true);

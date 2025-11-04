@@ -15,8 +15,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::collections::HashMap;
 use std::net::IpAddr;
-use std::str::FromStr;
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use url::Url; // for read_line()
@@ -105,20 +103,6 @@ pub const WALLETD_NETWORK_CONFIG: &str = r#"{
     }
 }"#;
 
-pub const ALICE_SIA_ADDRESS_STR: &str = "a0cfbc1089d129f52d00bc0b0fac190d4d87976a1d7f34da7ca0c295c99a628de344d19ad469";
-pub const ALICE_KMD_KEY: TestKeyPair = TestKeyPair {
-    address: "RNa3bJJC2L3UUCGQ9WY5fhCSzSd5ExiAWr",
-    pubkey: "033ca097f047603318d7191ecb8e75b96a15b6bfac97853c4f25619177c5992427",
-    wif: "UqubgosgQT3cjt488P2qLoqP3oMGgNccXHTGeVQBSUFsMwCA459Q",
-};
-
-pub const BOB_SIA_ADDRESS_STR: &str = "c34caa97740668de2bbdb7174572ed64c861342bf27e80313cbfa02e9251f52e30aad3892533";
-pub const BOB_KMD_KEY: TestKeyPair = TestKeyPair {
-    address: "RLHqXM7q689D1PZvt9nH5nmouSPMG9sopG",
-    pubkey: "02f5e06a51ac7723d8d07792b6b2f36e7953264ce0756006c3859baaad4c016266",
-    wif: "UvU3bn2bucriZVDaSSB51aGGu9emUbmf9ZK72sdRjrD2Vb4smQ8T",
-};
-
 lazy_static! {
     pub static ref COINS: Json = json!(
         [
@@ -145,12 +129,6 @@ lazy_static! {
         ]
     );
 
-    /// Sia Address from the iguana seed "buyer buyer buyer buyer buyer buyer buyer buyer buyer buyer buyer cabin"
-    pub static ref ALICE_SIA_ADDRESS: Address = Address::from_str(ALICE_SIA_ADDRESS_STR).unwrap();
-
-    /// Sia Address from the iguana seed "sell sell sell sell sell sell sell sell sell sell sell sell"
-    pub static ref BOB_SIA_ADDRESS: Address = Address::from_str(BOB_SIA_ADDRESS_STR).unwrap();
-
     /// A Sia Address that is not Alice's or Bob's. Global walletd container will mine to this address.
     /// iguana seed "neutral neutral neutral neutral neutral neutral neutral neutral neutral neutral neutral noise"
     pub static ref CHARLIE_SIA_KEYPAIR: Keypair = Keypair::from_private_bytes(&[
@@ -162,19 +140,6 @@ lazy_static! {
 
     /// Sia Address of CHARLIE_SIA_KEYPAIR
     pub static ref CHARLIE_SIA_ADDRESS: Address = CHARLIE_SIA_KEYPAIR.public().address();
-}
-
-/// A container running a Sia walletd instance.
-/// The container will run until the `Container` falls out of scope. It will then be stopped and removed.
-/// It is sometimes useful while debugging to leave a container running after a test executes.
-/// This can be done by leaking the `Container` or the `SiaTestnetContainer` itself.
-/// eg,
-/// let _leaked = Box::leak(Box::new(container));
-pub struct SiaTestnetContainer {
-    /// SiaClient to interact with the walletd API within the container
-    pub client: SiaClient,
-    /// Port on the host that walletd API is bound to
-    pub host_port: u16,
 }
 
 /// Send coins from Charlie to the given address.
@@ -208,23 +173,6 @@ pub async fn fund_privkey_sia(priv_key: &H256, amount: Currency) {
     let keypair = Keypair::from_private_bytes(priv_key.as_slice()).unwrap();
     let address = Address::from_public_key(&keypair.public());
     fund_address(&address, amount).await;
-}
-
-/// Get the global walletd container
-pub async fn get_global_walletd_container() -> Arc<SiaTestnetContainer> {
-    let client = init_sia_client().await.unwrap();
-    Arc::new(SiaTestnetContainer {
-        host_port: client.base_url.port().unwrap(),
-        client,
-    })
-}
-
-pub struct TestKeyPair<'a> {
-    pub address: &'a str,
-    #[allow(dead_code)]
-    pub pubkey: &'a str,
-    #[allow(dead_code)]
-    pub wif: &'a str,
 }
 
 /// Response from `get_directly_connected_peers` RPC endpoint.
@@ -306,6 +254,21 @@ pub async fn init_bob(priv_key: &H256, custom_locktime: Option<u64>) -> MarketMa
     mm
 }
 
+/// Re-initialize Bob's MarketMaker instance with the same configuration but a new instance.
+/// This is useful to simulate Bob going offline and then coming back online.
+pub async fn re_init_bob(mm: &MarketMakerIt, priv_key: &H256, custom_locktime: Option<u64>) -> MarketMakerIt {
+    let seed = format!("0x{}", hex::encode(priv_key));
+    let mut conf = Mm2TestConf::seednode(&seed, &COINS);
+    conf.conf["dbdir"] = mm.folder.join("DB").to_str().unwrap().into();
+    conf.conf["log"] = mm.folder.join("mm2_dup.log").to_str().unwrap().into();
+    if let Some(lt) = custom_locktime {
+        conf.conf["payment_locktime"] = lt.into();
+    }
+    MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)
+        .await
+        .unwrap()
+}
+
 /// Initialize a Sia standalone SiaClient.
 /// This is useful to interact with a Sia testnet container for commands that are not from Alice or
 /// Bob. Eg, mining blocks to progress the chain.
@@ -366,9 +329,9 @@ pub async fn wait_for_dsia_node_ready() {
     });
 }
 
-/// Connects to the the already initilized komodod container (running MYCOIN) and funds `funded_key` with some coins.
-/// Also imports both `funded_key` and `unfunded_key` addresses into the node.
-pub async fn get_komodod_client(funded_key: TestKeyPair<'_>, unfunded_key: TestKeyPair<'_>) -> KomododClient {
+/// Connects to the the already initilized komodod container (running MYCOIN) and funds `funded_address` with some coins.
+/// Also imports both `funded_address` and `unfunded_address` addresses into the node.
+pub async fn get_komodod_client(funded_address: &str, unfunded_address: &str) -> KomododClient {
     let conf = KomododClientConf {
         // This is where MYCOIN node runs.
         // TODO: make a global constant for this.
@@ -380,12 +343,12 @@ pub async fn get_komodod_client(funded_key: TestKeyPair<'_>, unfunded_key: TestK
     };
     let client = KomododClient::new(conf).await;
 
-    // Send 1,000,000 coins to funded_key.address
-    let _ = client.rpc("sendtoaddress", json!([funded_key.address, 1000000])).await;
+    // Send 1,000,000 coins to funded_address
+    let _ = client.rpc("sendtoaddress", json!([funded_address, 1000000])).await;
 
     // Import both addresses to our node.
-    let _ = client.rpc("importaddress", json!([funded_key.address])).await;
-    let _ = client.rpc("importaddress", json!([unfunded_key.address])).await;
+    let _ = client.rpc("importaddress", json!([funded_address])).await;
+    let _ = client.rpc("importaddress", json!([unfunded_address])).await;
 
     client
 }
