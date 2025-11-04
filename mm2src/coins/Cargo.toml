@@ -11,12 +11,17 @@ enable-sia = [
     "dep:blake2b_simd",
 ]
 enable-solana = [
+    "dep:bincode",
+    "dep:solana-bincode",
     "dep:solana-keypair",
     "dep:solana-pubkey",
     "dep:solana-rpc-client-types",
     "dep:solana-rpc-client",
     "dep:solana-signer",
+    "dep:solana-system-transaction",
+    "dep:solana-transaction",
     "dep:spl-associated-token-account-client",
+    "dep:spl-token",
 ]
 default = []
 run-docker-tests = []
@@ -115,7 +120,6 @@ sha3.workspace = true
 utxo_signer = { path = "utxo_signer" }
 # using the same version as cosmrs
 tendermint-rpc.workspace = true
-tokio-tungstenite-wasm = { workspace = true, features = ["rustls-tls-native-roots"]}
 thiserror.workspace = true
 url.workspace = true
 uuid.workspace = true
@@ -128,12 +132,17 @@ zcash_extras.workspace = true
 zcash_primitives.workspace = true
 
 # Solana
+bincode = { version = "1.3", default-features = false, optional = true }
+solana-bincode = { version = "2.2", default-features = false, optional = true }
 solana-keypair = { version = "2.2", default-features = false, optional = true }
 solana-pubkey = { version = "2.4", default-features = false, optional = true }
 solana-rpc-client = { version = "2.3", default-features = false, optional = true }
 solana-rpc-client-types= { version = "2.3", default-features = false, optional = true }
 solana-signer = { version = "2.2", default-features = false, optional = true }
+solana-system-transaction = { version = "2.2", default-features = false, optional = true }
+solana-transaction = { version = "2.2", default-features = false, optional = true }
 spl-associated-token-account-client = { version = "2.0", default-features = false, optional = true }
+spl-token = { version = "8", default-features = false, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 blake2b_simd.workspace = true
@@ -169,12 +178,23 @@ timed-map = { workspace = true, features = ["rustc-hash"] }
 tokio.workspace = true
 tokio-rustls.workspace = true
 tonic = { workspace = true, features = ["codegen", "prost", "gzip", "tls", "tls-webpki-roots"] }
-webpki-roots.workspace = true
 zcash_client_sqlite.workspace = true
 zcash_proofs = { workspace = true, features = ["local-prover", "multicore"] }
 
+[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))'.dependencies]
+webpki-roots.workspace = true
+
 [target.'cfg(windows)'.dependencies]
 winapi.workspace = true
+
+# iOS-specific dependencies to fix certificate validation issues with Let's Encrypt ECDSA certificates
+[target.'cfg(target_os = "ios")'.dependencies]
+tokio-tungstenite-wasm = { workspace = true, features = ["rustls-tls-webpki-roots"] }
+webpki-roots = "0.26"
+
+# Non-iOS platforms use native certificate roots
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+tokio-tungstenite-wasm = { workspace = true, features = ["rustls-tls-native-roots"] }
 
 [dev-dependencies]
 mm2_test_helpers = { path = "../mm2_test_helpers" }

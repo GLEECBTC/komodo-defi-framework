@@ -9,9 +9,10 @@ use url::Url;
 pub(crate) const FEE_PRIORITY_LEVEL_N: usize = 3;
 
 /// Indicates which provider was used to get fee per gas estimations
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum EstimationSource {
     /// filled by default values
+    #[default]
     Empty,
     /// internal simple estimator
     Simple,
@@ -27,12 +28,6 @@ impl std::fmt::Display for EstimationSource {
             EstimationSource::Infura => write!(f, "infura"),
             EstimationSource::Blocknative => write!(f, "blocknative"),
         }
-    }
-}
-
-impl Default for EstimationSource {
-    fn default() -> Self {
-        Self::Empty
     }
 }
 

@@ -2,6 +2,13 @@
 
 ### Enhancements/Fixes:
 
+**Swap Stats DB**:
+- Swap status broadcasting was enabled for privacy coins with the persistent pubkey hidden (set to zeros) to maintain user privacy. [#2648](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2648)
+- Stats database now correctly stores persistent pubkeys for both maker and taker instead of incorrectly storing htlc pubkeys in some cases. [#2648](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2648)
+
+**ARRR/Pirate**:
+- The `get_nullifiers` function for Zcoin WASM build is now aligned with its sqlite counterpart to return nullifiers for both unspent notes and notes with unconfirmed spends, fixing the `spent_by_me` field in transaction history and balance calculations. [#2651](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2651)
+
 **Metrics**:
 - The `memory_db` size metric that relied on `parity-util-mem::malloc_size` was removed because it intermittently segfaulted on Linux due to allocator conflicts. [#2632](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2632)
 

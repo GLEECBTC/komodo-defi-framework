@@ -16,16 +16,13 @@ pub async fn handle_sse(request: Request<Body>, ctx_h: u32) -> Response<Body> {
         return handle_internal_error("Event streaming is disabled".to_string()).await;
     };
 
-    let client_id = match request.uri().query().and_then(|query| {
-        query
-            .split('&')
-            .find(|param| param.starts_with("id="))
-            .map(|id_param| id_param.trim_start_matches("id=").parse::<u64>())
-    }) {
-        Some(Ok(id)) => id,
+    let client_id = request
+        .uri()
+        .query()
+        .and_then(|q| q.split('&').find_map(|p| p.strip_prefix("id=")))
+        .and_then(|v| v.parse::<u64>().ok())
         // Default to zero when client ID isn't passed, most of the cases we will have a single user/client.
-        _ => 0,
-    };
+        .unwrap_or(0);
 
     let event_stream_manager = ctx.event_stream_manager.clone();
     let Ok(mut rx) = event_stream_manager.new_client(client_id) else {

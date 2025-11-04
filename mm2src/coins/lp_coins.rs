@@ -47,9 +47,10 @@ extern crate ser_error_derive;
 
 use async_trait::async_trait;
 use bip32::ExtendedPrivateKey;
+use common::custom_futures::repeatable::Action::{Ready, Retry};
 use common::custom_futures::timeout::TimeoutError;
 use common::executor::{abortable_queue::WeakSpawner, AbortedError, SpawnFuture};
-use common::log::{warn, LogOnError};
+use common::log::{info, warn, LogOnError};
 use common::{calc_total_pages, now_sec, ten, HttpStatusCode, DEX_BURN_ADDR_RAW_PUBKEY, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::{
     derive_secp256k1_secret, Bip32Error, Bip44Chain, CryptoCtx, CryptoCtxError, DerivationPath, GlobalHDAccountArc,
@@ -303,6 +304,8 @@ use z_coin::{ZCoin, ZcoinProtocolInfo};
 
 #[cfg(feature = "enable-solana")]
 pub mod solana;
+#[cfg(feature = "enable-solana")]
+use crate::solana::SolanaFeeDetails;
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
 pub type TransactionResult = Result<TransactionEnum, TransactionErr>;
@@ -1919,6 +1922,12 @@ pub trait MakerCoinSwapOpsV2: ParseCoinAssocTypes + CommonSwapOpsV2 + Send + Syn
     async fn send_maker_payment_v2(&self, args: SendMakerPaymentArgs<'_, Self>) -> Result<Self::Tx, TransactionErr>;
 
     /// Validate maker payment transaction
+    ///
+    /// Important:
+    /// - Offline semantic validation only (destination address/script, value/ABI args/pubs).
+    /// - Must not perform any network I/O: no RPC calls, no mempool lookups, no confirmation checks.
+    /// - Presence and confirmations are enforced by the swap state machine
+    /// (e.g., before the taker waits for maker payment confirmation to allow for fast failure).
     async fn validate_maker_payment_v2(&self, args: ValidateMakerPaymentArgs<'_, Self>) -> ValidatePaymentResult<()>;
 
     /// Refund maker payment transaction using timelock path
@@ -2069,6 +2078,12 @@ pub trait TakerCoinSwapOpsV2: ParseCoinAssocTypes + CommonSwapOpsV2 + Send + Syn
     async fn send_taker_funding(&self, args: SendTakerFundingArgs<'_>) -> Result<Self::Tx, TransactionErr>;
 
     /// Validates taker funding transaction.
+    ///
+    /// Important:
+    /// - Offline semantic validation only (destination address/script, value/ABI args/pubs).
+    /// - Must not perform any network I/O: no RPC calls, no mempool lookups, no confirmation checks.
+    /// - Presence and confirmations are enforced by the swap state machine
+    /// (e.g., before Maker sends their payment if they don't require funding confirmation).
     async fn validate_taker_funding(&self, args: ValidateTakerFundingArgs<'_, Self>) -> ValidateSwapV2TxResult;
 
     /// Refunds taker funding transaction using time-locked path without secret reveal.
@@ -2471,6 +2486,8 @@ pub enum TxFeeDetails {
     Tendermint(TendermintFeeDetails),
     #[cfg(feature = "enable-sia")]
     Sia(SiaFeeDetails),
+    #[cfg(feature = "enable-solana")]
+    Solana(SolanaFeeDetails),
 }
 
 /// Deserialize the TxFeeDetails as an untagged enum.
@@ -2485,18 +2502,24 @@ impl<'de> Deserialize<'de> for TxFeeDetails {
             Utxo(UtxoFeeDetails),
             Eth(EthTxFeeDetails),
             Qrc20(Qrc20FeeDetails),
+            Slp(SlpFeeDetails),
             Tendermint(TendermintFeeDetails),
             #[cfg(feature = "enable-sia")]
             Sia(SiaFeeDetails),
+            #[cfg(feature = "enable-solana")]
+            Solana(SolanaFeeDetails),
         }
 
         match Deserialize::deserialize(deserializer)? {
             TxFeeDetailsUnTagged::Utxo(f) => Ok(TxFeeDetails::Utxo(f)),
             TxFeeDetailsUnTagged::Eth(f) => Ok(TxFeeDetails::Eth(f)),
             TxFeeDetailsUnTagged::Qrc20(f) => Ok(TxFeeDetails::Qrc20(f)),
+            TxFeeDetailsUnTagged::Slp(f) => Ok(TxFeeDetails::Slp(f)),
             TxFeeDetailsUnTagged::Tendermint(f) => Ok(TxFeeDetails::Tendermint(f)),
             #[cfg(feature = "enable-sia")]
             TxFeeDetailsUnTagged::Sia(f) => Ok(TxFeeDetails::Sia(f)),
+            #[cfg(feature = "enable-solana")]
+            TxFeeDetailsUnTagged::Solana(f) => Ok(TxFeeDetails::Solana(f)),
         }
     }
 }
@@ -3738,7 +3761,7 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
     /// Transaction history background sync status
     fn history_sync_status(&self) -> HistorySyncState;
 
-    /// Get fee to be paid per 1 swap transaction
+    /// Returns the approximate amount of the miner fee that is paid per swap transaction.
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send>;
 
     /// Get fee to be paid by sender per whole swap (including possible refund) using the sending value and check if the wallet has sufficient balance to pay the fee.
@@ -3822,6 +3845,57 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
 
     /// For Handling the removal/deactivation of token on platform coin deactivation.
     fn on_token_deactivated(&self, ticker: &str);
+}
+
+/// Best-effort tx mempool visibility within the grace window. If the tx is not seen initially,
+/// a one-shot rebroadcast is done, then a poll until the tx is seen or the grace window expires.
+pub async fn ensure_tx_is_broadcasted<C, T>(coin: &C, tx: &T, total_grace_secs: f64, poll_every_secs: f64) -> bool
+where
+    C: MmCoin + ?Sized,
+    T: Transaction + ?Sized,
+{
+    let tx_hash_bytes = tx.tx_hash_as_bytes().0.clone();
+    let raw_bytes = tx.tx_hex();
+
+    let did_rebroadcast = Arc::new(AtomicBool::new(false));
+
+    let result = repeatable!(async {
+        match coin.get_tx_hex_by_hash(tx_hash_bytes.clone()).compat().await {
+            Ok(_) => Ready(()),
+            Err(e) => {
+                // One-shot best-effort rebroadcast on first miss.
+                if did_rebroadcast
+                    .compare_exchange(false, true, AtomicOrdering::Relaxed, AtomicOrdering::Relaxed)
+                    .is_ok()
+                {
+                    match coin.send_raw_tx_bytes(&raw_bytes).compat().await {
+                        Ok(tx_hash) => {
+                            info!(
+                                "ensure_tx_is_broadcasted: [{}] rebroadcast attempt for {} accepted by node as {}",
+                                coin.ticker(),
+                                hex::encode(&tx_hash_bytes),
+                                tx_hash
+                            );
+                        },
+                        Err(err) => {
+                            warn!(
+                                "ensure_tx_is_broadcasted: [{}] rebroadcast attempt for {} failed: {}",
+                                coin.ticker(),
+                                hex::encode(&tx_hash_bytes),
+                                err
+                            );
+                        },
+                    }
+                }
+                Retry(e)
+            },
+        }
+    })
+    .repeat_every_secs(poll_every_secs)
+    .with_timeout_secs(total_grace_secs)
+    .await;
+
+    result.is_ok()
 }
 
 #[derive(Clone)]

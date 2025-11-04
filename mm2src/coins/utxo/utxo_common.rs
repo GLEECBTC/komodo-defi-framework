@@ -4794,6 +4794,8 @@ where
     let expected_redeem = tx_type_with_secret_hash.redeem_script(time_lock, first_pub0, second_pub0);
     let tx_hash = tx.tx_hash_as_bytes();
 
+    // TODO: This is redundant when used in swaps v2.
+    // It will be removed if we implemented cross-publishing swap payments in swaps v1.
     let tx_from_rpc = retry_on_err!(async {
         coin.as_ref()
             .rpc_client
@@ -5431,21 +5433,6 @@ where
             expected_output,
             args.funding_tx.outputs.first()
         )));
-    }
-
-    let tx_bytes_from_rpc = coin
-        .as_ref()
-        .rpc_client
-        .get_transaction_bytes(&args.funding_tx.hash().reversed().into())
-        .compat()
-        .await
-        .map_mm_err()?;
-    let actual_tx_bytes = serialize(args.funding_tx).take();
-    if tx_bytes_from_rpc.0 != actual_tx_bytes {
-        return MmError::err(ValidateSwapV2TxError::TxBytesMismatch {
-            from_rpc: tx_bytes_from_rpc,
-            actual: actual_tx_bytes.into(),
-        });
     }
 
     // import funding address in native mode to track funding tx spend

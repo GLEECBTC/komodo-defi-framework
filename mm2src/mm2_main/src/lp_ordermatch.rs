@@ -3389,6 +3389,7 @@ async fn start_maker_swap_state_machine<
         secret_hash_algo: *params.secret_hash_algo,
         lock_duration: *params.locktime,
         taker_p2p_pubkey: *taker_p2p_pubkey,
+        require_taker_funding_confirm_before_maker_payment: false,
         require_taker_payment_spend_confirm: true,
         swap_version: maker_order.swap_version.version,
     };
