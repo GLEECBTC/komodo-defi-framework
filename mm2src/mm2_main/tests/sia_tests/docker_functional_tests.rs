@@ -1,3 +1,7 @@
+use crate::docker_tests::docker_tests_common::{
+    fund_privkey_utxo, generate_utxo_coin_with_privkey, random_secp256k1_secret,
+};
+
 use super::utils::*;
 
 use coins::siacoin::ApiClientHelpers;
@@ -5,61 +9,44 @@ use mm2_test_helpers::for_tests::{start_swaps, wait_for_swap_finished_or_err};
 
 use std::str::FromStr;
 
-/// Not a real test, useful to start a DSIA container with identical parameters as the one used in
-/// other tests.
-/// Starts a new DSIA container and prints the port walletd is bound to on the host.
-///
-/// The container must be manually stopped.
+/// Tests sia client and it's connectivity to the sia walletd global container.
 #[tokio::test]
-async fn debug_init_walletd_container() {
-    let dsia = get_global_walletd_container().await;
-    log!("DSIA host port: {}", dsia.host_port);
+async fn debug_init_sia_client() {
+    let client = init_sia_client().await.unwrap();
 
     let address =
         Address::from_str("439536d27e5cbf46b0ff873056fa8ef5424fd3f574e5ed694450c8dc4323fe6062d40a11fbc9").unwrap();
 
-    let response = dsia.client.address_balance(address.clone()).await.unwrap();
+    let response = client.address_balance(address.clone()).await.unwrap();
     log!("Address balance: {:?}", response);
     assert_eq!(response.siacoins, Currency(0));
 
-    fund_address(&dsia.client, &address, Currency(10)).await;
+    fund_address(&address, Currency(10)).await;
 
-    let response = dsia.client.address_balance(address).await.unwrap();
+    let response = client.address_balance(address).await.unwrap();
     log!("Address balance: {:?}", response);
 
     assert_eq!(response.siacoins, Currency(10));
 }
 
-/// Initialize Bob KDF instance
+/// Initialize Alice and Bob, check that they connected via p2p network, enable DSIA for both parties
 #[tokio::test]
-async fn test_init_bob() {
-    let _ = init_bob(None).await;
-}
+async fn test_alice_and_bob_enable_dsia() {
+    let alice_priv = random_secp256k1_secret();
+    let bob_priv = random_secp256k1_secret();
 
-/// Initialize Alice and Bob, check that they connected via p2p network
-#[tokio::test]
-async fn test_init_alice_and_bob() {
-    // initialize Bob first because he acts as a seed node
-    let mm_bob = init_bob(None).await;
-    let mm_alice = init_alice(&mm_bob.ip, None).await;
+    let mm_bob = init_bob(&bob_priv, None).await;
+    let mm_alice = init_alice(&alice_priv, &mm_bob.ip, None).await;
 
     wait_for_peers_connected(&mm_alice, &mm_bob, std::time::Duration::from_secs(30))
         .await
         .unwrap();
+
+    let _bob_enable_sia_resp = enable_dsia(&mm_alice).await;
+    let _alice_enable_sia_resp = enable_dsia(&mm_bob).await;
 }
 
-/// Initialize Alice and Bob, initialize Sia testnet container, enable DSIA for both parties
-#[tokio::test]
-async fn test_alice_and_bob_enable_dsia() {
-    let dsia = get_global_walletd_container().await;
-    let mm_bob = init_bob(None).await;
-    let mm_alice = init_alice(&mm_bob.ip, None).await;
-
-    let _bob_enable_sia_resp = enable_dsia(&mm_alice, dsia.host_port).await;
-    let _alice_enable_sia_resp = enable_dsia(&mm_bob, dsia.host_port).await;
-}
-
-/// Initialize Komodods container, initialize KomododClient for Alice and Bob
+/// Test komodo client and it's connectivity to the komodod (mycoin) global container.
 /// Validate Alice and Bob's addresses were imported via `importaddress`
 #[tokio::test]
 async fn test_init_utxo_container_and_client() {
@@ -76,17 +63,20 @@ async fn test_init_utxo_container_and_client() {
 /// Bob sells DSIA for Alice's MYCOIN
 #[tokio::test]
 async fn test_bob_sells_dsia_for_mycoin() {
-    // Start the Sia container and mine 155 blocks to Bob
-    let dsia = get_global_walletd_container().await;
-    fund_address(&dsia.client, &BOB_SIA_ADDRESS, Currency(5)).await;
+    let alice_priv = random_secp256k1_secret();
+    let bob_priv = random_secp256k1_secret();
+
+    // Give bob some sia and alice some mycoin
+    fund_privkey_sia(&bob_priv, Currency(1e23 as u128)).await;
+    fund_privkey_utxo("MYCOIN", 5.into(), &alice_priv).await;
 
     // Initalize Alice and Bob KDF instances
-    let mut mm_bob = init_bob(None).await;
-    let mut mm_alice = init_alice(&mm_bob.ip, None).await;
+    let mut mm_bob = init_bob(&bob_priv, None).await;
+    let mut mm_alice = init_alice(&alice_priv, &mm_bob.ip, None).await;
 
     // Enable DSIA coin for Alice and Bob
-    let _ = enable_dsia(&mm_bob, dsia.host_port).await;
-    let _ = enable_dsia(&mm_alice, dsia.host_port).await;
+    let _ = enable_dsia(&mm_bob).await;
+    let _ = enable_dsia(&mm_alice).await;
 
     // Enable MYCOIN coin via Native node for Alice and Bob
     let _ = enable_mycoin(&mm_alice).await;
@@ -113,17 +103,20 @@ async fn test_bob_sells_dsia_for_mycoin() {
 /// Bob sells MYCOIN for Alice's DSIA
 #[tokio::test]
 async fn test_bob_sells_mycoin_for_dsia() {
-    // Start the Sia container and mine 155 blocks to Alice
-    let dsia = get_global_walletd_container().await;
-    fund_address(&dsia.client, &ALICE_SIA_ADDRESS, Currency(5)).await;
+    let alice_priv = random_secp256k1_secret();
+    let bob_priv = random_secp256k1_secret();
+
+    // Give alice some sia and bob some mycoin
+    fund_privkey_sia(&alice_priv, Currency(1e23 as u128)).await;
+    fund_privkey_utxo("MYCOIN", 5.into(), &bob_priv).await;
 
     // Initalize Alice and Bob KDF instances
-    let mut mm_bob = init_bob(None).await;
-    let mut mm_alice = init_alice(&mm_bob.ip, None).await;
+    let mut mm_bob = init_bob(&bob_priv, None).await;
+    let mut mm_alice = init_alice(&alice_priv, &mm_bob.ip, None).await;
 
     // Enable DSIA coin for Alice and Bob
-    let _ = enable_dsia(&mm_bob, dsia.host_port).await;
-    let _ = enable_dsia(&mm_alice, dsia.host_port).await;
+    let _ = enable_dsia(&mm_bob).await;
+    let _ = enable_dsia(&mm_alice).await;
 
     // Enable MYCOIN coin via Native node for Alice and Bob
     let _ = enable_mycoin(&mm_alice).await;

@@ -17,6 +17,8 @@ use coins::utxo::{
 };
 use coins::z_coin::ZCoin;
 use coins::{ConfirmPaymentInput, MarketCoinOps, Transaction};
+use common::executor::Timer;
+use common::Future01CompatExt;
 pub use common::{block_on, block_on_f01, now_ms, now_sec, wait_until_ms, wait_until_sec};
 use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
 use crypto::Secp256k1Secret;
@@ -53,17 +55,17 @@ use std::{path::PathBuf, sync::Mutex, time::Duration};
 use testcontainers::core::Mount;
 use testcontainers::runners::SyncRunner;
 use testcontainers::{core::WaitFor, Container, GenericImage, RunnableImage};
+use tokio::sync::Mutex as AsyncMutex;
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use web3::types::Address as EthAddress;
 use web3::types::{BlockId, BlockNumber, TransactionRequest};
 use web3::{transports::Http, Web3};
 
 lazy_static! {
-    static ref MY_COIN_LOCK: Mutex<()> = Mutex::new(());
-    static ref MY_COIN1_LOCK: Mutex<()> = Mutex::new(());
-    static ref QTUM_LOCK: Mutex<()> = Mutex::new(());
-    static ref FOR_SLP_LOCK: Mutex<()> = Mutex::new(());
-    static ref ZOMBIE_LOCK: Mutex<()> = Mutex::new(());
+    static ref MY_COIN_LOCK: AsyncMutex<()> = AsyncMutex::new(());
+    static ref MY_COIN1_LOCK: AsyncMutex<()> = AsyncMutex::new(());
+    static ref QTUM_LOCK: AsyncMutex<()> = AsyncMutex::new(());
+    static ref FOR_SLP_LOCK: AsyncMutex<()> = AsyncMutex::new(());
     pub static ref SLP_TOKEN_ID: Mutex<H256> = Mutex::new(H256::default());
     // Private keys supplied with 1000 SLP tokens on tests initialization.
     // Due to the SLP protocol limitations only 19 outputs (18 + change) can be sent in one transaction, which is sufficient for now though.
@@ -589,7 +591,7 @@ pub fn get_slp_token_id() -> String {
     hex::encode(SLP_TOKEN_ID.lock().unwrap().as_slice())
 }
 
-pub fn import_address<T>(coin: &T)
+pub async fn import_address<T>(coin: &T)
 where
     T: MarketCoinOps + AsRef<UtxoCoinFields>,
 {
@@ -600,12 +602,16 @@ where
         "FORSLP" => &*FOR_SLP_LOCK,
         ticker => panic!("Unknown ticker {}", ticker),
     };
-    let _lock = mutex.lock().unwrap();
+    let _lock = mutex.lock().await;
 
     match coin.as_ref().rpc_client {
         UtxoRpcClientEnum::Native(ref native) => {
             let my_address = coin.my_address().unwrap();
-            block_on_f01(native.import_address(&my_address, &my_address, false)).unwrap()
+            native
+                .import_address(&my_address, &my_address, false)
+                .compat()
+                .await
+                .unwrap();
         },
         UtxoRpcClientEnum::Electrum(_) => panic!("Expected NativeClient"),
     }
@@ -657,7 +663,7 @@ pub fn qrc20_coin_from_privkey(ticker: &str, priv_key: Secp256k1Secret) -> (MmAr
     ))
     .unwrap();
 
-    import_address(&coin);
+    block_on(import_address(&coin));
     (ctx, coin)
 }
 
@@ -691,7 +697,7 @@ pub fn utxo_coin_from_privkey(ticker: &str, priv_key: Secp256k1Secret) -> (MmArc
     let req = json!({"method":"enable"});
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
     let coin = block_on(utxo_standard_coin_with_priv_key(&ctx, ticker, &conf, &params, priv_key)).unwrap();
-    import_address(&coin);
+    block_on(import_address(&coin));
     (ctx, coin)
 }
 
@@ -701,6 +707,18 @@ pub fn generate_utxo_coin_with_privkey(ticker: &str, balance: BigDecimal, priv_k
     let timeout = 30; // timeout if test takes more than 30 seconds to run
     let my_address = coin.my_address().expect("!my_address");
     fill_address(&coin, &my_address, balance, timeout);
+}
+
+pub async fn fund_privkey_utxo(ticker: &str, balance: BigDecimal, priv_key: &Secp256k1Secret) {
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let conf = json!({"coin":ticker,"asset":ticker,"txversion":4,"overwintered":1,"txfee":1000,"network":"regtest"});
+    let req = json!({"method":"enable"});
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = utxo_standard_coin_with_priv_key(&ctx, ticker, &conf, &params, *priv_key)
+        .await
+        .unwrap();
+    let my_address = coin.my_address().expect("!my_address");
+    fill_address_async(&coin, &my_address, balance, 30).await;
 }
 
 /// Generate random privkey, create a UTXO coin and fill it's address with the specified balance.
@@ -739,7 +757,7 @@ pub fn fill_qrc20_address(coin: &Qrc20Coin, amount: BigDecimal, timeout: u64) {
     // prevent concurrent fill since daemon RPC returns errors if send_to_address
     // is called concurrently (insufficient funds) and it also may return other errors
     // if previous transaction is not confirmed yet
-    let _lock = QTUM_LOCK.lock().unwrap();
+    let _lock = block_on(QTUM_LOCK.lock());
     let timeout = wait_until_sec(timeout);
     let client = match coin.as_ref().rpc_client {
         UtxoRpcClientEnum::Native(ref client) => client,
@@ -863,6 +881,13 @@ pub fn fill_address<T>(coin: &T, address: &str, amount: BigDecimal, timeout: u64
 where
     T: MarketCoinOps + AsRef<UtxoCoinFields>,
 {
+    block_on(fill_address_async(coin, address, amount, timeout));
+}
+
+pub async fn fill_address_async<T>(coin: &T, address: &str, amount: BigDecimal, timeout: u64)
+where
+    T: MarketCoinOps + AsRef<UtxoCoinFields>,
+{
     // prevent concurrent fill since daemon RPC returns errors if send_to_address
     // is called concurrently (insufficient funds) and it also may return other errors
     // if previous transaction is not confirmed yet
@@ -873,13 +898,13 @@ where
         "FORSLP" => &*FOR_SLP_LOCK,
         ticker => panic!("Unknown ticker {}", ticker),
     };
-    let _lock = mutex.lock().unwrap();
+    let _lock = mutex.lock().await;
     let timeout = wait_until_sec(timeout);
 
     if let UtxoRpcClientEnum::Native(client) = &coin.as_ref().rpc_client {
-        block_on_f01(client.import_address(address, address, false)).unwrap();
-        let hash = block_on_f01(client.send_to_address(address, &amount)).unwrap();
-        let tx_bytes = block_on_f01(client.get_transaction_bytes(&hash)).unwrap();
+        client.import_address(address, address, false).compat().await.unwrap();
+        let hash = client.send_to_address(address, &amount).compat().await.unwrap();
+        let tx_bytes = client.get_transaction_bytes(&hash).compat().await.unwrap();
         let confirm_payment_input = ConfirmPaymentInput {
             payment_tx: tx_bytes.clone().0,
             confirmations: 1,
@@ -887,15 +912,22 @@ where
             wait_until: timeout,
             check_every: 1,
         };
-        block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
+        coin.wait_for_confirmations(confirm_payment_input)
+            .compat()
+            .await
+            .unwrap();
         log!("{:02x}", tx_bytes);
         loop {
-            let unspents = block_on_f01(client.list_unspent_impl(0, i32::MAX, vec![address.to_string()])).unwrap();
+            let unspents = client
+                .list_unspent_impl(0, i32::MAX, vec![address.to_string()])
+                .compat()
+                .await
+                .unwrap();
             if !unspents.is_empty() {
                 break;
             }
             assert!(now_sec() < timeout, "Test timed out");
-            thread::sleep(Duration::from_secs(1));
+            Timer::sleep(1.0).await;
         }
     };
 }

@@ -2,6 +2,7 @@ pub use coins::siacoin::sia_rust::types::{Address, Currency, Keypair};
 pub use coins::siacoin::sia_rust::utils::V2TransactionBuilder;
 
 use coins::siacoin::{ApiClientHelpers, SiaApiClient, SiaClient, SiaClientConf};
+use keys::hash::H256;
 
 use crate::docker_tests::docker_tests_common::SIA_RPC_PARAMS;
 use common::custom_futures::timeout::FutureTimerExt;
@@ -17,6 +18,7 @@ use std::net::IpAddr;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Mutex;
 use url::Url; // for read_line()
 
 mod komodod_client;
@@ -139,26 +141,7 @@ lazy_static! {
                 "protocol":{
                     "type":"UTXO"
                 }
-            },
-            {
-                "coin": "DOC",
-                "asset": "DOC",
-                "fname": "DOC",
-                "rpcport": 62415,
-                "txversion": 4,
-                "overwintered": 1,
-                "mm2": 1,
-                "sign_message_prefix": "Komodo Signed Message:\n",
-                "is_testnet": true,
-                "required_confirmations": 1,
-                "requires_notarization": false,
-                "avg_blocktime": 60,
-                "protocol": {
-                "type": "UTXO"
-                },
-                "derivation_path": "m/44'/141'",
-                "trezor_coin": "Komodo"
-            },
+            }
         ]
     );
 
@@ -196,11 +179,19 @@ pub struct SiaTestnetContainer {
 
 /// Send coins from Charlie to the given address.
 /// Assumes Charlie has enough coins to send.
-pub async fn fund_address(client: &SiaClient, address: &Address, amount: Currency) {
+pub async fn fund_address(address: &Address, amount: Currency) {
+    lazy_static! {
+        static ref SIA_FUNDING_LOCK: Mutex<()> = Mutex::new(());
+    }
+    // Lock the funding operation so to not let multiple tests fund address from the same utxos and double spend them.
+    let _lock = SIA_FUNDING_LOCK.lock().await;
+
+    let client = init_sia_client().await.unwrap();
+
     let tx = V2TransactionBuilder::new()
         .miner_fee(Currency::DEFAULT_FEE)
         .add_siacoin_output((address.clone(), amount).into())
-        .fund_tx_single_source(client, &CHARLIE_SIA_KEYPAIR.public())
+        .fund_tx_single_source(&client, &CHARLIE_SIA_KEYPAIR.public())
         .await
         .expect("fund_address helper failed at fund_tx_single_source")
         .add_change_output(&CHARLIE_SIA_KEYPAIR.public().address())
@@ -211,6 +202,12 @@ pub async fn fund_address(client: &SiaClient, address: &Address, amount: Currenc
     client.broadcast_transaction(&tx).await.unwrap();
     // Mine some blocks to confirm the transaction
     client.mine_blocks(10, &CHARLIE_SIA_ADDRESS).await.unwrap();
+}
+
+pub async fn fund_privkey_sia(priv_key: &H256, amount: Currency) {
+    let keypair = Keypair::from_private_bytes(priv_key.as_slice()).unwrap();
+    let address = Address::from_public_key(&keypair.public());
+    fund_address(&address, amount).await;
 }
 
 /// Get the global walletd container
@@ -237,15 +234,16 @@ pub struct TestKeyPair<'a> {
 #[serde(transparent, rename = "result")]
 pub struct GetDirectlyConnectedPeersResponse(pub HashMap<String, Vec<String>>);
 
-pub async fn enable_dsia(mm: &MarketMakerIt, walletd_port: u16) -> CoinInitResponse {
-    let url = format!("http://127.0.0.1:{}/", walletd_port);
+pub async fn enable_dsia(mm: &MarketMakerIt) -> CoinInitResponse {
+    let (ip, port, password) = SIA_RPC_PARAMS;
+    let url = format!("http://{ip}:{port}/");
     mm.rpc_typed::<CoinInitResponse>(&json!({
         "method": "enable",
         "coin": "DSIA",
         "tx_history": true,
         "client_conf": {
             "server_url": url,
-            "password": "password"
+            "password": password,
         }
     }))
     .await
@@ -269,11 +267,9 @@ Intended to be used in conjunction with `init_bob` to create a taker/maker setup
 
 This node will not act as a seed node and will not listen on the p2p port.
 **/
-pub async fn init_alice(seednode_ip: &IpAddr, custom_locktime: Option<u64>) -> MarketMakerIt {
-    let coins = COINS.clone();
-
-    let seed = "buyer buyer buyer buyer buyer buyer buyer buyer buyer buyer buyer cabin";
-    let mut conf = Mm2TestConf::light_node(seed, &coins, &[&seednode_ip.to_string()]);
+pub async fn init_alice(priv_key: &H256, seednode_ip: &IpAddr, custom_locktime: Option<u64>) -> MarketMakerIt {
+    let seed = format!("0x{}", hex::encode(priv_key));
+    let mut conf = Mm2TestConf::light_node(&seed, &COINS, &[&seednode_ip.to_string()]);
     if let Some(lt) = custom_locktime {
         conf.conf["payment_locktime"] = lt.into();
     }
@@ -294,11 +290,9 @@ Intended to be used in conjunction with `init_alice` to create a taker/maker set
 
 This node will act as a seed node and will listen on the p2p port.
 **/
-pub async fn init_bob(custom_locktime: Option<u64>) -> MarketMakerIt {
-    let coins = COINS.clone();
-
-    let seed = "sell sell sell sell sell sell sell sell sell sell sell sell";
-    let mut conf = Mm2TestConf::seednode(seed, &coins);
+pub async fn init_bob(priv_key: &H256, custom_locktime: Option<u64>) -> MarketMakerIt {
+    let seed = format!("0x{}", hex::encode(priv_key));
+    let mut conf = Mm2TestConf::seednode(&seed, &COINS);
     if let Some(lt) = custom_locktime {
         conf.conf["payment_locktime"] = lt.into();
     }
