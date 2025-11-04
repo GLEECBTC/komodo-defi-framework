@@ -19,18 +19,18 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
 
-pub type ClientResult<T> = Result<T, ClientError>;
+type ClientResult<T> = Result<T, ClientError>;
 
 #[derive(Debug)]
-pub struct RpcClient {
+pub(crate) struct RpcClient {
     url: String,
     request_id: AtomicU64,
 }
 
 #[derive(Debug, Error)]
 #[error("{kind}")]
-pub struct ClientError {
-    pub kind: ClientErrorKind,
+pub(crate) struct ClientError {
+    pub(crate) kind: ClientErrorKind,
 }
 
 impl From<ClientErrorKind> for ClientError {
@@ -40,7 +40,7 @@ impl From<ClientErrorKind> for ClientError {
 }
 
 #[derive(Debug, Error)]
-pub enum ClientErrorKind {
+pub(crate) enum ClientErrorKind {
     #[error("Transport error: {0}")]
     Transport(String),
     #[error("RPC error {0}")]
@@ -53,21 +53,21 @@ pub enum ClientErrorKind {
 
 #[derive(Debug, Error)]
 #[error("{message} (code {code})")]
-pub struct RpcResponseError {
-    pub code: i64,
-    pub message: String,
-    pub data: Option<Value>,
+pub(crate) struct RpcResponseError {
+    pub(crate) code: i64,
+    pub(crate) message: String,
+    pub(crate) data: Option<Value>,
 }
 
 impl RpcClient {
-    pub fn new(url: String) -> Self {
+    pub(crate) fn new(url: String) -> Self {
         RpcClient {
             url,
             request_id: AtomicU64::new(0),
         }
     }
 
-    pub async fn get_health(&self) -> ClientResult<()> {
+    pub(crate) async fn get_health(&self) -> ClientResult<()> {
         let result: String = self.send(RpcRequest::GetHealth, json!([])).await?;
 
         if result == "ok" {
@@ -77,7 +77,7 @@ impl RpcClient {
         }
     }
 
-    pub async fn get_token_accounts_by_owner(
+    pub(crate) async fn get_token_accounts_by_owner(
         &self,
         owner: &Pubkey,
         filter: RpcTokenAccountsFilter,
@@ -90,32 +90,32 @@ impl RpcClient {
         .map(|_| ())
     }
 
-    pub async fn get_token_account_balance(&self, account: &Pubkey) -> ClientResult<UiTokenAmount> {
+    pub(crate) async fn get_token_account_balance(&self, account: &Pubkey) -> ClientResult<UiTokenAmount> {
         let response: Response<UiTokenAmount> = self
             .send(RpcRequest::GetTokenAccountBalance, json!([account.to_string()]))
             .await?;
         Ok(response.value)
     }
 
-    pub async fn get_latest_blockhash(&self) -> ClientResult<Hash> {
+    pub(crate) async fn get_latest_blockhash(&self) -> ClientResult<Hash> {
         let response: Response<RpcBlockhash> = self.send(RpcRequest::GetLatestBlockhash, json!([])).await?;
         Hash::from_str(&response.value.blockhash)
             .map_err(|e| ClientErrorKind::Parse(format!("Invalid blockhash: {e}")).into())
     }
 
-    pub async fn get_fee_for_message(&self, message: &Message) -> ClientResult<u64> {
+    pub(crate) async fn get_fee_for_message(&self, message: &Message) -> ClientResult<u64> {
         let encoded = encode_bincode_base64(message)?;
         let response: Response<Option<u64>> = self.send(RpcRequest::GetFeeForMessage, json!([encoded])).await?;
         let value = response.value;
         value.ok_or_else(|| ClientErrorKind::Custom("Fee unavailable for provided message".to_string()).into())
     }
 
-    pub async fn get_balance(&self, address: &Pubkey) -> ClientResult<u64> {
+    pub(crate) async fn get_balance(&self, address: &Pubkey) -> ClientResult<u64> {
         let response: Response<u64> = self.send(RpcRequest::GetBalance, json!([address.to_string()])).await?;
         Ok(response.value)
     }
 
-    pub async fn get_account(&self, address: &Pubkey) -> ClientResult<Account> {
+    pub(crate) async fn get_account(&self, address: &Pubkey) -> ClientResult<Account> {
         let response = self
             .send::<Response<Option<UiAccount>>>(
                 RpcRequest::GetAccountInfo,
@@ -137,12 +137,12 @@ impl RpcClient {
             .ok_or_else(|| ClientErrorKind::Parse(format!("Failed to decode account data for pubkey {address}")).into())
     }
 
-    pub async fn get_minimum_balance_for_rent_exemption(&self, data_len: usize) -> ClientResult<u64> {
+    pub(crate) async fn get_minimum_balance_for_rent_exemption(&self, data_len: usize) -> ClientResult<u64> {
         self.send(RpcRequest::GetMinimumBalanceForRentExemption, json!([data_len]))
             .await
     }
 
-    pub async fn send_transaction(&self, transaction: &Transaction) -> ClientResult<Signature> {
+    pub(crate) async fn send_transaction(&self, transaction: &Transaction) -> ClientResult<Signature> {
         let encoded = encode_bincode_base64(transaction)?;
         let signature: String = self
             .send(
@@ -159,7 +159,7 @@ impl RpcClient {
         Signature::from_str(&signature).map_err(|e| ClientErrorKind::Parse(format!("Invalid signature: {e}")).into())
     }
 
-    pub async fn get_block_height(&self) -> ClientResult<u64> {
+    pub(crate) async fn get_block_height(&self) -> ClientResult<u64> {
         self.send(RpcRequest::GetBlockHeight, json!([])).await
     }
 
