@@ -1,8 +1,7 @@
 use super::utils::*;
 
 use coins::siacoin::ApiClientHelpers;
-use mm2_test_helpers::electrums::doc_electrums;
-use mm2_test_helpers::for_tests::{enable_utxo_v2_electrum, start_swaps, wait_for_swap_finished_or_err};
+use mm2_test_helpers::for_tests::{start_swaps, wait_for_swap_finished_or_err};
 
 use std::str::FromStr;
 
@@ -71,86 +70,6 @@ async fn test_init_utxo_container_and_client() {
 
     assert_eq!(alice_validate_address_resp["result"]["iswatchonly"], true);
     assert_eq!(bob_validate_address_resp["result"]["iswatchonly"], true);
-}
-
-/// Initialize Alice and Bob, initialize Sia testnet container
-/// Bob sells DOC for Alice's DSIA
-/// Will fail if Bob is not prefunded with DOC
-#[tokio::test]
-#[ignore]
-async fn test_bob_sells_doc_for_dsia() {
-    // Start the Sia container
-    let dsia = get_global_walletd_container().await;
-
-    fund_address(&dsia.client, &ALICE_SIA_ADDRESS, Currency(5)).await;
-
-    // Initalize Alice and Bob KDF instances
-    let mut mm_bob = init_bob(None).await;
-    let mut mm_alice = init_alice(&mm_bob.ip, None).await;
-
-    // Enable DOC coin via electrum for Alice and Bob
-    let _ = enable_utxo_v2_electrum(&mm_bob, "DOC", doc_electrums(), None, 60, None).await;
-    let _ = enable_utxo_v2_electrum(&mm_alice, "DOC", doc_electrums(), None, 60, None).await;
-
-    // Enable DSIA coin for Alice and Bob
-    let _ = enable_dsia(&mm_bob, dsia.host_port).await;
-    let _ = enable_dsia(&mm_alice, dsia.host_port).await;
-
-    // Wait for Alice and Bob KDF instances to peer
-    wait_for_peers_connected(&mm_bob, &mm_alice, std::time::Duration::from_secs(30))
-        .await
-        .unwrap();
-
-    // Start a swap where Bob sells DOC for Alice's DSIA
-    let uuid = start_swaps(&mut mm_bob, &mut mm_alice, &[("DOC", "DSIA")], 1., 1., 0.05)
-        .await
-        .first()
-        .cloned()
-        .unwrap();
-
-    // Wait for the swap to complete
-    wait_for_swap_finished_or_err(&mm_alice, &uuid, 600).await.unwrap();
-    wait_for_swap_finished_or_err(&mm_bob, &uuid, 120).await.unwrap();
-}
-
-/// Initialize Alice and Bob, initialize Sia testnet container
-/// Bob sells DSIA for Alice's DOC
-/// Will fail if Alice is not prefunded with DOC
-#[tokio::test]
-#[ignore]
-async fn test_bob_sells_dsia_for_doc() {
-    // Start the Sia container
-    let dsia = get_global_walletd_container().await;
-
-    fund_address(&dsia.client, &BOB_SIA_ADDRESS, Currency(5)).await;
-
-    // Initalize Alice and Bob KDF instances
-    let mut mm_bob = init_bob(None).await;
-    let mut mm_alice = init_alice(&mm_bob.ip, None).await;
-
-    // Enable DOC coin via electrum for Alice and Bob
-    let _ = enable_utxo_v2_electrum(&mm_bob, "DOC", doc_electrums(), None, 60, None).await;
-    let _ = enable_utxo_v2_electrum(&mm_alice, "DOC", doc_electrums(), None, 60, None).await;
-
-    // Enable DSIA coin for Alice and Bob
-    let _ = enable_dsia(&mm_bob, dsia.host_port).await;
-    let _ = enable_dsia(&mm_alice, dsia.host_port).await;
-
-    // Wait for Alice and Bob KDF instances to peer
-    wait_for_peers_connected(&mm_bob, &mm_alice, std::time::Duration::from_secs(30))
-        .await
-        .unwrap();
-
-    // Start a swap where Bob sells DSIA for Alice's DOC
-    let uuid = start_swaps(&mut mm_bob, &mut mm_alice, &[("DSIA", "DOC")], 1., 1., 0.05)
-        .await
-        .first()
-        .cloned()
-        .unwrap();
-
-    // Wait for the swap to complete
-    wait_for_swap_finished_or_err(&mm_alice, &uuid, 600).await.unwrap();
-    wait_for_swap_finished_or_err(&mm_bob, &uuid, 120).await.unwrap();
 }
 
 /// Initialize Alice and Bob, initialize Sia testnet container, initialize UTXO testnet container,
