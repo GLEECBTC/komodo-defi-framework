@@ -2509,7 +2509,7 @@ fn broadcast_keep_alive_for_pub(ctx: &MmArc, pubkey: &str, trie_store: &TrieStor
     };
 
     for (alb_pair, root) in state.trie_roots.iter() {
-        if *root == H64::default() && *root == hashed_null_node::<Layout>() {
+        if *root == H64::default() || *root == hashed_null_node::<Layout>() {
             continue;
         }
 
