@@ -1012,7 +1012,7 @@ impl MakerSwap {
     }
 
     async fn wait_for_taker_payment(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
-        const PAYMENT_MSG_INTERVAL_SEC: f64 = 600.;
+        const PAYMENT_MSG_INTERVAL_SEC: f64 = 15.;
         let payment_data_msg = match self.get_my_payment_data().await {
             Ok(data) => data,
             Err(e) => {
