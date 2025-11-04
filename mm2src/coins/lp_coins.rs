@@ -304,6 +304,8 @@ use z_coin::{ZCoin, ZcoinProtocolInfo};
 
 #[cfg(feature = "enable-solana")]
 pub mod solana;
+#[cfg(feature = "enable-solana")]
+use crate::solana::SolanaFeeDetails;
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
 pub type TransactionResult = Result<TransactionEnum, TransactionErr>;
@@ -2453,6 +2455,8 @@ pub enum TxFeeDetails {
     Qrc20(Qrc20FeeDetails),
     Slp(SlpFeeDetails),
     Tendermint(TendermintFeeDetails),
+    #[cfg(feature = "enable-solana")]
+    Solana(SolanaFeeDetails),
 }
 
 /// Deserialize the TxFeeDetails as an untagged enum.
@@ -2467,14 +2471,20 @@ impl<'de> Deserialize<'de> for TxFeeDetails {
             Utxo(UtxoFeeDetails),
             Eth(EthTxFeeDetails),
             Qrc20(Qrc20FeeDetails),
+            Slp(SlpFeeDetails),
             Tendermint(TendermintFeeDetails),
+            #[cfg(feature = "enable-solana")]
+            Solana(SolanaFeeDetails),
         }
 
         match Deserialize::deserialize(deserializer)? {
             TxFeeDetailsUnTagged::Utxo(f) => Ok(TxFeeDetails::Utxo(f)),
             TxFeeDetailsUnTagged::Eth(f) => Ok(TxFeeDetails::Eth(f)),
             TxFeeDetailsUnTagged::Qrc20(f) => Ok(TxFeeDetails::Qrc20(f)),
+            TxFeeDetailsUnTagged::Slp(f) => Ok(TxFeeDetails::Slp(f)),
             TxFeeDetailsUnTagged::Tendermint(f) => Ok(TxFeeDetails::Tendermint(f)),
+            #[cfg(feature = "enable-solana")]
+            TxFeeDetailsUnTagged::Solana(f) => Ok(TxFeeDetails::Solana(f)),
         }
     }
 }
@@ -3677,7 +3687,7 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
     /// Transaction history background sync status
     fn history_sync_status(&self) -> HistorySyncState;
 
-    /// Get fee to be paid per 1 swap transaction
+    /// Returns the approximate amount of the miner fee that is paid per swap transaction.
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send>;
 
     /// Get fee to be paid by sender per whole swap (including possible refund) using the sending value and check if the wallet has sufficient balance to pay the fee.

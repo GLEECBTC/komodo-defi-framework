@@ -1248,21 +1248,23 @@ impl WalletRead for WalletIndexedDb {
 
         let mut nullifiers = vec![];
         for (_, note) in maybe_notes {
-            let matching_tx = maybe_txs.iter().find(|(id_tx, _tx)| id_tx.to_bigint() == note.spent);
-
-            if let Some((_, tx)) = matching_tx {
-                if tx.block.is_some() {
-                    nullifiers.push((
-                        AccountId(
-                            note.account
-                                .to_u32()
-                                .ok_or_else(|| ZcoinStorageError::GetFromStorageError("Invalid amount".to_string()))?,
-                        ),
-                        Nullifier::from_slice(&note.nf.clone().ok_or_else(|| {
-                            ZcoinStorageError::GetFromStorageError("Error while putting tx_meta".to_string())
-                        })?)
-                        .unwrap(),
-                    ));
+            let maybe_spending_tx = maybe_txs.iter().find(|(id_tx, _tx)| id_tx.to_bigint() == note.spent);
+            let add_nullifier = match maybe_spending_tx {
+                Some((_, tx)) if tx.block.is_none() => true,
+                None => true,
+                _ => false,
+            };
+            if add_nullifier {
+                if let Some(ref nf_bytes) = note.nf {
+                    let account_id = AccountId(
+                        note.account
+                            .to_u32()
+                            .ok_or_else(|| ZcoinStorageError::GetFromStorageError("Invalid account id".to_string()))?,
+                    );
+                    let nf = Nullifier::from_slice(nf_bytes).map_err(|e| {
+                        ZcoinStorageError::GetFromStorageError(format!("Invalid nullifier bytes error: {}", e))
+                    })?;
+                    nullifiers.push((account_id, nf));
                 }
             }
         }

@@ -430,6 +430,8 @@ async fn rpc_streaming_dispatcher(
         "order_status::enable" => handle_mmrpc(ctx, request, streaming_activations::enable_order_status).await,
         "tx_history::enable" => handle_mmrpc(ctx, request, streaming_activations::enable_tx_history).await,
         "orderbook::enable" => handle_mmrpc(ctx, request, streaming_activations::enable_orderbook).await,
+        #[cfg(not(any(target_arch = "wasm32", target_os = "windows")))]
+        "shutdown_signal::enable" => handle_mmrpc(ctx, request, streaming_activations::enable_shutdown_signal).await,
         "disable" => handle_mmrpc(ctx, request, streaming_activations::disable_streamer).await,
         _ => MmError::err(DispatcherError::NoSuchMethod),
     }

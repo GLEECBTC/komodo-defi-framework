@@ -52,6 +52,9 @@ impl From<SolanaTokenInitError> for EnableTokenError {
             SolanaTokenInitErrorKind::QueryError { reason } => EnableTokenError::Transport(reason.to_string()),
             SolanaTokenInitErrorKind::Internal { reason } => EnableTokenError::Internal(reason.to_string()),
             SolanaTokenInitErrorKind::PlatformCoinMismatch { .. } => EnableTokenError::PlatformCoinMismatch,
+            SolanaTokenInitErrorKind::UnhealthyRPCs => {
+                EnableTokenError::Transport("None of the RPC servers are healthy.".to_owned())
+            },
         }
     }
 }
@@ -62,6 +65,9 @@ impl From<SolanaTokenInitError> for InitTokensAsMmCoinsError {
             SolanaTokenInitErrorKind::QueryError { reason } => InitTokensAsMmCoinsError::Transport(reason.to_string()),
             SolanaTokenInitErrorKind::Internal { reason } => InitTokensAsMmCoinsError::Internal(reason.to_string()),
             SolanaTokenInitErrorKind::PlatformCoinMismatch { .. } => InitTokensAsMmCoinsError::PlatformCoinMismatch,
+            SolanaTokenInitErrorKind::UnhealthyRPCs => {
+                InitTokensAsMmCoinsError::Transport("None of the RPC servers are healthy.".to_owned())
+            },
         }
     }
 }
@@ -81,7 +87,7 @@ impl TokenActivationOps for SolanaToken {
         protocol_conf: Self::ProtocolInfo,
         _is_custom: bool,
     ) -> Result<(Self, Self::ActivationResult), MmError<Self::ActivationError>> {
-        let token = SolanaToken::init(ticker.clone(), platform_coin, protocol_conf)?;
+        let token = SolanaToken::init(ticker.clone(), platform_coin, protocol_conf).await?;
 
         let address = token.my_address().map_err(|e| SolanaTokenInitError {
             ticker: ticker.clone(),

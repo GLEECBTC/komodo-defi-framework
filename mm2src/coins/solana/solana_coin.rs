@@ -10,6 +10,7 @@ use common::executor::{
     abortable_queue::{AbortableQueue, WeakSpawner},
     AbortableSystem, AbortedError,
 };
+use common::now_sec;
 use derive_more::Display;
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
@@ -18,16 +19,21 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 use nom::AsBytes;
+use num_traits::ToPrimitive;
 use num_traits::Zero;
 use parking_lot::Mutex as PaMutex;
+use rpc::v1::types::Bytes as BytesJson;
 use rpc::v1::types::{Bytes as RpcBytes, H264 as RpcH264};
-use solana_keypair::keypair_from_seed;
+use solana_bincode::limited_deserialize;
+use solana_keypair::{keypair_from_seed, Keypair};
 use solana_pubkey::Pubkey as SolanaAddress;
-use solana_rpc_client::rpc_client::RpcClient;
+use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_types::request::TokenAccountsFilter;
 use solana_signer::Signer;
+use solana_transaction::Transaction;
 use url::Url;
 
+use crate::TxFeeDetails;
 use crate::{
     coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentResult},
     hd_wallet::HDAddressSelector,
@@ -35,12 +41,21 @@ use crate::{
     FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy,
     RawTransactionFut, RawTransactionRequest, RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput,
     SendPaymentArgs, SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps, TradeFee, TradePreimageFut,
-    TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionResult, TxMarshalingErr,
-    UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentInput,
-    VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WithdrawFut, WithdrawRequest,
+    TradePreimageResult, TradePreimageValue, TransactionData, TransactionDetails, TransactionEnum, TransactionResult,
+    TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+    ValidateOtherPubKeyErr, ValidatePaymentInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
+    WithdrawError, WithdrawFut, WithdrawRequest,
 };
 
 pub const SOLANA_DECIMALS: u8 = 9;
+
+/// Maximum over-the-wire size of a Transaction
+///   1280 is IPv6 minimum MTU
+///   40 bytes is the size of the IPv6 header
+///   8 bytes is the size of the fragment header
+///
+/// Ported from: https://github.com/anza-xyz/solana-sdk/blob/ac902c4bdb8b0a1/packet/src/lib.rs#L28-L32
+pub const PACKET_DATA_SIZE: usize = 1280 - 40 - 8;
 
 #[derive(Clone, Deserialize)]
 pub struct RpcNode {
@@ -53,6 +68,7 @@ pub struct SolanaCoin(Arc<SolanaCoinFields>);
 pub struct SolanaCoinFields {
     ticker: String,
     pub(crate) address: SolanaAddress,
+    pub(crate) keypair: Keypair,
     pub(crate) abortable_system: AbortableQueue,
     rpc_clients: AsyncMutex<Vec<Arc<RpcClient>>>,
     protocol_info: SolanaProtocolInfo,
@@ -92,6 +108,19 @@ pub enum SolanaInitErrorKind {
     QueryError {
         reason: String,
     },
+}
+
+/// Fees associated with a Solana transaction.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SolanaFeeDetails {
+    /// Network fee in SOL.
+    pub fee_amount: BigDecimal,
+    /// Rent in SOL when an associated token account (ATA) is created.
+    ///
+    /// This is 0 if no ATA creation is needed.
+    pub rent_amount: BigDecimal,
+    /// Sum of the network fee and rent.
+    pub total_amount: BigDecimal,
 }
 
 impl SolanaCoin {
@@ -147,7 +176,10 @@ impl SolanaCoin {
             kind: SolanaInitErrorKind::Internal { reason: e.to_string() },
         })?;
 
-        let rpc_clients: Vec<Arc<RpcClient>> = nodes.iter().map(|n| Arc::new(RpcClient::new(&n.url))).collect();
+        let rpc_clients: Vec<Arc<RpcClient>> = nodes
+            .iter()
+            .map(|n| Arc::new(RpcClient::new(n.url.to_string())))
+            .collect();
 
         let abortable_system = ctx.abortable_system.create_subsystem().map_to_mm(|e| SolanaInitError {
             ticker: ticker.clone(),
@@ -157,6 +189,7 @@ impl SolanaCoin {
         let fields = SolanaCoinFields {
             ticker,
             address,
+            keypair,
             abortable_system,
             rpc_clients: AsyncMutex::new(rpc_clients),
             protocol_info,
@@ -169,11 +202,11 @@ impl SolanaCoin {
     pub(crate) async fn rpc_client(&self) -> MmResult<Arc<RpcClient>, String> {
         let mut rpcs = self.rpc_clients.lock().await;
 
-        if let Some(index) = rpcs.iter().position(|rpc| rpc.get_health().is_ok()) {
-            // Put healthy one to the front.
-            rpcs.rotate_left(index);
-
-            return Ok(rpcs[0].clone());
+        for (index, rpc) in rpcs.iter().enumerate() {
+            if rpc.get_health().await.is_ok() {
+                rpcs.rotate_left(index);
+                return Ok(rpcs[0].clone());
+            }
         }
 
         MmError::err("No healthy RPC client found.".to_owned())
@@ -189,7 +222,10 @@ impl SolanaCoin {
             .map_err(|e| BalanceError::Transport(e.into_inner()))
             .await?;
 
-        if let Err(e) = rpc.get_token_accounts_by_owner(&self.address, TokenAccountsFilter::Mint(*mint_address)) {
+        if let Err(e) = rpc
+            .get_token_accounts_by_owner(&self.address, TokenAccountsFilter::Mint(*mint_address))
+            .await
+        {
             if e.kind.to_string().contains("could not find mint") {
                 return Ok(CoinBalance {
                     spendable: BigDecimal::zero(),
@@ -205,6 +241,7 @@ impl SolanaCoin {
 
         let balance_string = rpc
             .get_token_account_balance(&token_account)
+            .await
             .map_err(|e| BalanceError::Transport(e.to_string()))?
             .ui_amount_string;
 
@@ -214,6 +251,77 @@ impl SolanaCoin {
             spendable: balance,
             unspendable: Default::default(),
         })
+    }
+
+    /// Calculates the withdraw amount (in lamports) that can be withdrawn based on the
+    /// user's request along with the network fee (in lamports).
+    ///
+    /// Returns the amount to withdraw and network fee in lamports on success or
+    /// [`WithdrawError`] if the request is invalid or cannot be processed.
+    async fn calculate_withdraw_and_fee_amount(&self, req: &WithdrawRequest) -> MmResult<(u64, u64), WithdrawError> {
+        let rpc = self
+            .rpc_client()
+            .await
+            .map_err(|e| WithdrawError::Transport(e.into_inner()))?;
+
+        let recent_blockhash = rpc
+            .get_latest_blockhash()
+            .await
+            .map_err(|e| WithdrawError::Transport(e.to_string()))?;
+
+        // Dummy TX to estimate the fee.
+        let tx = solana_system_transaction::transfer(&self.keypair, &self.address, 0, recent_blockhash);
+        let fee_u64 = rpc
+            .get_fee_for_message(tx.message())
+            .await
+            .map_err(|e| WithdrawError::Transport(e.to_string()))?;
+
+        let balance_u64 = rpc
+            .get_balance(&self.address)
+            .await
+            .map_err(|e| WithdrawError::Transport(e.to_string()))?;
+
+        if req.max {
+            let amount = balance_u64.saturating_sub(fee_u64);
+            let amount_big_decimal = u64_lamports_to_big_decimal(amount, SOLANA_DECIMALS);
+
+            // Amount must be bigger than min_tx_amount.
+            if amount_big_decimal < self.min_tx_amount() {
+                return MmError::err(WithdrawError::AmountTooLow {
+                    amount: amount_big_decimal,
+                    threshold: self.min_tx_amount(),
+                });
+            }
+
+            return Ok((amount, fee_u64));
+        }
+
+        let requested_amount = include_lamports_to_big_decimal(&req.amount, SOLANA_DECIMALS);
+
+        // Amount must be bigger than min_tx_amount.
+        if requested_amount < self.min_tx_amount() {
+            return MmError::err(WithdrawError::AmountTooLow {
+                amount: requested_amount,
+                threshold: self.min_tx_amount(),
+            });
+        }
+
+        let requested_amount_u64 = requested_amount.to_u64().ok_or_else(|| {
+            MmError::new(WithdrawError::InternalError(format!(
+                "Couldn't convert {requested_amount} to u64."
+            )))
+        })?;
+
+        // User must have enough balance to cover both the send and fee amounts.
+        if requested_amount_u64 + fee_u64 > balance_u64 {
+            return MmError::err(WithdrawError::NotSufficientBalance {
+                coin: self.ticker.to_owned(),
+                available: u64_lamports_to_big_decimal(balance_u64, SOLANA_DECIMALS),
+                required: u64_lamports_to_big_decimal(requested_amount_u64 + fee_u64, SOLANA_DECIMALS),
+            });
+        };
+
+        Ok((requested_amount_u64, fee_u64))
     }
 }
 
@@ -228,11 +336,84 @@ impl MmCoin for SolanaCoin {
     }
 
     fn spawner(&self) -> WeakSpawner {
-        todo!()
+        self.abortable_system.weak_spawner()
     }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
-        todo!()
+        let coin = self.clone();
+        let fut = async move {
+            let to = SolanaAddress::from_str(&req.to).map_err(|e| WithdrawError::InvalidAddress(e.to_string()))?;
+
+            let rpc = coin
+                .rpc_client()
+                .await
+                .map_err(|e| WithdrawError::Transport(e.into_inner()))?;
+
+            let (withdraw_lamports, fee_lamports) = coin.calculate_withdraw_and_fee_amount(&req).await?;
+
+            if withdraw_lamports == 0 {
+                return MmError::err(WithdrawError::AmountTooLow {
+                    amount: req.amount,
+                    threshold: coin.min_tx_amount(),
+                });
+            }
+
+            let recent_blockhash = rpc
+                .get_latest_blockhash()
+                .await
+                .map_err(|e| WithdrawError::Transport(e.to_string()))?;
+
+            // Actual TX
+            let tx = solana_system_transaction::transfer(&coin.keypair, &to, withdraw_lamports, recent_blockhash);
+
+            let tx_hash = tx
+                .signatures
+                .first()
+                .map(|s| s.to_string())
+                .ok_or_else(|| WithdrawError::InternalError("Couldn't find the TX signature.".to_owned()))?;
+
+            let tx_bytes =
+                bincode::serialize(&tx).map_err(|e| MmError::new(WithdrawError::InternalError(e.to_string())))?;
+
+            let tx_data = TransactionData::new_signed(BytesJson(tx_bytes), tx_hash.clone());
+
+            let amount_dec = u64_lamports_to_big_decimal(withdraw_lamports, SOLANA_DECIMALS);
+
+            let fee = u64_lamports_to_big_decimal(fee_lamports, SOLANA_DECIMALS);
+
+            let received_by_me = if to == coin.address {
+                amount_dec.clone()
+            } else {
+                BigDecimal::zero()
+            };
+
+            let spent_by_me = &amount_dec + &fee;
+
+            Ok(TransactionDetails {
+                tx: tx_data,
+                from: vec![coin.address.to_string()],
+                to: vec![to.to_string()],
+                my_balance_change: &received_by_me - &spent_by_me,
+                spent_by_me,
+                total_amount: amount_dec,
+                received_by_me,
+                block_height: 0,
+                timestamp: now_sec(),
+                fee_details: Some(TxFeeDetails::Solana(SolanaFeeDetails {
+                    fee_amount: fee.clone(),
+                    rent_amount: 0.into(),
+                    total_amount: fee,
+                })),
+                coin: req.coin,
+                internal_id: BytesJson(tx_hash.into_bytes()),
+                kmd_rewards: None,
+                transaction_type: TransactionType::StandardTransfer,
+                // TODO: Add memo instruction to the TX.
+                memo: None,
+            })
+        };
+
+        Box::new(fut.boxed().compat())
     }
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut<'_> {
@@ -379,10 +560,10 @@ impl MarketCoinOps for SolanaCoin {
 
             let balance_u64 = rpc_client
                 .get_balance(&coin.address)
+                .await
                 .map_err(|e| BalanceError::Transport(e.to_string()))?;
 
-            let scale = BigDecimal::from(10u64.pow(SOLANA_DECIMALS as u32));
-            let balance_decimal = BigDecimal::from(balance_u64) / scale;
+            let balance_decimal = u64_lamports_to_big_decimal(balance_u64, SOLANA_DECIMALS);
 
             Ok(CoinBalance {
                 spendable: balance_decimal,
@@ -402,11 +583,24 @@ impl MarketCoinOps for SolanaCoin {
     }
 
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
-        todo!()
+        let bytes = try_fus!(hex::decode(tx));
+        self.send_raw_tx_bytes(&bytes)
     }
 
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
-        todo!()
+        let coin = self.clone();
+        let bytes = tx.to_vec();
+        let fut = async move {
+            let rpc = coin.rpc_client().await.map_err(|e| e.into_inner())?;
+
+            let tx: Transaction = limited_deserialize(&bytes, PACKET_DATA_SIZE as u64).map_err(|e| e.to_string())?;
+            let signature = rpc.send_transaction(&tx).await.map_err(|e| e.to_string())?;
+
+            // TX hash is just the base58 `String` form of the `Signature`.
+            // ref: https://solana.com/docs/references/terminology#transaction-id
+            Ok(signature.to_string())
+        };
+        Box::new(fut.boxed().compat())
     }
 
     #[inline(always)]
@@ -432,7 +626,7 @@ impl MarketCoinOps for SolanaCoin {
         let fut = async move {
             let rpc_client = try_s!(coin.rpc_client().await);
 
-            rpc_client.get_block_height().map_err(|e| e.to_string())
+            rpc_client.get_block_height().await.map_err(|e| e.to_string())
         };
 
         Box::new(fut.boxed().compat())
@@ -444,7 +638,7 @@ impl MarketCoinOps for SolanaCoin {
 
     #[inline]
     fn min_tx_amount(&self) -> BigDecimal {
-        todo!()
+        u64_lamports_to_big_decimal(1, SOLANA_DECIMALS)
     }
 
     #[inline]
@@ -564,3 +758,11 @@ impl SwapOps for SolanaCoin {
 
 #[async_trait]
 impl WatcherOps for SolanaCoin {}
+
+pub(crate) fn u64_lamports_to_big_decimal<T: Into<u32>>(lamports: u64, decimals: T) -> BigDecimal {
+    BigDecimal::from(lamports) / BigDecimal::from(10u64.pow(decimals.into()))
+}
+
+pub(crate) fn include_lamports_to_big_decimal<T: Into<u32>>(amount: &BigDecimal, decimals: T) -> BigDecimal {
+    amount * &BigDecimal::from(10u64.pow(decimals.into()))
+}

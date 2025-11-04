@@ -1656,11 +1656,6 @@ pub fn detect_secret_hash_algo_v2(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEn
     }
 }
 
-pub struct SwapPubkeys {
-    pub maker: String,
-    pub taker: String,
-}
-
 /// P2P topic used to broadcast messages during execution of the upgraded swap protocol.
 pub fn swap_v2_topic(uuid: &Uuid) -> String {
     pub_sub_topic(SWAP_V2_PREFIX, &uuid.to_string())
