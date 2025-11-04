@@ -2825,7 +2825,7 @@ impl TrieStore {
             let mut pair_trie = match get_trie_mut(&mut self.memory_db, pair_root) {
                 Ok(trie) => trie,
                 Err(e) => {
-                    error!("Error getting {} trie with root {:?}", e, prev_root);
+                    error!("Error {} getting trie with root {:?}", e, prev_root);
                     return;
                 },
             };
