@@ -9,7 +9,7 @@ use super::{
     detect_secret_hash_algo, get_locked_amount, recv_swap_msg, swap_topic, taker_payment_spend_deadline,
     tx_helper_topic, wait_for_maker_payment_conf_until, AtomicSwap, LockedAmount, MySwapInfo, NegotiationDataMsg,
     NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap, SavedSwapIo, SavedTradeFee,
-    SwapConfirmationsSettings, SwapError, SwapMsg, SwapPubkeys, SwapTxDataMsg, SwapsContext, TransactionIdentifier,
+    SwapConfirmationsSettings, SwapError, SwapMsg, SwapTxDataMsg, SwapsContext, TransactionIdentifier,
     TAKER_FEE_VALIDATION_ATTEMPTS, TAKER_FEE_VALIDATION_RETRY_DELAY_SECS, WAIT_CONFIRM_INTERVAL_SEC,
 };
 use crate::lp_dispatcher::{DispatcherContext, LpEvents};
@@ -2158,31 +2158,14 @@ impl MakerSavedSwap {
         }
     }
 
-    // TODO: Adjust for private coins when/if they are braodcasted
-    // TODO: Adjust for HD wallet when completed
-    pub fn swap_pubkeys(&self) -> Result<SwapPubkeys, String> {
-        let maker = match &self.events.first() {
+    pub fn maker_pubkey(&self) -> Result<String, String> {
+        match &self.events.first() {
             Some(event) => match &event.event {
-                MakerSwapEvent::Started(started) => started.my_persistent_pub.to_string(),
-                _ => return ERR!("First swap event must be Started"),
+                MakerSwapEvent::Started(started) => Ok(started.my_persistent_pub.to_string()),
+                _ => ERR!("First swap event must be Started"),
             },
-            None => return ERR!("Can't get maker's pubkey while events are empty"),
-        };
-
-        let taker = match self.events.get(1) {
-            Some(event) => match &event.event {
-                MakerSwapEvent::Negotiated(neg) => {
-                    let Some(key) = neg.taker_coin_htlc_pubkey else {
-                        return ERR!("taker's pubkey is empty");
-                    };
-                    key.to_string()
-                },
-                _ => return ERR!("Swap must be negotiated to get taker's pubkey"),
-            },
-            None => return ERR!("Can't get taker's pubkey while there's no Negotiated event"),
-        };
-
-        Ok(SwapPubkeys { maker, taker })
+            None => ERR!("Can't get maker's pubkey while events are empty"),
+        }
     }
 }
 
@@ -2275,7 +2258,6 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
     subscribe_to_topic(&ctx, swap_topic(&swap.uuid));
     let mut status = ctx.log.status_handle();
     let uuid_str = swap.uuid.to_string();
-    let to_broadcast = !(swap.maker_coin.is_privacy() || swap.taker_coin.is_privacy());
     macro_rules! swap_tags {
         () => {
             &[&"swap", &("uuid", uuid_str.as_str())]
@@ -2344,10 +2326,8 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
                             error!("!mark_swap_finished({}): {}", uuid, e);
                         }
 
-                        if to_broadcast {
-                            if let Err(e) = broadcast_my_swap_status(&ctx, uuid).await {
-                                error!("!broadcast_my_swap_status({}): {}", uuid, e);
-                            }
+                        if let Err(e) = broadcast_my_swap_status(&ctx, uuid).await {
+                            covered_error!("!broadcast_my_swap_status({}): {}", uuid, e);
                         }
                         break;
                     },

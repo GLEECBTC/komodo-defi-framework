@@ -7,6 +7,9 @@ mod mm2_tests_inner;
 mod orderbook_sync_tests;
 mod z_coin_tests;
 
+#[cfg(feature = "enable-solana")]
+mod solana_tests;
+
 #[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
 use mm2_test_helpers::for_tests::MarketMakerIt;
 #[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]

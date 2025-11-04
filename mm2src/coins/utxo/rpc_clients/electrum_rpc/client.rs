@@ -55,7 +55,7 @@ use std::sync::Arc;
 use crate::utxo::utxo_balance_events::UtxoBalanceEventStreamer;
 use async_trait::async_trait;
 use futures::compat::Future01CompatExt;
-use futures::future::{join_all, FutureExt, TryFutureExt};
+use futures::future::{FutureExt, TryFutureExt};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use futures01::Future;
@@ -797,41 +797,38 @@ impl ElectrumClient {
     pub(crate) fn get_servers_with_latest_block_count(&self) -> UtxoRpcFut<(Vec<String>, u64)> {
         let selfi = self.clone();
         let fut = async move {
+            let mut successful_responses = vec![];
+            // We are storing the erroneous responses for better error reporting if all servers fail.
+            let mut erroneous_responses = vec![];
             let addresses = selfi.connection_manager.get_all_server_addresses();
-            let futures = addresses
-                .into_iter()
-                .map(|address| {
-                    selfi
-                        .get_block_count_from(&address)
-                        .map(|response| (address, response))
-                        .compat()
-                })
-                .collect::<Vec<_>>();
 
-            let responses = join_all(futures).await;
-
-            // First, we use filter_map to get rid of any errors and collect the
-            // server addresses and block counts into two vectors
-            let (responding_servers, block_counts_from_all_servers): (Vec<_>, Vec<_>) =
-                responses.clone().into_iter().filter_map(|res| res.ok()).unzip();
+            for address in addresses {
+                match selfi.get_block_count_from(&address).compat().await {
+                    Ok(block_count) => successful_responses.push((address, block_count)),
+                    Err(e) => erroneous_responses.push((address, e)),
+                }
+            }
 
             // Next, we use max to find the maximum block count from all servers
-            if let Some(max_block_count) = block_counts_from_all_servers.clone().iter().max() {
+            if let Some(max_block_count) = successful_responses
+                .iter()
+                .map(|(_, block_count)| block_count)
+                .max()
+                .cloned()
+            {
                 // Then, we use filter and collect to get the servers that have the maximum block count
-                let servers_with_max_count: Vec<_> = responding_servers
+                let servers_with_max_count: Vec<_> = successful_responses
                     .into_iter()
-                    .zip(block_counts_from_all_servers)
-                    .filter(|(_, count)| count == max_block_count)
-                    .map(|(addr, _)| addr)
+                    .filter_map(|(addr, block_count)| (block_count == max_block_count).then_some(addr))
                     .collect();
 
                 // Finally, we return a tuple of servers with max count and the max count
-                return Ok((servers_with_max_count, *max_block_count));
+                return Ok((servers_with_max_count, max_block_count));
             }
 
             Err(MmError::new(UtxoRpcError::Internal(format!(
                 "Couldn't get block count from any server for {}, responses: {:?}",
-                &selfi.coin_ticker, responses
+                &selfi.coin_ticker, erroneous_responses
             ))))
         };
 

@@ -397,19 +397,14 @@ impl RpcCommonOps for TendermintCoin {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(Default, PartialEq)]
 pub enum TendermintWalletConnectionType {
     Wc(kdf_walletconnect::WcTopic),
     WcLedger(kdf_walletconnect::WcTopic),
     KeplrLedger,
     Keplr,
+    #[default]
     Native,
-}
-
-impl Default for TendermintWalletConnectionType {
-    fn default() -> Self {
-        Self::Native
-    }
 }
 
 pub struct TendermintCoinImpl {
@@ -3524,7 +3519,28 @@ impl MmCoin for TendermintCoin {
     }
 
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
-        Box::new(futures01::future::err("Not implemented".into()))
+        let coin = self.clone();
+
+        let fut = async move {
+            let fee = try_s!(
+                coin.get_sender_trade_fee_for_denom(
+                    coin.ticker.to_owned(),
+                    coin.protocol_info.denom.clone(),
+                    coin.protocol_info.decimals,
+                    // Transaction amount does not influence the fee.
+                    coin.min_tx_amount(),
+                )
+                .await
+            );
+
+            Ok(TradeFee {
+                coin: coin.ticker.to_owned(),
+                amount: fee.amount,
+                paid_from_trading_vol: false,
+            })
+        };
+
+        Box::new(fut.boxed().compat())
     }
 
     async fn get_sender_trade_fee(
@@ -4376,7 +4392,7 @@ pub(crate) fn tendermint_tx_internal_id(bytes: &[u8], token_id: Option<BytesJson
 }
 
 #[cfg(test)]
-pub mod tendermint_falsecoin_tests {
+pub mod tests {
     use super::*;
     use crate::DexFeeBurnDestination;
 

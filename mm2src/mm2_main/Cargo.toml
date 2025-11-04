@@ -128,10 +128,13 @@ rcgen.workspace = true
 rustls = { workspace = true, default-features = false }
 rustls-pemfile.workspace = true
 timed-map = { workspace = true, features = ["rustc-hash"] }
-tokio = { workspace = true, features = ["io-util", "rt-multi-thread", "net", "signal"] }
+tokio = { workspace = true, features = ["io-util", "rt-multi-thread", "net"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi.workspace = true
+
+[target.'cfg(not(any(target_arch = "wasm32", target_os = "windows")))'.dependencies]
+signal-hook-tokio = { version = "0.3", features = [ "futures-v0_3" ] }
 
 [dev-dependencies]
 coins = { path = "../coins", features = ["for-tests"] }
