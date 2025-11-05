@@ -111,8 +111,8 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
             (None, None, None)
         };
         let (utxo_node, utxo_node1) = if !disable_utxo {
-            let utxo_node = utxo_asset_docker_node("MYCOIN", 7000);
-            let utxo_node1 = utxo_asset_docker_node("MYCOIN1", 8000);
+            let utxo_node = utxo_asset_docker_node("MYCOIN", 8000);
+            let utxo_node1 = utxo_asset_docker_node("MYCOIN1", 8001);
             (Some(utxo_node), Some(utxo_node1))
         } else {
             (None, None)

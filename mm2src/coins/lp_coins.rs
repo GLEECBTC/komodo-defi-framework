@@ -302,9 +302,7 @@ use crate::coin_balance::{BalanceObjectOps, HDWalletBalanceObject};
 use crate::hd_wallet::{AddrToString, DisplayAddress};
 use z_coin::{ZCoin, ZcoinProtocolInfo};
 
-#[cfg(feature = "enable-solana")]
 pub mod solana;
-#[cfg(feature = "enable-solana")]
 use crate::solana::SolanaFeeDetails;
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
@@ -2486,7 +2484,6 @@ pub enum TxFeeDetails {
     Tendermint(TendermintFeeDetails),
     #[cfg(feature = "enable-sia")]
     Sia(SiaFeeDetails),
-    #[cfg(feature = "enable-solana")]
     Solana(SolanaFeeDetails),
 }
 
@@ -2506,7 +2503,6 @@ impl<'de> Deserialize<'de> for TxFeeDetails {
             Tendermint(TendermintFeeDetails),
             #[cfg(feature = "enable-sia")]
             Sia(SiaFeeDetails),
-            #[cfg(feature = "enable-solana")]
             Solana(SolanaFeeDetails),
         }
 
@@ -2518,7 +2514,6 @@ impl<'de> Deserialize<'de> for TxFeeDetails {
             TxFeeDetailsUnTagged::Tendermint(f) => Ok(TxFeeDetails::Tendermint(f)),
             #[cfg(feature = "enable-sia")]
             TxFeeDetailsUnTagged::Sia(f) => Ok(TxFeeDetails::Sia(f)),
-            #[cfg(feature = "enable-solana")]
             TxFeeDetailsUnTagged::Solana(f) => Ok(TxFeeDetails::Solana(f)),
         }
     }
@@ -3914,9 +3909,7 @@ pub enum MmCoinEnum {
     LightningCoinVariant(LightningCoin),
     #[cfg(feature = "enable-sia")]
     SiaCoinVariant(SiaCoin),
-    #[cfg(feature = "enable-solana")]
     Solana(solana::SolanaCoin),
-    #[cfg(feature = "enable-solana")]
     SolanaToken(solana::SolanaToken),
     #[cfg(any(test, feature = "for-tests"))]
     TestVariant(TestCoin),
@@ -3997,14 +3990,12 @@ impl From<SiaCoin> for MmCoinEnum {
     }
 }
 
-#[cfg(feature = "enable-solana")]
 impl From<solana::SolanaCoin> for MmCoinEnum {
     fn from(c: solana::SolanaCoin) -> MmCoinEnum {
         MmCoinEnum::Solana(c)
     }
 }
 
-#[cfg(feature = "enable-solana")]
 impl From<solana::SolanaToken> for MmCoinEnum {
     fn from(c: solana::SolanaToken) -> MmCoinEnum {
         MmCoinEnum::SolanaToken(c)
@@ -4029,9 +4020,7 @@ impl Deref for MmCoinEnum {
             MmCoinEnum::ZCoinVariant(ref c) => c,
             #[cfg(feature = "enable-sia")]
             MmCoinEnum::SiaCoinVariant(ref c) => c,
-            #[cfg(feature = "enable-solana")]
             MmCoinEnum::Solana(ref c) => c,
-            #[cfg(feature = "enable-solana")]
             MmCoinEnum::SolanaToken(ref c) => c,
             #[cfg(any(test, feature = "for-tests"))]
             MmCoinEnum::TestVariant(ref c) => c,
@@ -4965,9 +4954,7 @@ pub enum CoinProtocol {
     NFT {
         platform: String,
     },
-    #[cfg(feature = "enable-solana")]
     SOLANA(solana::SolanaProtocolInfo),
-    #[cfg(feature = "enable-solana")]
     SOLANATOKEN(solana::SolanaTokenProtocolInfo),
 }
 
@@ -5013,9 +5000,7 @@ impl CoinProtocol {
             | CoinProtocol::ZHTLC(_) => None,
             #[cfg(feature = "enable-sia")]
             CoinProtocol::SIA => None,
-            #[cfg(feature = "enable-solana")]
             CoinProtocol::SOLANA(_) => None,
-            #[cfg(feature = "enable-solana")]
             CoinProtocol::SOLANATOKEN(info) => Some(&info.platform),
         }
     }
@@ -5040,9 +5025,7 @@ impl CoinProtocol {
             CoinProtocol::LIGHTNING { .. } => None,
             #[cfg(feature = "enable-sia")]
             CoinProtocol::SIA => None,
-            #[cfg(feature = "enable-solana")]
             CoinProtocol::SOLANA(_) => None,
-            #[cfg(feature = "enable-solana")]
             CoinProtocol::SOLANATOKEN(info) => Some(info.mint_address.to_string()),
         }
     }
@@ -5397,9 +5380,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             let params = try_s!(SiaCoinActivationRequest::from_legacy_req(req));
             try_s!(SiaCoin::new(ctx, coins_en, &params, priv_key_policy).await).into()
         },
-        #[cfg(feature = "enable-solana")]
         CoinProtocol::SOLANA(_) => return ERR!("SOLANA is not supported by lp_coininit"),
-        #[cfg(feature = "enable-solana")]
         CoinProtocol::SOLANATOKEN(_) => return ERR!("SOLANATOKEN is not supported by lp_coininit"),
     };
 
@@ -6058,9 +6039,7 @@ pub fn address_by_coin_conf_and_pubkey_str(
         // so it's not a priority right now
         #[cfg(feature = "enable-sia")]
         CoinProtocol::SIA => Ok("sia-address".to_string()),
-        #[cfg(feature = "enable-solana")]
         CoinProtocol::SOLANA(_) => ERR!("address_by_coin_conf_and_pubkey_str is not implemented for SOLANA yet."),
-        #[cfg(feature = "enable-solana")]
         CoinProtocol::SOLANATOKEN(_) => {
             ERR!("address_by_coin_conf_and_pubkey_str is not implemented for SOLANATOKEN yet.")
         },

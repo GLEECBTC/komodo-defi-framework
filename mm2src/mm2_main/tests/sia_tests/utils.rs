@@ -336,7 +336,7 @@ pub async fn get_komodod_client(funded_address: &str, unfunded_address: &str) ->
         // This is where MYCOIN node runs.
         // TODO: make a global constant for this.
         ip: IpAddr::from([127, 0, 0, 1]),
-        port: 7000,
+        port: 8000,
         rpcuser: "test".to_string(),
         rpcpassword: "test".to_string(),
         timeout: None,

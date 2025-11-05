@@ -27,12 +27,12 @@ use rpc::v1::types::{Bytes as RpcBytes, H264 as RpcH264};
 use solana_bincode::limited_deserialize;
 use solana_keypair::{keypair_from_seed, Keypair};
 use solana_pubkey::Pubkey as SolanaAddress;
-use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_rpc_client_types::request::TokenAccountsFilter;
+use solana_rpc_client_types::config::RpcTokenAccountsFilter;
 use solana_signer::Signer;
 use solana_transaction::Transaction;
 use url::Url;
 
+use crate::solana::rpc_client::RpcClient;
 use crate::TxFeeDetails;
 use crate::{
     coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentResult},
@@ -223,7 +223,7 @@ impl SolanaCoin {
             .await?;
 
         if let Err(e) = rpc
-            .get_token_accounts_by_owner(&self.address, TokenAccountsFilter::Mint(*mint_address))
+            .get_token_accounts_by_owner(&self.address, RpcTokenAccountsFilter::Mint(mint_address.to_string()))
             .await
         {
             if e.kind.to_string().contains("could not find mint") {

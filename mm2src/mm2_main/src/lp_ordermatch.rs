@@ -6411,9 +6411,7 @@ fn orderbook_address(
         CoinProtocol::LIGHTNING { .. } => Ok(OrderbookAddress::Shielded),
         #[cfg(feature = "enable-sia")]
         CoinProtocol::SIA => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
-        #[cfg(feature = "enable-solana")]
         CoinProtocol::SOLANA(_) => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
-        #[cfg(feature = "enable-solana")]
         CoinProtocol::SOLANATOKEN(_) => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
     }
 }
