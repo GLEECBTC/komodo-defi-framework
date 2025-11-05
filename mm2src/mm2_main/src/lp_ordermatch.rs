@@ -113,9 +113,9 @@ cfg_wasm32! {
 }
 
 // test-only imports
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(test)]
 use futures::channel::oneshot;
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(test)]
 use mocktopus::macros::*;
 
 mod best_orders;
