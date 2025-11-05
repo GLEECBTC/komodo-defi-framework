@@ -2,7 +2,7 @@ use async_std::prelude::FutureExt;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use bincode::serialize;
 use compatible_time::Duration;
-use mm2_net::transport;
+use mm2_net::transport::slurp_post_json;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{json, Value};
 use solana_account::Account;
@@ -172,11 +172,22 @@ impl RpcClient {
         let id = self.next_request_id();
         let payload = request.build_request_json(id, params);
 
-        let response = transport::post_json::<Value>(&self.url, payload.to_string())
+        let (status_code, _, response_bytes) = slurp_post_json(&self.url, payload.to_string())
             .timeout(Duration::from_secs(5))
             .await
             .map_err(|e| ClientError::from(ClientErrorKind::Transport(e.to_string())))?
             .map_err(|e| ClientError::from(ClientErrorKind::Transport(e.to_string())))?;
+
+        if !status_code.is_success() {
+            return Err(ClientErrorKind::Transport(format!(
+                "Expected 200, got '{status_code}' status code from '{}' node. Payload: '{payload}'",
+                self.url
+            ))
+            .into());
+        }
+
+        let response: Value = serde_json::from_slice(&response_bytes)
+            .map_err(|e| ClientError::from(ClientErrorKind::Parse(e.to_string())))?;
 
         if let Some(error) = response.get("error") {
             let code = error.get("code").and_then(Value::as_i64).unwrap_or(0);
