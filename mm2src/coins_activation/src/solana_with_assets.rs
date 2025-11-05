@@ -134,7 +134,15 @@ impl PlatformCoinWithTokensActivationOps for SolanaCoin {
             kind: SolanaInitErrorKind::Internal { reason: e.to_string() },
         })?;
 
-        let coin = Self::init(&ctx, ticker, protocol_conf, activation_request.nodes, priv_key_policy).await?;
+        let coin = Self::init(
+            &ctx,
+            ticker,
+            protocol_conf,
+            activation_request.nodes,
+            priv_key_policy,
+            activation_request.tx_history,
+        )
+        .await?;
 
         Ok(coin)
     }

@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::{collections::HashMap, ops::Deref};
 
 use async_trait::async_trait;
@@ -73,6 +73,7 @@ pub struct SolanaCoinFields {
     rpc_clients: AsyncMutex<Vec<Arc<RpcClient>>>,
     protocol_info: SolanaProtocolInfo,
     pub tokens_info: PaMutex<HashMap<String, super::SolanaTokenProtocolInfo>>,
+    pub(crate) history_sync_state: Mutex<HistorySyncState>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -130,6 +131,7 @@ impl SolanaCoin {
         protocol_info: SolanaProtocolInfo,
         nodes: Vec<RpcNode>,
         priv_key_policy: PrivKeyBuildPolicy,
+        tx_history: bool,
     ) -> MmResult<SolanaCoin, SolanaInitError> {
         if nodes.is_empty() {
             return MmError::err(SolanaInitError {
@@ -186,6 +188,12 @@ impl SolanaCoin {
             kind: SolanaInitErrorKind::Internal { reason: e.to_string() },
         })?;
 
+        let history_sync_state = if tx_history {
+            HistorySyncState::NotStarted
+        } else {
+            HistorySyncState::NotEnabled
+        };
+
         let fields = SolanaCoinFields {
             ticker,
             address,
@@ -194,6 +202,7 @@ impl SolanaCoin {
             rpc_clients: AsyncMutex::new(rpc_clients),
             protocol_info,
             tokens_info: PaMutex::new(HashMap::new()),
+            history_sync_state: Mutex::new(history_sync_state),
         };
 
         Ok(SolanaCoin(Arc::new(fields)))
@@ -332,7 +341,7 @@ impl MmCoin for SolanaCoin {
     }
 
     fn wallet_only(&self, ctx: &MmArc) -> bool {
-        todo!()
+        true
     }
 
     fn spawner(&self) -> WeakSpawner {
