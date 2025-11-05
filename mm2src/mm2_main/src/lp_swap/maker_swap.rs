@@ -1012,6 +1012,7 @@ impl MakerSwap {
     }
 
     async fn wait_for_taker_payment(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
+        /// Broadcast interval for maker payment message, reduced to ensure the iOS app can re-send or receive it while remaining in the foreground.
         const PAYMENT_MSG_INTERVAL_SEC: f64 = 15.;
         let payment_data_msg = match self.get_my_payment_data().await {
             Ok(data) => data,

@@ -1847,7 +1847,9 @@ impl TakerSwap {
     }
 
     async fn wait_for_taker_payment_spend(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        const BROADCAST_MSG_INTERVAL_SEC: f64 = 15.;
+        const WATCHER_MSG_INTERVAL_SEC: f64 = 600.;
+        /// Broadcast interval for taker payment message, reduced to ensure the iOS app can re-send or receive it while remaining in the foreground.
+        const PAYMENT_MSG_INTERVAL_SEC: f64 = 15.;
 
         let tx_hex = self.r().taker_payment.as_ref().unwrap().tx_hex.clone();
         let mut watcher_broadcast_abort_handle = None;
@@ -1872,7 +1874,7 @@ impl TakerSwap {
                     self.ctx.clone(),
                     watcher_topic(&self.r().data.taker_coin),
                     swpmsg_watcher,
-                    BROADCAST_MSG_INTERVAL_SEC,
+                    WATCHER_MSG_INTERVAL_SEC,
                     Some(htlc_keypair),
                 ));
             }
@@ -1884,7 +1886,7 @@ impl TakerSwap {
             self.ctx.clone(),
             swap_topic(&self.uuid),
             msg,
-            BROADCAST_MSG_INTERVAL_SEC,
+            PAYMENT_MSG_INTERVAL_SEC,
             self.p2p_privkey,
         );
 
