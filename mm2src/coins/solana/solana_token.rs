@@ -185,7 +185,7 @@ impl MmCoin for SolanaToken {
     }
 
     fn wallet_only(&self, ctx: &MmArc) -> bool {
-        todo!()
+        true
     }
 
     fn spawner(&self) -> WeakSpawner {
@@ -395,7 +395,7 @@ impl MmCoin for SolanaToken {
     }
 
     fn history_sync_status(&self) -> HistorySyncState {
-        todo!()
+        self.platform_coin.history_sync_status()
     }
 
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {

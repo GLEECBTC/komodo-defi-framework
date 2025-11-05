@@ -450,7 +450,7 @@ impl MmCoin for SolanaCoin {
     }
 
     fn history_sync_status(&self) -> HistorySyncState {
-        todo!()
+        self.history_sync_state.lock().unwrap().clone()
     }
 
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
