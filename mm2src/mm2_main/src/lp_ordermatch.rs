@@ -2941,7 +2941,7 @@ impl TrieStore {
         from_pubkey: &str,
         message: new_protocol::PubkeyKeepAlive,
         i_am_relay: bool,
-        mut is_subscribed: impl FnMut(&str) -> bool,
+        is_subscribed: impl Fn(&str) -> bool,
     ) -> Option<OrdermatchRequest> {
         let pubkey_state = pubkey_state_mut(&mut self.pubkeys_state, from_pubkey);
         pubkey_state.last_keep_alive = now_sec();
