@@ -12,7 +12,9 @@ pub struct WantsTlsConfig(());
 impl AcceptorBuilder<WantsTlsConfig> {
     #[inline]
     /// Creates a new [`AcceptorBuilder`]
-    pub fn new() -> Self { Self(WantsTlsConfig(())) }
+    pub fn new() -> Self {
+        Self(WantsTlsConfig(()))
+    }
 
     #[inline]
     /// Passes a rustls [`ServerConfig`] to configure the TLS connection
@@ -39,7 +41,9 @@ impl AcceptorBuilder<WantsTlsConfig> {
 }
 
 impl Default for AcceptorBuilder<WantsTlsConfig> {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// State of a builder that needs a incoming address next

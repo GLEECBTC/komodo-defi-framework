@@ -49,5 +49,7 @@ impl Notifiee {
     }
 
     /// Clears the pending notifications if there are any.
-    fn clear(&mut self) { while let Ok(Some(_)) = self.0.try_next() {} }
+    fn clear(&mut self) {
+        while let Ok(Some(_)) = self.0.try_next() {}
+    }
 }

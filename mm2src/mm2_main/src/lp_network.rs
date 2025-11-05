@@ -31,8 +31,10 @@ use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
 use mm2_libp2p::application::request_response::P2PRequest;
 use mm2_libp2p::p2p_ctx::P2PContext;
-use mm2_libp2p::{decode_message, encode_message, DecodingError, GossipsubEvent, GossipsubMessage, Libp2pPublic,
-                 Libp2pSecpPublic, MessageId, NetworkPorts, PeerId, TOPIC_SEPARATOR};
+use mm2_libp2p::{
+    decode_message, encode_message, DecodingError, GossipsubEvent, GossipsubMessage, Libp2pPublic, Libp2pSecpPublic,
+    MessageId, NetworkPorts, PeerId, TOPIC_SEPARATOR,
+};
 use mm2_libp2p::{AdexBehaviourCmd, AdexBehaviourEvent, AdexEventRx, AdexResponse};
 use mm2_libp2p::{PeerAddresses, RequestResponseBehaviourEvent};
 use mm2_metrics::{mm_label, mm_timing};
@@ -49,7 +51,9 @@ pub trait Libp2pPeerId {
 
 impl Libp2pPeerId for KeyPair {
     #[inline(always)]
-    fn libp2p_peer_id(&self) -> PeerId { peer_id_from_secp_public(self.public_slice()).expect("valid public") }
+    fn libp2p_peer_id(&self) -> PeerId {
+        peer_id_from_secp_public(self.public_slice()).expect("valid public")
+    }
 }
 
 #[derive(Debug, Display)]
@@ -59,7 +63,7 @@ pub enum P2PRequestError {
     DecodeError(String),
     SendError(String),
     ResponseError(String),
-    #[display(fmt = "Expected 1 response, found {}", _0)]
+    #[display(fmt = "Expected 1 response, found {_0}")]
     ExpectedSingleResponseError(usize),
     ValidationFailed(String),
 }
@@ -73,19 +77,23 @@ pub enum P2PProcessError {
     /// Message signature is invalid.
     InvalidSignature(String),
     /// Unexpected message sender.
-    #[display(fmt = "Unexpected message sender {}", _0)]
+    #[display(fmt = "Unexpected message sender {_0}")]
     UnexpectedSender(String),
     /// Message did not pass additional validation
-    #[display(fmt = "Message validation failed: {}", _0)]
+    #[display(fmt = "Message validation failed: {_0}")]
     ValidationFailed(String),
 }
 
 impl From<rmp_serde::encode::Error> for P2PRequestError {
-    fn from(e: rmp_serde::encode::Error) -> Self { P2PRequestError::EncodeError(e.to_string()) }
+    fn from(e: rmp_serde::encode::Error) -> Self {
+        P2PRequestError::EncodeError(e.to_string())
+    }
 }
 
 impl From<rmp_serde::decode::Error> for P2PRequestError {
-    fn from(e: rmp_serde::decode::Error) -> Self { P2PRequestError::DecodeError(e.to_string()) }
+    fn from(e: rmp_serde::decode::Error) -> Self {
+        P2PRequestError::DecodeError(e.to_string())
+    }
 }
 
 pub async fn p2p_event_process_loop(ctx: MmWeak, mut rx: AdexEventRx, i_am_relay: bool) {
@@ -440,9 +448,9 @@ pub fn add_reserved_peer_addresses(ctx: &MmArc, peer: PeerId, addresses: PeerAdd
 
 #[derive(Clone, Debug, Display, Serialize)]
 pub enum NetIdError {
-    #[display(fmt = "Netid {} is larger than max {}", netid, max_netid)]
+    #[display(fmt = "Netid {netid} is larger than max {max_netid}")]
     LargerThanMax { netid: u16, max_netid: u16 },
-    #[display(fmt = "{} netid is deprecated.", netid)]
+    #[display(fmt = "{netid} netid is deprecated.")]
     Deprecated { netid: u16 },
 }
 

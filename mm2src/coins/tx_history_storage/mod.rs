@@ -10,7 +10,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashSet;
 use std::iter::FromIterator;
 
-#[cfg(target_arch = "wasm32")] pub mod wasm;
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod sql_tx_history_storage_v2;
@@ -31,7 +32,7 @@ pub fn token_id_from_tx_type(tx_type: &TransactionType) -> String {
             token_id: Some(token_id),
             ..
         } => {
-            format!("{:02x}", token_id)
+            format!("{token_id:02x}")
         },
         _ => String::new(),
     }
@@ -49,7 +50,9 @@ pub struct TxHistoryStorageBuilder<'a> {
 
 impl TxHistoryStorageBuilder<'_> {
     #[inline]
-    pub fn new(ctx: &MmArc) -> TxHistoryStorageBuilder<'_> { TxHistoryStorageBuilder { ctx } }
+    pub fn new(ctx: &MmArc) -> TxHistoryStorageBuilder<'_> {
+        TxHistoryStorageBuilder { ctx }
+    }
 
     #[inline]
     pub fn build(self) -> MmResult<impl TxHistoryStorage, CreateTxHistoryStorageError> {
@@ -98,8 +101,7 @@ impl<'de> Deserialize<'de> for ConfirmationStatus {
             0 => Ok(ConfirmationStatus::Unconfirmed),
             1 => Ok(ConfirmationStatus::Confirmed),
             unknown => Err(D::Error::custom(format!(
-                "Expected either '0' or '1' confirmation status, found '{}'",
-                unknown
+                "Expected either '0' or '1' confirmation status, found '{unknown}'"
             ))),
         }
     }
@@ -121,7 +123,9 @@ impl WalletId {
     }
 
     #[inline]
-    pub fn set_hd_wallet_rmd160(&mut self, hd_wallet_rmd160: H160) { self.hd_wallet_rmd160 = Some(hd_wallet_rmd160); }
+    pub fn set_hd_wallet_rmd160(&mut self, hd_wallet_rmd160: H160) {
+        self.hd_wallet_rmd160 = Some(hd_wallet_rmd160);
+    }
 
     #[inline]
     pub fn with_hd_wallet_rmd160(mut self, hd_wallet_rmd160: H160) -> WalletId {
@@ -160,11 +164,15 @@ impl GetTxHistoryFilters {
     }
 
     #[inline]
-    pub fn set_token_id(&mut self, token_id: String) { self.token_id = Some(token_id); }
+    pub fn set_token_id(&mut self, token_id: String) {
+        self.token_id = Some(token_id);
+    }
 
     /// If [`GetTxHistoryFilters::token_id`] is not specified,
     /// we should exclude token's transactions by applying an empty `token_id` filter.
-    fn token_id_or_exclude(&self) -> String { self.token_id.clone().unwrap_or_default() }
+    fn token_id_or_exclude(&self) -> String {
+        self.token_id.clone().unwrap_or_default()
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -172,10 +180,14 @@ pub struct FilteringAddresses(HashSet<String>);
 
 impl FilteringAddresses {
     #[inline]
-    pub fn is_empty(&self) -> bool { self.0.is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 
     #[inline]
-    pub fn len(&self) -> usize { self.0.len() }
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
 
     /// Whether the containers have the same addresses.
     #[inline]
@@ -188,9 +200,13 @@ impl IntoIterator for FilteringAddresses {
     type Item = String;
     type IntoIter = std::collections::hash_set::IntoIter<String>;
 
-    fn into_iter(self) -> Self::IntoIter { self.0.into_iter() }
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
 }
 
 impl FromIterator<String> for FilteringAddresses {
-    fn from_iter<T: IntoIterator<Item = String>>(iter: T) -> Self { FilteringAddresses(iter.into_iter().collect()) }
+    fn from_iter<T: IntoIterator<Item = String>>(iter: T) -> Self {
+        FilteringAddresses(iter.into_iter().collect())
+    }
 }

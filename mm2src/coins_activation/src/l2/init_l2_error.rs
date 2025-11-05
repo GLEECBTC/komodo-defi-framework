@@ -15,35 +15,35 @@ pub type CancelInitL2Error = CancelRpcTaskError;
 #[derive(Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum InitL2Error {
-    #[display(fmt = "Layer 2 {} is already activated", _0)]
+    #[display(fmt = "Layer 2 {_0} is already activated")]
     L2IsAlreadyActivated(String),
-    #[display(fmt = "Layer 2 {} config is not found", _0)]
+    #[display(fmt = "Layer 2 {_0} config is not found")]
     L2ConfigIsNotFound(String),
-    #[display(fmt = "Layer 2 {} protocol parsing failed: {}", ticker, error)]
+    #[display(fmt = "Layer 2 {ticker} protocol parsing failed: {error}")]
     L2ProtocolParseError {
         ticker: String,
         error: String,
     },
-    #[display(fmt = "Unexpected layer 2 protocol {} for {}", protocol, ticker)]
+    #[display(fmt = "Unexpected layer 2 protocol {protocol} for {ticker}")]
     UnexpectedL2Protocol {
         ticker: String,
         protocol: Json,
     },
-    #[display(fmt = "Platform coin {} is not activated", _0)]
+    #[display(fmt = "Platform coin {_0} is not activated")]
     PlatformCoinIsNotActivated(String),
-    #[display(fmt = "{} is not a platform coin for layer 2 {}", platform_coin_ticker, l2_ticker)]
+    #[display(fmt = "{platform_coin_ticker} is not a platform coin for layer 2 {l2_ticker}")]
     UnsupportedPlatformCoin {
         platform_coin_ticker: String,
         l2_ticker: String,
     },
-    #[display(fmt = "Invalid config for platform coin: {}, error: {}", platform_coin_ticker, err)]
+    #[display(fmt = "Invalid config for platform coin: {platform_coin_ticker}, error: {err}")]
     InvalidPlatformConfiguration {
         platform_coin_ticker: String,
         err: String,
     },
-    #[display(fmt = "Layer 2 configuration parsing failed: {}", _0)]
+    #[display(fmt = "Layer 2 configuration parsing failed: {_0}")]
     L2ConfigParseError(String),
-    #[display(fmt = "Initialization task has timed out {:?}", duration)]
+    #[display(fmt = "Initialization task has timed out {duration:?}")]
     TaskTimedOut {
         duration: Duration,
     },
@@ -63,7 +63,7 @@ impl From<CoinConfWithProtocolError> for InitL2Error {
                 InitL2Error::UnexpectedL2Protocol { ticker, protocol }
             },
             CoinConfWithProtocolError::CustomTokenError(e) => {
-                InitL2Error::Internal(format!("Custom tokens are not supported for L2: {}", e))
+                InitL2Error::Internal(format!("Custom tokens are not supported for L2: {e}"))
             },
         }
     }

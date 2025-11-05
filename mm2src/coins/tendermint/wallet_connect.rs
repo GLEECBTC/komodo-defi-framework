@@ -5,7 +5,7 @@ use cosmrs::proto::cosmos::tx::v1beta1::TxRaw;
 use kdf_walletconnect::chain::WcChainId;
 use kdf_walletconnect::error::WalletConnectError;
 use kdf_walletconnect::WalletConnectOps;
-use kdf_walletconnect::{chain::WcRequestMethods, WalletConnectCtx};
+use kdf_walletconnect::{chain::WcRequestMethods, WalletConnectCtx, WcTopic};
 use mm2_err_handle::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -121,7 +121,7 @@ impl WalletConnectOps for TendermintCoin {
         todo!()
     }
 
-    fn session_topic(&self) -> Result<&str, Self::Error> {
+    fn session_topic(&self) -> Result<&WcTopic, Self::Error> {
         match self.wallet_type {
             TendermintWalletConnectionType::WcLedger(ref session_topic)
             | TendermintWalletConnectionType::Wc(ref session_topic) => Ok(session_topic),
@@ -135,7 +135,7 @@ impl WalletConnectOps for TendermintCoin {
 
 pub async fn cosmos_get_accounts_impl(
     wc: &WalletConnectCtx,
-    session_topic: &str,
+    session_topic: &WcTopic,
     chain_id: &str,
 ) -> MmResult<CosmosAccount, WalletConnectError> {
     let chain_id = WcChainId::new_cosmos(chain_id.to_string());
@@ -217,9 +217,10 @@ where
 }
 
 fn decode_data(encoded: &str) -> Result<Vec<u8>, &'static str> {
-    if encoded.chars().all(|c| c.is_ascii_hexdigit()) && encoded.len() % 2 == 0 {
+    if encoded.chars().all(|c| c.is_ascii_hexdigit()) && encoded.len().is_multiple_of(2) {
         hex::decode(encoded).map_err(|_| "Invalid hex encoding")
-    } else if encoded.contains('=') || encoded.contains('/') || encoded.contains('+') || encoded.len() % 4 == 0 {
+    } else if encoded.contains('=') || encoded.contains('/') || encoded.contains('+') || encoded.len().is_multiple_of(4)
+    {
         general_purpose::STANDARD
             .decode(encoded)
             .map_err(|_| "Invalid base64 encoding")

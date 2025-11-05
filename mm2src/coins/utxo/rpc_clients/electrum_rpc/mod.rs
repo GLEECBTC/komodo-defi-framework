@@ -6,10 +6,12 @@ mod connection_manager;
 mod constants;
 mod event_handlers;
 mod rpc_responses;
-#[cfg(not(target_arch = "wasm32"))] mod tcp_stream;
+#[cfg(not(target_arch = "wasm32"))]
+mod tcp_stream;
 
 pub use client::{ElectrumClient, ElectrumClientImpl, ElectrumClientSettings};
 pub use connection::ElectrumConnectionSettings;
+pub use constants::*;
 pub use rpc_responses::*;
 
 #[inline]

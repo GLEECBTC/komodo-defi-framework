@@ -6,6 +6,7 @@ use coins::lp_coinfind;
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_number::BigDecimal;
 use rpc::v1::types::H256 as H256Json;
 use uuid::Uuid;
 #[cfg(target_arch = "wasm32")]
@@ -15,17 +16,17 @@ pub type SavedSwapResult<T> = Result<T, MmError<SavedSwapError>>;
 
 #[derive(Debug, Display, Deserialize, Serialize)]
 pub enum SavedSwapError {
-    #[display(fmt = "Error saving the a swap: {}", _0)]
+    #[display(fmt = "Error saving the a swap: {_0}")]
     ErrorSaving(String),
-    #[display(fmt = "Error loading a swap: {}", _0)]
+    #[display(fmt = "Error loading a swap: {_0}")]
     ErrorLoading(String),
-    #[display(fmt = "Error deserializing a swap: {}", _0)]
+    #[display(fmt = "Error deserializing a swap: {_0}")]
     ErrorDeserializing(String),
-    #[display(fmt = "Error serializing a swap: {}", _0)]
+    #[display(fmt = "Error serializing a swap: {_0}")]
     ErrorSerializing(String),
     CursorError(String),
     #[allow(dead_code)]
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     InternalError(String),
 }
 
@@ -37,11 +38,15 @@ pub enum SavedSwap {
 }
 
 impl From<MakerSavedSwap> for SavedSwap {
-    fn from(maker: MakerSavedSwap) -> Self { SavedSwap::Maker(maker) }
+    fn from(maker: MakerSavedSwap) -> Self {
+        SavedSwap::Maker(maker)
+    }
 }
 
 impl From<TakerSavedSwap> for SavedSwap {
-    fn from(taker: TakerSavedSwap) -> Self { SavedSwap::Taker(taker) }
+    fn from(taker: TakerSavedSwap) -> Self {
+        SavedSwap::Taker(taker)
+    }
 }
 
 impl SavedSwap {
@@ -52,7 +57,9 @@ impl SavedSwap {
         }
     }
 
-    pub fn is_finished_and_success(&self) -> bool { self.is_success().unwrap_or(false) }
+    pub fn is_finished_and_success(&self) -> bool {
+        self.is_success().unwrap_or(false)
+    }
 
     pub fn is_finished(&self) -> bool {
         match self {
@@ -143,6 +150,13 @@ impl SavedSwap {
                 if let Some(ref mut event) = swap.events.first_mut() {
                     if let MakerSwapEvent::Started(ref mut data) = event.event {
                         data.secret = H256Json::default();
+                        // Remove the taker's pubkey. Let the stats node get it from the taker directly.
+                        data.taker_pubkey = Default::default();
+                        // If we are using a spun up private key for this swap, then we probably want to hide our
+                        // persistent pubkey as well.
+                        if data.p2p_privkey.is_some() {
+                            data.my_persistent_pub = Default::default();
+                        }
                         data.p2p_privkey = None;
                     }
                 }
@@ -150,6 +164,13 @@ impl SavedSwap {
             SavedSwap::Taker(swap) => {
                 if let Some(ref mut event) = swap.events.first_mut() {
                     if let TakerSwapEvent::Started(ref mut data) = event.event {
+                        // Remove the maker's pubkey. Let the stats node get it from the maker directly.
+                        data.maker_pubkey = Default::default();
+                        // If we are using a spun up private key for this swap, then we probably want to hide our
+                        // persistent pubkey as well.
+                        if data.p2p_privkey.is_some() {
+                            data.my_persistent_pub = Default::default();
+                        }
                         data.p2p_privkey = None;
                     }
                 }
@@ -161,6 +182,62 @@ impl SavedSwap {
         match self {
             SavedSwap::Maker(maker) => maker.fetch_and_set_usd_prices().await,
             SavedSwap::Taker(taker) => taker.fetch_and_set_usd_prices().await,
+        }
+    }
+
+    pub fn taker_pubkey(&self) -> Option<Result<String, String>> {
+        match self {
+            SavedSwap::Taker(swap) => Some(swap.taker_pubkey()),
+            SavedSwap::Maker(_) => None,
+        }
+    }
+
+    pub fn maker_pubkey(&self) -> Option<Result<String, String>> {
+        match self {
+            SavedSwap::Maker(swap) => Some(swap.maker_pubkey()),
+            SavedSwap::Taker(_) => None,
+        }
+    }
+
+    pub fn maker_usd_price(&self) -> Option<&BigDecimal> {
+        match self {
+            SavedSwap::Maker(swap) => swap.maker_coin_usd_price.as_ref(),
+            SavedSwap::Taker(swap) => swap.maker_coin_usd_price.as_ref(),
+        }
+    }
+
+    pub fn taker_usd_price(&self) -> Option<&BigDecimal> {
+        match self {
+            SavedSwap::Maker(swap) => swap.taker_coin_usd_price.as_ref(),
+            SavedSwap::Taker(swap) => swap.taker_coin_usd_price.as_ref(),
+        }
+    }
+
+    pub fn maker_gui(&self) -> Option<&String> {
+        match self {
+            SavedSwap::Maker(swap) => swap.gui.as_ref(),
+            SavedSwap::Taker(_) => None,
+        }
+    }
+
+    pub fn taker_gui(&self) -> Option<&String> {
+        match self {
+            SavedSwap::Taker(swap) => swap.gui.as_ref(),
+            SavedSwap::Maker(_) => None,
+        }
+    }
+
+    pub fn maker_mm_version(&self) -> Option<&String> {
+        match self {
+            SavedSwap::Maker(swap) => swap.mm_version.as_ref(),
+            SavedSwap::Taker(_) => None,
+        }
+    }
+
+    pub fn taker_mm_version(&self) -> Option<&String> {
+        match self {
+            SavedSwap::Taker(swap) => swap.mm_version.as_ref(),
+            SavedSwap::Maker(_) => None,
         }
     }
 }
@@ -297,8 +374,9 @@ mod native_impl {
 #[cfg(target_arch = "wasm32")]
 mod wasm_impl {
     use super::*;
-    use crate::lp_swap::swap_wasm_db::{DbTransactionError, InitDbError, MySwapsFiltersTable, SavedSwapTable,
-                                       SwapsMigrationTable};
+    use crate::lp_swap::swap_wasm_db::{
+        DbTransactionError, InitDbError, MySwapsFiltersTable, SavedSwapTable, SwapsMigrationTable,
+    };
     use crate::lp_swap::{SwapsContext, LEGACY_SWAP_TYPE};
     use bytes::Buf;
     use common::log::{info, warn};
@@ -369,8 +447,7 @@ mod wasm_impl {
                 1 => break,
                 unsupported => {
                     return MmError::err(SavedSwapError::InternalError(format!(
-                        "Unsupported migration {}",
-                        unsupported
+                        "Unsupported migration {unsupported}"
                     )))
                 },
             }
@@ -386,7 +463,9 @@ mod wasm_impl {
     }
 
     impl From<CursorError> for SavedSwapError {
-        fn from(e: CursorError) -> Self { SavedSwapError::CursorError(e.to_string()) }
+        fn from(e: CursorError) -> Self {
+            SavedSwapError::CursorError(e.to_string())
+        }
     }
 
     impl From<DbTransactionError> for SavedSwapError {
@@ -415,7 +494,9 @@ mod wasm_impl {
     }
 
     impl From<InitDbError> for SavedSwapError {
-        fn from(e: InitDbError) -> Self { SavedSwapError::InternalError(e.to_string()) }
+        fn from(e: InitDbError) -> Self {
+            SavedSwapError::InternalError(e.to_string())
+        }
     }
 
     #[async_trait]

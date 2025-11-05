@@ -20,11 +20,16 @@ use std::sync::Mutex;
 use wasm_bindgen::prelude::*;
 use web_sys::{IdbDatabase, IdbTransactionMode};
 
-#[path = "drivers/builder.rs"] mod builder;
-#[path = "drivers/cursor/cursor.rs"] pub(super) mod cursor;
-#[path = "drivers/object_store.rs"] mod object_store;
-#[path = "drivers/transaction.rs"] mod transaction;
-#[path = "drivers/upgrader.rs"] mod upgrader;
+#[path = "drivers/builder.rs"]
+mod builder;
+#[path = "drivers/cursor/cursor.rs"]
+pub(super) mod cursor;
+#[path = "drivers/object_store.rs"]
+mod object_store;
+#[path = "drivers/transaction.rs"]
+mod transaction;
+#[path = "drivers/upgrader.rs"]
+mod upgrader;
 
 pub use builder::{IdbDatabaseBuilder, InitDbError, InitDbResult};
 pub use object_store::IdbObjectStoreImpl;
@@ -45,16 +50,17 @@ struct InternalItem {
 }
 
 impl InternalItem {
-    pub fn into_pair(self) -> (ItemId, Json) { (self._item_id, self.item) }
+    pub fn into_pair(self) -> (ItemId, Json) {
+        (self._item_id, self.item)
+    }
 }
 
 pub struct IdbDatabaseImpl {
     db: IdbDatabase,
     db_name: String,
     tables: HashSet<String>,
+    _not_send: common::NotSend,
 }
-
-impl !Send for IdbDatabaseImpl {}
 
 impl fmt::Debug for IdbDatabaseImpl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

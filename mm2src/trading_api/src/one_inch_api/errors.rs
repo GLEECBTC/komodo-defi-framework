@@ -76,7 +76,7 @@ impl NativeError {
             match serde_json::from_value(body) {
                 Ok(err) => Self::HttpError400(err),
                 Err(err) => Self::ParseError {
-                    error_msg: format!("could not parse error response: {}", err),
+                    error_msg: format!("could not parse error response: {err}"),
                 },
             }
         } else {

@@ -1,5 +1,3 @@
-#![feature(result_flattening)]
-
 #[macro_use] extern crate serde_derive;
 
 pub mod electrums;

@@ -31,14 +31,18 @@ pub struct NetworkEvent {
 }
 
 impl NetworkEvent {
-    pub fn new(config: NetworkEventConfig, ctx: MmArc) -> Self { Self { config, ctx } }
+    pub fn new(config: NetworkEventConfig, ctx: MmArc) -> Self {
+        Self { config, ctx }
+    }
 }
 
 #[async_trait]
 impl EventStreamer for NetworkEvent {
     type DataInType = NoDataIn;
 
-    fn streamer_id(&self) -> StreamerId { StreamerId::Network }
+    fn streamer_id(&self) -> StreamerId {
+        StreamerId::Network
+    }
 
     async fn handle(
         self,

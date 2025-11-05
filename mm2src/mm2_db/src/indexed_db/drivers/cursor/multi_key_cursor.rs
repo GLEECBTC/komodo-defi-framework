@@ -14,7 +14,9 @@ pub struct IdbMultiKeyCursor {
 }
 
 impl IdbMultiKeyCursor {
-    pub(super) fn new(only_values: Vec<(String, Json)>) -> IdbMultiKeyCursor { IdbMultiKeyCursor { only_values } }
+    pub(super) fn new(only_values: Vec<(String, Json)>) -> IdbMultiKeyCursor {
+        IdbMultiKeyCursor { only_values }
+    }
 }
 
 impl CursorDriverImpl for IdbMultiKeyCursor {
@@ -24,7 +26,7 @@ impl CursorDriverImpl for IdbMultiKeyCursor {
         for (field, value) in self.only_values.iter() {
             let js_value = serialize_to_js(value).map_to_mm(|e| CursorError::ErrorSerializingIndexFieldValue {
                 field: field.to_owned(),
-                value: format!("{:?}", value),
+                value: format!("{value:?}"),
                 description: e.to_string(),
             })?;
             only.push(&js_value);

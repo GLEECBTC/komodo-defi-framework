@@ -35,10 +35,7 @@ impl Default for DataAsker {
 
 #[derive(Debug, Display)]
 pub enum AskForDataError {
-    #[display(
-        fmt = "Expected JSON data, but the received data (from data provider) was not deserializable: {:?}",
-        _0
-    )]
+    #[display(fmt = "Expected JSON data, but the received data (from data provider) was not deserializable: {_0:?}")]
     DeserializationError(serde_json::Error),
     Internal(String),
     Timeout,
@@ -108,9 +105,9 @@ pub struct SendAskedDataRequest {
 #[derive(Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum SendAskedDataError {
-    #[display(fmt = "No data was asked for id={}", _0)]
+    #[display(fmt = "No data was asked for id={_0}")]
     NotFound(usize),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 

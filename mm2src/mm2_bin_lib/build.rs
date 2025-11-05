@@ -2,7 +2,9 @@ use chrono::Utc;
 use regex::Regex;
 use std::{env, process::Command};
 
-fn crate_version() -> &'static str { env!("CARGO_PKG_VERSION") }
+fn crate_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
 
 fn version_tag() -> Result<String, String> {
     if let Ok(tag) = env::var("KDF_BUILD_TAG") {
@@ -10,6 +12,7 @@ fn version_tag() -> Result<String, String> {
     }
 
     let output = Command::new("git")
+        .current_dir("../../")
         .args(["log", "--pretty=format:%h", "-n1"])
         .output()
         .map_err(|e| format!("Failed to run git command: {e}\nSet `KDF_BUILD_TAG` manually instead.",))?;
@@ -29,9 +32,13 @@ fn version_tag() -> Result<String, String> {
     Ok(commit_hash)
 }
 
-fn version() -> Result<String, String> { version_tag().map(|tag| format!("{}_{}", crate_version(), tag)) }
+fn version() -> Result<String, String> {
+    version_tag().map(|tag| format!("{}_{}", crate_version(), tag))
+}
 
-fn build_datetime() -> String { Utc::now().to_rfc3339() }
+fn build_datetime() -> String {
+    Utc::now().to_rfc3339()
+}
 
 fn set_build_variables() -> Result<(), String> {
     println!("cargo:rustc-env=KDF_VERSION={}", version()?);
@@ -42,7 +49,7 @@ fn set_build_variables() -> Result<(), String> {
 fn main() {
     println!("cargo:rerun-if-env-changed=CARGO_PKG_VERSION");
     println!("cargo:rerun-if-env-changed=KDF_BUILD_TAG");
-    println!("cargo::rerun-if-changed=.git/HEAD");
+    println!("cargo::rerun-if-changed=../../.git/HEAD");
 
     set_build_variables().expect("Failed to set build variables");
 }

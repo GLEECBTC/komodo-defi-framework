@@ -11,22 +11,22 @@ pub type HwResult<T> = Result<T, MmError<HwError>>;
 pub enum HwError {
     #[display(fmt = "No Trezor device available")]
     NoTrezorDeviceAvailable,
-    #[display(fmt = "Found multiple devices ({}). Please unplug unused devices", count)]
+    #[display(fmt = "Found multiple devices ({count}). Please unplug unused devices")]
     CannotChooseDevice {
         count: usize,
     },
-    #[display(fmt = "Couldn't connect to a Hardware Wallet device in {:?}", timeout)]
+    #[display(fmt = "Couldn't connect to a Hardware Wallet device in {timeout:?}")]
     ConnectionTimedOut {
         timeout: Duration,
     },
     #[display(fmt = "Found unexpected Hardware Wallet device")]
     FoundUnexpectedDevice,
     DeviceDisconnected,
-    #[display(fmt = "'{}' transport not supported", transport)]
+    #[display(fmt = "'{transport}' transport not supported")]
     TransportNotSupported {
         transport: String,
     },
-    #[display(fmt = "Invalid xpub received from a device: '{}'", _0)]
+    #[display(fmt = "Invalid xpub received from a device: '{_0}'")]
     InvalidXpub(String),
     UnderlyingError(String),
     ProtocolError(String),
@@ -83,7 +83,9 @@ impl From<TrezorError> for HwError {
 }
 
 impl From<Bip32Error> for HwError {
-    fn from(e: Bip32Error) -> Self { HwError::InvalidXpub(e.to_string()) }
+    fn from(e: Bip32Error) -> Self {
+        HwError::InvalidXpub(e.to_string())
+    }
 }
 
 /// This error enumeration is involved to be used as a part of another RPC error.

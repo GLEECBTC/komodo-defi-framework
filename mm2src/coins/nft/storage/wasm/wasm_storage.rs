@@ -1,10 +1,14 @@
 use crate::hd_wallet::AddrToString;
-use crate::nft::nft_structs::{Chain, ContractType, Nft, NftList, NftListFilters, NftTransferHistory,
-                              NftsTransferHistoryList, TransferMeta, TransferStatus};
+use crate::nft::nft_structs::{
+    Chain, ContractType, Nft, NftList, NftListFilters, NftTransferHistory, NftsTransferHistoryList, TransferMeta,
+    TransferStatus,
+};
 use crate::nft::storage::wasm::nft_idb::NftCacheIDBLocked;
 use crate::nft::storage::wasm::{WasmNftCacheError, WasmNftCacheResult};
-use crate::nft::storage::{get_offset_limit, NftListStorageOps, NftTokenAddrId, NftTransferHistoryFilters,
-                          NftTransferHistoryStorageOps, RemoveNftResult};
+use crate::nft::storage::{
+    get_offset_limit, NftListStorageOps, NftTokenAddrId, NftTransferHistoryFilters, NftTransferHistoryStorageOps,
+    RemoveNftResult,
+};
 use async_trait::async_trait;
 use ethereum_types::Address;
 use mm2_db::indexed_db::{BeBigUint, DbTable, DbUpgrader, MultiIndex, OnUpgradeError, OnUpgradeResult, TableSignature};
@@ -101,9 +105,13 @@ where
 }
 
 impl NftListFilters {
-    fn passes_spam_filter(&self, nft: &Nft) -> bool { !self.exclude_spam || !nft.common.possible_spam }
+    fn passes_spam_filter(&self, nft: &Nft) -> bool {
+        !self.exclude_spam || !nft.common.possible_spam
+    }
 
-    fn passes_phishing_filter(&self, nft: &Nft) -> bool { !self.exclude_phishing || !nft.possible_phishing }
+    fn passes_phishing_filter(&self, nft: &Nft) -> bool {
+        !self.exclude_phishing || !nft.possible_phishing
+    }
 }
 
 impl NftTransferHistoryFilters {
@@ -131,9 +139,13 @@ impl NftTransferHistoryFilters {
 impl NftListStorageOps for NftCacheIDBLocked<'_> {
     type Error = WasmNftCacheError;
 
-    async fn init(&self, _chain: &Chain) -> MmResult<(), Self::Error> { Ok(()) }
+    async fn init(&self, _chain: &Chain) -> MmResult<(), Self::Error> {
+        Ok(())
+    }
 
-    async fn is_initialized(&self, _chain: &Chain) -> MmResult<bool, Self::Error> { Ok(true) }
+    async fn is_initialized(&self, _chain: &Chain) -> MmResult<bool, Self::Error> {
+        Ok(true)
+    }
 
     async fn get_nft_list(
         &self,
@@ -500,9 +512,13 @@ impl NftListStorageOps for NftCacheIDBLocked<'_> {
 impl NftTransferHistoryStorageOps for NftCacheIDBLocked<'_> {
     type Error = WasmNftCacheError;
 
-    async fn init(&self, _chain: &Chain) -> MmResult<(), Self::Error> { Ok(()) }
+    async fn init(&self, _chain: &Chain) -> MmResult<(), Self::Error> {
+        Ok(())
+    }
 
-    async fn is_initialized(&self, _chain: &Chain) -> MmResult<bool, Self::Error> { Ok(true) }
+    async fn is_initialized(&self, _chain: &Chain) -> MmResult<bool, Self::Error> {
+        Ok(true)
+    }
 
     async fn get_transfer_history(
         &self,
@@ -961,11 +977,15 @@ trait BlockNumberTable {
 }
 
 impl BlockNumberTable for NftListTable {
-    fn get_block_number(&self) -> &BeBigUint { &self.block_number }
+    fn get_block_number(&self) -> &BeBigUint {
+        &self.block_number
+    }
 }
 
 impl BlockNumberTable for NftTransferHistoryTable {
-    fn get_block_number(&self) -> &BeBigUint { &self.block_number }
+    fn get_block_number(&self) -> &BeBigUint {
+        &self.block_number
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

@@ -69,7 +69,7 @@ impl LockedNoteDbInner {
 }
 
 impl LockedNotesStorage {
-    async fn lockdb(&self) -> MmResult<LockedNotesDbInnerLocked, LockedNotesStorageError> {
+    async fn lockdb(&self) -> MmResult<LockedNotesDbInnerLocked<'_>, LockedNotesStorageError> {
         self.db.get_or_initialize().await.map_mm_err()
     }
 }

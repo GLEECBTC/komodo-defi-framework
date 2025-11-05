@@ -1,8 +1,10 @@
 use crate::my_tx_history_v2::{GetHistoryResult, RemoveTxResult, TxHistoryStorage};
 use crate::tx_history_storage::wasm::tx_history_db::{TxHistoryDb, TxHistoryDbLocked};
 use crate::tx_history_storage::wasm::{WasmTxHistoryError, WasmTxHistoryResult};
-use crate::tx_history_storage::{token_id_from_tx_type, ConfirmationStatus, CreateTxHistoryStorageError,
-                                FilteringAddresses, GetTxHistoryFilters, WalletId};
+use crate::tx_history_storage::{
+    token_id_from_tx_type, ConfirmationStatus, CreateTxHistoryStorageError, FilteringAddresses, GetTxHistoryFilters,
+    WalletId,
+};
 use crate::{compare_transaction_details, CoinsContext, TransactionDetails};
 use async_trait::async_trait;
 use common::PagingOptionsEnum;
@@ -42,9 +44,13 @@ impl IndexedDbTxHistoryStorage {
 impl TxHistoryStorage for IndexedDbTxHistoryStorage {
     type Error = WasmTxHistoryError;
 
-    async fn init(&self, _wallet_id: &WalletId) -> MmResult<(), Self::Error> { Ok(()) }
+    async fn init(&self, _wallet_id: &WalletId) -> MmResult<(), Self::Error> {
+        Ok(())
+    }
 
-    async fn is_initialized_for(&self, _wallet_id: &WalletId) -> MmResult<bool, Self::Error> { Ok(true) }
+    async fn is_initialized_for(&self, _wallet_id: &WalletId) -> MmResult<bool, Self::Error> {
+        Ok(true)
+    }
 
     /// Adds multiple transactions to the selected coin's history
     /// Also consider adding tx_hex to the cache during this operation

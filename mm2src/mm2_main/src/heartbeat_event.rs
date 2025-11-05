@@ -24,14 +24,18 @@ pub struct HeartbeatEvent {
 }
 
 impl HeartbeatEvent {
-    pub fn new(config: HeartbeatEventConfig) -> Self { Self { config } }
+    pub fn new(config: HeartbeatEventConfig) -> Self {
+        Self { config }
+    }
 }
 
 #[async_trait]
 impl EventStreamer for HeartbeatEvent {
     type DataInType = NoDataIn;
 
-    fn streamer_id(&self) -> StreamerId { StreamerId::Heartbeat }
+    fn streamer_id(&self) -> StreamerId {
+        StreamerId::Heartbeat
+    }
 
     async fn handle(
         self,

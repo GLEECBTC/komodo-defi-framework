@@ -1,13 +1,16 @@
 use super::client::ElectrumClient;
-use super::constants::{BLOCKCHAIN_HEADERS_SUB_ID, BLOCKCHAIN_SCRIPTHASH_SUB_ID, CUTOFF_TIMEOUT,
-                       DEFAULT_CONNECTION_ESTABLISHMENT_TIMEOUT};
+use super::constants::{
+    BLOCKCHAIN_HEADERS_SUB_ID, BLOCKCHAIN_SCRIPTHASH_SUB_ID, CUTOFF_TIMEOUT, DEFAULT_CONNECTION_ESTABLISHMENT_TIMEOUT,
+};
 
 use crate::{RpcTransportEventHandler, SharableRpcTransportEventHandler};
 use common::custom_futures::timeout::FutureTimerExt;
-use common::executor::{abortable_queue::AbortableQueue, abortable_queue::WeakSpawner, AbortableSystem, SpawnFuture,
-                       Timer};
-use common::jsonrpc_client::{JsonRpcBatchResponse, JsonRpcErrorType, JsonRpcId, JsonRpcRequest, JsonRpcResponse,
-                             JsonRpcResponseEnum};
+use common::executor::{
+    abortable_queue::AbortableQueue, abortable_queue::WeakSpawner, AbortableSystem, SpawnFuture, Timer,
+};
+use common::jsonrpc_client::{
+    JsonRpcBatchResponse, JsonRpcErrorType, JsonRpcId, JsonRpcRequest, JsonRpcResponse, JsonRpcResponseEnum,
+};
 use common::log::{error, info};
 use common::{now_float, now_ms};
 use mm2_rpc::data::legacy::ElectrumProtocol;
@@ -184,11 +187,17 @@ impl ElectrumConnection {
         }
     }
 
-    pub fn address(&self) -> &str { &self.settings.url }
+    pub fn address(&self) -> &str {
+        &self.settings.url
+    }
 
-    fn weak_spawner(&self) -> WeakSpawner { self.abortable_system.weak_spawner() }
+    fn weak_spawner(&self) -> WeakSpawner {
+        self.abortable_system.weak_spawner()
+    }
 
-    fn is_connected(&self) -> bool { self.tx.lock().unwrap().is_some() }
+    fn is_connected(&self) -> bool {
+        self.tx.lock().unwrap().is_some()
+    }
 
     fn set_protocol_version(&self, version: f32) {
         let mut protocol_version = self.protocol_version.lock().unwrap();
@@ -197,7 +206,9 @@ impl ElectrumConnection {
         }
     }
 
-    fn clear_protocol_version(&self) { self.protocol_version.lock().unwrap().take(); }
+    fn clear_protocol_version(&self) {
+        self.protocol_version.lock().unwrap().take();
+    }
 
     fn set_last_error(&self, reason: ElectrumConnectionErr) {
         let mut last_error = self.last_error.lock().unwrap();
@@ -206,9 +217,13 @@ impl ElectrumConnection {
         }
     }
 
-    fn clear_last_error(&self) { self.last_error.lock().unwrap().take(); }
+    fn clear_last_error(&self) {
+        self.last_error.lock().unwrap().take();
+    }
 
-    fn last_error(&self) -> Option<ElectrumConnectionErr> { self.last_error.lock().unwrap().clone() }
+    fn last_error(&self) -> Option<ElectrumConnectionErr> {
+        self.last_error.lock().unwrap().clone()
+    }
 
     /// Connects to the electrum server by setting the `tx` sender channel.
     ///

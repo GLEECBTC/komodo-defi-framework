@@ -16,11 +16,17 @@ impl Default for SwapVersion {
 }
 
 impl SwapVersion {
-    pub(crate) const fn is_legacy(&self) -> bool { self.version == legacy_swap_version() }
+    pub(crate) const fn is_legacy(&self) -> bool {
+        self.version == legacy_swap_version()
+    }
 }
 
 impl From<u8> for SwapVersion {
-    fn from(version: u8) -> Self { Self { version } }
+    fn from(version: u8) -> Self {
+        Self { version }
+    }
 }
 
-pub(crate) const fn legacy_swap_version() -> u8 { 1 }
+pub(crate) const fn legacy_swap_version() -> u8 {
+    1
+}

@@ -4,8 +4,10 @@ use crate::session::Session;
 use async_trait::async_trait;
 use common::log::debug;
 use mm2_core::mm_ctx::MmArc;
-use mm2_db::indexed_db::{ConstructibleDb, DbIdentifier, DbInstance, DbLocked, DbUpgrader, IndexedDb, IndexedDbBuilder,
-                         InitDbResult, OnUpgradeResult, SharedDb, TableSignature};
+use mm2_db::indexed_db::{
+    ConstructibleDb, DbIdentifier, DbInstance, DbLocked, DbUpgrader, IndexedDb, IndexedDbBuilder, InitDbResult,
+    OnUpgradeResult, SharedDb, TableSignature,
+};
 use mm2_err_handle::prelude::MmResult;
 use mm2_err_handle::prelude::*;
 use relay_rpc::domain::Topic;
@@ -44,7 +46,9 @@ impl DbInstance for IDBSessionStorageInner {
 }
 
 impl IDBSessionStorageInner {
-    pub(crate) fn get_inner(&self) -> &IndexedDb { &self.0 }
+    pub(crate) fn get_inner(&self) -> &IndexedDb {
+        &self.0
+    }
 }
 
 #[derive(Clone)]
@@ -72,7 +76,9 @@ impl WalletConnectStorageOps for IDBSessionStorage {
         Ok(())
     }
 
-    async fn is_initialized(&self) -> MmResult<bool, Self::Error> { Ok(true) }
+    async fn is_initialized(&self) -> MmResult<bool, Self::Error> {
+        Ok(true)
+    }
 
     async fn save_session(&self, session: &Session) -> MmResult<(), Self::Error> {
         debug!("[{}] Saving WalletConnect session to storage", session.topic);

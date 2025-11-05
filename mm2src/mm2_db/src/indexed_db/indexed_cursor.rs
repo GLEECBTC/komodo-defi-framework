@@ -85,7 +85,7 @@ impl<'transaction, 'reference, Table: TableSignature> CursorBuilder<'transaction
     where
         Value: Serialize + fmt::Debug,
     {
-        let field_value_str = format!("{:?}", field_value);
+        let field_value_str = format!("{field_value:?}");
         let field_value = json::to_value(field_value).map_to_mm(|e| CursorError::ErrorSerializingIndexFieldValue {
             field: field_name.to_owned(),
             value: field_value_str,
@@ -141,7 +141,9 @@ impl<'transaction, 'reference, Table: TableSignature> CursorBuilder<'transaction
     /// // Apply the default condition to the cursor builder to return the first item
     /// let updated_cursor_builder = cursor_builder.where_first().open_cursor().next();
     /// ```
-    pub fn where_first(self) -> CursorBuilder<'transaction, 'reference, Table> { self.where_(|_| Ok(true)) }
+    pub fn where_first(self) -> CursorBuilder<'transaction, 'reference, Table> {
+        self.where_(|_| Ok(true))
+    }
 
     pub fn limit(mut self, limit: usize) -> CursorBuilder<'transaction, 'reference, Table> {
         if limit < 1 {
@@ -300,7 +302,7 @@ mod tests {
             table
                 .add_item(item)
                 .await
-                .unwrap_or_else(|_| panic!("Error adding {:?} item", item));
+                .unwrap_or_else(|_| panic!("Error adding {item:?} item"));
         }
     }
 

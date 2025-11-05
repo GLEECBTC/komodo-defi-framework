@@ -8,18 +8,13 @@ use std::str::FromStr;
 #[derive(Clone, Debug, Display, Serialize)]
 pub enum RelayAddressError {
     #[display(
-        fmt = "Error parsing 'RelayAddress' from {}: address has unknown protocol, expected either IPv4 or DNS or Memory address",
-        found
+        fmt = "Error parsing 'RelayAddress' from {found}: address has unknown protocol, expected either IPv4 or DNS or Memory address"
     )]
     FromStrError { found: String },
-    #[display(
-        fmt = "Error converting '{:?}' to Multiaddr: unexpected IPv4/DNS address on a memory network",
-        self_str
-    )]
+    #[display(fmt = "Error converting '{self_str:?}' to Multiaddr: unexpected IPv4/DNS address on a memory network")]
     DistributedAddrOnMemoryNetwork { self_str: String },
     #[display(
-        fmt = "Error converting '{:?}' to Multiaddr: unexpected memory address on a distributed network",
-        self_str
+        fmt = "Error converting '{self_str:?}' to Multiaddr: unexpected memory address on a distributed network"
     )]
     MemoryAddrOnDistributedNetwork { self_str: String },
 }
@@ -29,13 +24,13 @@ impl std::error::Error for RelayAddressError {}
 impl RelayAddressError {
     fn distributed_addr_on_memory_network(addr: &RelayAddress) -> RelayAddressError {
         RelayAddressError::DistributedAddrOnMemoryNetwork {
-            self_str: format!("{:?}", addr),
+            self_str: format!("{addr:?}"),
         }
     }
 
     fn memory_addr_on_distributed_network(addr: &RelayAddress) -> RelayAddressError {
         RelayAddressError::MemoryAddrOnDistributedNetwork {
-            self_str: format!("{:?}", addr),
+            self_str: format!("{addr:?}"),
         }
     }
 }
@@ -110,7 +105,9 @@ fn validate_domain_name(s: &str) -> bool {
     DNS_REGEX.is_match(s)
 }
 
-fn memory_multiaddr(port: u64) -> Multiaddr { format!("/memory/{}", port).parse().unwrap() }
+fn memory_multiaddr(port: u64) -> Multiaddr {
+    format!("/memory/{port}").parse().unwrap()
+}
 
 #[cfg(target_arch = "wasm32")]
 fn ipv4_multiaddr(ipv4_addr: &str, ports: NetworkPorts) -> Multiaddr {
@@ -149,7 +146,7 @@ fn test_relay_address_from_str() {
         ("/memory/71428421981", RelayAddress::Memory(71428421981)),
     ];
     for (s, expected) in valid_addresses {
-        let actual = RelayAddress::from_str(s).unwrap_or_else(|_| panic!("Error parsing '{}'", s));
+        let actual = RelayAddress::from_str(s).unwrap_or_else(|_| panic!("Error parsing '{s}'"));
         assert_eq!(actual, expected);
     }
 

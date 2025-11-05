@@ -44,20 +44,26 @@ impl std::error::Error for AsyncConnError {
 }
 
 impl From<String> for AsyncConnError {
-    fn from(err: String) -> Self { Self::Internal(InternalError(err)) }
+    fn from(err: String) -> Self {
+        Self::Internal(InternalError(err))
+    }
 }
 
 #[derive(Debug)]
 pub struct InternalError(pub String);
 
 impl fmt::Display for InternalError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self.0) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
 
 impl std::error::Error for InternalError {}
 
 impl From<SqlError> for AsyncConnError {
-    fn from(value: SqlError) -> Self { AsyncConnError::Rusqlite(value) }
+    fn from(value: SqlError) -> Self {
+        AsyncConnError::Rusqlite(value)
+    }
 }
 
 /// The result returned on method calls in this crate.
@@ -97,7 +103,9 @@ impl AsyncConnection {
     /// # Failure
     ///
     /// Will return `Err` if the underlying SQLite open call fails.
-    pub async fn open_in_memory() -> Result<Self> { start(rusqlite::Connection::open_in_memory).await }
+    pub async fn open_in_memory() -> Result<Self> {
+        start(rusqlite::Connection::open_in_memory).await
+    }
 
     /// Open a new AsyncConnection to a SQLite database.
     ///
@@ -239,7 +247,9 @@ impl AsyncConnection {
 }
 
 impl Debug for AsyncConnection {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.debug_struct("AsyncConnection").finish() }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AsyncConnection").finish()
+    }
 }
 
 async fn start<F>(open: F) -> Result<AsyncConnection>

@@ -19,6 +19,7 @@
 //  marketmaker
 //
 
+use coins::utxo::rpc_clients::ELECTRUM_REQUEST_TIMEOUT;
 use coins::{lp_coinfind, lp_coinfind_any, lp_coininit, CoinsContext, MmCoinEnum};
 use common::custom_futures::timeout::FutureTimerExt;
 use common::executor::Timer;
@@ -71,10 +72,10 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
         Ok(Some(t)) if t.is_available() => t,
         Ok(Some(t)) if !t.is_available() && force_disable => t,
         Err(err) => {
-            return disable_coin_err(format!("!lp_coinfind({}): ", err), &[], &[], &[]);
+            return disable_coin_err(format!("!lp_coinfind({err}): "), &[], &[], &[]);
         },
         _ => {
-            return disable_coin_err(format!("No such coin: {}", ticker), &[], &[], &[]);
+            return disable_coin_err(format!("No such coin: {ticker}"), &[], &[], &[]);
         },
     };
 
@@ -113,9 +114,12 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
 
     // Proceed with disabling the coin/tokens.
     log!("disabling {ticker} coin");
-    let cancelled_and_matching_orders = cancel_orders_by(&ctx, CancelBy::Coin {
-        ticker: ticker.to_string(),
-    })
+    let cancelled_and_matching_orders = cancel_orders_by(
+        &ctx,
+        CancelBy::Coin {
+            ticker: ticker.to_string(),
+        },
+    )
     .await;
     let cancelled_orders = match cancelled_and_matching_orders {
         Ok((cancelled, _)) => cancelled,
@@ -138,7 +142,7 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
 pub async fn electrum(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
     let coin: MmCoinEnum = try_s!(lp_coininit(&ctx, &ticker, &req).await);
-    let balance = match coin.my_balance().compat().timeout_secs(5.).await {
+    let balance = match coin.my_balance().compat().timeout_secs(ELECTRUM_REQUEST_TIMEOUT).await {
         Ok(Ok(balance)) => balance,
         // If the coin was activated successfully but the balance query failed (most probably due to faulty
         // electrum servers), remove the coin as the whole request is a failure now from the POV of the GUI.
@@ -190,36 +194,14 @@ pub async fn enable(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> 
     Ok(res)
 }
 
-#[cfg(target_arch = "wasm32")]
-pub fn help() -> HyRes {
-    rpc_response(
-        INTERNAL_SERVER_ERROR_CODE,
-        json!({
-            "error":"'help' is only supported in native mode"
-        })
-        .to_string(),
-    )
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn help() -> HyRes {
+pub fn help(ctx: MmArc) -> HyRes {
     rpc_response(
         RESPONSE_OK_STATUS_CODE,
-        "
-        buy(base, rel, price, relvolume, timeout=10, duration=3600)
-        electrum(coin, urls)
-        enable(coin, urls, swap_contract_address)
-        myprice(base, rel)
-        my_balance(coin)
-        my_swap_status(params/uuid)
-        orderbook(base, rel, duration=3600)
-        sell(base, rel, price, basevolume, timeout=10, duration=3600)
-        send_raw_transaction(coin, tx_hex)
-        setprice(base, rel, price, broadcast=1)
-        stop()
-        version
-        withdraw(coin, amount, to)
-    ",
+        json!({
+            "result": "Please visit https://komodoplatform.com/en/docs/komodo-defi-framework/api for the API documentation.",
+            "version": &ctx.mm_version,
+        })
+        .to_string(),
     )
 }
 

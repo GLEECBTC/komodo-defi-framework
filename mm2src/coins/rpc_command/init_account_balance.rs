@@ -5,10 +5,12 @@ use async_trait::async_trait;
 use common::{SerdeInfallible, SuccessResponse};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
-                           RpcTaskStatusRequest};
-use rpc_task::{RpcInitReq, RpcTask, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus,
-               RpcTaskTypes};
+use rpc_task::rpc_common::{
+    CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError, RpcTaskStatusRequest,
+};
+use rpc_task::{
+    RpcInitReq, RpcTask, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes,
+};
 
 pub type AccountBalanceUserAction = SerdeInfallible;
 pub type AccountBalanceAwaitingStatus = SerdeInfallible;
@@ -64,7 +66,9 @@ impl RpcTaskTypes for InitAccountBalanceTask {
 
 #[async_trait]
 impl RpcTask for InitAccountBalanceTask {
-    fn initial_status(&self) -> Self::InProgressStatus { AccountBalanceInProgressStatus::RequestingAccountBalance }
+    fn initial_status(&self) -> Self::InProgressStatus {
+        AccountBalanceInProgressStatus::RequestingAccountBalance
+    }
 
     // Do nothing if the task has been cancelled.
     async fn cancel(self) {}

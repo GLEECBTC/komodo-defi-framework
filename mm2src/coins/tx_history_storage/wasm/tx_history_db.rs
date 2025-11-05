@@ -28,5 +28,7 @@ impl DbInstance for TxHistoryDb {
 }
 
 impl TxHistoryDb {
-    pub fn get_inner(&self) -> &IndexedDb { &self.inner }
+    pub fn get_inner(&self) -> &IndexedDb {
+        &self.inner
+    }
 }

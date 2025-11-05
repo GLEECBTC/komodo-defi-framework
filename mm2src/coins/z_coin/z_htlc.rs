@@ -127,25 +127,33 @@ pub enum ZP2SHSpendError {
     GenTxError(GenTxError),
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     Rpc(UtxoRpcError),
-    #[display(fmt = "{:?} {}", _0, _1)]
+    #[display(fmt = "{_0:?} {_1}")]
     TxRecoverable(TransactionEnum, String),
     Io(std::io::Error),
 }
 
 impl From<ZTxBuilderError> for ZP2SHSpendError {
-    fn from(tx_builder: ZTxBuilderError) -> ZP2SHSpendError { ZP2SHSpendError::ZTxBuilderError(tx_builder) }
+    fn from(tx_builder: ZTxBuilderError) -> ZP2SHSpendError {
+        ZP2SHSpendError::ZTxBuilderError(tx_builder)
+    }
 }
 
 impl From<PrivKeyPolicyNotAllowed> for ZP2SHSpendError {
-    fn from(err: PrivKeyPolicyNotAllowed) -> Self { ZP2SHSpendError::PrivKeyPolicyNotAllowed(err) }
+    fn from(err: PrivKeyPolicyNotAllowed) -> Self {
+        ZP2SHSpendError::PrivKeyPolicyNotAllowed(err)
+    }
 }
 
 impl From<UtxoRpcError> for ZP2SHSpendError {
-    fn from(rpc: UtxoRpcError) -> ZP2SHSpendError { ZP2SHSpendError::Rpc(rpc) }
+    fn from(rpc: UtxoRpcError) -> ZP2SHSpendError {
+        ZP2SHSpendError::Rpc(rpc)
+    }
 }
 
 impl From<std::io::Error> for ZP2SHSpendError {
-    fn from(e: std::io::Error) -> Self { ZP2SHSpendError::Io(e) }
+    fn from(e: std::io::Error) -> Self {
+        ZP2SHSpendError::Io(e)
+    }
 }
 
 impl ZP2SHSpendError {

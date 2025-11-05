@@ -35,10 +35,14 @@ impl StartupError {
     }
 
     #[wasm_bindgen(getter)]
-    pub fn code(&self) -> i8 { self.code as i8 }
+    pub fn code(&self) -> i8 {
+        self.code as i8
+    }
 
     #[wasm_bindgen(getter)]
-    pub fn message(&self) -> String { self.message.clone() }
+    pub fn message(&self) -> String {
+        self.message.clone()
+    }
 }
 
 #[derive(Deserialize)]
@@ -48,7 +52,9 @@ struct MainParams {
 }
 
 impl From<MainParams> for LpMainParams {
-    fn from(orig: MainParams) -> Self { LpMainParams::with_conf(orig.conf).log_filter(Some(orig.log_level)) }
+    fn from(orig: MainParams) -> Self {
+        LpMainParams::with_conf(orig.conf).log_filter(Some(orig.log_level))
+    }
 }
 
 /// Runs a MarketMaker2 instance.
@@ -92,7 +98,7 @@ pub async fn mm2_main(params: JsValue, log_cb: js_sys::Function) -> Result<i8, J
         Err(e) => {
             let error = StartupError::new(
                 StartupResultCode::InvalidParams,
-                format!("Expected 'MainParams' as the first argument, found {:?}: {}", params, e),
+                format!("Expected 'MainParams' as the first argument, found {params:?}: {e}"),
             );
             console_err!("{}", error.message());
             return Err(error.into());
@@ -137,7 +143,7 @@ pub async fn mm2_main(params: JsValue, log_cb: js_sys::Function) -> Result<i8, J
             ctx
         },
         Err(err) => {
-            let error = StartupError::new(StartupResultCode::InitError, format!("lp_main error: {}", err));
+            let error = StartupError::new(StartupResultCode::InitError, format!("lp_main error: {err}"));
             console_err!("{}", error.message());
             LP_MAIN_RUNNING.store(false, Ordering::Relaxed);
             return Err(error.into());
@@ -154,7 +160,9 @@ pub async fn mm2_main(params: JsValue, log_cb: js_sys::Function) -> Result<i8, J
 
 /// Returns the MarketMaker2 instance status.
 #[wasm_bindgen]
-pub fn mm2_main_status() -> MainStatus { mm2_status() }
+pub fn mm2_main_status() -> MainStatus {
+    mm2_status()
+}
 
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
@@ -179,10 +187,6 @@ pub enum Mm2RpcErr {
     NotRunning = 1,
     InvalidPayload = 2,
     InternalError = 3,
-}
-
-impl From<Mm2RpcErr> for JsValue {
-    fn from(e: Mm2RpcErr) -> Self { JsValue::from(e as i32) }
 }
 
 /// Invokes an RPC request.

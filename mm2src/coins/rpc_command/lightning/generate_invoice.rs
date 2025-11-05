@@ -19,13 +19,13 @@ type GenerateInvoiceResult<T> = Result<T, MmError<GenerateInvoiceError>>;
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum GenerateInvoiceError {
-    #[display(fmt = "Lightning network is not supported for {}", _0)]
+    #[display(fmt = "Lightning network is not supported for {_0}")]
     UnsupportedCoin(String),
-    #[display(fmt = "No such coin {}", _0)]
+    #[display(fmt = "No such coin {_0}")]
     NoSuchCoin(String),
-    #[display(fmt = "Invoice signing or creation error: {}", _0)]
+    #[display(fmt = "Invoice signing or creation error: {_0}")]
     SignOrCreationError(String),
-    #[display(fmt = "DB error {}", _0)]
+    #[display(fmt = "DB error {_0}")]
     DbError(String),
 }
 
@@ -50,11 +50,15 @@ impl From<CoinFindError> for GenerateInvoiceError {
 }
 
 impl From<SignOrCreationError> for GenerateInvoiceError {
-    fn from(e: SignOrCreationError) -> Self { GenerateInvoiceError::SignOrCreationError(e.to_string()) }
+    fn from(e: SignOrCreationError) -> Self {
+        GenerateInvoiceError::SignOrCreationError(e.to_string())
+    }
 }
 
 impl From<SqlError> for GenerateInvoiceError {
-    fn from(err: SqlError) -> GenerateInvoiceError { GenerateInvoiceError::DbError(err.to_string()) }
+    fn from(err: SqlError) -> GenerateInvoiceError {
+        GenerateInvoiceError::DbError(err.to_string())
+    }
 }
 
 #[derive(Deserialize)]
@@ -85,8 +89,7 @@ pub async fn generate_invoice(
         connect_to_ln_node(node_pubkey, node_addr, ln_coin.peer_manager.clone())
             .await
             .error_log_with_msg(&format!(
-                "Channel with node: {} can't be used for invoice routing hints due to connection error.",
-                node_pubkey
+                "Channel with node: {node_pubkey} can't be used for invoice routing hints due to connection error."
             ));
     }
 

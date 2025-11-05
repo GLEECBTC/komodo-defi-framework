@@ -1,7 +1,8 @@
 use common::password_policy::{password_policy, PasswordPolicyError};
 use common::HttpStatusCode;
-use crypto::{decrypt_mnemonic, encrypt_mnemonic, generate_mnemonic, CryptoCtx, CryptoInitError, EncryptedData,
-             MnemonicError};
+use crypto::{
+    decrypt_mnemonic, encrypt_mnemonic, generate_mnemonic, CryptoCtx, CryptoInitError, EncryptedData, MnemonicError,
+};
 use derive_more::Display;
 use enum_derives::EnumFromStringify;
 use http::StatusCode;
@@ -24,53 +25,59 @@ cfg_wasm32! {
 cfg_native! {
     use mnemonics_storage::{delete_wallet, read_all_wallet_names, read_encrypted_passphrase, save_encrypted_passphrase, WalletsStorageError};
 }
-#[cfg(not(target_arch = "wasm32"))] mod mnemonics_storage;
-#[cfg(target_arch = "wasm32")] mod mnemonics_wasm_db;
+#[cfg(not(target_arch = "wasm32"))]
+mod mnemonics_storage;
+#[cfg(target_arch = "wasm32")]
+mod mnemonics_wasm_db;
 
 type WalletInitResult<T> = Result<T, MmError<WalletInitError>>;
 
 #[derive(Debug, Deserialize, Display, EnumFromStringify, Serialize)]
 pub enum WalletInitError {
-    #[display(fmt = "Error deserializing '{}' config field: {}", field, error)]
+    #[display(fmt = "Error deserializing '{field}' config field: {error}")]
     ErrorDeserializingConfig {
         field: String,
         error: String,
     },
-    #[display(fmt = "The '{}' field not found in the config", field)]
+    #[display(fmt = "The '{field}' field not found in the config")]
     FieldNotFoundInConfig {
         field: String,
     },
-    #[display(fmt = "Wallets storage error: {}", _0)]
+    #[display(fmt = "Wallets storage error: {_0}")]
     WalletsStorageError(String),
     #[display(
         fmt = "Passphrase doesn't match the one from file, please create a new wallet if you want to use a new passphrase"
     )]
     PassphraseMismatch,
-    #[display(fmt = "Error generating or decrypting mnemonic: {}", _0)]
+    #[display(fmt = "Error generating or decrypting mnemonic: {_0}")]
     MnemonicError(String),
-    #[display(fmt = "Error initializing crypto context: {}", _0)]
+    #[display(fmt = "Error initializing crypto context: {_0}")]
     CryptoInitError(String),
-    #[display(fmt = "Password does not meet policy requirements: {}", _0)]
+    #[display(fmt = "Password does not meet policy requirements: {_0}")]
     #[from_stringify("PasswordPolicyError")]
     PasswordPolicyViolation(String),
     InternalError(String),
 }
 
 impl From<MnemonicError> for WalletInitError {
-    fn from(e: MnemonicError) -> Self { WalletInitError::MnemonicError(e.to_string()) }
+    fn from(e: MnemonicError) -> Self {
+        WalletInitError::MnemonicError(e.to_string())
+    }
 }
 
 impl From<CryptoInitError> for WalletInitError {
-    fn from(e: CryptoInitError) -> Self { WalletInitError::CryptoInitError(e.to_string()) }
+    fn from(e: CryptoInitError) -> Self {
+        WalletInitError::CryptoInitError(e.to_string())
+    }
 }
 
 #[derive(Debug, Deserialize, Display, Serialize)]
 pub enum ReadPassphraseError {
-    #[display(fmt = "Wallets storage error: {}", _0)]
+    #[display(fmt = "Wallets storage error: {_0}")]
     WalletsStorageError(String),
-    #[display(fmt = "Error decrypting passphrase: {}", _0)]
+    #[display(fmt = "Error decrypting passphrase: {_0}")]
     DecryptionError(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
@@ -101,7 +108,9 @@ impl WalletsContext {
         })))
     }
 
-    pub async fn wallets_db(&self) -> InitDbResult<WalletsDbLocked<'_>> { self.wallets_db.get_or_initialize().await }
+    pub async fn wallets_db(&self) -> InitDbResult<WalletsDbLocked<'_>> {
+        self.wallets_db.get_or_initialize().await
+    }
 }
 
 // Utility function for deserialization to reduce repetition
@@ -434,7 +443,9 @@ impl From<EncryptedData> for MnemonicForRpc {
 }
 
 impl From<String> for MnemonicForRpc {
-    fn from(mnemonic: String) -> Self { MnemonicForRpc::PlainText { mnemonic } }
+    fn from(mnemonic: String) -> Self {
+        MnemonicForRpc::PlainText { mnemonic }
+    }
 }
 
 /// [`GetMnemonicResponse`] is a struct representing the response to a get mnemonic request.
@@ -472,16 +483,16 @@ pub struct GetMnemonicResponse {
 #[derive(Debug, Display, Serialize, SerializeErrorType, EnumFromStringify)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum MnemonicRpcError {
-    #[display(fmt = "Invalid request error: {}", _0)]
+    #[display(fmt = "Invalid request error: {_0}")]
     InvalidRequest(String),
-    #[display(fmt = "Wallets storage error: {}", _0)]
+    #[display(fmt = "Wallets storage error: {_0}")]
     WalletsStorageError(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
-    #[display(fmt = "Invalid password error: {}", _0)]
+    #[display(fmt = "Invalid password error: {_0}")]
     #[from_stringify("MnemonicError")]
     InvalidPassword(String),
-    #[display(fmt = "Password does not meet policy requirements: {}", _0)]
+    #[display(fmt = "Password does not meet policy requirements: {_0}")]
     #[from_stringify("PasswordPolicyError")]
     PasswordPolicyViolation(String),
 }
@@ -501,12 +512,16 @@ impl HttpStatusCode for MnemonicRpcError {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<WalletsStorageError> for MnemonicRpcError {
-    fn from(e: WalletsStorageError) -> Self { MnemonicRpcError::WalletsStorageError(e.to_string()) }
+    fn from(e: WalletsStorageError) -> Self {
+        MnemonicRpcError::WalletsStorageError(e.to_string())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
 impl From<WalletsDBError> for MnemonicRpcError {
-    fn from(e: WalletsDBError) -> Self { MnemonicRpcError::WalletsStorageError(e.to_string()) }
+    fn from(e: WalletsDBError) -> Self {
+        MnemonicRpcError::WalletsStorageError(e.to_string())
+    }
 }
 
 impl From<ReadPassphraseError> for MnemonicRpcError {

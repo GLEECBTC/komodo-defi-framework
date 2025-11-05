@@ -223,7 +223,7 @@ mod tests {
         ];
 
         for (source, encoded) in numbers {
-            println!("{}", source);
+            println!("{source}");
             let actual_encoded = encode_contract_number(source);
             assert_eq!(actual_encoded, encoded);
             let actual_decoded = decode_contract_number(&encoded).unwrap();

@@ -26,7 +26,7 @@ mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_event_stream = { path = "../mm2_event_stream" }
 mm2_metrics = { path = "../mm2_metrics" }
 mm2_number = { path = "../mm2_number" }
-parking_lot = { workspace = true, features = ["nightly"] }
+parking_lot = { workspace = true }
 rpc = { path = "../mm2_bitcoin/rpc" }
 rpc_task = { path = "../rpc_task" }
 secp256k1 = { version = "0.24" }

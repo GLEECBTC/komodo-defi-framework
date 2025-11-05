@@ -4,8 +4,10 @@ use derive_more::Display;
 use http::{Response, StatusCode};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_libp2p::application::request_response::{ordermatch::{BestOrdersAction, OrdermatchRequest},
-                                                P2PRequest};
+use mm2_libp2p::application::request_response::{
+    ordermatch::{BestOrdersAction, OrdermatchRequest},
+    P2PRequest,
+};
 use mm2_number::{BigRational, MmNumber};
 use mm2_rpc::data::legacy::OrderConfirmationsSettings;
 use num_traits::Zero;
@@ -13,8 +15,10 @@ use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
-use super::{addr_format_from_protocol_info, is_my_order, mm2_internal_pubkey_hex, orderbook_address,
-            BaseRelProtocolInfo, OrderbookP2PItemWithProof, OrdermatchContext, RpcOrderbookEntryV2};
+use super::{
+    addr_format_from_protocol_info, is_my_order, mm2_internal_pubkey_hex, orderbook_address, BaseRelProtocolInfo,
+    OrderbookP2PItemWithProof, OrdermatchContext, RpcOrderbookEntryV2,
+};
 use crate::lp_network::request_any_relay;
 
 #[derive(Debug, Deserialize)]
@@ -330,7 +334,7 @@ pub async fn best_orders_rpc_v2(
 
     let best_orders_res = request_any_relay::<BestOrdersP2PRes>(ctx.clone(), P2PRequest::Ordermatch(p2p_request))
         .await
-        .mm_err(|e| BestOrdersRpcError::P2PError(format!("{:?}", e)))?;
+        .mm_err(|e| BestOrdersRpcError::P2PError(format!("{e:?}")))?;
     let mut orders = HashMap::new();
     if let Some((p2p_response, peer_id)) = best_orders_res {
         log::debug!("Got best orders {:?} from peer {}", p2p_response, peer_id);
@@ -470,10 +474,13 @@ mod best_orders_test {
         let v1_serialized = rmp_serde::to_vec_named(&v1).unwrap();
 
         let mut new: BestOrdersP2PRes = rmp_serde::from_slice(&v1_serialized).unwrap();
-        new.protocol_infos.insert(new_uuid(), BaseRelProtocolInfo {
-            base: vec![1],
-            rel: vec![2],
-        });
+        new.protocol_infos.insert(
+            new_uuid(),
+            BaseRelProtocolInfo {
+                base: vec![1],
+                rel: vec![2],
+            },
+        );
         new.conf_infos.insert(new_uuid(), OrderConfirmationsSettings::default());
 
         let new_serialized = rmp_serde::to_vec_named(&new).unwrap();
@@ -498,10 +505,13 @@ mod best_orders_test {
 
         let v2 = BestOrdersResV2 {
             orders: HashMap::from_iter(std::iter::once(("RICK".into(), v2_orders))),
-            protocol_infos: HashMap::from_iter(std::iter::once((new_uuid(), BaseRelProtocolInfo {
-                base: vec![1],
-                rel: vec![2],
-            }))),
+            protocol_infos: HashMap::from_iter(std::iter::once((
+                new_uuid(),
+                BaseRelProtocolInfo {
+                    base: vec![1],
+                    rel: vec![2],
+                },
+            ))),
         };
 
         let v2_serialized = rmp_serde::to_vec_named(&v2).unwrap();

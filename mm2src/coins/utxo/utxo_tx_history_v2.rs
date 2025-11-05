@@ -6,9 +6,10 @@ use crate::utxo::bch::BchCoin;
 use crate::utxo::slp::ParseSlpScriptError;
 use crate::utxo::tx_history_events::TxHistoryEventStreamer;
 use crate::utxo::{utxo_common, AddrFromStrError, GetBlockHeaderError};
-use crate::{BalanceError, BalanceResult, BlockHeightAndTime, CoinWithDerivationMethod, HistorySyncState,
-            MarketCoinOps, MmCoin, NumConversError, ParseBigDecimalError, TransactionDetails,
-            UnexpectedDerivationMethod, UtxoRpcError, UtxoTx};
+use crate::{
+    BalanceError, BalanceResult, BlockHeightAndTime, CoinWithDerivationMethod, HistorySyncState, MarketCoinOps, MmCoin,
+    NumConversError, ParseBigDecimalError, TransactionDetails, UnexpectedDerivationMethod, UtxoRpcError, UtxoTx,
+};
 use async_trait::async_trait;
 use common::executor::Timer;
 use common::log::{error, info};
@@ -42,46 +43,58 @@ pub enum UtxoMyAddressesHistoryError {
 }
 
 impl From<AddressDerivingError> for UtxoMyAddressesHistoryError {
-    fn from(e: AddressDerivingError) -> Self { UtxoMyAddressesHistoryError::AddressDerivingError(e) }
+    fn from(e: AddressDerivingError) -> Self {
+        UtxoMyAddressesHistoryError::AddressDerivingError(e)
+    }
 }
 
 impl From<UnexpectedDerivationMethod> for UtxoMyAddressesHistoryError {
-    fn from(e: UnexpectedDerivationMethod) -> Self { UtxoMyAddressesHistoryError::UnexpectedDerivationMethod(e) }
+    fn from(e: UnexpectedDerivationMethod) -> Self {
+        UtxoMyAddressesHistoryError::UnexpectedDerivationMethod(e)
+    }
 }
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Display)]
 pub enum UtxoTxDetailsError {
-    #[display(fmt = "Storage error: {}", _0)]
+    #[display(fmt = "Storage error: {_0}")]
     StorageError(String),
-    #[display(fmt = "Transaction deserialization error: {}", _0)]
+    #[display(fmt = "Transaction deserialization error: {_0}")]
     TxDeserializationError(serialization::Error),
-    #[display(fmt = "Invalid transaction: {}", _0)]
+    #[display(fmt = "Invalid transaction: {_0}")]
     InvalidTransaction(String),
-    #[display(fmt = "TX Address deserialization error: {}", _0)]
+    #[display(fmt = "TX Address deserialization error: {_0}")]
     TxAddressDeserializationError(String),
-    #[display(fmt = "{}", _0)]
+    #[display(fmt = "{_0}")]
     NumConversionErr(NumConversError),
-    #[display(fmt = "RPC error: {}", _0)]
+    #[display(fmt = "RPC error: {_0}")]
     RpcError(UtxoRpcError),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
 impl From<serialization::Error> for UtxoTxDetailsError {
-    fn from(e: serialization::Error) -> Self { UtxoTxDetailsError::TxDeserializationError(e) }
+    fn from(e: serialization::Error) -> Self {
+        UtxoTxDetailsError::TxDeserializationError(e)
+    }
 }
 
 impl From<UtxoRpcError> for UtxoTxDetailsError {
-    fn from(e: UtxoRpcError) -> Self { UtxoTxDetailsError::RpcError(e) }
+    fn from(e: UtxoRpcError) -> Self {
+        UtxoTxDetailsError::RpcError(e)
+    }
 }
 
 impl From<NumConversError> for UtxoTxDetailsError {
-    fn from(e: NumConversError) -> Self { UtxoTxDetailsError::NumConversionErr(e) }
+    fn from(e: NumConversError) -> Self {
+        UtxoTxDetailsError::NumConversionErr(e)
+    }
 }
 
 impl From<ParseBigDecimalError> for UtxoTxDetailsError {
-    fn from(e: ParseBigDecimalError) -> Self { UtxoTxDetailsError::from(NumConversError::from(e)) }
+    fn from(e: ParseBigDecimalError) -> Self {
+        UtxoTxDetailsError::from(NumConversError::from(e))
+    }
 }
 
 impl From<ParseSlpScriptError> for UtxoTxDetailsError {
@@ -94,7 +107,9 @@ impl<StorageErr> From<StorageErr> for UtxoTxDetailsError
 where
     StorageErr: TxHistoryStorageError,
 {
-    fn from(e: StorageErr) -> Self { UtxoTxDetailsError::StorageError(format!("{:?}", e)) }
+    fn from(e: StorageErr) -> Self {
+        UtxoTxDetailsError::StorageError(format!("{e:?}"))
+    }
 }
 
 pub struct UtxoTxDetailsParams<'a, Storage> {
@@ -593,7 +608,7 @@ where
         let my_addresses = try_or_stop_unknown!(ctx.coin.my_addresses().await, "Error on getting my addresses");
 
         for (tx_hash, height) in self.all_tx_ids_with_height {
-            let tx_hash_string = format!("{:02x}", tx_hash);
+            let tx_hash_string = format!("{tx_hash:02x}");
             match ctx.storage.history_has_tx_hash(&wallet_id, &tx_hash_string).await {
                 Ok(true) => continue,
                 Ok(false) => (),
@@ -669,7 +684,7 @@ impl<Coin, Storage> Stopped<Coin, Storage> {
     {
         Stopped {
             phantom: Default::default(),
-            stop_reason: StopReason::StorageError(format!("{:?}", e)),
+            stop_reason: StopReason::StorageError(format!("{e:?}")),
         }
     }
 

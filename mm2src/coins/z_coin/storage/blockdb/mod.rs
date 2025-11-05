@@ -3,13 +3,15 @@ pub(crate) mod blockdb_sql_storage;
 
 #[cfg(not(target_arch = "wasm32"))]
 use db_common::sqlite::rusqlite::Connection;
-#[cfg(not(target_arch = "wasm32"))] use std::sync::{Arc, Mutex};
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::{Arc, Mutex};
 
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod blockdb_idb_storage;
 #[cfg(target_arch = "wasm32")]
 use blockdb_idb_storage::BlockDbInner;
-#[cfg(target_arch = "wasm32")] use mm2_db::indexed_db::SharedDb;
+#[cfg(target_arch = "wasm32")]
+use mm2_db::indexed_db::SharedDb;
 
 /// A wrapper for the db connection to the block cache database in native and browser.
 #[derive(Clone)]
@@ -87,21 +89,27 @@ mod block_db_storage_tests {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod native_tests {
-    use crate::z_coin::storage::blockdb::block_db_storage_tests::{test_insert_block_and_get_latest_block_impl,
-                                                                  test_rewind_to_height_impl};
+    use crate::z_coin::storage::blockdb::block_db_storage_tests::{
+        test_insert_block_and_get_latest_block_impl, test_rewind_to_height_impl,
+    };
     use common::block_on;
 
     #[test]
-    fn test_insert_block_and_get_latest_block() { block_on(test_insert_block_and_get_latest_block_impl()) }
+    fn test_insert_block_and_get_latest_block() {
+        block_on(test_insert_block_and_get_latest_block_impl())
+    }
 
     #[test]
-    fn test_rewind_to_height() { block_on(test_rewind_to_height_impl()) }
+    fn test_rewind_to_height() {
+        block_on(test_rewind_to_height_impl())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
 mod wasm_tests {
-    use crate::z_coin::storage::blockdb::block_db_storage_tests::{test_insert_block_and_get_latest_block_impl,
-                                                                  test_rewind_to_height_impl};
+    use crate::z_coin::storage::blockdb::block_db_storage_tests::{
+        test_insert_block_and_get_latest_block_impl, test_rewind_to_height_impl,
+    };
     // use crate::z_coin::z_rpc::{LightRpcClient, ZRpcOps};
     // use common::log::info;
     // use common::log::wasm_log::register_wasm_log;
@@ -111,10 +119,14 @@ mod wasm_tests {
     wasm_bindgen_test_configure!(run_in_browser);
 
     #[wasm_bindgen_test]
-    async fn test_insert_block_and_get_latest_block() { test_insert_block_and_get_latest_block_impl().await }
+    async fn test_insert_block_and_get_latest_block() {
+        test_insert_block_and_get_latest_block_impl().await
+    }
 
     #[wasm_bindgen_test]
-    async fn test_rewind_to_height() { test_rewind_to_height_impl().await }
+    async fn test_rewind_to_height() {
+        test_rewind_to_height_impl().await
+    }
 
     #[wasm_bindgen_test]
     async fn test_transport() {

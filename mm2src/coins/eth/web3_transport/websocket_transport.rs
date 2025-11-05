@@ -6,8 +6,8 @@
 //! for each request.
 
 use super::http_transport::de_rpc_response;
-use crate::eth::eth_rpc::ETH_RPC_REQUEST_TIMEOUT;
 use crate::eth::web3_transport::Web3SendOut;
+use crate::eth::WEB3_REQUEST_TIMEOUT_S;
 use crate::eth::{EthCoin, RpcTransportEventHandlerShared};
 use crate::{MmCoin, RpcTransportEventHandler};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
@@ -22,8 +22,10 @@ use jsonrpc_core::Call;
 use mm2_p2p::Keypair;
 use proxy_signature::{ProxySign, RawMessage};
 use std::sync::atomic::AtomicBool;
-use std::sync::{atomic::{AtomicUsize, Ordering},
-                Arc};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 use timed_map::TimedMap;
 use tokio_tungstenite_wasm::WebSocketStream;
 use web3::error::{Error, TransportError};
@@ -148,7 +150,7 @@ impl WebsocketTransport {
                     request_id,
                     response_notifier,
                     // Since request will be cancelled when timeout occurs, we are free to drop its state.
-                    ETH_RPC_REQUEST_TIMEOUT,
+                    WEB3_REQUEST_TIMEOUT_S,
                 );
 
                 let mut should_continue = Default::default();
@@ -376,8 +378,7 @@ async fn send_request(
     };
 
     Err(Error::Transport(TransportError::Message(format!(
-        "Sending {:?} failed.",
-        request
+        "Sending {request:?} failed."
     ))))
 }
 

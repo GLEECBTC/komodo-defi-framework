@@ -132,9 +132,13 @@ pub struct WsOutgoingSender {
 /// Please note `WsOutgoingSender` must not provide a way to close the [`WsOutgoingSender::inner`] channel,
 /// because the shutdown_tx wouldn't be closed properly.
 impl WsOutgoingSender {
-    pub async fn send(&mut self, msg: Vec<u8>) -> Result<(), SendError> { self.inner.send(msg).await }
+    pub async fn send(&mut self, msg: Vec<u8>) -> Result<(), SendError> {
+        self.inner.send(msg).await
+    }
 
-    pub fn try_send(&mut self, msg: Vec<u8>) -> Result<(), TrySendError<Vec<u8>>> { self.inner.try_send(msg) }
+    pub fn try_send(&mut self, msg: Vec<u8>) -> Result<(), TrySendError<Vec<u8>>> {
+        self.inner.try_send(msg)
+    }
 }
 
 #[derive(Debug)]
@@ -463,7 +467,9 @@ impl StateEventListener {
         }
     }
 
-    async fn receive_one(&mut self) -> Option<StateEvent> { self.rx.next().await }
+    async fn receive_one(&mut self) -> Option<StateEvent> {
+        self.rx.next().await
+    }
 }
 
 /// The combination of `WsTransportEvent` and `OutgoingEvent`
@@ -503,7 +509,9 @@ enum WsTransportError {
 }
 
 impl From<CloseEvent> for WsTransportEvent {
-    fn from(close: CloseEvent) -> Self { WsTransportEvent::Close { code: close.code() } }
+    fn from(close: CloseEvent) -> Self {
+        WsTransportEvent::Close { code: close.code() }
+    }
 }
 
 struct ConnectingState;
@@ -648,7 +656,7 @@ fn decode_incoming(incoming: MessageEvent) -> Result<Vec<u8>, String> {
             let txt = String::from(txt);
             Ok(txt.into_bytes())
         },
-        Err(e) => Err(format!("Unknown MessageEvent {:?}", e)),
+        Err(e) => Err(format!("Unknown MessageEvent {e:?}")),
     }
 }
 
@@ -710,7 +718,7 @@ mod tests {
 
         match incoming_rx.next().timeout_secs(5.).await.unwrap_w() {
             Some((_conn_idx, WebSocketEvent::Establish)) => (),
-            other => panic!("Expected 'Establish' event, found: {:?}", other),
+            other => panic!("Expected 'Establish' event, found: {other:?}"),
         }
 
         let get_version = json!({
@@ -728,7 +736,7 @@ mod tests {
                 debug!("Response: {:?}", response);
                 assert!(response.get("result").is_some());
             },
-            other => panic!("Expected 'Incoming' event, found: {:?}", other),
+            other => panic!("Expected 'Incoming' event, found: {other:?}"),
         }
 
         drop(outgoing_tx);
@@ -754,7 +762,7 @@ mod tests {
                     reason: ClosureReason::NormalClosure,
                 },
             )) => (),
-            other => panic!("Expected 'Closed' event with 'ClientClosed' reason, found: {:?}", other),
+            other => panic!("Expected 'Closed' event with 'ClientClosed' reason, found: {other:?}"),
         }
     }
 
@@ -780,10 +788,7 @@ mod tests {
                     reason: _reason @ ClosureReason::ClientClosedOnUnderlyingError,
                 },
             )) => (),
-            other => panic!(
-                "Expected 'Closed' event with 'ClosedOnUnderlyingError' reason, found: {:?}",
-                other
-            ),
+            other => panic!("Expected 'Closed' event with 'ClosedOnUnderlyingError' reason, found: {other:?}"),
         }
     }
 }

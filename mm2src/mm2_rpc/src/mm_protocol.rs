@@ -93,10 +93,14 @@ where
 }
 
 impl<T: Serialize, E: SerMmErrorType> MmRpcResult<T, E> {
-    pub fn ok(result: T) -> MmRpcResult<T, E> { MmRpcResult::Ok { result } }
+    pub fn ok(result: T) -> MmRpcResult<T, E> {
+        MmRpcResult::Ok { result }
+    }
 
     #[track_caller]
-    pub fn mm_err(error: E) -> MmRpcResult<T, E> { MmRpcResult::Err(MmError::new(error)) }
+    pub fn mm_err(error: E) -> MmRpcResult<T, E> {
+        MmRpcResult::Err(MmError::new(error))
+    }
 }
 
 impl<T, E1> MmRpcResult<T, E1>
@@ -179,7 +183,7 @@ mod tests {
     #[derive(Display, Serialize, SerializeErrorType)]
     #[serde(tag = "error_type", content = "error_data")]
     enum AnError {
-        #[display(fmt = "Not sufficient balance. Top up your balance by {}", missing)]
+        #[display(fmt = "Not sufficient balance. Top up your balance by {missing}")]
         NotSufficientBalance { missing: u64 },
     }
 

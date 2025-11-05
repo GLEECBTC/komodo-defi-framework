@@ -10,10 +10,14 @@ use libp2p::core::Endpoint;
 use libp2p::request_response::{InboundFailure, Message, OutboundFailure, ProtocolSupport};
 use libp2p::swarm::{ConnectionDenied, ConnectionId, ToSwarm};
 use libp2p::Multiaddr;
-use libp2p::{request_response::{Behaviour as RequestResponse, Config as RequestResponseConfig,
-                                Event as RequestResponseEvent, RequestId, ResponseChannel},
-             swarm::NetworkBehaviour,
-             PeerId};
+use libp2p::{
+    request_response::{
+        Behaviour as RequestResponse, Config as RequestResponseConfig, Event as RequestResponseEvent, RequestId,
+        ResponseChannel,
+    },
+    swarm::NetworkBehaviour,
+    PeerId,
+};
 use log::{error, warn};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -171,7 +175,9 @@ pub struct RequestResponseBehaviour {
 }
 
 impl RequestResponseBehaviour {
-    pub fn sender(&self) -> RequestResponseSender { self.tx.clone() }
+    pub fn sender(&self) -> RequestResponseSender {
+        self.tx.clone()
+    }
 
     pub fn send_response(&mut self, ch: ResponseChannel<PeerResponse>, rs: PeerResponse) -> Result<(), PeerResponse> {
         self.inner.send_response(ch, rs)
@@ -297,7 +303,7 @@ impl NetworkBehaviour for RequestResponseBehaviour {
                     request_id, peer_id, error
                 );
                 let err_response = PeerResponse::Err {
-                    err: format!("{:?}", error),
+                    err: format!("{error:?}"),
                 };
                 self.process_response(request_id, err_response);
                 return;
@@ -309,7 +315,7 @@ impl NetworkBehaviour for RequestResponseBehaviour {
                     request_id, peer_id, error
                 );
                 let err_response = PeerResponse::Err {
-                    err: format!("{:?}", error),
+                    err: format!("{error:?}"),
                 };
                 self.process_response(request_id, err_response);
                 return;

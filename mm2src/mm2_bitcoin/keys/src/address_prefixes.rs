@@ -19,11 +19,15 @@ impl TryFrom<&[u8]> for AddressPrefix {
 }
 
 impl From<[u8; 1]> for AddressPrefix {
-    fn from(prefix: [u8; 1]) -> Self { Self { data: prefix.to_vec() } }
+    fn from(prefix: [u8; 1]) -> Self {
+        Self { data: prefix.to_vec() }
+    }
 }
 
 impl From<[u8; 2]> for AddressPrefix {
-    fn from(prefix: [u8; 2]) -> Self { Self { data: prefix.to_vec() } }
+    fn from(prefix: [u8; 2]) -> Self {
+        Self { data: prefix.to_vec() }
+    }
 }
 
 impl fmt::Display for AddressPrefix {
@@ -42,7 +46,9 @@ impl fmt::Display for AddressPrefix {
 
 impl AddressPrefix {
     /// Get as vec of u8
-    pub fn to_vec(&self) -> Vec<u8> { self.data.to_vec() }
+    pub fn to_vec(&self) -> Vec<u8> {
+        self.data.to_vec()
+    }
 
     /// Get if prefix size is 1, for use in cash_address
     pub fn get_size_1_prefix(&self) -> u8 {
@@ -53,7 +59,9 @@ impl AddressPrefix {
         }
     }
 
-    pub fn is_empty(&self) -> bool { self.data.is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
 }
 
 /// All prefixes for legacy address types supported for a coin, from coin config

@@ -185,17 +185,25 @@ impl<C> SlurpHttpClient for Client<C>
 where
     C: Connect + Clone + Send + Sync + 'static,
 {
-    fn request(&self, req: Request<Body>) -> ResponseFuture { Client::<C>::request(self, req) }
+    fn request(&self, req: Request<Body>) -> ResponseFuture {
+        Client::<C>::request(self, req)
+    }
 }
 
 /// Executes a Hyper request, returning the response status, headers and body.
-pub async fn slurp_req(request: Request<Vec<u8>>) -> SlurpResult { HYPER.slurp_req(request).await }
+pub async fn slurp_req(request: Request<Vec<u8>>) -> SlurpResult {
+    HYPER.slurp_req(request).await
+}
 
 /// Executes a Hyper request, requires [`Request<Body>`] and return the response status, headers and body as Json.
-pub async fn slurp_req_body(request: Request<Body>) -> SlurpResultJson { HYPER.slurp_req_body(request).await }
+pub async fn slurp_req_body(request: Request<Body>) -> SlurpResultJson {
+    HYPER.slurp_req_body(request).await
+}
 
 /// Executes a GET request, returning the response status, headers and body.
-pub async fn slurp_url(url: &str) -> SlurpResult { HYPER.slurp_url(url).await }
+pub async fn slurp_url(url: &str) -> SlurpResult {
+    HYPER.slurp_url(url).await
+}
 
 /// Executes a GET request with additional headers.
 /// Returning the response status, headers and body.
@@ -204,10 +212,14 @@ pub async fn slurp_url_with_headers(url: &str, headers: Vec<(&'static str, &'sta
 }
 
 /// Executes a POST request, returning the response status, headers and body.
-pub async fn slurp_post_json(url: &str, body: String) -> SlurpResult { HYPER.slurp_post_json(url, body).await }
+pub async fn slurp_post_json(url: &str, body: String) -> SlurpResult {
+    HYPER.slurp_post_json(url, body).await
+}
 
 impl From<Canceled> for SlurpError {
-    fn from(_: Canceled) -> Self { SlurpError::Internal("Spawned Slurp future has been canceled".to_owned()) }
+    fn from(_: Canceled) -> Self {
+        SlurpError::Internal("Spawned Slurp future has been canceled".to_owned())
+    }
 }
 
 impl SlurpError {
@@ -227,7 +239,9 @@ impl SlurpError {
 
 /// `http::Error` can appear on an HTTP request [`http::Builder::build`] building.
 impl From<http::Error> for SlurpError {
-    fn from(e: http::Error) -> Self { SlurpError::InvalidRequest(e.to_string()) }
+    fn from(e: http::Error) -> Self {
+        SlurpError::InvalidRequest(e.to_string())
+    }
 }
 
 /// Sends a GET request to the given URI and expects a 2xx status code in response.
@@ -248,8 +262,7 @@ pub async fn send_request_to_uri(uri: &str, auth_header: Option<&str>) -> MmResu
     let (status, _header, body) = slurp_req_body(request).await.map_mm_err()?;
     if !status.is_success() {
         return Err(MmError::new(GetInfoFromUriError::Transport(format!(
-            "Status code not in 2xx range from {}: {}, {}",
-            uri, status, body
+            "Status code not in 2xx range from {uri}: {status}, {body}"
         ))));
     }
     Ok(body)
@@ -263,6 +276,6 @@ mod tests {
     #[test]
     fn test_slurp_req() {
         let (status, headers, body) = block_on(slurp_url("https://postman-echo.com/get")).unwrap();
-        assert!(status.is_success(), "{:?} {:?} {:?}", status, headers, body);
+        assert!(status.is_success(), "{status:?} {headers:?} {body:?}");
     }
 }

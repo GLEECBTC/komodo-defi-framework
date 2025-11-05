@@ -1,11 +1,16 @@
-use super::{check_decoded_length, extract_id_from_tx_data, validate_amount, validate_from_to_addresses,
-            EthPaymentType, PaymentMethod, PrepareTxDataError, SpendTxSearchParams, ZERO_VALUE};
-use crate::eth::{decode_contract_call, get_function_input_data, wei_from_big_decimal, EthCoin, EthCoinType,
-                 ParseCoinAssocTypes, RefundFundingSecretArgs, RefundTakerPaymentArgs, SendTakerFundingArgs,
-                 SignedEthTx, SwapTxTypeWithSecretHash, TakerPaymentStateV2, TransactionErr, ValidateSwapV2TxError,
-                 ValidateSwapV2TxResult, ValidateTakerFundingArgs, TAKER_SWAP_V2};
-use crate::{FindPaymentSpendError, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
-            SearchForFundingSpendErr};
+use super::{
+    check_decoded_length, extract_id_from_tx_data, validate_amount, validate_from_to_addresses, EthPaymentType,
+    PaymentMethod, PrepareTxDataError, SpendTxSearchParams, ZERO_VALUE,
+};
+use crate::eth::{
+    decode_contract_call, get_function_input_data, u256_from_big_decimal, EthCoin, EthCoinType, ParseCoinAssocTypes,
+    RefundFundingSecretArgs, RefundTakerPaymentArgs, SendTakerFundingArgs, SignedEthTx, SwapTxTypeWithSecretHash,
+    TakerPaymentStateV2, TransactionErr, ValidateSwapV2TxError, ValidateSwapV2TxResult, ValidateTakerFundingArgs,
+    TAKER_SWAP_V2,
+};
+use crate::{
+    FindPaymentSpendError, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, SearchForFundingSpendErr,
+};
 use derive_more::Display;
 use enum_derives::EnumFromStringify;
 use ethabi::{Contract, Function, Token};
@@ -15,7 +20,7 @@ use ethkey::public_to_address;
 use futures::compat::Future01CompatExt;
 use mm2_err_handle::prelude::{MapToMmResult, MmError, MmResult, MmResultExt};
 use std::convert::TryInto;
-use web3::types::{BlockNumber, TransactionId};
+use web3::types::BlockNumber;
 
 const ETH_TAKER_PAYMENT: &str = "ethTakerPayment";
 const ERC20_TAKER_PAYMENT: &str = "erc20TakerPayment";
@@ -84,9 +89,9 @@ impl EthCoin {
             .ok_or_else(|| TransactionErr::Plain(ERRL!("Expected swap_v2_contracts to be Some, but found None")))?
             .taker_swap_v2_contract;
         // TODO add burnFee support
-        let dex_fee = try_tx_s!(wei_from_big_decimal(&args.dex_fee.fee_amount().into(), self.decimals));
+        let dex_fee = try_tx_s!(u256_from_big_decimal(&args.dex_fee.fee_amount().into(), self.decimals));
 
-        let payment_amount = try_tx_s!(wei_from_big_decimal(
+        let payment_amount = try_tx_s!(u256_from_big_decimal(
             &(args.trading_amount.clone() + args.premium_amount.clone()),
             self.decimals
         ));
@@ -112,7 +117,7 @@ impl EthCoin {
                     eth_total_payment,
                     Action::Call(taker_swap_v2_contract),
                     data,
-                    U256::from(self.gas_limit_v2.taker.eth_payment),
+                    Some(U256::from(self.gas_limit_v2.taker.eth_payment)),
                 )
                 .compat()
                 .await
@@ -128,7 +133,7 @@ impl EthCoin {
                     U256::from(ZERO_VALUE),
                     Action::Call(taker_swap_v2_contract),
                     data,
-                    U256::from(self.gas_limit_v2.taker.erc20_payment),
+                    Some(U256::from(self.gas_limit_v2.taker.erc20_payment)),
                 )
                 .compat()
                 .await
@@ -159,20 +164,14 @@ impl EthCoin {
         validate_amount(&args.trading_amount).map_err(ValidateSwapV2TxError::Internal)?;
         let swap_id = self.etomic_swap_id_v2(args.payment_time_lock, args.maker_secret_hash);
 
-        let tx_from_rpc = self.transaction(TransactionId::Hash(args.funding_tx.tx_hash())).await?;
-        let tx_from_rpc = tx_from_rpc.as_ref().ok_or_else(|| {
-            ValidateSwapV2TxError::TxDoesNotExist(format!(
-                "Didn't find provided tx {:?} on ETH node",
-                args.funding_tx.tx_hash()
-            ))
-        })?;
+        let tx = args.funding_tx;
         let taker_address = public_to_address(args.taker_pub);
-        validate_from_to_addresses(tx_from_rpc, taker_address, taker_swap_v2_contract).map_mm_err()?;
+        validate_from_to_addresses(tx, taker_address, taker_swap_v2_contract).map_mm_err()?;
 
         let validation_args = {
-            let dex_fee = wei_from_big_decimal(&args.dex_fee.fee_amount().into(), self.decimals).map_mm_err()?;
+            let dex_fee = u256_from_big_decimal(&args.dex_fee.fee_amount().into(), self.decimals).map_mm_err()?;
             let payment_amount =
-                wei_from_big_decimal(&(args.trading_amount + args.premium_amount), self.decimals).map_mm_err()?;
+                u256_from_big_decimal(&(args.trading_amount + args.premium_amount), self.decimals).map_mm_err()?;
             TakerValidationArgs {
                 swap_id,
                 amount: payment_amount,
@@ -187,12 +186,12 @@ impl EthCoin {
         match self.coin_type {
             EthCoinType::Eth => {
                 let function = TAKER_SWAP_V2.function(ETH_TAKER_PAYMENT)?;
-                let decoded = decode_contract_call(function, &tx_from_rpc.input.0)?;
-                validate_eth_taker_payment_data(&decoded, &validation_args, function, tx_from_rpc.value)?;
+                let decoded = decode_contract_call(function, tx.unsigned().data())?;
+                validate_eth_taker_payment_data(&decoded, &validation_args, function, tx.unsigned().value())?;
             },
             EthCoinType::Erc20 { token_addr, .. } => {
                 let function = TAKER_SWAP_V2.function(ERC20_TAKER_PAYMENT)?;
-                let decoded = decode_contract_call(function, &tx_from_rpc.input.0)?;
+                let decoded = decode_contract_call(function, tx.unsigned().data())?;
                 validate_erc20_taker_payment_data(&decoded, &validation_args, function, token_addr)?;
             },
             EthCoinType::Nft { .. } => {
@@ -231,7 +230,7 @@ impl EthCoin {
                 U256::from(ZERO_VALUE),
                 Action::Call(taker_swap_v2_contract),
                 data,
-                gas_limit,
+                Some(gas_limit),
             )
             .compat()
             .await?;
@@ -269,11 +268,11 @@ impl EthCoin {
                 )))
             },
         };
-        let dex_fee = try_tx_s!(wei_from_big_decimal(
+        let dex_fee = try_tx_s!(u256_from_big_decimal(
             &args.dex_fee.fee_amount().to_decimal(),
             self.decimals
         ));
-        let payment_amount = try_tx_s!(wei_from_big_decimal(
+        let payment_amount = try_tx_s!(u256_from_big_decimal(
             &(args.trading_amount + args.premium_amount),
             self.decimals
         ));
@@ -296,7 +295,7 @@ impl EthCoin {
             U256::from(ZERO_VALUE),
             Action::Call(taker_swap_v2_contract),
             data,
-            U256::from(gas_limit),
+            Some(U256::from(gas_limit)),
         )
         .compat()
         .await
@@ -323,11 +322,11 @@ impl EthCoin {
             .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
 
         let maker_secret_hash = try_tx_s!(args.maker_secret_hash.try_into());
-        let dex_fee = try_tx_s!(wei_from_big_decimal(
+        let dex_fee = try_tx_s!(u256_from_big_decimal(
             &args.dex_fee.fee_amount().to_decimal(),
             self.decimals
         ));
-        let payment_amount = try_tx_s!(wei_from_big_decimal(
+        let payment_amount = try_tx_s!(u256_from_big_decimal(
             &(args.trading_amount + args.premium_amount),
             self.decimals
         ));
@@ -350,7 +349,7 @@ impl EthCoin {
             U256::from(ZERO_VALUE),
             Action::Call(taker_swap_v2_contract),
             data,
-            U256::from(gas_limit),
+            Some(U256::from(gas_limit)),
         )
         .compat()
         .await
@@ -411,7 +410,7 @@ impl EthCoin {
                 U256::from(ZERO_VALUE),
                 Action::Call(taker_swap_v2_contract),
                 data,
-                U256::from(gas_limit),
+                Some(U256::from(gas_limit)),
             )
             .compat()
             .await?;
@@ -729,15 +728,13 @@ impl EthCoin {
 
         let state = decoded_tokens.get(state_index).ok_or_else(|| {
             PaymentStatusErr::Internal(format!(
-                "Payment status must contain 'state' as the {} token",
-                state_index
+                "Payment status must contain 'state' as the {state_index} token"
             ))
         })?;
         match state {
             Token::Uint(state) => Ok(*state),
             _ => Err(PaymentStatusErr::InvalidData(format!(
-                "Payment status must be Uint, got {:?}",
-                state
+                "Payment status must be Uint, got {state:?}"
             ))),
         }
     }
@@ -746,14 +743,14 @@ impl EthCoin {
 #[derive(Debug, Display, EnumFromStringify)]
 enum PaymentStatusErr {
     #[from_stringify("ethabi::Error")]
-    #[display(fmt = "ABI error: {}", _0)]
+    #[display(fmt = "ABI error: {_0}")]
     ABIError(String),
     #[from_stringify("web3::Error")]
-    #[display(fmt = "Transport error: {}", _0)]
+    #[display(fmt = "Transport error: {_0}")]
     Transport(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
-    #[display(fmt = "Invalid data error: {}", _0)]
+    #[display(fmt = "Invalid data error: {_0}")]
     InvalidData(String),
 }
 
@@ -790,8 +787,7 @@ fn validate_eth_taker_payment_data(
     })?;
     if total != tx_value {
         return MmError::err(ValidateSwapV2TxError::WrongPaymentTx(format!(
-            "ETH Taker Payment amount, is invalid, expected {:?}, got {:?}",
-            total, tx_value
+            "ETH Taker Payment amount, is invalid, expected {total:?}, got {tx_value:?}"
         )));
     }
     Ok(())
@@ -839,8 +835,7 @@ fn get_dex_fee_and_amount_from_eth_payment_data(
         Some(Token::Uint(dex_fee)) => *dex_fee,
         _ => {
             return Err(PrepareTxDataError::Internal(format!(
-                "Invalid token type for dex fee, got decoded function data: {:?}",
-                decoded
+                "Invalid token type for dex fee, got decoded function data: {decoded:?}"
             )))
         },
     };

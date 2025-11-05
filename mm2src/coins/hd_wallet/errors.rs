@@ -1,46 +1,54 @@
 use super::{HDConfirmAddressError, HDWalletStorageError};
 use bip32::Error as Bip32Error;
 use crypto::trezor::{TrezorError, TrezorProcessingError};
-use crypto::{Bip32DerPathError, Bip44Chain, CryptoCtxError, HwError, HwProcessingError, StandardHDPathError, XpubError};
+use crypto::{
+    Bip32DerPathError, Bip44Chain, CryptoCtxError, HwError, HwProcessingError, StandardHDPathError, XpubError,
+};
 use derive_more::Display;
 use rpc_task::RpcTaskError;
 
 #[derive(Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum AddressDerivingError {
-    #[display(fmt = "Coin doesn't support the given BIP44 chain: {:?}", chain)]
+    #[display(fmt = "Coin doesn't support the given BIP44 chain: {chain:?}")]
     InvalidBip44Chain {
         chain: Bip44Chain,
     },
-    #[display(fmt = "BIP32 address deriving error: {}", _0)]
+    #[display(fmt = "BIP32 address deriving error: {_0}")]
     Bip32Error(String),
     Internal(String),
 }
 
 impl From<InvalidBip44ChainError> for AddressDerivingError {
-    fn from(e: InvalidBip44ChainError) -> Self { AddressDerivingError::InvalidBip44Chain { chain: e.chain } }
+    fn from(e: InvalidBip44ChainError) -> Self {
+        AddressDerivingError::InvalidBip44Chain { chain: e.chain }
+    }
 }
 
 impl From<Bip32Error> for AddressDerivingError {
-    fn from(e: Bip32Error) -> Self { AddressDerivingError::Bip32Error(e.to_string()) }
+    fn from(e: Bip32Error) -> Self {
+        AddressDerivingError::Bip32Error(e.to_string())
+    }
 }
 
 #[derive(Display)]
 pub enum NewAddressDerivingError {
-    #[display(fmt = "Addresses limit reached. Max number of addresses: {}", max_addresses_number)]
+    #[display(fmt = "Addresses limit reached. Max number of addresses: {max_addresses_number}")]
     AddressLimitReached { max_addresses_number: u32 },
-    #[display(fmt = "Coin doesn't support the given BIP44 chain: {:?}", chain)]
+    #[display(fmt = "Coin doesn't support the given BIP44 chain: {chain:?}")]
     InvalidBip44Chain { chain: Bip44Chain },
-    #[display(fmt = "BIP32 address deriving error: {}", _0)]
+    #[display(fmt = "BIP32 address deriving error: {_0}")]
     Bip32Error(String),
-    #[display(fmt = "Wallet storage error: {}", _0)]
+    #[display(fmt = "Wallet storage error: {_0}")]
     WalletStorageError(HDWalletStorageError),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
 impl From<Bip32Error> for NewAddressDerivingError {
-    fn from(e: Bip32Error) -> Self { NewAddressDerivingError::Bip32Error(e.to_string()) }
+    fn from(e: Bip32Error) -> Self {
+        NewAddressDerivingError::Bip32Error(e.to_string())
+    }
 }
 
 impl From<AddressDerivingError> for NewAddressDerivingError {
@@ -54,7 +62,9 @@ impl From<AddressDerivingError> for NewAddressDerivingError {
 }
 
 impl From<InvalidBip44ChainError> for NewAddressDerivingError {
-    fn from(e: InvalidBip44ChainError) -> Self { NewAddressDerivingError::InvalidBip44Chain { chain: e.chain } }
+    fn from(e: InvalidBip44ChainError) -> Self {
+        NewAddressDerivingError::InvalidBip44Chain { chain: e.chain }
+    }
 }
 
 impl From<AccountUpdatingError> for NewAddressDerivingError {
@@ -75,11 +85,15 @@ pub enum NewAddressDeriveConfirmError {
 }
 
 impl From<HDConfirmAddressError> for NewAddressDeriveConfirmError {
-    fn from(e: HDConfirmAddressError) -> Self { NewAddressDeriveConfirmError::ConfirmError(e) }
+    fn from(e: HDConfirmAddressError) -> Self {
+        NewAddressDeriveConfirmError::ConfirmError(e)
+    }
 }
 
 impl From<NewAddressDerivingError> for NewAddressDeriveConfirmError {
-    fn from(e: NewAddressDerivingError) -> Self { NewAddressDeriveConfirmError::DeriveError(e) }
+    fn from(e: NewAddressDerivingError) -> Self {
+        NewAddressDeriveConfirmError::DeriveError(e)
+    }
 }
 
 impl From<AccountUpdatingError> for NewAddressDeriveConfirmError {
@@ -106,13 +120,13 @@ pub enum NewAccountCreationError {
     CoinDoesntSupportTrezor,
     RpcTaskError(RpcTaskError),
     HardwareWalletError(HwError),
-    #[display(fmt = "Accounts limit reached. Max number of accounts: {}", max_accounts_number)]
+    #[display(fmt = "Accounts limit reached. Max number of accounts: {max_accounts_number}")]
     AccountLimitReached {
         max_accounts_number: u32,
     },
-    #[display(fmt = "Error saving HD account to storage: {}", _0)]
+    #[display(fmt = "Error saving HD account to storage: {_0}")]
     ErrorSavingAccountToStorage(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
@@ -137,7 +151,7 @@ impl From<HDWalletStorageError> for NewAccountCreationError {
 
 /// Currently, we suppose that ETH/ERC20/QRC20 don't have [`Bip44Chain::Internal`] addresses.
 #[derive(Display)]
-#[display(fmt = "Coin doesn't support the given BIP44 chain: {:?}", chain)]
+#[display(fmt = "Coin doesn't support the given BIP44 chain: {chain:?}")]
 pub struct InvalidBip44ChainError {
     pub chain: Bip44Chain,
 }
@@ -150,11 +164,15 @@ pub enum AccountUpdatingError {
 }
 
 impl From<InvalidBip44ChainError> for AccountUpdatingError {
-    fn from(e: InvalidBip44ChainError) -> Self { AccountUpdatingError::InvalidBip44Chain(e) }
+    fn from(e: InvalidBip44ChainError) -> Self {
+        AccountUpdatingError::InvalidBip44Chain(e)
+    }
 }
 
 impl From<HDWalletStorageError> for AccountUpdatingError {
-    fn from(e: HDWalletStorageError) -> Self { AccountUpdatingError::WalletStorageError(e) }
+    fn from(e: HDWalletStorageError) -> Self {
+        AccountUpdatingError::WalletStorageError(e)
+    }
 }
 
 #[derive(Display)]
@@ -166,7 +184,9 @@ pub enum HDWithdrawError {
 }
 
 impl From<AddressDerivingError> for HDWithdrawError {
-    fn from(e: AddressDerivingError) -> Self { HDWithdrawError::AddressDerivingError(e) }
+    fn from(e: AddressDerivingError) -> Self {
+        HDWithdrawError::AddressDerivingError(e)
+    }
 }
 
 #[derive(Clone)]
@@ -180,15 +200,21 @@ pub enum HDExtractPubkeyError {
 }
 
 impl From<CryptoCtxError> for HDExtractPubkeyError {
-    fn from(e: CryptoCtxError) -> Self { HDExtractPubkeyError::Internal(e.to_string()) }
+    fn from(e: CryptoCtxError) -> Self {
+        HDExtractPubkeyError::Internal(e.to_string())
+    }
 }
 
 impl From<TrezorError> for HDExtractPubkeyError {
-    fn from(e: TrezorError) -> Self { HDExtractPubkeyError::HardwareWalletError(HwError::from(e)) }
+    fn from(e: TrezorError) -> Self {
+        HDExtractPubkeyError::HardwareWalletError(HwError::from(e))
+    }
 }
 
 impl From<HwError> for HDExtractPubkeyError {
-    fn from(e: HwError) -> Self { HDExtractPubkeyError::HardwareWalletError(e) }
+    fn from(e: HwError) -> Self {
+        HDExtractPubkeyError::HardwareWalletError(e)
+    }
 }
 
 impl From<TrezorProcessingError<RpcTaskError>> for HDExtractPubkeyError {
@@ -211,7 +237,9 @@ impl From<HwProcessingError<RpcTaskError>> for HDExtractPubkeyError {
 }
 
 impl From<XpubError> for HDExtractPubkeyError {
-    fn from(e: XpubError) -> Self { HDExtractPubkeyError::InvalidXpub(e.to_string()) }
+    fn from(e: XpubError) -> Self {
+        HDExtractPubkeyError::InvalidXpub(e.to_string())
+    }
 }
 
 impl From<HDExtractPubkeyError> for NewAccountCreationError {
@@ -235,7 +263,9 @@ pub enum TrezorCoinError {
 }
 
 impl From<TrezorCoinError> for HDExtractPubkeyError {
-    fn from(e: TrezorCoinError) -> Self { HDExtractPubkeyError::Internal(e.to_string()) }
+    fn from(e: TrezorCoinError) -> Self {
+        HDExtractPubkeyError::Internal(e.to_string())
+    }
 }
 
 impl From<TrezorCoinError> for NewAddressDeriveConfirmError {

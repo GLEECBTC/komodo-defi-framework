@@ -1,11 +1,13 @@
 use async_trait::async_trait;
 use chain::BlockHeader;
 use common::async_blocking;
-use db_common::{sqlite::rusqlite::Error as SqlError,
-                sqlite::rusqlite::{params_from_iter, Connection, Row, ToSql},
-                sqlite::string_from_row,
-                sqlite::validate_table_name,
-                sqlite::CHECK_TABLE_EXISTS_SQL};
+use db_common::{
+    sqlite::rusqlite::Error as SqlError,
+    sqlite::rusqlite::{params_from_iter, Connection, Row, ToSql},
+    sqlite::string_from_row,
+    sqlite::validate_table_name,
+    sqlite::CHECK_TABLE_EXISTS_SQL,
+};
 use primitives::hash::H256;
 use serialization::Reader;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
@@ -14,7 +16,9 @@ use std::convert::TryInto;
 use std::num::TryFromIntError;
 use std::sync::{Arc, Mutex};
 
-pub(crate) fn block_headers_cache_table(ticker: &str) -> String { ticker.to_owned() + "_block_headers_cache" }
+pub(crate) fn block_headers_cache_table(ticker: &str) -> String {
+    ticker.to_owned() + "_block_headers_cache"
+}
 
 fn get_table_name_and_validate(for_coin: &str) -> Result<String, BlockHeaderStorageError> {
     let table_name = block_headers_cache_table(for_coin);
@@ -28,13 +32,12 @@ fn get_table_name_and_validate(for_coin: &str) -> Result<String, BlockHeaderStor
 fn create_block_header_cache_table_sql(for_coin: &str) -> Result<String, BlockHeaderStorageError> {
     let table_name = get_table_name_and_validate(for_coin)?;
     let sql = format!(
-        "CREATE TABLE IF NOT EXISTS {} (
+        "CREATE TABLE IF NOT EXISTS {table_name} (
             block_height INTEGER NOT NULL UNIQUE,
             hex TEXT NOT NULL,
             block_bits INTEGER NOT NULL,
             block_hash VARCHAR(255) NOT NULL UNIQUE
-        );",
-        table_name
+        );"
     );
 
     Ok(sql)
@@ -44,25 +47,21 @@ fn insert_block_header_in_cache_sql(for_coin: &str) -> Result<String, BlockHeade
     let table_name = get_table_name_and_validate(for_coin)?;
     // Always update the block headers with new values just in case a chain reorganization occurs.
     let sql = format!(
-        "INSERT OR REPLACE INTO {} (block_height, hex, block_bits, block_hash) VALUES (?1, ?2, ?3, ?4);",
-        table_name
+        "INSERT OR REPLACE INTO {table_name} (block_height, hex, block_bits, block_hash) VALUES (?1, ?2, ?3, ?4);"
     );
     Ok(sql)
 }
 
 fn get_block_header_by_height(for_coin: &str) -> Result<String, BlockHeaderStorageError> {
     let table_name = get_table_name_and_validate(for_coin)?;
-    let sql = format!("SELECT hex FROM {} WHERE block_height=?1;", table_name);
+    let sql = format!("SELECT hex FROM {table_name} WHERE block_height=?1;");
 
     Ok(sql)
 }
 
 fn get_last_block_height_sql(for_coin: &str) -> Result<String, BlockHeaderStorageError> {
     let table_name = get_table_name_and_validate(for_coin)?;
-    let sql = format!(
-        "SELECT block_height FROM {} ORDER BY block_height DESC LIMIT 1;",
-        table_name
-    );
+    let sql = format!("SELECT block_height FROM {table_name} ORDER BY block_height DESC LIMIT 1;");
 
     Ok(sql)
 }
@@ -72,17 +71,14 @@ fn get_last_block_header_with_non_max_bits_sql(
     max_bits: u32,
 ) -> Result<String, BlockHeaderStorageError> {
     let table_name = get_table_name_and_validate(for_coin)?;
-    let sql = format!(
-        "SELECT hex FROM {} WHERE block_bits<>{} ORDER BY block_height DESC LIMIT 1;",
-        table_name, max_bits
-    );
+    let sql = format!("SELECT hex FROM {table_name} WHERE block_bits<>{max_bits} ORDER BY block_height DESC LIMIT 1;");
 
     Ok(sql)
 }
 
 fn get_block_height_by_hash(for_coin: &str) -> Result<String, BlockHeaderStorageError> {
     let table_name = get_table_name_and_validate(for_coin)?;
-    let sql = format!("SELECT block_height FROM {} WHERE block_hash=?1;", table_name);
+    let sql = format!("SELECT block_height FROM {table_name} WHERE block_hash=?1;");
 
     Ok(sql)
 }

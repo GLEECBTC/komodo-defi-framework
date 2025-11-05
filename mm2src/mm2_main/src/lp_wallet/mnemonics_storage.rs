@@ -9,13 +9,13 @@ type WalletsStorageResult<T> = Result<T, MmError<WalletsStorageError>>;
 
 #[derive(Debug, Deserialize, Display, Serialize)]
 pub enum WalletsStorageError {
-    #[display(fmt = "Error writing to file: {}", _0)]
+    #[display(fmt = "Error writing to file: {_0}")]
     FsWriteError(String),
-    #[display(fmt = "Error reading from file: {}", _0)]
+    #[display(fmt = "Error reading from file: {_0}")]
     FsReadError(String),
-    #[display(fmt = "Invalid wallet name: {}", _0)]
+    #[display(fmt = "Invalid wallet name: {_0}")]
     InvalidWalletName(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
@@ -30,14 +30,13 @@ fn wallet_file_path(ctx: &MmArc, wallet_name: &str) -> Result<PathBuf, String> {
         .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == ' ')
     {
         return Err(format!(
-            "Invalid wallet name: '{}'. Only alphanumeric characters, spaces, dash and underscore are allowed.",
-            wallet_name_trimmed
+            "Invalid wallet name: '{wallet_name_trimmed}'. Only alphanumeric characters, spaces, dash and underscore are allowed."
         ));
     }
 
     Ok(ctx
         .db_root()
-        .join(format!("{}.{}", wallet_name_trimmed, WALLET_FILE_EXTENSION)))
+        .join(format!("{wallet_name_trimmed}.{WALLET_FILE_EXTENSION}")))
 }
 
 /// Saves the passphrase to a file associated with the given wallet name.
@@ -86,7 +85,7 @@ pub(super) async fn read_encrypted_passphrase(
 pub(super) async fn read_all_wallet_names(ctx: &MmArc) -> WalletsStorageResult<impl Iterator<Item = String>> {
     let wallet_names = list_files_by_extension(&ctx.db_root(), WALLET_FILE_EXTENSION, false)
         .await
-        .mm_err(|e| WalletsStorageError::FsReadError(format!("Error reading wallets directory: {}", e)))?;
+        .mm_err(|e| WalletsStorageError::FsReadError(format!("Error reading wallets directory: {e}")))?;
     Ok(wallet_names)
 }
 

@@ -34,14 +34,12 @@ impl IdbSingleKeyBoundCursor {
     fn check_bounds(lower_bound: &CursorBoundValue, upper_bound: &CursorBoundValue) -> CursorResult<()> {
         if lower_bound > upper_bound {
             let description = format!(
-                "Incorrect usage of 'IdbSingleKeyBoundCursor': lower_bound '{:?}' is expected to be less or equal to upper_bound '{:?}'",
-                lower_bound,
-                upper_bound
+                "Incorrect usage of 'IdbSingleKeyBoundCursor': lower_bound '{lower_bound:?}' is expected to be less or equal to upper_bound '{upper_bound:?}'"
             );
             return MmError::err(CursorError::InvalidKeyRange { description });
         }
         if lower_bound == upper_bound {
-            warn!("lower_bound '{:?}' equals to upper_bound '{:?}'. Consider using 'IdbObjectStoreImpl::get_items' instead", lower_bound, upper_bound);
+            warn!("lower_bound '{lower_bound:?}' equals to upper_bound '{upper_bound:?}'. Consider using 'IdbObjectStoreImpl::get_items' instead");
         }
         Ok(())
     }

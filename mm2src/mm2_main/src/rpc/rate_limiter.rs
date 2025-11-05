@@ -14,7 +14,7 @@ pub type RateInfosRegistry = HashMap<IpAddr, usize>;
 #[derive(Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum RateLimitError {
-    #[display(fmt = "Rate Limit attempts left: {}", _0)]
+    #[display(fmt = "Rate Limit attempts left: {_0}")]
     NbAttemptsLeft(usize),
 }
 

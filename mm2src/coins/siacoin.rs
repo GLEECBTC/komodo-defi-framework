@@ -1,14 +1,17 @@
-use super::{BalanceError, CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut,
-            RawTransactionRequest, SwapOps, TradeFee, TransactionEnum};
+use super::{
+    BalanceError, CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest,
+    SwapOps, TradeFee, TransactionEnum,
+};
 use crate::hd_wallet::HDAddressSelector;
-use crate::{coin_errors::MyAddressError, AddressFromPubkeyError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs,
-            ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
-            PrivKeyBuildPolicy, PrivKeyPolicy, RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput,
-            SendPaymentArgs, SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionResult, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentInput,
-            ValidatePaymentResult, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawFut,
-            WithdrawRequest};
+use crate::{
+    coin_errors::MyAddressError, AddressFromPubkeyError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs,
+    ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy,
+    PrivKeyPolicy, RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs,
+    SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, TradePreimageFut, TradePreimageResult,
+    TradePreimageValue, TransactionResult, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
+    ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentInput, ValidatePaymentResult, VerificationResult,
+    WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawFut, WithdrawRequest,
+};
 use crate::{SignatureError, VerificationError};
 use async_trait::async_trait;
 use common::executor::AbortedError;
@@ -68,7 +71,9 @@ pub struct SiaConfBuilder<'a> {
 }
 
 impl<'a> SiaConfBuilder<'a> {
-    pub fn new(conf: &'a Json, ticker: &'a str) -> Self { SiaConfBuilder { conf, ticker } }
+    pub fn new(conf: &'a Json, ticker: &'a str) -> Self {
+        SiaConfBuilder { conf, ticker }
+    }
 
     pub fn build(&self) -> SiaConfResult<SiaCoinConf> {
         Ok(SiaCoinConf {
@@ -147,7 +152,9 @@ fn siacoin_from_hastings(hastings: u128) -> BigDecimal {
 }
 
 impl From<SiaConfError> for SiaCoinBuildError {
-    fn from(e: SiaConfError) -> Self { SiaCoinBuildError::ConfError(e) }
+    fn from(e: SiaConfError) -> Self {
+        SiaCoinBuildError::ConfError(e)
+    }
 }
 
 #[derive(Debug, Display)]
@@ -160,12 +167,18 @@ pub enum SiaCoinBuildError {
 
 impl SiaCoinBuilder<'_> {
     #[allow(dead_code)]
-    fn ctx(&self) -> &MmArc { self.ctx }
+    fn ctx(&self) -> &MmArc {
+        self.ctx
+    }
 
     #[allow(dead_code)]
-    fn conf(&self) -> &Json { self.conf }
+    fn conf(&self) -> &Json {
+        self.conf
+    }
 
-    fn ticker(&self) -> &str { self.ticker }
+    fn ticker(&self) -> &str {
+        self.ticker
+    }
 
     async fn build(self) -> MmResult<SiaCoin, SiaCoinBuildError> {
         let conf = SiaConfBuilder::new(self.conf, self.ticker()).build().map_mm_err()?;
@@ -184,25 +197,37 @@ impl SiaCoinBuilder<'_> {
 
 impl Deref for SiaArc {
     type Target = SiaCoinFields;
-    fn deref(&self) -> &SiaCoinFields { &self.0 }
+    fn deref(&self) -> &SiaCoinFields {
+        &self.0
+    }
 }
 
 impl From<SiaCoinFields> for SiaArc {
-    fn from(coin: SiaCoinFields) -> SiaArc { SiaArc::new(coin) }
+    fn from(coin: SiaCoinFields) -> SiaArc {
+        SiaArc::new(coin)
+    }
 }
 
 impl From<Arc<SiaCoinFields>> for SiaArc {
-    fn from(arc: Arc<SiaCoinFields>) -> SiaArc { SiaArc(arc) }
+    fn from(arc: Arc<SiaCoinFields>) -> SiaArc {
+        SiaArc(arc)
+    }
 }
 
 impl From<SiaArc> for SiaCoin {
-    fn from(coin: SiaArc) -> SiaCoin { SiaCoin(coin) }
+    fn from(coin: SiaArc) -> SiaCoin {
+        SiaCoin(coin)
+    }
 }
 
 impl SiaArc {
-    pub fn new(fields: SiaCoinFields) -> SiaArc { SiaArc(Arc::new(fields)) }
+    pub fn new(fields: SiaCoinFields) -> SiaArc {
+        SiaArc(Arc::new(fields))
+    }
 
-    pub fn with_arc(inner: Arc<SiaCoinFields>) -> SiaArc { SiaArc(inner) }
+    pub fn with_arc(inner: Arc<SiaCoinFields>) -> SiaArc {
+        SiaArc(inner)
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -210,39 +235,62 @@ pub struct SiaCoinProtocolInfo;
 
 #[async_trait]
 impl MmCoin for SiaCoin {
-    fn is_asset_chain(&self) -> bool { false }
+    fn is_asset_chain(&self) -> bool {
+        false
+    }
 
-    fn spawner(&self) -> WeakSpawner { unimplemented!() }
+    fn spawner(&self) -> WeakSpawner {
+        unimplemented!()
+    }
 
-    fn get_raw_transaction(&self, _req: RawTransactionRequest) -> RawTransactionFut { unimplemented!() }
+    fn get_raw_transaction(&self, _req: RawTransactionRequest) -> RawTransactionFut<'_> {
+        unimplemented!()
+    }
 
-    fn get_tx_hex_by_hash(&self, _tx_hash: Vec<u8>) -> RawTransactionFut { unimplemented!() }
+    fn get_tx_hex_by_hash(&self, _tx_hash: Vec<u8>) -> RawTransactionFut<'_> {
+        unimplemented!()
+    }
 
-    fn withdraw(&self, _req: WithdrawRequest) -> WithdrawFut { unimplemented!() }
+    fn withdraw(&self, _req: WithdrawRequest) -> WithdrawFut {
+        unimplemented!()
+    }
 
-    fn decimals(&self) -> u8 { unimplemented!() }
+    fn decimals(&self) -> u8 {
+        unimplemented!()
+    }
 
-    fn convert_to_address(&self, _from: &str, _to_address_format: Json) -> Result<String, String> { unimplemented!() }
+    fn convert_to_address(&self, _from: &str, _to_address_format: Json) -> Result<String, String> {
+        unimplemented!()
+    }
 
-    fn validate_address(&self, _address: &str) -> ValidateAddressResult { unimplemented!() }
+    fn validate_address(&self, _address: &str) -> ValidateAddressResult {
+        unimplemented!()
+    }
 
-    fn process_history_loop(&self, _ctx: MmArc) -> Box<dyn Future<Item = (), Error = ()> + Send> { unimplemented!() }
+    fn process_history_loop(&self, _ctx: MmArc) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        unimplemented!()
+    }
 
-    fn history_sync_status(&self) -> HistorySyncState { unimplemented!() }
+    fn history_sync_status(&self) -> HistorySyncState {
+        unimplemented!()
+    }
 
     /// Get fee to be paid per 1 swap transaction
-    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> { unimplemented!() }
+    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
+        unimplemented!()
+    }
 
     async fn get_sender_trade_fee(
         &self,
         _value: TradePreimageValue,
         _stage: FeeApproxStage,
-        _include_refund_fee: bool,
     ) -> TradePreimageResult<TradeFee> {
         unimplemented!()
     }
 
-    fn get_receiver_trade_fee(&self, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> { unimplemented!() }
+    fn get_receiver_trade_fee(&self, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
+        unimplemented!()
+    }
 
     async fn get_fee_to_send_taker_fee(
         &self,
@@ -252,21 +300,37 @@ impl MmCoin for SiaCoin {
         unimplemented!()
     }
 
-    fn required_confirmations(&self) -> u64 { unimplemented!() }
+    fn required_confirmations(&self) -> u64 {
+        unimplemented!()
+    }
 
-    fn requires_notarization(&self) -> bool { false }
+    fn requires_notarization(&self) -> bool {
+        false
+    }
 
-    fn set_required_confirmations(&self, _confirmations: u64) { unimplemented!() }
+    fn set_required_confirmations(&self, _confirmations: u64) {
+        unimplemented!()
+    }
 
-    fn set_requires_notarization(&self, _requires_nota: bool) { unimplemented!() }
+    fn set_requires_notarization(&self, _requires_nota: bool) {
+        unimplemented!()
+    }
 
-    fn swap_contract_address(&self) -> Option<BytesJson> { unimplemented!() }
+    fn swap_contract_address(&self) -> Option<BytesJson> {
+        unimplemented!()
+    }
 
-    fn fallback_swap_contract(&self) -> Option<BytesJson> { unimplemented!() }
+    fn fallback_swap_contract(&self) -> Option<BytesJson> {
+        unimplemented!()
+    }
 
-    fn mature_confirmations(&self) -> Option<u32> { unimplemented!() }
+    fn mature_confirmations(&self) -> Option<u32> {
+        unimplemented!()
+    }
 
-    fn coin_protocol_info(&self, _amount_to_receive: Option<MmNumber>) -> Vec<u8> { Vec::new() }
+    fn coin_protocol_info(&self, _amount_to_receive: Option<MmNumber>) -> Vec<u8> {
+        Vec::new()
+    }
 
     fn is_coin_protocol_supported(
         &self,
@@ -278,7 +342,9 @@ impl MmCoin for SiaCoin {
         true
     }
 
-    fn on_disabled(&self) -> Result<(), AbortedError> { Ok(()) }
+    fn on_disabled(&self) -> Result<(), AbortedError> {
+        Ok(())
+    }
 
     fn on_token_deactivated(&self, _ticker: &str) {}
 }
@@ -286,7 +352,9 @@ impl MmCoin for SiaCoin {
 // TODO Alright - Dummy values for these functions allow minimal functionality to produce signatures
 #[async_trait]
 impl MarketCoinOps for SiaCoin {
-    fn ticker(&self) -> &str { &self.0.conf.ticker }
+    fn ticker(&self) -> &str {
+        &self.0.conf.ticker
+    }
 
     // needs test coverage FIXME COME BACK
     fn my_address(&self) -> MmResult<String, MyAddressError> {
@@ -334,7 +402,9 @@ impl MarketCoinOps for SiaCoin {
         MmError::err(UnexpectedDerivationMethod::InternalError("Not implemented".into()))
     }
 
-    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { None }
+    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> {
+        None
+    }
 
     fn sign_message(&self, _message: &str, _address: Option<HDAddressSelector>) -> SignatureResult<String> {
         MmError::err(SignatureError::InternalError("Not implemented".into()))
@@ -369,25 +439,35 @@ impl MarketCoinOps for SiaCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { unimplemented!() }
+    fn platform_coin_balance(&self) -> BalanceFut<BigDecimal> {
+        unimplemented!()
+    }
 
-    fn platform_ticker(&self) -> &str { "FOO" } // TODO Alright
+    fn platform_ticker(&self) -> &str {
+        "FOO"
+    } // TODO Alright
 
     /// Receives raw transaction bytes in hexadecimal format as input and returns tx hash in hexadecimal format
-    fn send_raw_tx(&self, _tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> { unimplemented!() }
+    fn send_raw_tx(&self, _tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
+        unimplemented!()
+    }
 
     fn send_raw_tx_bytes(&self, _tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
         unimplemented!()
     }
 
     #[inline(always)]
-    async fn sign_raw_tx(&self, _args: &SignRawTransactionRequest) -> RawTransactionResult { unimplemented!() }
+    async fn sign_raw_tx(&self, _args: &SignRawTransactionRequest) -> RawTransactionResult {
+        unimplemented!()
+    }
 
     fn wait_for_confirmations(&self, _input: ConfirmPaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
         unimplemented!()
     }
 
-    async fn wait_for_htlc_tx_spend(&self, _args: WaitForHTLCTxSpendArgs<'_>) -> TransactionResult { unimplemented!() }
+    async fn wait_for_htlc_tx_spend(&self, _args: WaitForHTLCTxSpendArgs<'_>) -> TransactionResult {
+        unimplemented!()
+    }
 
     fn tx_enum_from_bytes(&self, _bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
         MmError::err(TxMarshalingErr::NotSupported(
@@ -405,15 +485,25 @@ impl MarketCoinOps for SiaCoin {
         Box::new(height_fut)
     }
 
-    fn display_priv_key(&self) -> Result<String, String> { unimplemented!() }
+    fn display_priv_key(&self) -> Result<String, String> {
+        unimplemented!()
+    }
 
-    fn min_tx_amount(&self) -> BigDecimal { unimplemented!() }
+    fn min_tx_amount(&self) -> BigDecimal {
+        unimplemented!()
+    }
 
-    fn min_trading_vol(&self) -> MmNumber { unimplemented!() }
+    fn min_trading_vol(&self) -> MmNumber {
+        unimplemented!()
+    }
 
-    fn should_burn_dex_fee(&self) -> bool { false }
+    fn should_burn_dex_fee(&self) -> bool {
+        false
+    }
 
-    fn is_trezor(&self) -> bool { self.0.priv_key_policy.is_trezor() }
+    fn is_trezor(&self) -> bool {
+        self.0.priv_key_policy.is_trezor()
+    }
 }
 
 #[async_trait]
@@ -507,13 +597,21 @@ impl SwapOps for SiaCoin {
         Ok(None)
     }
 
-    fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { unimplemented!() }
+    fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair {
+        unimplemented!()
+    }
 
-    fn derive_htlc_pubkey(&self, _swap_unique_data: &[u8]) -> [u8; 33] { unimplemented!() }
+    fn derive_htlc_pubkey(&self, _swap_unique_data: &[u8]) -> [u8; 33] {
+        unimplemented!()
+    }
 
-    async fn can_refund_htlc(&self, _locktime: u64) -> Result<CanRefundHtlc, String> { unimplemented!() }
+    async fn can_refund_htlc(&self, _locktime: u64) -> Result<CanRefundHtlc, String> {
+        unimplemented!()
+    }
 
-    fn validate_other_pubkey(&self, _raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> { unimplemented!() }
+    fn validate_other_pubkey(&self, _raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
+        unimplemented!()
+    }
 }
 
 #[async_trait]

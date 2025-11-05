@@ -2,8 +2,9 @@
 
 use blake2b_simd::Params as Blake2b;
 use bytes::Bytes;
-use chain::{JoinSplit, OutPoint, ShieldedOutput, ShieldedSpend, Transaction, TransactionInput, TransactionOutput,
-            TxHashAlgo};
+use chain::{
+    JoinSplit, OutPoint, ShieldedOutput, ShieldedSpend, Transaction, TransactionInput, TransactionOutput, TxHashAlgo,
+};
 use crypto::{dhash256, sha256};
 use hash::{H256, H512};
 use keys::KeyPair;
@@ -39,7 +40,9 @@ pub enum SighashBase {
 }
 
 impl From<SighashBase> for u32 {
-    fn from(s: SighashBase) -> Self { s as u32 }
+    fn from(s: SighashBase) -> Self {
+        s as u32
+    }
 }
 
 /// Signature hash type. [Documentation](https://en.bitcoin.it/wiki/OP_CHECKSIG#Procedure_for_Hashtype_SIGHASH_SINGLE)
@@ -627,13 +630,16 @@ fn blake_2b_256_personal(input: &[u8], personal: &[u8]) -> Result<H256, String> 
 
 #[cfg(test)]
 mod tests {
-    use super::{blake_2b_256_personal, Sighash, SighashBase, SignatureVersion, TransactionInputSigner,
-                UnsignedTransactionInput};
+    use super::{
+        blake_2b_256_personal, Sighash, SighashBase, SignatureVersion, TransactionInputSigner, UnsignedTransactionInput,
+    };
     use bytes::Bytes;
     use chain::{OutPoint, Transaction, TransactionOutput};
     use hash::{H160, H256};
-    use keys::{prefixes::{BTC_PREFIXES, T_BTC_PREFIXES},
-               Address, AddressHashEnum, Private};
+    use keys::{
+        prefixes::{BTC_PREFIXES, T_BTC_PREFIXES},
+        Address, AddressHashEnum, Private,
+    };
     use script::Script;
     use ser::deserialize;
     use sign::SignerHashAlgo;

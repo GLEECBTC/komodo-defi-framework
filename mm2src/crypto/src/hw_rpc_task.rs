@@ -7,8 +7,9 @@ use serde::Serialize;
 use std::convert::TryFrom;
 use std::sync::Arc;
 use std::time::Duration;
-use trezor::trezor_rpc_task::{RpcTask, RpcTaskError, RpcTaskHandleShared, TrezorRequestStatuses,
-                              TrezorRpcTaskProcessor, TryIntoUserAction};
+use trezor::trezor_rpc_task::{
+    RpcTask, RpcTaskError, RpcTaskHandleShared, TrezorRequestStatuses, TrezorRpcTaskProcessor, TryIntoUserAction,
+};
 use trezor::user_interaction::TrezorPassphraseResponse;
 use trezor::{TrezorProcessingError, TrezorRequestProcessor};
 

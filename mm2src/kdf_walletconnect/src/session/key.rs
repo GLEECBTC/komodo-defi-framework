@@ -3,9 +3,11 @@ use crate::error::SessionError;
 use serde::{Deserialize, Serialize};
 use wc_common::SymKey;
 use x25519_dalek::{PublicKey, SharedSecret, StaticSecret};
-use {hkdf::Hkdf,
-     rand::{rngs::OsRng, CryptoRng, RngCore},
-     sha2::{Digest, Sha256}};
+use {
+    hkdf::Hkdf,
+    rand::{rngs::OsRng, CryptoRng, RngCore},
+    sha2::{Digest, Sha256},
+};
 
 pub(crate) struct SymKeyPair {
     pub(crate) secret: StaticSecret,
@@ -88,10 +90,14 @@ impl SessionKey {
     }
 
     /// Gets symmetic key reference.
-    pub fn symmetric_key(&self) -> SymKey { self.sym_key }
+    pub fn symmetric_key(&self) -> SymKey {
+        self.sym_key
+    }
 
     /// Gets "our" public key used in symmetric key derivation.
-    pub fn diffie_public_key(&self) -> SymKey { self.public_key }
+    pub fn diffie_public_key(&self) -> SymKey {
+        self.public_key
+    }
 
     /// Generates new session topic.
     pub fn generate_topic(&self) -> String {
@@ -190,7 +196,7 @@ mod session_key_tests {
         let public_key = PublicKey::from(&static_secret);
         let session_key = SessionKey::new(public_key);
 
-        let debug_str = format!("{:?}", session_key);
+        let debug_str = format!("{session_key:?}");
         assert!(debug_str.contains("SessionKey"));
         assert!(debug_str.contains("sym_key: \"*******\""));
     }

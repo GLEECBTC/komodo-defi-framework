@@ -18,8 +18,9 @@ use crate::grpc_web::PostGrpcWebErr;
 
 use base64::prelude::*;
 use bytes::{BufMut, Bytes, BytesMut};
-use common::{APPLICATION_GRPC_WEB, APPLICATION_GRPC_WEB_PROTO, APPLICATION_GRPC_WEB_TEXT,
-             APPLICATION_GRPC_WEB_TEXT_PROTO};
+use common::{
+    APPLICATION_GRPC_WEB, APPLICATION_GRPC_WEB_PROTO, APPLICATION_GRPC_WEB_TEXT, APPLICATION_GRPC_WEB_TEXT_PROTO,
+};
 use futures_util::{ready, stream};
 use futures_util::{stream::empty, Stream};
 use http::{header::HeaderName, HeaderMap, HeaderValue};
@@ -29,8 +30,10 @@ use js_sys::{Object, Uint8Array};
 use pin_project::pin_project;
 use std::convert::TryInto;
 use std::ops::{Deref, DerefMut};
-use std::{pin::Pin,
-          task::{Context, Poll}};
+use std::{
+    pin::Pin,
+    task::{Context, Poll},
+};
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{ReadableStream, ReadableStreamDefaultReader};
@@ -68,7 +71,9 @@ impl EncodedBytes {
     // This is to avoid passing a slice of bytes with a length that the base64
     // decoder would consider invalid.
     #[inline]
-    fn max_decodable(&self) -> usize { (self.raw_buf.len() / 4) * 4 }
+    fn max_decodable(&self) -> usize {
+        (self.raw_buf.len() / 4) * 4
+    }
 
     fn decode_base64_chunk(&mut self) -> Result<(), PostGrpcWebErr> {
         let index = self.max_decodable();
@@ -104,11 +109,15 @@ impl EncodedBytes {
 impl Deref for EncodedBytes {
     type Target = BytesMut;
 
-    fn deref(&self) -> &Self::Target { &self.buf }
+    fn deref(&self) -> &Self::Target {
+        &self.buf
+    }
 }
 
 impl DerefMut for EncodedBytes {
-    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.buf }
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.buf
+    }
 }
 
 /// Represents the state of reading the response body, including compression flags, data lengths, trailers, and the done state.
@@ -123,7 +132,9 @@ pub enum ReadState {
 }
 
 impl ReadState {
-    fn is_done(&self) -> bool { matches!(self, ReadState::Done) }
+    fn is_done(&self) -> bool {
+        matches!(self, ReadState::Done)
+    }
 
     fn finished_data(&self) -> bool {
         matches!(self, ReadState::TrailerLength)

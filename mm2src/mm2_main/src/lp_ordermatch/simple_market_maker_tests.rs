@@ -1,6 +1,8 @@
-use crate::{lp_ordermatch::lp_bot::simple_market_maker_bot::vwap,
-            lp_ordermatch::lp_bot::SimpleCoinMarketMakerCfg,
-            lp_swap::{MakerSavedSwap, SavedSwap}};
+use crate::{
+    lp_ordermatch::lp_bot::simple_market_maker_bot::vwap,
+    lp_ordermatch::lp_bot::SimpleCoinMarketMakerCfg,
+    lp_swap::{MakerSavedSwap, SavedSwap},
+};
 use common::{block_on, log::UnifiedLoggerBuilder};
 use mm2_number::MmNumber;
 

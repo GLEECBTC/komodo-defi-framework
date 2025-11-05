@@ -29,7 +29,9 @@ pub(crate) struct AtomicDEXDomain {
 }
 
 impl AtomicDEXDomain {
-    pub fn new(name: String) -> AtomicDEXDomain { AtomicDEXDomain { name } }
+    pub fn new(name: String) -> AtomicDEXDomain {
+        AtomicDEXDomain { name }
+    }
 }
 
 #[derive(Debug, Serialize)]

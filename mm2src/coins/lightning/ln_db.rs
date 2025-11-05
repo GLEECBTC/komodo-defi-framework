@@ -173,7 +173,9 @@ impl PaymentInfo {
         self
     }
 
-    pub(crate) fn is_outbound(&self) -> bool { matches!(self.payment_type, PaymentType::OutboundPayment { .. }) }
+    pub(crate) fn is_outbound(&self) -> bool {
+        matches!(self.payment_type, PaymentType::OutboundPayment { .. })
+    }
 }
 
 #[derive(Clone)]

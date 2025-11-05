@@ -1,13 +1,15 @@
 #![allow(deprecated)] // TODO: remove this once rusqlite is >= 0.29
 
-use crate::hd_wallet::{HDAccountStorageItem, HDWalletId, HDWalletStorageError, HDWalletStorageInternalOps,
-                       HDWalletStorageResult};
+use crate::hd_wallet::{
+    HDAccountStorageItem, HDWalletId, HDWalletStorageError, HDWalletStorageInternalOps, HDWalletStorageResult,
+};
 use async_trait::async_trait;
 use common::async_blocking;
 use db_common::owned_named_params;
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Row};
-use db_common::sqlite::{query_single_row_with_named_params, AsSqlNamedParams, OwnedSqlNamedParams, SqliteConnShared,
-                        SqliteConnWeak};
+use db_common::sqlite::{
+    query_single_row_with_named_params, AsSqlNamedParams, OwnedSqlNamedParams, SqliteConnShared, SqliteConnWeak,
+};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -222,9 +224,9 @@ impl HDWalletSqliteStorage {
             .or_mm_err(|| HDWalletStorageError::Internal("'HDWalletSqliteStorage::conn' doesn't exist".to_owned()))
     }
 
-    fn lock_conn_mutex(conn: &SqliteConnShared) -> HDWalletStorageResult<MutexGuard<Connection>> {
+    fn lock_conn_mutex(conn: &SqliteConnShared) -> HDWalletStorageResult<MutexGuard<'_, Connection>> {
         conn.lock()
-            .map_to_mm(|e| HDWalletStorageError::Internal(format!("Error locking sqlite connection: {}", e)))
+            .map_to_mm(|e| HDWalletStorageError::Internal(format!("Error locking sqlite connection: {e}")))
     }
 
     async fn init_tables(&self) -> HDWalletStorageResult<()> {

@@ -12,7 +12,9 @@ pub struct GithubClient {
 }
 
 impl GitCommons for GithubClient {
-    fn new(api_address: String) -> Self { Self { api_address } }
+    fn new(api_address: String) -> Self {
+        Self { api_address }
+    }
 }
 
 #[async_trait]
@@ -21,10 +23,10 @@ impl RepositoryOperations for GithubClient {
         &self,
         file_metadata: FileMetadata,
     ) -> Result<T, MmError<GitControllerError>> {
-        let (_status_code, _headers, data_buffer) = slurp_url_with_headers(&file_metadata.download_url, vec![(
-            http::header::USER_AGENT.as_str(),
-            GITHUB_CLIENT_USER_AGENT,
-        )])
+        let (_status_code, _headers, data_buffer) = slurp_url_with_headers(
+            &file_metadata.download_url,
+            vec![(http::header::USER_AGENT.as_str(), GITHUB_CLIENT_USER_AGENT)],
+        )
         .await
         .map_err(|e| GitControllerError::HttpError(e.to_string()))?;
 
@@ -52,10 +54,10 @@ impl RepositoryOperations for GithubClient {
             &self.api_address, owner, repository_name, dir, branch
         );
 
-        let (_status_code, _headers, data_buffer) = slurp_url_with_headers(&uri, vec![(
-            http::header::USER_AGENT.as_str(),
-            GITHUB_CLIENT_USER_AGENT,
-        )])
+        let (_status_code, _headers, data_buffer) = slurp_url_with_headers(
+            &uri,
+            vec![(http::header::USER_AGENT.as_str(), GITHUB_CLIENT_USER_AGENT)],
+        )
         .await
         .map_err(|e| GitControllerError::HttpError(e.to_string()))?;
 

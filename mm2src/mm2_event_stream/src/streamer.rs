@@ -128,9 +128,13 @@ where
 pub struct Broadcaster(StreamingManager);
 
 impl Broadcaster {
-    pub fn new(inner: StreamingManager) -> Self { Self(inner) }
+    pub fn new(inner: StreamingManager) -> Self {
+        Self(inner)
+    }
 
-    pub fn broadcast(&self, event: Event) { self.0.broadcast(event); }
+    pub fn broadcast(&self, event: Event) {
+        self.0.broadcast(event);
+    }
 }
 
 #[cfg(any(test, target_arch = "wasm32"))]
