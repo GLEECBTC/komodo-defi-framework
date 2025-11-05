@@ -220,7 +220,7 @@ jobs:
       - name: Test
         run: |
           wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/v0.8.1//zcutil/fetch-params-alt.sh | bash
-          cargo test --test 'docker_tests_main' --features run-docker-tests --no-fail-fast
+          cargo test --test 'docker_tests_main' --features run-docker-tests,enable-sia --no-fail-fast
 
   wasm:
     timeout-minutes: 90
@@ -269,28 +269,3 @@ jobs:
 
       - name: Test
         run: WASM_BINDGEN_TEST_TIMEOUT=1200 GECKODRIVER=/bin/geckodriver wasm-pack test --firefox --headless mm2src/mm2_main
-
-  # TODO: Integrate this job into the docker job (we shouldn't have enable-sia and !enable-sia)
-  sia-tests:
-    timeout-minutes: 30
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Install toolchain
-        run: |
-          rustup toolchain install stable --no-self-update --profile=minimal
-          rustup default stable
-
-      - name: Install build deps
-        uses: ./.github/actions/deps-install
-        with:
-          deps: ('protoc')
-
-      - name: Build cache
-        uses: ./.github/actions/build-cache
-
-      - name: Sia functional tests - short locktime
-        run: |
-          wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/v0.8.1//zcutil/fetch-params-alt.sh | bash
-          _KDF_NO_QTUM_DOCKER= _KDF_NO_SLP_DOCKER= _KDF_NO_ETH_DOCKER= _KDF_NO_COSMOS_DOCKER= _KDF_NO_ZOMBIE_DOCKER= cargo test --test 'docker_tests_main' --features run-docker-tests,enable-sia --no-fail-fast sia
