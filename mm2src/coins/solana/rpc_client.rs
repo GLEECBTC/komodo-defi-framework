@@ -1,5 +1,7 @@
+use async_std::prelude::FutureExt;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use bincode::serialize;
+use compatible_time::Duration;
 use mm2_net::transport;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{json, Value};
@@ -170,9 +172,11 @@ impl RpcClient {
         let id = self.next_request_id();
         let payload = request.build_request_json(id, params);
 
-        let response: Value = transport::post_json(&self.url, payload.to_string())
+        let response = transport::post_json::<Value>(&self.url, payload.to_string())
+            .timeout(Duration::from_secs(5))
             .await
-            .map_err(|e| -> ClientError { ClientErrorKind::Transport(e.to_string()).into() })?;
+            .map_err(|e| ClientError::from(ClientErrorKind::Transport(e.to_string())))?
+            .map_err(|e| ClientError::from(ClientErrorKind::Transport(e.to_string())))?;
 
         if let Some(error) = response.get("error") {
             let code = error.get("code").and_then(Value::as_i64).unwrap_or(0);
@@ -192,8 +196,11 @@ impl RpcClient {
             )))
         })?;
 
-        serde_json::from_value(result).map_err(|e| -> ClientError {
-            ClientErrorKind::Parse(format!("Failed to parse response for {}: {e}", request)).into()
+        serde_json::from_value(result).map_err(|e| {
+            ClientError::from(ClientErrorKind::Parse(format!(
+                "Failed to parse response for {}: {e}",
+                request
+            )))
         })
     }
 
@@ -205,5 +212,5 @@ impl RpcClient {
 fn encode_bincode_base64<T: Serialize + std::fmt::Debug>(value: &T) -> ClientResult<String> {
     serialize(value)
         .map(|bytes| STANDARD.encode(bytes))
-        .map_err(|e| -> ClientError { ClientErrorKind::Parse(format!("{e}: failed to serialize: {value:?}")).into() })
+        .map_err(|e| ClientError::from(ClientErrorKind::Parse(format!("{e}: failed to serialize: {value:?}"))))
 }
