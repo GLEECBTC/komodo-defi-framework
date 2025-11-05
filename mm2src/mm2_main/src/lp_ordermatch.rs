@@ -34,11 +34,10 @@ use common::executor::{
 use common::log::{error, warn, LogOnError};
 use common::{bits256, log, new_uuid, now_ms, now_sec};
 use crypto::privkey::SerializableSecp256k1Keypair;
+use crypto::secret_hash_algo::SecretHashAlgo;
 use crypto::{CryptoCtx, CryptoCtxError};
 use derive_more::Display;
 use futures::channel::mpsc::{unbounded, UnboundedSender};
-#[cfg(test)]
-use futures::channel::oneshot;
 use futures::{compat::Future01CompatExt, lock::Mutex as AsyncMutex, StreamExt, TryFutureExt};
 use hash256_std_hasher::Hash256StdHasher;
 use hash_db::Hasher;
@@ -59,8 +58,6 @@ use mm2_rpc::data::legacy::{
     TakerAction, TakerRequestForRpc,
 };
 use mm2_state_machine::prelude::*;
-#[cfg(test)]
-use mocktopus::macros::*;
 use my_orders_storage::{
     delete_my_maker_order, delete_my_taker_order, save_maker_order_on_update, save_my_new_maker_order,
     save_my_new_taker_order, MyActiveOrders, MyOrdersFilteringHistory, MyOrdersHistory, MyOrdersStorage,
@@ -69,6 +66,7 @@ use num_traits::identities::Zero;
 use order_events::{OrderStatusEvent, OrderStatusStreamer};
 use orderbook_events::{OrderbookItemChangeEvent, OrderbookStreamer};
 use parking_lot::{Mutex as PaMutex, RwLock as PaRwLock};
+use primitives::hash::{H256, H264};
 use rpc::v1::types::H256 as H256Json;
 use secp256k1::PublicKey as Secp256k1Pubkey;
 use serde_json::{self as json, Value as Json};
@@ -104,7 +102,6 @@ use crate::lp_swap::taker_swap::FailAt;
 use coins::rpc_command::tendermint::ibc::ChannelId;
 
 pub use best_orders::{best_orders_rpc, best_orders_rpc_v2};
-use crypto::secret_hash_algo::SecretHashAlgo;
 pub use orderbook_depth::orderbook_depth_rpc;
 pub use orderbook_rpc::{orderbook_rpc, orderbook_rpc_v2};
 
@@ -115,12 +112,17 @@ cfg_wasm32! {
     pub type OrdermatchDbLocked<'a> = DbLocked<'a, OrdermatchDb>;
 }
 
+// test-only imports
+#[cfg(all(test, not(target_arch = "wasm32")))]
+use futures::channel::oneshot;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+use mocktopus::macros::*;
+
 mod best_orders;
 mod lp_bot;
 pub use lp_bot::{
     start_simple_market_maker_bot, stop_simple_market_maker_bot, StartSimpleMakerBotRequest, TradingBotEvent,
 };
-use primitives::hash::{H256, H264};
 
 mod my_orders_storage;
 mod new_protocol;
@@ -2738,6 +2740,7 @@ pub struct TrieStore {
     /// MemoryDB instance to store Patricia Tries data
     memory_db: MemoryDB<Blake2Hasher64>,
 }
+
 impl TrieStore {
     /// Apply a sequence of trie operations produced by the Orderbook.
     /// This is the only place mutating MemoryDB and trie histories.
@@ -3060,7 +3063,7 @@ impl Orderbook {
             return Vec::new();
         }
 
-        let mut trie_ops = Vec::with_capacity(1);
+        let mut trie_ops = vec![];
         let zero = BigRational::from_integer(0.into());
 
         if order.max_volume <= zero || order.price <= zero || order.min_volume < zero {
@@ -3324,9 +3327,9 @@ impl OrdermatchContext {
         self.ordermatch_db.get_or_initialize().await
     }
 
-    #[cfg(test)]
     /// Block until the background trie worker has applied all previously enqueued ops.
     /// This still goes through the unbounded_send path and only waits for a Flush ack.
+    #[cfg(test)]
     pub fn wait_trie_ops_flushed(&self) {
         let (tx, rx) = oneshot::channel::<()>();
         let _ = self.trie_ops_tx.unbounded_send(vec![TrieOp::Flush(tx)]);
