@@ -1,3 +1,4 @@
+mod rpc_client;
 mod solana_coin;
 mod solana_token;
 

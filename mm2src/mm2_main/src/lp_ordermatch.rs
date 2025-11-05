@@ -6412,9 +6412,7 @@ fn orderbook_address(
         // TODO implement for SIA "this is needed to show the address in the orderbook"
         #[cfg(feature = "enable-sia")]
         CoinProtocol::SIA => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
-        #[cfg(feature = "enable-solana")]
         CoinProtocol::SOLANA(_) => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
-        #[cfg(feature = "enable-solana")]
         CoinProtocol::SOLANATOKEN(_) => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
     }
 }
