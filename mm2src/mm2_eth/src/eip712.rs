@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
 
-pub(crate) const EIP712_DOMAIN: &str = "EIP712Domain";
+pub const EIP712_DOMAIN: &str = "EIP712Domain";
 
 pub(crate) type CustomTypes = HashMap<String, Vec<ObjectProperty>>;
 
@@ -36,7 +36,7 @@ pub(crate) type CustomTypes = HashMap<String, Vec<ObjectProperty>>;
 /// let mut mail_type = ObjectType::new("Mail");
 /// mail_type.property("message", PropertyType::String);
 /// mail_type.property("from", PropertyType::Custom("Person".into()));
-/// mail_type.property_array("to", PropertyType::Custom("Person".into()));
+/// mail_type.property("to", PropertyType::Custom("Person".into()));
 ///
 /// let mut person_type = ObjectType::new("Person");
 /// person_type.property("address", PropertyType::Address);
@@ -85,6 +85,7 @@ pub enum PropertyType {
     String,
     Uint256,
     Address,
+    Bytes,
     Bytes32,
     Custom(String),
 }
@@ -96,6 +97,7 @@ impl fmt::Display for PropertyType {
             PropertyType::String => write!(f, "string"),
             PropertyType::Uint256 => write!(f, "uint256"),
             PropertyType::Address => write!(f, "address"),
+            PropertyType::Bytes => write!(f, "bytes"),
             PropertyType::Bytes32 => write!(f, "bytes32"),
             PropertyType::Custom(custom) => write!(f, "{custom}"),
         }
@@ -109,6 +111,7 @@ impl FromStr for PropertyType {
         let property_type = match s {
             "bool" => PropertyType::Bool,
             "string" => PropertyType::String,
+            "bytes" => PropertyType::Bytes,
             "uint256" => PropertyType::Uint256,
             "address" => PropertyType::Address,
             "bytes32" => PropertyType::Bytes32,

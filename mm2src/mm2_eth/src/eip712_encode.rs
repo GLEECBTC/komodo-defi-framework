@@ -80,6 +80,7 @@ fn encode_data(
     match data_type {
         PropertyType::Bool => encode_bool(data, field_name),
         PropertyType::String => encode_string(data, field_name),
+        PropertyType::Bytes => encode_bytes(data, field_name),
         PropertyType::Uint256 => encode_u256(data, field_name),
         PropertyType::Address => encode_address(data, field_name),
         PropertyType::Bytes32 => encode_bytes32(data, field_name),
@@ -114,12 +115,13 @@ fn encode_bytes32(value: &Json, field_name: Option<&str>) -> Result<Vec<u8>> {
     let string = value
         .as_str()
         .ok_or_else(|| expected_type_error("bytes32", value, field_name))?;
-    check_hex(string, field_name)?;
+    println!("encode_bytes32 string={}", string);
+    check_hex_prefix(&string, field_name)?;
+    check_hex_len(&string[2..], field_name, 32)?;
 
-    let bytes = hex::decode(string).map_err(|e| decode_error(e, field_name))?;
-    let hash = keccak256(&bytes).to_vec();
+    let bytes = hex::decode(&string[2..]).map_err(|e| decode_error(e, field_name))?;
 
-    Ok(encode(&[Token::FixedBytes(hash)]))
+    Ok(encode(&[Token::FixedBytes(bytes)]))
 }
 
 fn encode_string(value: &Json, field_name: Option<&str>) -> Result<Vec<u8>> {
@@ -127,6 +129,17 @@ fn encode_string(value: &Json, field_name: Option<&str>) -> Result<Vec<u8>> {
         .as_str()
         .ok_or_else(|| expected_type_error("string", value, field_name))?;
     let hash = keccak256(string.as_ref()).to_vec();
+
+    Ok(encode(&[Token::FixedBytes(hash)]))
+}
+
+fn encode_bytes(value: &Json, field_name: Option<&str>) -> Result<Vec<u8>> {
+    let string = value
+        .as_str()
+        .ok_or_else(|| expected_type_error("bytes", value, field_name))?;
+    check_hex_prefix(string, field_name)?;
+    let bytes = hex::decode(&string[2..]).map_err(|e| decode_error(e, field_name))?;
+    let hash = keccak256(bytes.as_ref()).to_vec();
 
     Ok(encode(&[Token::FixedBytes(hash)]))
 }
@@ -154,7 +167,7 @@ fn encode_u256(value: &Json, field_name: Option<&str>) -> Result<Vec<u8>> {
     let string = value
         .as_str()
         .ok_or_else(|| expected_type_error("str(u256)", value, field_name))?;
-    check_hex(string, field_name)?;
+    check_hex_prefix(string, field_name)?;
 
     let uint = U256::from_str(&string[2..]).map_err(|e| decode_error(e, field_name))?;
     Ok(encode(&[Token::Uint(uint)]))
@@ -224,7 +237,7 @@ fn build_dependencies<'a>(data_type: &'a str, custom_types: &'a CustomTypes) -> 
     Some(deps)
 }
 
-fn check_hex(string: &str, field_name: Option<&str>) -> Result<()> {
+fn check_hex_prefix(string: &str, field_name: Option<&str>) -> Result<()> {
     if string.len() >= 2 && &string[..2] == "0x" {
         return Ok(());
     }
@@ -233,6 +246,20 @@ fn check_hex(string: &str, field_name: Option<&str>) -> Result<()> {
         format!(
             "Expected a 0x-prefixed string of even length, found {} length string",
             string.len()
+        ),
+        field_name,
+    ))
+}
+
+fn check_hex_len(string: &str, field_name: Option<&str>, len: usize) -> Result<()> {
+    if string.len() / 2 == len {
+        return Ok(());
+    }
+
+    Err(decode_error(
+        format!(
+            "Expected size of {}",
+            len
         ),
         field_name,
     ))
