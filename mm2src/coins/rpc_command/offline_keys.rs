@@ -5,7 +5,7 @@ use crate::CoinProtocol;
 use bitcoin_hashes::hex::ToHex;
 use bitcrypto::ChecksumType;
 use common::HttpStatusCode;
-use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
+use crypto::privkey::key_pair_from_secret;
 use crypto::{Bip32DerPathOps, CryptoCtx, HDPathToCoin, KeyPairPolicy, StandardHDPath};
 use derive_more::Display;
 use futures_util::future::try_join_all;
@@ -507,18 +507,23 @@ async fn offline_iguana_keys_export_internal(
 
             let prefix_values = extract_prefix_values(&ctx, &ticker, &coin_conf)?;
 
-            let passphrase = ctx.conf["passphrase"].as_str().unwrap_or("");
+            let crypto_ctx = CryptoCtx::from_ctx(&ctx)
+                .map_err(|e| OfflineKeysError::Internal(format!("Failed to get crypto context: {e}")))?;
 
-            let key_pair = {
-                match key_pair_from_seed(passphrase) {
-                    Ok(kp) => kp,
-                    Err(e) => {
-                        return MmError::err(OfflineKeysError::KeyDerivationFailed {
-                            ticker: ticker.clone(),
-                            error: e.to_string(),
-                        });
-                    },
-                }
+            let key_pair = match crypto_ctx.key_pair_policy() {
+                KeyPairPolicy::Iguana => {
+                    let secret = crypto_ctx.mm2_internal_privkey_secret();
+                    key_pair_from_secret(&secret.take()).map_err(|e| OfflineKeysError::KeyDerivationFailed {
+                        ticker: ticker.clone(),
+                        error: e.to_string(),
+                    })?
+                },
+                KeyPairPolicy::GlobalHDAccount(_) => {
+                    return MmError::err(OfflineKeysError::KeyDerivationFailed {
+                        ticker: ticker.clone(),
+                        error: "Iguana key derivation requires Iguana mode".to_string(),
+                    });
+                },
             };
 
             let protocol: CoinProtocol = serde_json::from_value(coin_conf["protocol"].clone()).map_err(|e| {
@@ -587,18 +592,7 @@ async fn offline_iguana_keys_export_internal(
                     (address, priv_key)
                 },
                 Some(PrefixValues::Zhtlc { .. }) => {
-                    let crypto_ctx = CryptoCtx::from_ctx(&ctx)
-                        .map_err(|e| OfflineKeysError::Internal(format!("Failed to get crypto context: {e}")))?;
-
-                    let iguana_key = match crypto_ctx.key_pair_policy() {
-                        KeyPairPolicy::Iguana => crypto_ctx.mm2_internal_privkey_slice().to_vec(),
-                        KeyPairPolicy::GlobalHDAccount(_) => {
-                            return MmError::err(OfflineKeysError::KeyDerivationFailed {
-                                ticker: ticker.clone(),
-                                error: "Iguana key derivation requires Iguana mode".to_string(),
-                            });
-                        },
-                    };
+                    let iguana_key = crypto_ctx.mm2_internal_privkey_slice().to_vec();
 
                     let spending_key = ExtendedSpendingKey::master(&iguana_key);
 
@@ -685,6 +679,9 @@ pub async fn get_private_keys(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bitcrypto::ChecksumType;
+    use crypto::privkey::key_pair_from_seed;
+    use keys::{AddressBuilder, AddressFormat, AddressPrefix, NetworkAddressPrefixes, Private};
     use mm2_core::mm_ctx::MmCtxBuilder;
     use serde_json::json;
 
@@ -962,31 +959,79 @@ mod tests {
 
         let mut btc_conf = btc_with_spv_conf();
         btc_conf["derivation_path"] = json!("m/44'/0'");
+
+        // Intentionally do NOT set ctx.conf["passphrase"] to reproduce the original regression.
         let ctx = MmCtxBuilder::new()
             .with_conf(json!({
-                "coins": [btc_conf],
+                "coins": [btc_conf.clone()],
                 "rpc_password": "test123"
             }))
             .into_mm_arc();
 
         CryptoCtx::init_with_iguana_passphrase(ctx.clone(), TEST_MNEMONIC).unwrap();
 
-        let _req = OfflineKeysRequest {
+        // Use the public RPC to match external behavior.
+        let req = GetPrivateKeysRequest {
             coins: vec!["BTC".to_string()],
+            mode: Some(KeyExportMode::Iguana),
+            start_index: None,
+            end_index: None,
+            account_index: None,
         };
 
-        let response = offline_iguana_keys_export_internal(ctx.clone(), _req).await;
+        let response = get_private_keys(ctx.clone(), req).await.unwrap();
 
         match response {
-            Ok(iguana_response) => {
+            GetPrivateKeysResponse::Iguana(iguana_response) => {
                 assert_eq!(iguana_response.len(), 1);
                 let btc_result = &iguana_response[0];
                 assert_eq!(btc_result.coin, "BTC");
-                assert!(!btc_result.pubkey.is_empty());
-                assert!(!btc_result.address.is_empty());
-                assert!(!btc_result.priv_key.is_empty());
+
+                // Expected values derived from the actual wallet secret (TEST_MNEMONIC)
+                let kp = key_pair_from_seed(TEST_MNEMONIC).unwrap();
+
+                // Expected compressed pubkey hex
+                let expected_pubkey = hex::encode(&*kp.public().to_vec());
+
+                // Expected WIF and legacy P2PKH address
+                let wif_type = btc_conf["wiftype"].as_u64().unwrap() as u8;
+                let pub_type = btc_conf["pubtype"].as_u64().unwrap() as u8;
+                let p2sh_type = btc_conf["p2shtype"].as_u64().unwrap() as u8;
+
+                let private = Private {
+                    prefix: wif_type,
+                    secret: kp.private().secret,
+                    compressed: true,
+                    checksum_type: ChecksumType::DSHA256,
+                };
+                let expected_wif = private.to_string();
+
+                let address_prefixes = NetworkAddressPrefixes {
+                    p2pkh: AddressPrefix::from([pub_type]),
+                    p2sh: AddressPrefix::from([p2sh_type]),
+                };
+
+                let address =
+                    AddressBuilder::new(AddressFormat::Standard, ChecksumType::DSHA256, address_prefixes, None)
+                        .as_pkh_from_pk(*kp.public())
+                        .build()
+                        .unwrap();
+
+                assert_eq!(
+                    btc_result.pubkey, expected_pubkey,
+                    "pubkey should match Iguana wallet secret"
+                );
+                assert_eq!(
+                    btc_result.priv_key, expected_wif,
+                    "WIF should match Iguana wallet secret"
+                );
+                assert_eq!(
+                    btc_result.address,
+                    address.to_string(),
+                    "address should match Iguana wallet secret"
+                );
             },
-            Err(e) => panic!("Iguana key derivation test failed: {:?}", e),
+            _ => panic!("Expected Iguana response for BTC key derivation"),
         }
     }
 
