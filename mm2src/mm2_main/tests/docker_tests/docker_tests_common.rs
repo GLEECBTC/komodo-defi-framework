@@ -125,7 +125,6 @@ pub static GETH_RPC_URL: &str = "http://127.0.0.1:8545";
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 pub static SEPOLIA_RPC_URL: &str = "https://ethereum-sepolia-rpc.publicnode.com";
 /// SIA daemon RPC connection parameters
-#[cfg(feature = "enable-sia")]
 pub static SIA_RPC_PARAMS: (&str, u16, &str) = ("127.0.0.1", 9980, "password");
 
 // use thread local to affect only the current running test
@@ -141,9 +140,7 @@ pub const GETH_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/ethereum/client-go:stabl
 pub const ZOMBIE_ASSET_DOCKER_IMAGE: &str = "docker.io/borngraced/zombietestrunner";
 pub const ZOMBIE_ASSET_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/borngraced/zombietestrunner:multiarch";
 
-#[cfg(feature = "enable-sia")]
 pub const SIA_DOCKER_IMAGE: &str = "ghcr.io/siafoundation/walletd";
-#[cfg(feature = "enable-sia")]
 pub const SIA_DOCKER_IMAGE_WITH_TAG: &str = "ghcr.io/siafoundation/walletd:latest";
 
 pub const NUCLEUS_IMAGE: &str = "docker.io/komodoofficial/nucleusd";
@@ -446,7 +443,6 @@ pub fn geth_docker_node(ticker: &'static str, port: u16) -> DockerNode {
     }
 }
 
-#[cfg(feature = "enable-sia")]
 pub fn sia_docker_node(ticker: &'static str, port: u16) -> DockerNode {
     use crate::sia_tests::utils::{WALLETD_CONFIG, WALLETD_NETWORK_CONFIG};
 

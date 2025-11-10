@@ -275,9 +275,7 @@ pub use test_coin::TestCoin;
 
 pub mod tx_history_storage;
 
-#[cfg(feature = "enable-sia")]
 pub mod siacoin;
-#[cfg(feature = "enable-sia")]
 use siacoin::{SiaCoin, SiaCoinActivationRequest, SiaFeeDetails, SiaTransaction, SiaTransactionTypes};
 
 pub mod utxo;
@@ -614,7 +612,6 @@ pub enum TransactionEnum {
     CosmosTransaction(CosmosTransaction),
     #[cfg(not(target_arch = "wasm32"))]
     LightningPayment(LightningPayment),
-    #[cfg(feature = "enable-sia")]
     SiaTransaction(SiaTransaction),
 }
 
@@ -623,7 +620,6 @@ ifrom!(TransactionEnum, SignedEthTx);
 ifrom!(TransactionEnum, ZTransaction);
 #[cfg(not(target_arch = "wasm32"))]
 ifrom!(TransactionEnum, LightningPayment);
-#[cfg(feature = "enable-sia")]
 ifrom!(TransactionEnum, SiaTransaction);
 
 impl TransactionEnum {
@@ -649,7 +645,6 @@ impl Deref for TransactionEnum {
             TransactionEnum::CosmosTransaction(ref t) => t,
             #[cfg(not(target_arch = "wasm32"))]
             TransactionEnum::LightningPayment(ref p) => p,
-            #[cfg(feature = "enable-sia")]
             TransactionEnum::SiaTransaction(ref t) => t,
         }
     }
@@ -2482,7 +2477,6 @@ pub enum TxFeeDetails {
     Qrc20(Qrc20FeeDetails),
     Slp(SlpFeeDetails),
     Tendermint(TendermintFeeDetails),
-    #[cfg(feature = "enable-sia")]
     Sia(SiaFeeDetails),
     Solana(SolanaFeeDetails),
 }
@@ -2501,7 +2495,6 @@ impl<'de> Deserialize<'de> for TxFeeDetails {
             Qrc20(Qrc20FeeDetails),
             Slp(SlpFeeDetails),
             Tendermint(TendermintFeeDetails),
-            #[cfg(feature = "enable-sia")]
             Sia(SiaFeeDetails),
             Solana(SolanaFeeDetails),
         }
@@ -2512,7 +2505,6 @@ impl<'de> Deserialize<'de> for TxFeeDetails {
             TxFeeDetailsUnTagged::Qrc20(f) => Ok(TxFeeDetails::Qrc20(f)),
             TxFeeDetailsUnTagged::Slp(f) => Ok(TxFeeDetails::Slp(f)),
             TxFeeDetailsUnTagged::Tendermint(f) => Ok(TxFeeDetails::Tendermint(f)),
-            #[cfg(feature = "enable-sia")]
             TxFeeDetailsUnTagged::Sia(f) => Ok(TxFeeDetails::Sia(f)),
             TxFeeDetailsUnTagged::Solana(f) => Ok(TxFeeDetails::Solana(f)),
         }
@@ -2537,7 +2529,6 @@ impl From<Qrc20FeeDetails> for TxFeeDetails {
     }
 }
 
-#[cfg(feature = "enable-sia")]
 impl From<SiaFeeDetails> for TxFeeDetails {
     fn from(sia_details: SiaFeeDetails) -> Self {
         TxFeeDetails::Sia(sia_details)
@@ -2578,11 +2569,8 @@ pub enum TransactionType {
     TendermintIBCTransfer {
         token_id: Option<BytesJson>,
     },
-    #[cfg(feature = "enable-sia")]
     SiaV1Transaction,
-    #[cfg(feature = "enable-sia")]
     SiaV2Transaction,
-    #[cfg(feature = "enable-sia")]
     SiaMinerPayout,
 }
 
@@ -2638,7 +2626,6 @@ pub enum TransactionData {
     /// TODO: Perhaps using generics would be more suitable here?
     Unsigned(Json),
     // Todo: After implementing tx hash in sia-rust we can use Signed variant for sia as well but make tx_hex: BytesJson and enum or add another variant for sia/json
-    #[cfg(feature = "enable-sia")]
     Sia {
         /// SIA transactions are broadcasted in JSON format.
         /// This is provided in case someone wants to broadcast the transaction JSON through other means than `send_raw_transaction`.
@@ -2661,7 +2648,6 @@ impl TransactionData {
         match self {
             TransactionData::Signed { tx_hex, .. } => Some(tx_hex),
             TransactionData::Unsigned(_) => None,
-            #[cfg(feature = "enable-sia")]
             TransactionData::Sia { .. } => None,
         }
     }
@@ -2670,7 +2656,6 @@ impl TransactionData {
         match self {
             TransactionData::Signed { tx_hash, .. } => Some(tx_hash),
             TransactionData::Unsigned(_) => None,
-            #[cfg(feature = "enable-sia")]
             TransactionData::Sia { tx_hash, .. } => Some(tx_hash),
         }
     }
@@ -3907,7 +3892,6 @@ pub enum MmCoinEnum {
     TendermintTokenVariant(TendermintToken),
     #[cfg(not(target_arch = "wasm32"))]
     LightningCoinVariant(LightningCoin),
-    #[cfg(feature = "enable-sia")]
     SiaCoinVariant(SiaCoin),
     Solana(solana::SolanaCoin),
     SolanaToken(solana::SolanaToken),
@@ -3983,7 +3967,6 @@ impl From<ZCoin> for MmCoinEnum {
     }
 }
 
-#[cfg(feature = "enable-sia")]
 impl From<SiaCoin> for MmCoinEnum {
     fn from(c: SiaCoin) -> MmCoinEnum {
         MmCoinEnum::SiaCoinVariant(c)
@@ -4018,7 +4001,6 @@ impl Deref for MmCoinEnum {
             #[cfg(not(target_arch = "wasm32"))]
             MmCoinEnum::LightningCoinVariant(ref c) => c,
             MmCoinEnum::ZCoinVariant(ref c) => c,
-            #[cfg(feature = "enable-sia")]
             MmCoinEnum::SiaCoinVariant(ref c) => c,
             MmCoinEnum::Solana(ref c) => c,
             MmCoinEnum::SolanaToken(ref c) => c,
@@ -4949,7 +4931,6 @@ pub enum CoinProtocol {
         confirmation_targets: PlatformCoinConfirmationTargets,
     },
     ZHTLC(ZcoinProtocolInfo),
-    #[cfg(feature = "enable-sia")]
     SIA,
     NFT {
         platform: String,
@@ -4998,7 +4979,6 @@ impl CoinProtocol {
             | CoinProtocol::BCH { .. }
             | CoinProtocol::TENDERMINT(_)
             | CoinProtocol::ZHTLC(_) => None,
-            #[cfg(feature = "enable-sia")]
             CoinProtocol::SIA => None,
             CoinProtocol::SOLANA(_) => None,
             CoinProtocol::SOLANATOKEN(info) => Some(&info.platform),
@@ -5023,7 +5003,6 @@ impl CoinProtocol {
             | CoinProtocol::NFT { .. } => None,
             #[cfg(not(target_arch = "wasm32"))]
             CoinProtocol::LIGHTNING { .. } => None,
-            #[cfg(feature = "enable-sia")]
             CoinProtocol::SIA => None,
             CoinProtocol::SOLANA(_) => None,
             CoinProtocol::SOLANATOKEN(info) => Some(info.mint_address.to_string()),
@@ -5375,7 +5354,6 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         CoinProtocol::TRX { .. } => return ERR!("TRX protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::LIGHTNING { .. } => return ERR!("Lightning protocol is not supported by lp_coininit"),
-        #[cfg(feature = "enable-sia")]
         CoinProtocol::SIA => {
             let params = try_s!(SiaCoinActivationRequest::from_legacy_req(req));
             try_s!(SiaCoin::new(ctx, coins_en, &params, priv_key_policy).await).into()
@@ -6037,7 +6015,6 @@ pub fn address_by_coin_conf_and_pubkey_str(
         // TODO Alright - generating a Sia address in this case requires including the ed25519 pubkey in the OrderbookItem
         // this will require significant changes and this function is only called from "legacy" dispatcher's `orderbook` rpc
         // so it's not a priority right now
-        #[cfg(feature = "enable-sia")]
         CoinProtocol::SIA => Ok("sia-address".to_string()),
         CoinProtocol::SOLANA(_) => ERR!("address_by_coin_conf_and_pubkey_str is not implemented for SOLANA yet."),
         CoinProtocol::SOLANATOKEN(_) => {

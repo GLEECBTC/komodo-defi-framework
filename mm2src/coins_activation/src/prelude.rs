@@ -1,4 +1,3 @@
-#[cfg(feature = "enable-sia")]
 use coins::siacoin::SiaCoinActivationRequest;
 use coins::utxo::bch::BchActivationRequest;
 use coins::utxo::UtxoActivationParams;
@@ -31,7 +30,6 @@ impl TxHistory for BchActivationRequest {
     }
 }
 
-#[cfg(feature = "enable-sia")]
 impl TxHistory for SiaCoinActivationRequest {
     fn tx_history(&self) -> bool {
         self.tx_history

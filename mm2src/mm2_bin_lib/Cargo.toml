@@ -15,7 +15,6 @@ custom-swap-locktime = ["mm2_main/custom-swap-locktime"] # only for testing purp
 native = ["mm2_main/native"] # Deprecated
 track-ctx-pointer = ["mm2_main/track-ctx-pointer"]
 zhtlc-native-tests = ["mm2_main/zhtlc-native-tests"]
-enable-sia = ["mm2_main/enable-sia"]
 test-ext-api = ["mm2_main/test-ext-api"]
 
 [[bin]]

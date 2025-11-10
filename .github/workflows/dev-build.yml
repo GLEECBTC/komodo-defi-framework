@@ -48,7 +48,7 @@ jobs:
         uses: ./.github/actions/build-cache
 
       - name: Build
-        run: cargo build --features "enable-sia" --release
+        run: cargo build --release
 
       - name: Compress kdf build output
         env:
@@ -113,7 +113,7 @@ jobs:
         uses: ./.github/actions/build-cache
 
       - name: Build
-        run: cargo build --features "enable-sia" --release --target x86_64-apple-darwin
+        run: cargo build --release --target x86_64-apple-darwin
 
       - name: Upload build for next job
         uses: actions/upload-artifact@v4
@@ -172,7 +172,7 @@ jobs:
         uses: ./.github/actions/build-cache
 
       - name: Build
-        run: cargo build --features "enable-sia" --release --target aarch64-apple-darwin
+        run: cargo build --release --target aarch64-apple-darwin
 
       - name: Upload build for next job
         uses: actions/upload-artifact@v4
@@ -294,7 +294,7 @@ jobs:
         uses: ./.github/actions/build-cache
 
       - name: Build
-        run: cargo build --features "enable-sia" --release
+        run: cargo build --release
 
       - name: Compress kdf build output
         env:
@@ -352,7 +352,7 @@ jobs:
         uses: ./.github/actions/build-cache
 
       - name: Build
-        run: cargo rustc --features "enable-sia" --target x86_64-apple-darwin --lib --release --package mm2_bin_lib --crate-type=staticlib
+        run: cargo rustc --target x86_64-apple-darwin --lib --release --package mm2_bin_lib --crate-type=staticlib
 
       - name: Compress kdf build output
         env:
@@ -419,7 +419,7 @@ jobs:
         uses: ./.github/actions/build-cache
 
       - name: Build
-        run: wasm-pack build --release mm2src/mm2_bin_lib --target web --out-dir ../../target/target-wasm-release --features enable-sia
+        run: wasm-pack build --release mm2src/mm2_bin_lib --target web --out-dir ../../target/target-wasm-release
 
       - name: Compress build output
         env:
@@ -472,7 +472,7 @@ jobs:
         uses: ./.github/actions/build-cache
 
       - name: Build
-        run: cargo rustc --features "enable-sia" --target aarch64-apple-ios --lib --release --package mm2_bin_lib --crate-type=staticlib
+        run: cargo rustc --target aarch64-apple-ios --lib --release --package mm2_bin_lib --crate-type=staticlib
 
       - name: Compress kdf build output
         env:
@@ -540,7 +540,7 @@ jobs:
       - name: Build
         run: |
           export PATH=$PATH:/android-ndk/bin
-          CC_aarch64_linux_android=aarch64-linux-android21-clang CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=aarch64-linux-android21-clang cargo rustc --features "enable-sia" --target=aarch64-linux-android --lib --release --crate-type=staticlib --package mm2_bin_lib
+          CC_aarch64_linux_android=aarch64-linux-android21-clang CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=aarch64-linux-android21-clang cargo rustc --target=aarch64-linux-android --lib --release --crate-type=staticlib --package mm2_bin_lib
 
       - name: Compress kdf build output
         env:
@@ -608,7 +608,7 @@ jobs:
       - name: Build
         run: |
           export PATH=$PATH:/android-ndk/bin
-          CC_armv7_linux_androideabi=armv7a-linux-androideabi21-clang CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=armv7a-linux-androideabi21-clang cargo rustc --features "enable-sia" --target=armv7-linux-androideabi --lib --release --crate-type=staticlib --package mm2_bin_lib
+          CC_armv7_linux_androideabi=armv7a-linux-androideabi21-clang CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=armv7a-linux-androideabi21-clang cargo rustc --target=armv7-linux-androideabi --lib --release --crate-type=staticlib --package mm2_bin_lib
 
       - name: Compress kdf build output
         env:
