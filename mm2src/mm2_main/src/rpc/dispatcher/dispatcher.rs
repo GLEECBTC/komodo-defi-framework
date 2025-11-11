@@ -12,7 +12,9 @@ use crate::lp_stats::{
     add_node_to_version_stat, remove_node_from_version_stat, start_version_stat_collection,
     stop_version_stat_collection, update_version_stat_collection,
 };
-use crate::lp_swap::swap_v2_rpcs::{active_swaps_rpc, my_recent_swaps_rpc, my_swap_status_rpc};
+use crate::lp_swap::swap_v2_rpcs::{
+    active_swaps_rpc, kickstart_swap_rpc, my_recent_swaps_rpc, my_swap_status_rpc, stop_swap_rpc,
+};
 use crate::lp_swap::{get_locked_amount_rpc, max_maker_vol, recreate_swap_data, trade_preimage_rpc};
 use crate::lp_wallet::{change_mnemonic_password, delete_wallet_rpc, get_mnemonic_rpc, get_wallet_names_rpc};
 use crate::rpc::lp_commands::db_id::get_shared_db_id;
@@ -272,6 +274,8 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "max_maker_vol" => handle_mmrpc(ctx, request, max_maker_vol).await,
         "my_recent_swaps" => handle_mmrpc(ctx, request, my_recent_swaps_rpc).await,
         "my_swap_status" => handle_mmrpc(ctx, request, my_swap_status_rpc).await,
+        "stop_swap" => handle_mmrpc(ctx, request, stop_swap_rpc).await,
+        "kickstart_swap" => handle_mmrpc(ctx, request, kickstart_swap_rpc).await,
         "my_tx_history" => handle_mmrpc(ctx, request, my_tx_history_v2_rpc).await,
         "orderbook" => handle_mmrpc(ctx, request, orderbook_rpc_v2).await,
         "recreate_swap_data" => handle_mmrpc(ctx, request, recreate_swap_data).await,

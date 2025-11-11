@@ -4,10 +4,12 @@ use super::my_swaps_storage::{MySwapsError, MySwapsOps, MySwapsStorage};
 use super::taker_swap::TakerSavedSwap;
 use super::taker_swap_v2::TakerSwapEvent;
 use super::{
-    active_swaps, MySwapsFilter, SavedSwap, SavedSwapError, SavedSwapIo, LEGACY_SWAP_TYPE, MAKER_SWAP_V2_TYPE,
-    TAKER_SWAP_V2_TYPE,
+    active_swaps, run_maker_swap, run_taker_swap, MySwapsFilter, RunMakerSwapInput, RunTakerSwapInput, SavedSwap,
+    SavedSwapError, SavedSwapIo, SwapsContext, LEGACY_SWAP_TYPE, MAKER_SWAP_V2_TYPE, TAKER_SWAP_V2_TYPE,
 };
-use common::log::{error, warn};
+use coins::lp_coinfind;
+use common::executor::SpawnFuture;
+use common::log::{error, info, warn};
 use common::{calc_total_pages, HttpStatusCode, PagingOptions};
 use derive_more::Display;
 use http::StatusCode;
@@ -28,7 +30,6 @@ cfg_native!(
 );
 
 cfg_wasm32!(
-    use super::SwapsContext;
     use super::maker_swap_v2::MakerSwapDbRepr;
     use super::taker_swap_v2::TakerSwapDbRepr;
     use crate::lp_swap::swap_wasm_db::{MySwapsFiltersTable, SavedSwapTable};
@@ -532,5 +533,146 @@ pub(crate) async fn active_swaps_rpc(
             .map(|uuid_with_type| uuid_with_type.0)
             .collect(),
         statuses,
+    })
+}
+
+#[derive(Deserialize)]
+pub(crate) struct StopSwapRequest {
+    uuid: Uuid,
+}
+
+#[derive(Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub(crate) enum StopSwapErr {
+    Internal(String),
+    NotRunning,
+}
+
+impl HttpStatusCode for StopSwapErr {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            StopSwapErr::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            StopSwapErr::NotRunning => StatusCode::BAD_REQUEST,
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub(crate) struct StopSwapResponse {
+    result: String,
+}
+
+pub(crate) async fn stop_swap_rpc(ctx: MmArc, req: StopSwapRequest) -> MmResult<StopSwapResponse, StopSwapErr> {
+    let swap_ctx = SwapsContext::from_ctx(&ctx).map_err(StopSwapErr::Internal)?;
+    // By just removing the swap's abort handle from the running swaps map, the swap will terminate.
+    if swap_ctx.running_swaps.lock().unwrap().remove(&req.uuid).is_none() {
+        return MmError::err(StopSwapErr::NotRunning);
+    }
+    info!("Swap {} stopped via RPC", req.uuid);
+    Ok(StopSwapResponse {
+        result: "Success".to_string(),
+    })
+}
+
+#[derive(Deserialize)]
+pub(crate) struct KickStartSwapRequest {
+    uuid: Uuid,
+}
+
+#[derive(Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub(crate) enum KickStartSwapErr {
+    Internal(String),
+    AlreadyRunning,
+    AlreadyFinished,
+    NeedsCoinActivation(String),
+    NotFound,
+}
+
+impl HttpStatusCode for KickStartSwapErr {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            KickStartSwapErr::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            KickStartSwapErr::AlreadyRunning
+            | KickStartSwapErr::AlreadyFinished
+            | KickStartSwapErr::NeedsCoinActivation(_) => StatusCode::BAD_REQUEST,
+            KickStartSwapErr::NotFound => StatusCode::NOT_FOUND,
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub(crate) struct KickStartSwapResponse {
+    result: String,
+}
+
+pub(crate) async fn kickstart_swap_rpc(
+    ctx: MmArc,
+    req: KickStartSwapRequest,
+) -> MmResult<KickStartSwapResponse, KickStartSwapErr> {
+    // Make sure first that the swap isn't already running. Note that this is not atomic and we might still end
+    // up with the same swap being kickstarted twice, but we have filesystem swap locks for that. This check is
+    // rather for convenience.
+    let swap_ctx = SwapsContext::from_ctx(&ctx).map_err(KickStartSwapErr::Internal)?;
+    if swap_ctx.running_swaps.lock().unwrap().contains_key(&req.uuid) {
+        return MmError::err(KickStartSwapErr::AlreadyRunning);
+    }
+    // Load the swap from the DB.
+    let swap = match SavedSwap::load_my_swap_from_db(&ctx, None, req.uuid).await {
+        Ok(Some(s)) => s,
+        Ok(None) => {
+            return MmError::err(KickStartSwapErr::NotFound);
+        },
+        Err(e) => {
+            return MmError::err(KickStartSwapErr::Internal(format!(
+                "Error getting the swap from the DB: {e}"
+            )))
+        },
+    };
+    // Make sure that the swap isn't finished.
+    if swap.is_finished() {
+        return MmError::err(KickStartSwapErr::AlreadyFinished);
+    }
+    // Get the maker and taker coins.
+    let find_swap_coin = |ctx: MmArc, maybe_ticker: Result<String, String>, ticker_type: &'static str| async move {
+        match maybe_ticker {
+            Ok(coin) => match lp_coinfind(&ctx, &coin).await {
+                Ok(Some(coin)) => Ok(coin),
+                Ok(None) => MmError::err(KickStartSwapErr::NeedsCoinActivation(format!(
+                    "{ticker_type} coin {} must be activated",
+                    coin
+                ))),
+                Err(e) => MmError::err(KickStartSwapErr::Internal(format!(
+                    "Error trying to find {ticker_type} coin: {e}"
+                ))),
+            },
+            Err(e) => MmError::err(KickStartSwapErr::Internal(format!(
+                "Error getting {ticker_type} ticker of swap: {e}"
+            ))),
+        }
+    };
+    let maker_coin = find_swap_coin(ctx.clone(), swap.maker_coin_ticker(), "maker").await?;
+    let taker_coin = find_swap_coin(ctx.clone(), swap.taker_coin_ticker(), "taker").await?;
+    // Kickstart the swap. A new abort handle will show up shortly for the swap.
+    match swap {
+        SavedSwap::Maker(saved_swap) => ctx.spawner().spawn(run_maker_swap(
+            RunMakerSwapInput::KickStart {
+                maker_coin,
+                taker_coin,
+                swap_uuid: saved_swap.uuid,
+            },
+            ctx,
+        )),
+        SavedSwap::Taker(saved_swap) => ctx.spawner().spawn(run_taker_swap(
+            RunTakerSwapInput::KickStart {
+                maker_coin,
+                taker_coin,
+                swap_uuid: saved_swap.uuid,
+            },
+            ctx,
+        )),
+    }
+    Ok(KickStartSwapResponse {
+        result: "Success".to_string(),
     })
 }

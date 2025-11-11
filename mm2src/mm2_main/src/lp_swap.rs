@@ -503,6 +503,22 @@ pub struct RecoveredSwap {
     transaction: TransactionEnum,
 }
 
+#[derive(Display, Debug, PartialEq)]
+pub enum RecoverSwapError {
+    // We might not find the original payment tx on chain (e.g. re-orged). This doesn't mean though that nobody has it.
+    // TODO: These coins should be spent ASAP to avoid them getting locked (or stolen).
+    #[display(fmt = "The payment tx is not on-chain. Nothing to recover.")]
+    PaymentTxNotFound,
+    #[display(fmt = "An unknown error occurred. Retrying might fix it: {}", _0)]
+    Temporary(String),
+    #[display(fmt = "The swap is not recoverable: {}", _0)]
+    Irrecoverable(String),
+    #[display(fmt = "Wait {}s and try to recover again.", _0)]
+    WaitAndRetry(u64),
+    #[display(fmt = "The funds will be automatically recovered after lock-time: {}", _0)]
+    AutoRecoverableAfter(u64),
+}
+
 /// Represents the amount of a coin locked by ongoing swap
 #[derive(Debug)]
 pub struct LockedAmount {
@@ -547,8 +563,11 @@ struct LockedAmountInfo {
     locked_amount: LockedAmount,
 }
 
+/// A running swap is the swap accompanied by the abort handle of the thread the swap is running on.
+type RunningSwap = (Arc<dyn AtomicSwap>, AbortOnDropHandle);
+
 struct SwapsContext {
-    running_swaps: Mutex<HashMap<Uuid, Arc<dyn AtomicSwap>>>,
+    running_swaps: Mutex<HashMap<Uuid, RunningSwap>>,
     active_swaps_v2_infos: Mutex<HashMap<Uuid, ActiveSwapV2Info>>,
     banned_pubkeys: Mutex<TimedMap<H256Json, BanReason>>,
     swap_msgs: Mutex<HashMap<Uuid, SwapMsgStore>>,
@@ -651,21 +670,20 @@ pub fn get_locked_amount(ctx: &MmArc, coin: &str) -> MmNumber {
     let swap_ctx = SwapsContext::from_ctx(ctx).unwrap();
     let swap_lock = swap_ctx.running_swaps.lock().unwrap();
 
-    let mut locked =
-        swap_lock
-            .values()
-            .flat_map(|swap| swap.locked_amount())
-            .fold(MmNumber::from(0), |mut total_amount, locked| {
-                if locked.coin == coin {
-                    total_amount += locked.amount;
+    let mut locked = swap_lock.values().flat_map(|(swap, _)| swap.locked_amount()).fold(
+        MmNumber::from(0),
+        |mut total_amount, locked| {
+            if locked.coin == coin {
+                total_amount += locked.amount;
+            }
+            if let Some(trade_fee) = locked.trade_fee {
+                if trade_fee.coin == coin && !trade_fee.paid_from_trading_vol {
+                    total_amount += trade_fee.amount;
                 }
-                if let Some(trade_fee) = locked.trade_fee {
-                    if trade_fee.coin == coin && !trade_fee.paid_from_trading_vol {
-                        total_amount += trade_fee.amount;
-                    }
-                }
-                total_amount
-            });
+            }
+            total_amount
+        },
+    );
     drop(swap_lock);
 
     let locked_amounts = swap_ctx.locked_amounts.lock().unwrap();
@@ -688,7 +706,7 @@ pub fn get_locked_amount(ctx: &MmArc, coin: &str) -> MmNumber {
 
 /// Clear up all the running swaps.
 ///
-/// This doesn't mean that these swaps will be stopped. They can only be stopped from the abortable systems they are running on top of.
+/// This also auto-stops any running swaps since their abort handles will get triggered (assuming these abort handles aren't already triggered by other means).
 pub fn clear_running_swaps(ctx: &MmArc) {
     let swap_ctx = SwapsContext::from_ctx(ctx).unwrap();
     swap_ctx.running_swaps.lock().unwrap().clear();
@@ -701,8 +719,8 @@ fn get_locked_amount_by_other_swaps(ctx: &MmArc, except_uuid: &Uuid, coin: &str)
 
     swap_lock
         .values()
-        .filter(|swap| swap.uuid() != except_uuid)
-        .flat_map(|swap| swap.locked_amount())
+        .filter(|(swap, _)| swap.uuid() != except_uuid)
+        .flat_map(|(swap, _)| swap.locked_amount())
         .fold(MmNumber::from(0), |mut total_amount, locked| {
             if locked.coin == coin {
                 total_amount += locked.amount;
@@ -720,7 +738,7 @@ pub fn active_swaps_using_coins(ctx: &MmArc, coins: &HashSet<String>) -> Result<
     let swap_ctx = try_s!(SwapsContext::from_ctx(ctx));
     let swaps = try_s!(swap_ctx.running_swaps.lock());
     let mut uuids = vec![];
-    for swap in swaps.values() {
+    for (swap, _) in swaps.values() {
         if coins.contains(&swap.maker_coin().to_string()) || coins.contains(&swap.taker_coin().to_string()) {
             uuids.push(*swap.uuid())
         }
