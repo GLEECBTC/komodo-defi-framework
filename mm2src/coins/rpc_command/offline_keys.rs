@@ -354,7 +354,7 @@ async fn offline_hd_keys_export_internal(
 
                 // The derivation path for a Z-coin account correctly stops at the account index.
                 let derivation_path = format!("{base_derivation_path}/{account_index}'");
-                let z_derivation_path = format!("{z_derivation_path_str}/{account_index}");
+                let z_derivation_path = format!("{z_derivation_path_str}/{account_index}'");
 
                 addresses.push(HdAddressInfo {
                     derivation_path,
