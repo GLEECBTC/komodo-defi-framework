@@ -2711,7 +2711,13 @@ pub async fn wait_check_stats_swap_status(mm: &MarketMakerIt, uuid: &str, timeou
             }))
             .await
             .unwrap();
-        assert!(response.0.is_success(), "!status of {}: {}", uuid, response.1);
+        if !response.0.is_success() {
+            Timer::sleep(1.).await;
+            if get_utc_timestamp() > wait_until {
+                panic!("Timed out waiting for swap stats status uuid={}, latest status={}", uuid, response.1);
+            }
+            continue;
+        }
         let status_response: Json = json::from_str(&response.1).unwrap();
 
         // Perform the checks only if the maker and taker stats are available.
