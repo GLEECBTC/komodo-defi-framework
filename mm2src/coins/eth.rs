@@ -152,7 +152,7 @@ pub use eth_utils::{
 };
 use eth_utils::{
     get_conf_param_or_from_plaform_coin, get_function_input_data, get_function_name, ESTIMATE_GAS_MULT,
-    GAS_PRICE_ADJUST, MAX_ETH_TX_TYPE_SUPPORTED, SWAP_GAS_FEE_POLICY,
+    GAS_PRICE_ADJUST, MAX_ETH_TX_TYPE_SUPPORTED, SWAP_GAS_FEE_POLICY, EIP4337_URL,
 };
 
 pub use rlp;
@@ -162,6 +162,8 @@ cfg_native! {
 
 pub mod eth_balance_events;
 mod eth_rpc;
+mod eip4337_rpc;
+use eip4337_rpc::Eip4337Rpc;
 #[cfg(test)]
 mod eth_tests;
 #[cfg(target_arch = "wasm32")]
@@ -196,6 +198,7 @@ use eth_swap_v2::{extract_id_from_tx_data, EthPaymentType, PaymentMethod, SpendT
 
 pub mod eth_utils;
 pub mod tron;
+mod eth_abstraction;
 
 /// Default timeout to wait for eth rpc request to complete
 pub(crate) const ETH_RPC_REQUEST_TIMEOUT_S: Duration = Duration::from_secs(30);
@@ -930,6 +933,7 @@ pub struct EthCoinImpl {
     fallback_swap_contract: Option<Address>,
     contract_supports_watchers: bool,
     web3_instances: AsyncMutex<Vec<Web3Instance>>,
+    eip4337_rpc: Option<Uri>,
     decimals: u8,
     history_sync_state: Mutex<HistorySyncState>,
     required_confirmations: AtomicU64,
@@ -6769,6 +6773,11 @@ pub async fn eth_coin_from_conf_and_request(
         get_conf_param_or_from_plaform_coin(ctx, conf, &coin_type, SWAP_GAS_FEE_POLICY)?.unwrap_or_default();
     let swap_gas_fee_policy: SwapGasFeePolicy =
         json::from_value(req["swap_gas_fee_policy"].clone()).unwrap_or(swap_gas_fee_policy_default);
+    let eip4337_rpc = if let Ok(uri_str) = json::from_value::<String>(req[EIP4337_URL].clone()) {
+        Some(try_s!(uri_str.parse()))
+    } else {
+        None
+    };
 
     let coin = EthCoinImpl {
         priv_key_policy: key_pair,
@@ -6784,6 +6793,7 @@ pub async fn eth_coin_from_conf_and_request(
         decimals,
         ticker: ticker.into(),
         web3_instances: AsyncMutex::new(web3_instances),
+        eip4337_rpc,
         history_sync_state: Mutex::new(initial_history_state),
         swap_gas_fee_policy: Mutex::new(swap_gas_fee_policy),
         max_eth_tx_type,
@@ -7730,6 +7740,7 @@ impl EthCoin {
             fallback_swap_contract: self.fallback_swap_contract,
             contract_supports_watchers: self.contract_supports_watchers,
             web3_instances: AsyncMutex::new(self.web3_instances.lock().await.clone()),
+            eip4337_rpc: None,
             decimals: self.decimals,
             history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
             required_confirmations: AtomicU64::new(
