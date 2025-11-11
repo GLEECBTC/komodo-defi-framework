@@ -36,7 +36,6 @@ log:
     format: human
 "#;
 
-// FIXME Alright - Nate provided a simplified version of this... use that after testing this works at all
 pub const WALLETD_NETWORK_CONFIG: &str = r#"{
     "network": {
         "name": "komodo-ci",

@@ -8,10 +8,6 @@ use std::{cmp, fmt, ops, str};
 
 macro_rules! impl_hash {
     ($name: ident, $size: expr) => {
-        // FIXME Alright - implementing Copy for these types is **extremely dangerous** because the
-        // H256 type(possibly others as well) is often used for private key material.
-        // This means trivial typos can lead to private key material being unknowingly copied around
-        // in memory.
         #[derive(Copy)]
         #[repr(C)]
         pub struct $name([u8; $size]);
@@ -34,8 +30,6 @@ macro_rules! impl_hash {
             }
         }
 
-        // FIXME Alright - This is not ideal either because it allows cloning private key material.
-        // See above comment about Copy.
         impl Clone for $name {
             fn clone(&self) -> Self {
                 *self

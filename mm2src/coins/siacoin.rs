@@ -1713,14 +1713,15 @@ impl TryFrom<WaitForHTLCTxSpendArgs<'_>> for SiaWaitForHTLCTxSpendArgs {
 
 /// Sia typed equivalent of coins::CheckIfMyPaymentSentArgs
 /// Does not include irrelevant fields swap_contract_address, swap_unique_data or payment_instructions
-#[allow(dead_code)] // FIXME Alright - current WIP
 struct SiaCheckIfMyPaymentSentArgs {
     time_lock: u64,
     /// The PublicKey that appears in the HTLC SpendPolicy success branch
     /// aka "other_pub" in coins::CheckIfMyPaymentSentArgs
     success_public_key: PublicKey,
     secret_hash: Hash256,
+    #[expect(dead_code)]
     search_from_block: u64,
+    #[expect(dead_code)]
     amount: Currency,
 }
 
@@ -1812,14 +1813,12 @@ impl SwapOps for SiaCoin {
             .map_err(|e| MmError::new(ValidatePaymentError::InternalError(e.to_string())))
     }
 
-    // FIXME Alright
     async fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
         self.sia_validate_maker_payment(input)
             .await
             .map_err(|e| MmError::new(ValidatePaymentError::InternalError(e.to_string())))
     }
 
-    // FIXME Alright
     async fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
         self.sia_validate_taker_payment(input)
             .await
@@ -1962,7 +1961,6 @@ impl TryFrom<Vec<u8>> for SiaTransaction {
 
 impl Transaction for SiaTransaction {
     // serde should always be succesful but write an empty vec just in case.
-    // FIXME Alright this trait should be refactored to return a Result for this method
     fn tx_hex(&self) -> Vec<u8> {
         serde_json::ser::to_vec(self).unwrap_or_default()
     }

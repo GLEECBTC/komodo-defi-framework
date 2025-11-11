@@ -64,10 +64,6 @@ use std::str::FromStr;
 ///   This number is chosen so that it does not cross with real accounts;
 /// * `change = 0` - nothing special.
 /// * `address_index = 0`.
-// FIXME Alright - it's a strange design choice to use a child of `m/44'/141'` as these keys should
-// be reserved **only** for KMD operations.
-// A path such as m/77777'/0' or m/77777'/0'/0'/0'/0' would be more appropriate.
-// As per BIP43, "Purpose codes from 10001 to 19999 are reserved for SLIPs. "
 pub(crate) fn mm2_internal_der_path() -> DerivationPath {
     DerivationPath::from_str("m/44'/141'/2147483647/0/0").expect("valid derivation path")
 }

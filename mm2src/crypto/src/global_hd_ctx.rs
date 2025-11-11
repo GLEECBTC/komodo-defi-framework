@@ -33,7 +33,6 @@ pub struct Bip39Seed(pub [u8; 64]);
 
 pub struct GlobalHDAccountCtx {
     bip39_seed: Bip39Seed,
-    // FIXME Alright - this field name is a misnomer, right?
     /// The master extended private key `m`, as defined within the BIP32 standard.
     bip39_secp_priv_key: ExtendedPrivateKey<secp256k1::SecretKey>,
     /// The master extended private key `m`, as defined within the SLIP-10 standard.
@@ -140,7 +139,7 @@ fn test_slip_10_ed25519_vector_1() {
     use std::str::FromStr;
 
     let ed25519_master_priv_key =
-        ExtendedSigningKey::from_seed(&hex::decode("000102030405060708090a0b0c0d0e0f").unwrap()).unwrap(); // FIXME Alright
+        ExtendedSigningKey::from_seed(&hex::decode("000102030405060708090a0b0c0d0e0f").unwrap()).unwrap();
 
     // master xpriv aka "m"
     let known_chain_code = hex::decode("90046a93de5380a72b5e45010748567d5ea02bbf6522f979e05c0d8d8ca9fffb").unwrap();
@@ -227,7 +226,7 @@ fn test_slip_10_ed25519_vector_2() {
 
     let seed_bytes : [u8;64] = hex::decode("fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542").unwrap().try_into().unwrap();
     let seed = Bip39Seed(seed_bytes);
-    let ed25519_master_priv_key = ExtendedSigningKey::from_seed(&seed.0).unwrap(); // FIXME Alright
+    let ed25519_master_priv_key = ExtendedSigningKey::from_seed(&seed.0).unwrap();
 
     // master xpriv aka "m"
     let known_chain_code = hex::decode("ef70a74db9c3a5af931b5fe73ed8e1a53464133654fd55e7a66f8570b8e33c3b").unwrap();
