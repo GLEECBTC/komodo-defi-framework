@@ -2302,7 +2302,7 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
                         error!("[swap uuid={uuid_str}] {event:?}");
                     }
 
-                    status.status(swap_tags!(), &event.status_str());
+                    let event_status_str = event.status_str();
                     running_swap.apply_event(event);
 
                     // Send a notification to the swap status streamer about a new event.
@@ -2317,6 +2317,7 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
                     save_my_maker_swap_event(&ctx, &running_swap, to_save)
                         .await
                         .expect("!save_my_maker_swap_event");
+                    status.status(swap_tags!(), &event_status_str);
                 }
                 match res.0 {
                     Some(c) => {

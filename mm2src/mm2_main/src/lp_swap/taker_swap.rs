@@ -493,7 +493,7 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
                         error!("[swap uuid={uuid_str}] {event:?}");
                     }
 
-                    status.status(&[&"swap", &("uuid", uuid_str.as_str())], &event.status_str());
+                    let event_status_str = event.status_str();
                     running_swap.apply_event(event);
 
                     // Send a notification to the swap status streamer about a new event.
@@ -508,6 +508,7 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
                     save_my_taker_swap_event(&ctx, &running_swap, to_save)
                         .await
                         .expect("!save_my_taker_swap_event");
+                    status.status(&[&"swap", &("uuid", uuid_str.as_str())], &event_status_str);
                 }
                 match res.0 {
                     Some(c) => {
