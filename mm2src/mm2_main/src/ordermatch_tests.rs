@@ -1223,8 +1223,8 @@ fn test_cancel_by_single_coin() {
         .set(Arc::new(Mutex::new(connection)))
         .map_err(|_| "Already Initialized".to_string());
 
-    delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
-    delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
+    delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(Box::pin(std::future::ready(()))));
+    delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(Box::pin(std::future::ready(()))));
 
     let (cancelled, _) = block_on(cancel_orders_by(&ctx, CancelBy::Coin { ticker: "RICK".into() })).unwrap();
     block_on(rx.take(2).collect::<Vec<_>>());
@@ -1245,8 +1245,8 @@ fn test_cancel_by_pair() {
         .set(Arc::new(Mutex::new(connection)))
         .map_err(|_| "Already Initialized".to_string());
 
-    delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
-    delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
+    delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(Box::pin(std::future::ready(()))));
+    delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(Box::pin(std::future::ready(()))));
 
     let (cancelled, _) = block_on(cancel_orders_by(
         &ctx,
@@ -1274,8 +1274,8 @@ fn test_cancel_by_all() {
         .set(Arc::new(Mutex::new(connection)))
         .map_err(|_| "Already Initialized".to_string());
 
-    delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
-    delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
+    delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(Box::pin(std::future::ready(()))));
+    delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(Box::pin(std::future::ready(()))));
 
     let (cancelled, _) = block_on(cancel_orders_by(&ctx, CancelBy::All)).unwrap();
     block_on(rx.take(3).collect::<Vec<_>>());

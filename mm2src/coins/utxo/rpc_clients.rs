@@ -193,6 +193,15 @@ impl UtxoRpcClientEnum {
             UtxoRpcClientEnum::Electrum(_) => false,
         }
     }
+
+    /// Checks if all `ElectrumClient` servers are offline.
+    pub fn is_offline(&self) -> bool {
+        if let UtxoRpcClientEnum::Electrum(client) = self {
+            client.is_offline()
+        } else {
+            false
+        }
+    }
 }
 
 /// Generic unspent info required to build transactions, we need this separate type because native

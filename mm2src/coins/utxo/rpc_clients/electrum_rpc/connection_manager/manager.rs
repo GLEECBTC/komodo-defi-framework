@@ -317,6 +317,19 @@ impl ConnectionManager {
         self.write_connections().remove(server_address);
         Ok(connection)
     }
+
+    /// Checks if there are no live server connections available.
+    pub fn is_completely_offline(&self) -> bool {
+        for server_address in self.read_maintained_connections().values() {
+            if let Some(connection) = self.get_connection(server_address) {
+                if connection.is_connected() {
+                    return false;
+                }
+            };
+        }
+
+        true
+    }
 }
 
 // Background tasks.

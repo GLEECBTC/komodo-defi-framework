@@ -3976,6 +3976,27 @@ impl MmCoinEnum {
         self.ticker() == self.platform_ticker()
     }
 
+    /// Check if coin server connection is offline.
+    pub async fn is_offline(&self) -> bool {
+        match self {
+            MmCoinEnum::Bch(c) => c.as_ref().rpc_client.is_offline(),
+            MmCoinEnum::QtumCoin(c) => c.as_ref().rpc_client.is_offline(),
+            MmCoinEnum::Qrc20Coin(c) => c.as_ref().rpc_client.is_offline(),
+            MmCoinEnum::SlpToken(c) => c.as_ref().rpc_client.is_offline(),
+            MmCoinEnum::UtxoCoin(c) => c.as_ref().rpc_client.is_offline(),
+            MmCoinEnum::ZCoin(c) => c.as_ref().rpc_client.is_offline(),
+            MmCoinEnum::Tendermint(c) => c.get_live_client().await.is_err(),
+            MmCoinEnum::EthCoin(c) => c.current_block().compat().await.is_err(),
+            MmCoinEnum::TendermintToken(c) => c.platform_coin.get_live_client().await.is_err(),
+            #[cfg(feature = "enable-sia")]
+            MmCoinEnum::SiaCoin(c) => c.is_offline().await,
+            #[cfg(not(target_arch = "wasm32"))]
+            MmCoinEnum::LightningCoin(c) => c.platform_coin().as_ref().rpc_client.is_offline(),
+            #[cfg(any(test, feature = "for-tests"))]
+            MmCoinEnum::Test(_) => false,
+        }
+    }
+
     /// Determines the secret hash algorithm for a coin, prioritizing specific algorithms for certain protocols.
     /// # Attention
     /// When adding new coins, update this function to specify their appropriate secret hash algorithm.

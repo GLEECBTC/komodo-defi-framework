@@ -195,7 +195,7 @@ impl ElectrumConnection {
         self.abortable_system.weak_spawner()
     }
 
-    fn is_connected(&self) -> bool {
+    pub(crate) fn is_connected(&self) -> bool {
         self.tx.lock().unwrap().is_some()
     }
 

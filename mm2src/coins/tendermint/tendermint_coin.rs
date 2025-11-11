@@ -90,7 +90,7 @@ use primitives::hash::H256;
 use regex::Regex;
 use rpc::v1::types::{Bytes as BytesJson, H264 as H264Json};
 use serde_json::{self as json, Value as Json};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::convert::{TryFrom, TryInto};
 use std::io;
 use std::num::NonZeroU32;
@@ -365,7 +365,14 @@ impl TendermintActivationPolicy {
 struct TendermintRpcClient(AsyncMutex<TendermintRpcClientImpl>);
 
 struct TendermintRpcClientImpl {
-    rpc_clients: Vec<HttpClient>,
+    /// Using `VecDeque` instead of `Vec` for several performance reasons:
+    /// 1. O(1) operations for adding/removing clients at both ends (vs O(n) for `Vec.rotate_left()`)
+    /// 2. More efficient for the round-robin client selection pattern we use
+    /// 3. Better handling of client rotation without needing to clone the entire collection
+    ///
+    /// This approach improves performance in high-frequency scenarios where we need to
+    /// try multiple RPC nodes quickly to find a responsive one.
+    rpc_clients: VecDeque<HttpClient>,
 }
 
 #[async_trait]
@@ -375,22 +382,31 @@ impl RpcCommonOps for TendermintCoin {
 
     async fn get_live_client(&self) -> Result<Self::RpcClient, Self::Error> {
         let mut client_impl = self.client.0.lock().await;
+        let client_count = client_impl.rpc_clients.len();
+
         // try to find first live client
-        for (i, client) in client_impl.rpc_clients.clone().into_iter().enumerate() {
+        for _ in 0..client_count {
+            // SAFETY: Safe because we know the count and avoid bound check.
+            let client = client_impl.rpc_clients.pop_front().unwrap();
             match client.perform(HealthRequest).timeout(Duration::from_secs(15)).await {
                 Ok(Ok(_)) => {
                     // Bring the live client to the front of rpc_clients
-                    client_impl.rpc_clients.rotate_left(i);
+                    client_impl.rpc_clients.push_front(client.clone());
                     return Ok(client);
                 },
                 Ok(Err(rpc_error)) => {
                     debug!("Could not perform healthcheck on: {:?}. Error: {}", &client, rpc_error);
+                    // Put the failed client at the back of the queue
+                    client_impl.rpc_clients.push_back(client);
                 },
                 Err(timeout_error) => {
                     debug!("Healthcheck timeout exceed on: {:?}. Error: {}", &client, timeout_error);
+                    // Put the failed client at the back of the queue
+                    client_impl.rpc_clients.push_back(client);
                 },
             };
         }
+
         return Err(TendermintCoinRpcError::RpcClientError(
             "All the current rpc nodes are unavailable.".to_string(),
         ));
@@ -3190,7 +3206,7 @@ impl TendermintCoin {
     }
 }
 
-fn clients_from_urls(ctx: &MmArc, nodes: Vec<RpcNode>) -> MmResult<Vec<HttpClient>, TendermintInitErrorKind> {
+fn clients_from_urls(ctx: &MmArc, nodes: Vec<RpcNode>) -> MmResult<VecDeque<HttpClient>, TendermintInitErrorKind> {
     if nodes.is_empty() {
         return MmError::err(TendermintInitErrorKind::EmptyRpcUrls);
     }
@@ -3202,20 +3218,21 @@ fn clients_from_urls(ctx: &MmArc, nodes: Vec<RpcNode>) -> MmResult<Vec<HttpClien
         None
     };
 
-    let mut clients = Vec::new();
-    let mut errors = Vec::new();
+    let mut clients = VecDeque::with_capacity(nodes.len());
+    let mut errors = Vec::with_capacity(nodes.len());
 
     // check that all urls are valid
     // keep all invalid urls in one vector to show all of them in error
     for node in nodes.iter() {
         let proxy_sign_keypair = if node.komodo_proxy { p2p_keypair.clone() } else { None };
         match HttpClient::new(node.url.as_str(), proxy_sign_keypair) {
-            Ok(client) => clients.push(client),
+            Ok(client) => clients.push_back(client),
             Err(e) => errors.push(format!("Url {} is invalid, got error {}", node.url, e)),
         }
     }
     drop_mutability!(clients);
     drop_mutability!(errors);
+
     if !errors.is_empty() {
         let errors: String = errors.into_iter().join(", ");
         return MmError::err(TendermintInitErrorKind::RpcClientInitError(errors));

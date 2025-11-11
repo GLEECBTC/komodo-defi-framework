@@ -834,6 +834,10 @@ impl ElectrumClient {
 
         Box::new(fut.boxed().compat())
     }
+
+    pub fn is_offline(&self) -> bool {
+        self.connection_manager.is_completely_offline()
+    }
 }
 
 // if mockable is placed before async_trait there is `munmap_chunk(): invalid pointer` error on async fn mocking attempt
