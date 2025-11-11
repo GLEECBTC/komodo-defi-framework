@@ -6409,6 +6409,7 @@ fn orderbook_address(
         // Todo: a routing node will know about a payment it routed but not the sender or the receiver. This will require using a new keypair for every order/swap
         // Todo: similar to how it's done for zcoin.
         CoinProtocol::LIGHTNING { .. } => Ok(OrderbookAddress::Shielded),
+        // TODO implement for SIA "this is needed to show the address in the orderbook"
         CoinProtocol::SIA => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
         CoinProtocol::SOLANA(_) => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
         CoinProtocol::SOLANATOKEN(_) => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),

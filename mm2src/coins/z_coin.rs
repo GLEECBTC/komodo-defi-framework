@@ -313,11 +313,7 @@ impl ZCoin {
         &self.z_fields.consensus_params
     }
 
-    /// Asynchronously checks the synchronization status and returns `true` if
-    /// the Sapling state has finished synchronizing, meaning that the block number is available.
-    /// Otherwise, it returns `false`.
-    // FIXME Alright - this import is broken when running sia functional tests
-    //#[cfg(any(test, feature = "run-docker-tests"))]
+    #[cfg(any(test, feature = "run-docker-tests"))]
     #[inline]
     pub async fn is_sapling_state_synced(&self) -> bool {
         use futures::StreamExt;
@@ -1176,8 +1172,7 @@ impl<'a> ZCoinBuilder<'a> {
 /// Initialize `ZCoin` with a forced `z_spending_key` for dockerized tests.
 /// db_dir_path is where ZOMBIE_wallet.db located
 /// Note that ZOMBIE_cache.db (db where blocks are downloaded to create ZOMBIE_wallet.db) is created in-memory (see BlockDbImpl::new fn)
-// #[cfg(any(test, feature = "run-docker-tests"))]
-// FIXME Alright - this import is broken when running sia functional tests
+#[cfg(any(test, feature = "run-docker-tests"))]
 #[allow(clippy::too_many_arguments)]
 pub async fn z_coin_from_conf_and_params_with_docker(
     ctx: &MmArc,
