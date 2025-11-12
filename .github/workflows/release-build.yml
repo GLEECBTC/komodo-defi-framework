@@ -48,10 +48,7 @@ jobs:
         uses: ./.github/actions/build-cache
 
       - name: Build
-        run: |
-          rm -f ./MM_VERSION
-          echo $COMMIT_HASH > ./MM_VERSION
-          cargo build --release
+        run: cargo build --release
 
       - name: Compress kdf build output
         run: |
@@ -110,10 +107,7 @@ jobs:
         uses: ./.github/actions/build-cache
 
       - name: Build
-        run: |
-          rm -f ./MM_VERSION
-          echo $COMMIT_HASH > ./MM_VERSION
-          cargo build --release --target x86_64-apple-darwin
+        run: cargo build --release --target x86_64-apple-darwin
 
       - name: Upload build for next job
         uses: actions/upload-artifact@v4
@@ -168,10 +162,7 @@ jobs:
         uses: ./.github/actions/build-cache
 
       - name: Build
-        run: |
-          rm -f ./MM_VERSION
-          echo $COMMIT_HASH > ./MM_VERSION
-          cargo build --release --target aarch64-apple-darwin
+        run: cargo build --release --target aarch64-apple-darwin
 
       - name: Upload build for next job
         uses: actions/upload-artifact@v4
@@ -289,12 +280,7 @@ jobs:
         uses: ./.github/actions/build-cache
 
       - name: Build
-        run: |
-          if (test-path "./MM_VERSION") {
-            remove-item "./MM_VERSION"
-          }
-          echo $Env:COMMIT_HASH > ./MM_VERSION
-          cargo build --release
+        run: cargo build --release
 
       - name: Compress kdf build output
         run: |
@@ -343,10 +329,7 @@ jobs:
         uses: ./.github/actions/build-cache
 
       - name: Build
-        run: |
-          rm -f ./MM_VERSION
-          echo $COMMIT_HASH > ./MM_VERSION
-          cargo rustc --target x86_64-apple-darwin --lib --release --package mm2_bin_lib --crate-type=staticlib
+        run: cargo rustc --target x86_64-apple-darwin --lib --release --package mm2_bin_lib --crate-type=staticlib
 
       - name: Compress kdf build output
         run: |
@@ -458,10 +441,7 @@ jobs:
         uses: ./.github/actions/build-cache
 
       - name: Build
-        run: |
-          rm -f ./MM_VERSION
-          echo $COMMIT_HASH > ./MM_VERSION
-          cargo rustc --target aarch64-apple-ios --lib --release --package mm2_bin_lib --crate-type=staticlib
+        run: cargo rustc --target aarch64-apple-ios --lib --release --package mm2_bin_lib --crate-type=staticlib
 
       - name: Compress kdf build output
         run: |
