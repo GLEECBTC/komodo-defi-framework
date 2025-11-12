@@ -176,7 +176,7 @@ serde = { version = "1", default-features = false }
 serde_bytes = "0.11.5"
 serde_derive = { version = "1", default-features = false }
 serde_json = { version = "1.0.140", features = ["preserve_order", "raw_value"] }
-serde_with = "1.14.0"
+serde_with = "3.14.1"
 serde_repr = "0.1.6"
 serde-wasm-bindgen = "0.4.3"
 sha-1 = "0.9"
