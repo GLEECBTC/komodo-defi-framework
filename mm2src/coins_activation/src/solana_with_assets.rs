@@ -75,7 +75,7 @@ impl TryPlatformCoinFromMmCoinEnum for SolanaCoin {
         Self: Sized,
     {
         match coin {
-            MmCoinEnum::Solana(coin) => Some(coin),
+            MmCoinEnum::SolanaCoinVariant(coin) => Some(coin),
             _ => None,
         }
     }
@@ -151,7 +151,7 @@ impl PlatformCoinWithTokensActivationOps for SolanaCoin {
         Self: Sized,
     {
         match coin {
-            MmCoinEnum::Solana(coin) => Some(coin),
+            MmCoinEnum::SolanaCoinVariant(coin) => Some(coin),
             _ => None,
         }
     }

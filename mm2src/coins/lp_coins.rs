@@ -3893,8 +3893,8 @@ pub enum MmCoinEnum {
     #[cfg(not(target_arch = "wasm32"))]
     LightningCoinVariant(LightningCoin),
     SiaCoinVariant(SiaCoin),
-    Solana(solana::SolanaCoin),
-    SolanaToken(solana::SolanaToken),
+    SolanaCoinVariant(solana::SolanaCoin),
+    SolanaTokenVariant(solana::SolanaToken),
     #[cfg(any(test, feature = "for-tests"))]
     TestVariant(TestCoin),
 }
@@ -3975,13 +3975,13 @@ impl From<SiaCoin> for MmCoinEnum {
 
 impl From<solana::SolanaCoin> for MmCoinEnum {
     fn from(c: solana::SolanaCoin) -> MmCoinEnum {
-        MmCoinEnum::Solana(c)
+        MmCoinEnum::SolanaCoinVariant(c)
     }
 }
 
 impl From<solana::SolanaToken> for MmCoinEnum {
     fn from(c: solana::SolanaToken) -> MmCoinEnum {
-        MmCoinEnum::SolanaToken(c)
+        MmCoinEnum::SolanaTokenVariant(c)
     }
 }
 
@@ -4002,8 +4002,8 @@ impl Deref for MmCoinEnum {
             MmCoinEnum::LightningCoinVariant(ref c) => c,
             MmCoinEnum::ZCoinVariant(ref c) => c,
             MmCoinEnum::SiaCoinVariant(ref c) => c,
-            MmCoinEnum::Solana(ref c) => c,
-            MmCoinEnum::SolanaToken(ref c) => c,
+            MmCoinEnum::SolanaCoinVariant(ref c) => c,
+            MmCoinEnum::SolanaTokenVariant(ref c) => c,
             #[cfg(any(test, feature = "for-tests"))]
             MmCoinEnum::TestVariant(ref c) => c,
         }
