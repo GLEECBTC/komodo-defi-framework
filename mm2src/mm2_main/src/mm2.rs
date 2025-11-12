@@ -78,7 +78,7 @@ pub mod heartbeat_event;
 pub mod lp_dispatcher;
 pub mod lp_healthcheck;
 pub mod lp_message_service;
-pub mod lp_native_dex;
+mod lp_native_dex;
 pub mod lp_network;
 pub mod lp_ordermatch;
 pub mod lp_stats;
