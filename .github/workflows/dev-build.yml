@@ -255,6 +255,7 @@ jobs:
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
