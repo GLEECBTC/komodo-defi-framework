@@ -151,12 +151,12 @@ ethcore-transaction.workspace = true
 rustc-hex.workspace = true
 sia-rust.workspace = true
 url.workspace = true
-reqwest = { workspace = true, features = ["json"] }
 base64.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 # todo: try to use async features
 testcontainers = { workspace = true, features = ["blocking"] }
+reqwest = { workspace = true, features = ["json"] }
 
 [build-dependencies]
 chrono.workspace = true

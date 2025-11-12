@@ -156,8 +156,7 @@ quote = "1.0"
 regex = "1"
 relay_client = { git = "https://github.com/komodoplatform/walletconnectrust", tag = "k-0.1.3" }
 relay_rpc = { git = "https://github.com/komodoplatform/walletconnectrust", tag = "k-0.1.3" }
-# Todo: recheck this before merge in all crates
-reqwest = { version = "0.11.9", default-features = false, features = ["json"] }
+reqwest = { version = "0.11.9", default-features = false }
 rand = { version = "0.7", default-features = false, features = ["std", "small_rng", "wasm-bindgen"] }
 rcgen = "0.10"
 ripemd160 = "0.9.0"
