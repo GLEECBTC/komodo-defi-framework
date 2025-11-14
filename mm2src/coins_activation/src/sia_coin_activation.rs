@@ -257,6 +257,6 @@ impl InitStandaloneCoinActivationOps for SiaCoin {
         _streaming_manager: StreamingManager,
         _current_balances: HashMap<String, BigDecimal>,
     ) {
-        // TODO Alright unclear what this is
+        // TODO: Implement v2 transaction history fetching for SiaCoin
     }
 }
