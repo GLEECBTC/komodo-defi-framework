@@ -41,7 +41,6 @@ pub struct GlobalHDAccountCtx {
     /// - ed25519 key derivation via SLIP-10 does not support deriving children from a public key alone.
     /// - Any type or abstraction that acts like an `xpub` must embed private key material, which can easily
     ///   lead to misuse if consumers assume it is safe to expose or serialize.
-    //#[cfg_attr(not(feature = "enable-sia"), allow(dead_code))]
     ed25519_master_priv_key: ExtendedSigningKey,
 }
 

@@ -137,6 +137,7 @@ winapi.workspace = true
 signal-hook-tokio = { version = "0.3", features = [ "futures-v0_3" ] }
 
 [dev-dependencies]
+base64.workspace = true
 coins = { path = "../coins", features = ["for-tests"] }
 coins_activation = { path = "../coins_activation", features = ["for-tests"] }
 common = { path = "../common", features = ["for-tests"] }
@@ -151,7 +152,6 @@ ethcore-transaction.workspace = true
 rustc-hex.workspace = true
 sia-rust.workspace = true
 url.workspace = true
-base64.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 # todo: try to use async features
