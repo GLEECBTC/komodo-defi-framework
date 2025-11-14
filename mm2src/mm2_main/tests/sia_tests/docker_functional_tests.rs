@@ -2,10 +2,26 @@ use crate::docker_tests::docker_tests_common::{fund_privkey_utxo, random_secp256
 
 use super::utils::*;
 
-use coins::siacoin::ApiClientHelpers;
+use coins::siacoin::{ApiClientHelpers, SiaTransactionTypes};
+use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::{start_swaps, wait_for_swap_finished_or_err};
+use serde::Deserialize;
+use serde_json::Value as Json;
 
 use std::str::FromStr;
+
+#[derive(Debug, Deserialize)]
+struct SiaWithdrawResponse {
+    tx_json: SiaTransactionTypes,
+    from: Vec<String>,
+    to: Vec<String>,
+    total_amount: BigDecimal,
+    spent_by_me: BigDecimal,
+    received_by_me: BigDecimal,
+    my_balance_change: BigDecimal,
+    fee_details: Json,
+    coin: String,
+}
 
 /// Tests sia client and it's connectivity to the sia walletd global container.
 #[tokio::test]
@@ -63,6 +79,93 @@ async fn test_utxo_container_and_client() {
 
     assert_eq!(alice_validate_address_resp["result"]["iswatchonly"], true);
     assert_eq!(bob_validate_address_resp["result"]["iswatchonly"], true);
+}
+
+/// Fund a DSIA account, call `withdraw` with `max: true`, and verify that:
+/// * The TransactionDetails report spending the full balance.
+/// * The fixed Sia fee is correctly reflected in `fee_details`.
+/// * The transaction targets the expected address.
+/// * After broadcasting, the Sia address has zero remaining balance (no unexpected change).
+#[tokio::test]
+async fn test_dsia_withdraw_max_spends_full_balance_minus_fee() {
+    // Use a fresh private key so the DSIA account starts empty.
+    let priv_key = random_secp256k1_secret();
+
+    // Match the fixed fee used in `SiaWithdrawBuilder::build`.
+    // If `TX_FEE_HASTINGS` in `sia_withdraw.rs` changes, this test should be updated.
+    const FIXED_WITHDRAW_FEE_HASTINGS: u128 = 10_000_000_000_000_000_000; // 1e19 Hastings
+    const FUNDING_MULTIPLIER: u128 = 5;
+    let funding_amount_hastings = FIXED_WITHDRAW_FEE_HASTINGS * FUNDING_MULTIPLIER;
+
+    // Fund the DSIA account on the Sia testnet.
+    fund_privkey_sia(&priv_key, Currency(funding_amount_hastings)).await;
+
+    // Compute the Sia address corresponding to this MarketMaker key.
+    let keypair = Keypair::from_private_bytes(priv_key.as_slice()).unwrap();
+    let mm_sia_address = Address::from_public_key(&keypair.public());
+
+    let client = init_sia_client().await.unwrap();
+    let balance_before = client.address_balance(mm_sia_address.clone()).await.unwrap();
+    assert_eq!(balance_before.siacoins, Currency(funding_amount_hastings));
+
+    // Spin up a MarketMaker node using the same key and enable DSIA.
+    let mm = init_bob(&priv_key, None).await;
+    let _ = enable_dsia(&mm).await;
+
+    // Withdraw everything to a distinct address (Charlie's).
+    let to_address = CHARLIE_SIA_ADDRESS.to_string();
+
+    let tx_details: SiaWithdrawResponse = mm
+        .rpc_typed(&json!({
+            "method": "withdraw",
+            "coin": "DSIA",
+            "to": to_address,
+            "max": true,
+        }))
+        .await
+        .unwrap();
+
+    // Basic shape assertions.
+    assert_eq!(tx_details.coin, "DSIA");
+    assert_eq!(tx_details.from.len(), 1);
+    assert_eq!(tx_details.to, vec![to_address.clone()]);
+
+    // Sia has 24 decimal places; 1 siacoin = 10^24 Hastings.
+    // We'll convert our known Hastings amounts into BigDecimal siacoin amounts
+    // using this fixed scale.
+    let scale = BigDecimal::from_str("1000000000000000000000000").unwrap(); // 10^24
+
+    let expected_total = BigDecimal::from_str(&funding_amount_hastings.to_string()).unwrap() / scale.clone();
+    let expected_fee = BigDecimal::from_str(&FIXED_WITHDRAW_FEE_HASTINGS.to_string()).unwrap() / scale.clone();
+    let zero = BigDecimal::from(0);
+
+    // Amount semantics:
+    // * total_amount == spent_by_me == full funded balance (in siacoins)
+    // * received_by_me == 0 (no change back to ourselves)
+    // * my_balance_change == -spent_by_me
+    assert_eq!(tx_details.total_amount, expected_total);
+    assert_eq!(tx_details.spent_by_me, expected_total);
+    assert_eq!(tx_details.received_by_me, zero);
+    assert_eq!(&tx_details.my_balance_change + &tx_details.spent_by_me, zero);
+
+    // Fee details should reflect the fixed Sia withdraw fee.
+    let fee_total_str = tx_details.fee_details["total_amount"]
+        .as_str()
+        .expect("fee_details.total_amount as string");
+    let fee_total: BigDecimal = fee_total_str.parse().unwrap();
+    assert_eq!(fee_total, expected_fee);
+
+    // Broadcast the transaction on Sia and ensure no balance remains for the DSIA address.
+    let signed_tx = match tx_details.tx_json {
+        SiaTransactionTypes::V2Transaction(tx) => tx,
+        _ => panic!("Expected V2Transaction in tx_json"),
+    };
+
+    client.broadcast_transaction(&signed_tx).await.unwrap();
+    client.mine_blocks(1, &CHARLIE_SIA_ADDRESS).await.unwrap();
+
+    let balance_after = client.address_balance(mm_sia_address).await.unwrap();
+    assert_eq!(balance_after.siacoins, Currency(0));
 }
 
 /// Initialize Alice and Bob, initialize Sia testnet container, initialize UTXO testnet container,
