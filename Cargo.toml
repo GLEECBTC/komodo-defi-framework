@@ -243,14 +243,10 @@ panic = 'unwind'
 [profile.dev]
 opt-level = 0
 debug = 1
-debug-assertions = true
+debug-assertions = false # TODO: Enable debug-assertions in the future
 panic = 'unwind'
-incremental = true # FIXME Alright - this is probably wasting resources in Github Actions
+incremental = true # TODO: this is probably wasting resources in Github Actions, `CARGO_INCREMENTAL` can be used there
 codegen-units = 256
-
-[profile.manual-debug]
-inherits = "dev"
-debug = 2
 
 
 [profile.release.package.mocktopus]
