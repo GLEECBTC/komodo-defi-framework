@@ -81,11 +81,6 @@ impl<'a> SiaWithdrawBuilder<'a> {
 
         let to = Address::from_str(&self.req.to).map_err(|e| WithdrawError::InvalidAddress(e.to_string()))?;
 
-        // Calculate the total amount to send (including fee)
-        let tx_amount_hastings =
-            siacoin_to_hastings(self.req.amount.clone()).map_err(|e| WithdrawError::InternalError(e.to_string()))?;
-        let total_amount = tx_amount_hastings + tx_fee;
-
         // Get unspent outputs
         let unspent_outputs = self
             .coin
@@ -94,16 +89,36 @@ impl<'a> SiaWithdrawBuilder<'a> {
             .await
             .map_err(|e| WithdrawError::Transport(e.to_string()))?;
 
-        // Select outputs to use as inputs
-        let selected_outputs = self.select_outputs(unspent_outputs.outputs, total_amount.into())?;
+        let basis = unspent_outputs.basis;
+        let outputs = unspent_outputs.outputs;
 
-        // Calculate change amount
-        let input_sum: Currency = selected_outputs.iter().map(|o| o.siacoin_output.value).sum();
-        let change_amount = input_sum - total_amount;
+        // Select outputs to use as inputs and calculate the total amount to send (including fee) and the change amount
+        let (selected_outputs, tx_amount_hastings, change_amount, input_sum) = if self.req.max {
+            // spend everything minus fee
+            let input_sum: Currency = outputs.iter().map(|o| o.siacoin_output.value).sum();
+            if input_sum <= tx_fee {
+                return Err(MmError::new(WithdrawError::NotSufficientBalance {
+                    coin: self.coin.ticker().to_string(),
+                    available: hastings_to_siacoin(input_sum),
+                    required: hastings_to_siacoin(tx_fee),
+                }));
+            }
+            let tx_amount_hastings = input_sum - tx_fee;
+            (outputs, tx_amount_hastings, Currency::ZERO, input_sum)
+        } else {
+            // Calculate the total amount to send (including fee)
+            let tx_amount_hastings = siacoin_to_hastings(self.req.amount.clone())
+                .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+            let total_amount = tx_amount_hastings + tx_fee;
+            let selected_outputs = self.select_outputs(outputs, total_amount.into())?;
+            let input_sum: Currency = selected_outputs.iter().map(|o| o.siacoin_output.value).sum();
+            let change_amount = input_sum - total_amount;
+            (selected_outputs, tx_amount_hastings, change_amount, input_sum)
+        };
 
         // Construct transaction
         let mut tx_builder = V2TransactionBuilder::new()
-            .update_basis(unspent_outputs.basis)
+            .update_basis(basis)
             // Add output for recipient
             .add_siacoin_output(SiacoinOutput {
                 value: tx_amount_hastings,
