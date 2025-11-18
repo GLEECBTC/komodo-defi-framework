@@ -3295,6 +3295,8 @@ mod taker_swap_tests {
 
         let event = TakerSwapEvent::TakerPaymentWaitForSpendFailed("err".into());
         assert!(event.should_ban_maker());
+        let event = TakerSwapEvent::NegotiateFailed("err".into());
+        assert!(event.should_ban_maker());
     }
 
     #[test]
