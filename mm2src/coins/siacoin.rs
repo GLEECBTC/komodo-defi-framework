@@ -113,7 +113,7 @@ pub struct SiaCoinGeneric<T: SiaApiClient + ApiClientHelpers> {
     /// SIA coin config
     pub conf: SiaCoinConf,
     pub priv_key_policy: Arc<PrivKeyPolicy<SiaKeypair>>,
-    /// Client used to interact with the blockchain, most likely a HTTP(s) client
+    /// Client used to interact with the blockchain, most likely an HTTP(s) client
     pub client: Arc<T>,
     /// State of the transaction history loop (enabled, started, in progress, etc.)
     pub history_sync_state: Arc<Mutex<HistorySyncState>>,
@@ -1293,7 +1293,7 @@ impl SiaCoin {
         Ok(())
     }
 
-    async fn send_refund_hltc(&self, args: RefundPaymentArgs<'_>) -> Result<TransactionEnum, SendRefundHltcError> {
+    async fn send_refund_htlc(&self, args: RefundPaymentArgs<'_>) -> Result<TransactionEnum, SendRefundHltcError> {
         let my_keypair = self.my_keypair()?;
         let refund_public_key = my_keypair.public();
 
@@ -1796,13 +1796,13 @@ impl SwapOps for SiaCoin {
     }
 
     async fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult {
-        self.send_refund_hltc(taker_refunds_payment_args)
+        self.send_refund_htlc(taker_refunds_payment_args)
             .await
             .map_err(|e| SendRefundHltcMakerOrTakerError::Taker(e).to_string().into())
     }
 
     async fn send_maker_refunds_payment(&self, maker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult {
-        self.send_refund_hltc(maker_refunds_payment_args)
+        self.send_refund_htlc(maker_refunds_payment_args)
             .await
             .map_err(|e| SendRefundHltcMakerOrTakerError::Maker(e).to_string().into())
     }
