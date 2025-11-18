@@ -135,16 +135,20 @@ async fn test_dsia_withdraw_max_spends_full_balance_minus_fee() {
     // using this fixed scale.
     let scale = BigDecimal::from_str("1000000000000000000000000").unwrap(); // 10^24
 
-    let expected_total = BigDecimal::from_str(&funding_amount_hastings.to_string()).unwrap() / scale.clone();
     let expected_fee = BigDecimal::from_str(&FIXED_WITHDRAW_FEE_HASTINGS.to_string()).unwrap() / scale.clone();
+    let expected_total = BigDecimal::from_str(&(funding_amount_hastings - FIXED_WITHDRAW_FEE_HASTINGS).to_string())
+        .unwrap()
+        / scale.clone();
+    let expected_spent = &expected_total + &expected_fee;
     let zero = BigDecimal::from(0);
 
     // Amount semantics:
-    // * total_amount == spent_by_me == full funded balance (in siacoins)
+    // * total_amount == value sent to the recipient (funds minus fee)
+    // * spent_by_me == total_amount + fee (full amount deducted from our wallet)
     // * received_by_me == 0 (no change back to ourselves)
     // * my_balance_change == -spent_by_me
     assert_eq!(tx_details.total_amount, expected_total);
-    assert_eq!(tx_details.spent_by_me, expected_total);
+    assert_eq!(tx_details.spent_by_me, expected_spent);
     assert_eq!(tx_details.received_by_me, zero);
     assert_eq!(&tx_details.my_balance_change + &tx_details.spent_by_me, zero);
 
