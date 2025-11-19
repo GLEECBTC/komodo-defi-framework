@@ -1364,11 +1364,9 @@ impl SiaCoin {
         };
 
         // return Ok(None) if no events found - This indicates the payment has not been sent.
-        // return Err if multiple events found
         let event = match events.len() {
             0 => return Ok(None),
-            1 => events[0].clone(),
-            _ => return Err(SiaCheckIfMyPaymentSentError::MultipleEvents(events)),
+            _ => events[0].clone(),
         };
 
         let tx = match event.data {

@@ -284,8 +284,6 @@ pub enum SiaCheckIfMyPaymentSentError {
     ParseArgs(#[from] SiaCheckIfMyPaymentSentArgsError),
     #[error("SiaCoin::new_check_if_my_payment_sent: invalid private key policy, must use iguana seed")]
     MyKeypair(#[from] SiaCoinMyKeypairError),
-    #[error("SiaCoin::new_check_if_my_payment_sent: expected to find single event found: {0:?}")]
-    MultipleEvents(Vec<Event>),
     #[error("SiaCoin::new_check_if_my_payment_sent: unexpected event variant: {0:?}")]
     EventVariant(EventDataWrapper),
 }
