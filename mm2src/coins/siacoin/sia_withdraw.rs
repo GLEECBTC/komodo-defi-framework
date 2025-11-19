@@ -93,7 +93,7 @@ impl<'a> SiaWithdrawBuilder<'a> {
         let outputs = unspent_outputs.outputs;
 
         // Select outputs to use as inputs and calculate the total amount to send (including fee) and the change amount
-        let (selected_outputs, tx_amount_hastings, change_amount) = if self.req.max {
+        let (selected_outputs, tx_amount_hastings, change_amount, input_sum) = if self.req.max {
             // spend everything minus fee
             let input_sum: Currency = outputs.iter().map(|o| o.siacoin_output.value).sum();
             if input_sum <= tx_fee {
@@ -104,7 +104,7 @@ impl<'a> SiaWithdrawBuilder<'a> {
                 }));
             }
             let tx_amount_hastings = input_sum - tx_fee;
-            (outputs, tx_amount_hastings, Currency::ZERO)
+            (outputs, tx_amount_hastings, Currency::ZERO, input_sum)
         } else {
             // Calculate the total amount to send (including fee)
             let tx_amount_hastings = siacoin_to_hastings(self.req.amount.clone())
@@ -113,7 +113,7 @@ impl<'a> SiaWithdrawBuilder<'a> {
             let selected_outputs = self.select_outputs(outputs, total_amount.into())?;
             let input_sum: Currency = selected_outputs.iter().map(|o| o.siacoin_output.value).sum();
             let change_amount = input_sum - total_amount;
-            (selected_outputs, tx_amount_hastings, change_amount)
+            (selected_outputs, tx_amount_hastings, change_amount, input_sum)
         };
 
         // Construct transaction
@@ -143,9 +143,8 @@ impl<'a> SiaWithdrawBuilder<'a> {
         // Sign the transaction
         let signed_tx = tx_builder.sign_simple(vec![self.key_pair]).build();
 
-        let total_amount = hastings_to_siacoin(tx_amount_hastings);
+        let spent_by_me = hastings_to_siacoin(input_sum);
         let fee_amount = hastings_to_siacoin(tx_fee);
-        let spent_by_me = &total_amount + &fee_amount;
         let received_by_me = hastings_to_siacoin(change_amount);
 
         Ok(TransactionDetails {
@@ -155,7 +154,7 @@ impl<'a> SiaWithdrawBuilder<'a> {
             },
             from: vec![self.from_address.to_string()],
             to: vec![self.req.to.clone()],
-            total_amount: total_amount.clone(),
+            total_amount: spent_by_me.clone() - fee_amount.clone(),
             spent_by_me: spent_by_me.clone(),
             received_by_me: received_by_me.clone(),
             my_balance_change: received_by_me - spent_by_me,
