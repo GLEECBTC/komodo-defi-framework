@@ -4262,6 +4262,12 @@ async fn handle_timed_out_maker_matches(ctx: MmArc, ordermatch_ctx: &OrdermatchC
     }
 }
 
+/// Taker processes MakerReserved messages.
+/// The messages are sorted by maker prices (ascending) and the first message that matches the taker order is selected.
+///
+/// This function is spawned for each MakerReserved message incoming from different makers
+/// but only one instance will stay running after the received message is added into the pending map.
+/// The running instance waits for a few secs and processes all pending MakerReserved messages.
 async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg: MakerReserved) {
     log::debug!("Processing MakerReserved {:?}", reserved_msg);
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
@@ -4289,7 +4295,8 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
             .or_insert_with(Vec::new);
         pending_for_order.push(reserved_msg);
         if pending_for_order.len() > 1 {
-            // messages will be sorted by price and processed in the first called handler
+            // Cancel second+ process_maker_reserved handlers.
+            // Messages will be sorted by price and processed in the first spawned handler
             return;
         }
     }
