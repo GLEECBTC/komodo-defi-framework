@@ -555,7 +555,7 @@ mod tests {
 
 		let eth_params = json!({
 			"urls": ETH_SEPOLIA_NODES,
-			"eip4337_url": "https://api.pimlico.io/v2/11155111/rpc?apikey=pim_ERGa26ctXC4ZGW419K6uLW",
+			"eip4337_url": "https://api.pimlico.io/v2/11155111/rpc?apikey=PIMLICO-KEY-HERE",
 			"swap_contract_address": "0x9130b257d37a52e52f21054c4da3450c72f595ce",
 		});
 		let coin = match block_on(lp_coininit(&ctx, ETH, &eth_params)).unwrap() {
