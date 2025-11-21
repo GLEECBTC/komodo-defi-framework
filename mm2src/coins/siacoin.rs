@@ -2004,6 +2004,7 @@ impl SiaCoin {
         match &event.data {
             EventDataWrapper::V2Transaction(tx) => {
                 let txid = tx.txid().to_string();
+                let internal_id = hex::decode(&txid).map_to_mm(|e| e.to_string())?.into();
 
                 let from: Vec<String> = tx
                     .siacoin_inputs
@@ -2067,7 +2068,7 @@ impl SiaCoin {
                         .into(),
                     ),
                     coin: self.ticker().to_string(),
-                    internal_id: vec![].into(),
+                    internal_id,
                     kmd_rewards: None,
                     transaction_type: TransactionType::SiaV2Transaction,
                     memo: None,
@@ -2075,6 +2076,7 @@ impl SiaCoin {
             },
             EventDataWrapper::V1Transaction(tx) => {
                 let txid = tx.transaction.txid().to_string();
+                let internal_id = hex::decode(&txid).map_to_mm(|e| e.to_string())?.into();
 
                 let from: Vec<String> = tx
                     .spent_siacoin_elements
@@ -2150,7 +2152,7 @@ impl SiaCoin {
                         .into(),
                     ),
                     coin: self.ticker().to_string(),
-                    internal_id: vec![].into(),
+                    internal_id,
                     kmd_rewards: None,
                     transaction_type: TransactionType::SiaV1Transaction,
                     memo: None,
@@ -2158,6 +2160,7 @@ impl SiaCoin {
             },
             EventDataWrapper::MinerPayout(event_payout) | EventDataWrapper::FoundationPayout(event_payout) => {
                 let txid = event_payout.siacoin_element.id.to_string();
+                let internal_id = hex::decode(&txid).map_to_mm(|e| e.to_string())?.into();
 
                 let from: Vec<String> = vec![];
 
@@ -2191,7 +2194,7 @@ impl SiaCoin {
                     timestamp: event.timestamp.timestamp() as u64,
                     fee_details: None,
                     coin: self.ticker().to_string(),
-                    internal_id: vec![].into(),
+                    internal_id,
                     kmd_rewards: None,
                     transaction_type: TransactionType::SiaMinerPayout,
                     memo: None,
