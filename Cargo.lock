@@ -2057,7 +2057,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33d852cb9b869c2a9b3df2f71a3074817f01e1844f839a144f5fcef059a4eb5d"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6251,7 +6251,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6885,7 +6885,7 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 [[package]]
 name = "sia-rust"
 version = "0.1.0"
-source = "git+https://github.com/KomodoPlatform/sia-rust?branch=refactor%2Frc-cleanup#dd4e466ae55fee0dafb81e1246371b4e150aaca1"
+source = "git+https://github.com/KomodoPlatform/sia-rust?branch=fix%2Fv2-file-contract-res-encoder#0f3985d7ad0b1ff4bd78069faa4cb751193336ba"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
