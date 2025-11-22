@@ -64,7 +64,7 @@ use rpc_clients::NativeClientImpl;
 use script::{Builder, Opcode, Script, ScriptAddress, TransactionInputSigner, UnsignedTransactionInput};
 use secp256k1::{PublicKey, Signature as SecpSignature};
 use serde_json::{self as json};
-use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, SERIALIZE_TRANSACTION_WITNESS};
+use serialization::{deserialize, serialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
 use std::cmp::Ordering;
 use std::collections::hash_map::{Entry, HashMap};
 use std::convert::TryFrom;
@@ -417,10 +417,10 @@ pub fn checked_address_from_str<T: UtxoCommonOps>(coin: &T, address: &str) -> Mm
     Ok(addr)
 }
 
-pub async fn get_current_mtp(coin: &UtxoCoinFields, coin_variant: CoinVariant) -> UtxoRpcResult<u32> {
+pub async fn get_current_mtp(coin: &UtxoCoinFields) -> UtxoRpcResult<u32> {
     let current_block = coin.rpc_client.get_block_count().compat().await?;
     coin.rpc_client
-        .get_median_time_past(current_block, coin.conf.mtp_block_count, coin_variant)
+        .get_median_time_past(current_block, coin.conf.mtp_block_count)
         .compat()
         .await
 }

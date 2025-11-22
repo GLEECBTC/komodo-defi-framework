@@ -14,6 +14,7 @@ use mm2_core::mm_ctx::MmArc;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 use mocktopus::macros::*;
 use primitives::hash::H256;
+use serialization::ChainVariant;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
@@ -30,7 +31,11 @@ impl Debug for BlockHeaderStorage {
 
 impl BlockHeaderStorage {
     #[cfg(all(not(test), not(target_arch = "wasm32")))]
-    pub(crate) fn new_from_ctx(ctx: MmArc, ticker: String) -> Result<Self, BlockHeaderStorageError> {
+    pub(crate) fn new_from_ctx(
+        ctx: MmArc,
+        ticker: String,
+        chain_variant: ChainVariant,
+    ) -> Result<Self, BlockHeaderStorageError> {
         #[cfg(not(feature = "new-db-arch"))]
         let maybe_sqlite_connection = ctx.sqlite_connection.get();
         #[cfg(feature = "new-db-arch")]
@@ -41,20 +46,29 @@ impl BlockHeaderStorage {
         Ok(BlockHeaderStorage {
             inner: Box::new(SqliteBlockHeadersStorage {
                 ticker,
+                chain_variant,
                 conn: sqlite_connection.clone(),
             }),
         })
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub(crate) fn new_from_ctx(ctx: MmArc, ticker: String) -> Result<Self, BlockHeaderStorageError> {
+    pub(crate) fn new_from_ctx(
+        ctx: MmArc,
+        ticker: String,
+        chain_variant: ChainVariant,
+    ) -> Result<Self, BlockHeaderStorageError> {
         Ok(BlockHeaderStorage {
-            inner: Box::new(IDBBlockHeadersStorage::new(&ctx, ticker)),
+            inner: Box::new(IDBBlockHeadersStorage::new(&ctx, ticker, chain_variant)),
         })
     }
 
     #[cfg(all(test, not(target_arch = "wasm32")))]
-    pub(crate) fn new_from_ctx(ctx: MmArc, ticker: String) -> Result<Self, BlockHeaderStorageError> {
+    pub(crate) fn new_from_ctx(
+        ctx: MmArc,
+        ticker: String,
+        chain_variant: ChainVariant,
+    ) -> Result<Self, BlockHeaderStorageError> {
         use db_common::sqlite::rusqlite::Connection;
         use std::sync::{Arc, Mutex};
 
@@ -65,7 +79,11 @@ impl BlockHeaderStorage {
             .unwrap_or_else(|| Arc::new(Mutex::new(Connection::open_in_memory().unwrap())));
 
         Ok(BlockHeaderStorage {
-            inner: Box::new(SqliteBlockHeadersStorage { ticker, conn }),
+            inner: Box::new(SqliteBlockHeadersStorage {
+                ticker,
+                chain_variant,
+                conn,
+            }),
         })
     }
 
@@ -149,7 +167,7 @@ mod block_headers_storage_tests {
 
     pub(crate) async fn test_add_block_headers_impl(for_coin: &str) {
         let ctx = mm_ctx_with_custom_db();
-        let storage = BlockHeaderStorage::new_from_ctx(ctx, for_coin.to_string())
+        let storage = BlockHeaderStorage::new_from_ctx(ctx, for_coin.to_string(), ChainVariant::Standard)
             .unwrap()
             .into_inner();
         storage.init().await.unwrap();
@@ -163,7 +181,7 @@ mod block_headers_storage_tests {
 
     pub(crate) async fn test_get_block_header_impl(for_coin: &str) {
         let ctx = mm_ctx_with_custom_db();
-        let storage = BlockHeaderStorage::new_from_ctx(ctx, for_coin.to_string())
+        let storage = BlockHeaderStorage::new_from_ctx(ctx, for_coin.to_string(), ChainVariant::Standard)
             .unwrap()
             .into_inner();
         storage.init().await.unwrap();
@@ -188,7 +206,7 @@ mod block_headers_storage_tests {
 
     pub(crate) async fn test_get_last_block_header_with_non_max_bits_impl(for_coin: &str) {
         let ctx = mm_ctx_with_custom_db();
-        let storage = BlockHeaderStorage::new_from_ctx(ctx, for_coin.to_string())
+        let storage = BlockHeaderStorage::new_from_ctx(ctx, for_coin.to_string(), ChainVariant::Standard)
             .unwrap()
             .into_inner();
         storage.init().await.unwrap();
@@ -223,7 +241,7 @@ mod block_headers_storage_tests {
 
     pub(crate) async fn test_get_last_block_height_impl(for_coin: &str) {
         let ctx = mm_ctx_with_custom_db();
-        let storage = BlockHeaderStorage::new_from_ctx(ctx, for_coin.to_string())
+        let storage = BlockHeaderStorage::new_from_ctx(ctx, for_coin.to_string(), ChainVariant::Standard)
             .unwrap()
             .into_inner();
         storage.init().await.unwrap();
@@ -251,7 +269,7 @@ mod block_headers_storage_tests {
 
     pub(crate) async fn test_remove_headers_from_storage_impl(for_coin: &str) {
         let ctx = mm_ctx_with_custom_db();
-        let storage = BlockHeaderStorage::new_from_ctx(ctx, for_coin.to_string())
+        let storage = BlockHeaderStorage::new_from_ctx(ctx, for_coin.to_string(), ChainVariant::Standard)
             .unwrap()
             .into_inner();
         storage.init().await.unwrap();
@@ -305,7 +323,7 @@ mod native_tests {
     fn test_init_collection() {
         let for_coin = "init_collection";
         let ctx = mm_ctx_with_custom_db();
-        let storage = BlockHeaderStorage::new_from_ctx(ctx, for_coin.to_string())
+        let storage = BlockHeaderStorage::new_from_ctx(ctx, for_coin.to_string(), ChainVariant::Standard)
             .unwrap()
             .into_inner();
 

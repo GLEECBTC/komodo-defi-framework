@@ -22,7 +22,7 @@ use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use script::Script;
-use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, SERIALIZE_TRANSACTION_WITNESS};
+use serialization::{deserialize, serialize, serialize_with_flags, ChainVariant, SERIALIZE_TRANSACTION_WITNESS};
 
 use std::collections::HashMap;
 use std::fmt;
@@ -191,6 +191,15 @@ impl UtxoRpcClientEnum {
         match self {
             UtxoRpcClientEnum::Native(_) => true,
             UtxoRpcClientEnum::Electrum(_) => false,
+        }
+    }
+
+    /// Returns how block headers/transactions should be interpreted for this client.
+    /// Delegates to the underlying concrete client, which stores the configured ChainVariant.
+    pub fn chain_variant(&self) -> ChainVariant {
+        match self {
+            UtxoRpcClientEnum::Native(ref c) => c.chain_variant(),
+            UtxoRpcClientEnum::Electrum(ref c) => c.chain_variant(),
         }
     }
 }
@@ -389,12 +398,7 @@ pub trait UtxoRpcClientOps: fmt::Debug + Send + Sync + 'static {
     ) -> Box<dyn Future<Item = Option<SpentOutputInfo>, Error = String> + Send>;
 
     /// Get median time past for `count` blocks in the past including `starting_block`
-    fn get_median_time_past(
-        &self,
-        starting_block: u64,
-        count: NonZeroU64,
-        coin_variant: CoinVariant,
-    ) -> UtxoRpcFut<u32>;
+    fn get_median_time_past(&self, starting_block: u64, count: NonZeroU64) -> UtxoRpcFut<u32>;
 
     /// Returns block time in seconds since epoch (Jan 1 1970 GMT).
     async fn get_block_timestamp(&self, height: u64) -> Result<u64, MmError<GetBlockHeaderError>>;
@@ -692,6 +696,7 @@ impl<K: Clone + Eq + std::hash::Hash, V: Clone> ConcurrentRequestMap<K, V> {
 pub struct NativeClientImpl {
     /// Name of coin the rpc client is intended to work with
     pub coin_ticker: String,
+    pub chain_variant: ChainVariant,
     /// The uri to send requests to
     pub uri: String,
     /// Value of Authorization header, e.g. "Basic base64(user:password)"
@@ -707,6 +712,7 @@ impl Default for NativeClientImpl {
     fn default() -> Self {
         NativeClientImpl {
             coin_ticker: "TEST".to_string(),
+            chain_variant: ChainVariant::Standard,
             uri: "".to_string(),
             auth: "".to_string(),
             event_handlers: vec![],
@@ -730,6 +736,9 @@ pub trait UtxoJsonRpcClientInfo: JsonRpcClient {
     /// Name of coin the rpc client is intended to work with
     fn coin_name(&self) -> &str;
 
+    /// How to interpret headers/transactions for the coin.
+    fn chain_variant(&self) -> ChainVariant;
+
     /// Generate client info from coin name
     fn client_info(&self) -> String {
         format!("coin: {}", self.coin_name())
@@ -739,6 +748,10 @@ pub trait UtxoJsonRpcClientInfo: JsonRpcClient {
 impl UtxoJsonRpcClientInfo for NativeClientImpl {
     fn coin_name(&self) -> &str {
         self.coin_ticker.as_str()
+    }
+
+    fn chain_variant(&self) -> ChainVariant {
+        self.chain_variant
     }
 }
 
@@ -992,12 +1005,7 @@ impl UtxoRpcClientOps for NativeClient {
         Box::new(fut.boxed().compat())
     }
 
-    fn get_median_time_past(
-        &self,
-        starting_block: u64,
-        count: NonZeroU64,
-        _coin_variant: CoinVariant,
-    ) -> UtxoRpcFut<u32> {
+    fn get_median_time_past(&self, starting_block: u64, count: NonZeroU64) -> UtxoRpcFut<u32> {
         let selfi = self.clone();
         let fut = async move {
             let starting_block_hash = selfi.get_block_hash(starting_block).compat().await?;

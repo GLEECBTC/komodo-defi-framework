@@ -12,8 +12,9 @@ use keys::NetworkAddressPrefixes;
 use mm2_err_handle::prelude::*;
 use script::SignatureVersion;
 use serde_json::{self as json, Value as Json};
+use serialization::ChainVariant;
 use spv_validation::conf::SPVConf;
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::num::NonZeroU64;
 use std::sync::atomic::AtomicBool;
 
@@ -36,6 +37,8 @@ pub enum UtxoConfError {
     InvalidAddressFormat(String),
     InvalidDecimals(String),
     InvalidProtocolData(String),
+    #[display(fmt = "Invalid 'protocol.chain_variant' value: {_0}")]
+    InvalidChainVariant(String),
 }
 
 impl From<Bip32Error> for UtxoConfError {
@@ -117,6 +120,7 @@ impl<'a> UtxoConfBuilder<'a> {
         let derivation_path = self.derivation_path()?;
         let avg_blocktime = self.avg_blocktime();
         let spv_conf = self.spv_conf()?;
+        let chain_variant = self.chain_variant()?;
 
         Ok(UtxoCoinConf {
             ticker: self.ticker.to_owned(),
@@ -149,6 +153,7 @@ impl<'a> UtxoConfBuilder<'a> {
             spv_conf,
             derivation_path,
             avg_blocktime,
+            chain_variant,
         })
     }
 
@@ -339,6 +344,19 @@ impl<'a> UtxoConfBuilder<'a> {
 
     fn avg_blocktime(&self) -> Option<u64> {
         self.conf["avg_blocktime"].as_u64()
+    }
+
+    fn chain_variant(&self) -> UtxoConfResult<ChainVariant> {
+        let chain_variant = match self.conf["protocol"]["chain_variant"].as_str() {
+            None => {
+                // Todo: For BCH we have to add BTC chain_variant in conf file
+                ChainVariant::Standard
+            },
+            Some(other) => ChainVariant::try_from(other)
+                .map_err(|_| MmError::new(UtxoConfError::InvalidChainVariant(other.to_owned())))?,
+        };
+
+        Ok(chain_variant)
     }
 }
 

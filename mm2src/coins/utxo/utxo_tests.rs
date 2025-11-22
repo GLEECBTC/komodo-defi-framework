@@ -56,7 +56,7 @@ use mm2_test_helpers::for_tests::{
 };
 use mocktopus::mocking::*;
 use rpc::v1::types::H256 as H256Json;
-use serialization::{deserialize, CoinVariant, CompactInteger, Reader};
+use serialization::{deserialize, ChainVariant, CompactInteger, Reader};
 use spv_validation::conf::{BlockHeaderValidationParams, SPVBlockHeader};
 use spv_validation::storage::BlockHeaderStorageOps;
 use spv_validation::work::DifficultyAlgorithm;
@@ -95,9 +95,9 @@ pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
         collect_metrics: false,
     };
 
-    let servers = servers.into_iter().map(|s| json::from_value(s).unwrap()).collect();
+    let servers: Vec<ElectrumConnectionSettings> = servers.into_iter().map(|s| json::from_value(s).unwrap()).collect();
     let abortable_system = AbortableQueue::default();
-    block_on(builder.electrum_client(abortable_system, args, servers, (None, None))).unwrap()
+    block_on(builder.electrum_client(abortable_system, args, ChainVariant::Standard, servers, (None, None))).unwrap()
 }
 
 /// Returned client won't work by default, requires some mocks to be usable
@@ -480,6 +480,7 @@ fn test_wait_for_payment_spend_timeout_electrum() {
     let block_headers_storage = BlockHeaderStorage {
         inner: Box::new(SqliteBlockHeadersStorage {
             ticker: TEST_COIN_NAME.into(),
+            chain_variant: ChainVariant::Standard,
             conn: Arc::new(Mutex::new(Connection::open_in_memory().unwrap())),
         }),
     };
@@ -500,6 +501,7 @@ fn test_wait_for_payment_spend_timeout_electrum() {
         block_headers_storage,
         StreamingManager::default(),
         abortable_system,
+        ChainVariant::Standard,
     )
     .expect("Expected electrum_client_impl constructed without a problem");
     let client = UtxoRpcClientEnum::Electrum(client);
@@ -1465,7 +1467,7 @@ fn test_get_median_time_past_from_electrum_kmd() {
         "electrum3.cipig.net:10001",
     ]);
 
-    let mtp = block_on_f01(client.get_median_time_past(1773390, KMD_MTP_BLOCK_COUNT, CoinVariant::Standard)).unwrap();
+    let mtp = block_on_f01(client.get_median_time_past(1773390, KMD_MTP_BLOCK_COUNT)).unwrap();
     // the MTP is block time of 1773385 in this case
     assert_eq!(1583159915, mtp);
 }
@@ -1478,7 +1480,7 @@ fn test_get_median_time_past_from_electrum_btc() {
         "electrum3.cipig.net:10000",
     ]);
 
-    let mtp = block_on_f01(client.get_median_time_past(632858, KMD_MTP_BLOCK_COUNT, CoinVariant::Standard)).unwrap();
+    let mtp = block_on_f01(client.get_median_time_past(632858, KMD_MTP_BLOCK_COUNT)).unwrap();
     assert_eq!(1591173041, mtp);
 }
 
@@ -1502,7 +1504,7 @@ fn test_get_median_time_past_from_native_has_median_in_get_block() {
         )
     });
 
-    let mtp = block_on_f01(client.get_median_time_past(632858, KMD_MTP_BLOCK_COUNT, CoinVariant::Standard)).unwrap();
+    let mtp = block_on_f01(client.get_median_time_past(632858, KMD_MTP_BLOCK_COUNT)).unwrap();
     assert_eq!(1591173041, mtp);
 }
 
@@ -1545,7 +1547,7 @@ fn test_get_median_time_past_from_native_does_not_have_median_in_get_block() {
         MockResult::Return(Box::new(futures01::future::ok(block)))
     });
 
-    let mtp = block_on_f01(client.get_median_time_past(632858, KMD_MTP_BLOCK_COUNT, CoinVariant::Standard)).unwrap();
+    let mtp = block_on_f01(client.get_median_time_past(632858, KMD_MTP_BLOCK_COUNT)).unwrap();
     assert_eq!(1591173041, mtp);
 }
 
@@ -1675,7 +1677,7 @@ fn test_network_info_negative_time_offset() {
 #[test]
 fn test_unavailable_electrum_proto_version() {
     ElectrumClientImpl::try_new_arc.mock_safe(
-        |client_settings, block_headers_storage, streaming_manager, abortable_system, event_handlers| {
+        |client_settings, block_headers_storage, streaming_manager, abortable_system, event_handlers, chain_variant| {
             MockResult::Return(ElectrumClientImpl::with_protocol_version(
                 client_settings,
                 block_headers_storage,
@@ -1683,6 +1685,7 @@ fn test_unavailable_electrum_proto_version() {
                 abortable_system,
                 event_handlers,
                 OrdRange::new(1.8, 1.9).unwrap(),
+                chain_variant,
             ))
         },
     );
@@ -1756,7 +1759,7 @@ fn test_spam_rick() {
 fn test_one_unavailable_electrum_proto_version() {
     // First mock with an unrealistically high version requirement that no server would support
     ElectrumClientImpl::try_new_arc.mock_safe(
-        |client_settings, block_headers_storage, streaming_manager, abortable_system, event_handlers| {
+        |client_settings, block_headers_storage, streaming_manager, abortable_system, event_handlers, chain_variant| {
             MockResult::Return(ElectrumClientImpl::with_protocol_version(
                 client_settings,
                 block_headers_storage,
@@ -1764,6 +1767,7 @@ fn test_one_unavailable_electrum_proto_version() {
                 abortable_system,
                 event_handlers,
                 OrdRange::new(7.4, 7.4).unwrap(),
+                chain_variant,
             ))
         },
     );
@@ -1784,7 +1788,7 @@ fn test_one_unavailable_electrum_proto_version() {
 
     // Now reset the mock to a supported version
     ElectrumClientImpl::try_new_arc.mock_safe(
-        |client_settings, block_headers_storage, streaming_manager, abortable_system, event_handlers| {
+        |client_settings, block_headers_storage, streaming_manager, abortable_system, event_handlers, chain_variant| {
             MockResult::Return(ElectrumClientImpl::with_protocol_version(
                 client_settings,
                 block_headers_storage,
@@ -1792,6 +1796,7 @@ fn test_one_unavailable_electrum_proto_version() {
                 abortable_system,
                 event_handlers,
                 OrdRange::new(1.4, 1.4).unwrap(),
+                chain_variant,
             ))
         },
     );
@@ -3143,8 +3148,7 @@ fn doge_mtp() {
         "electrum2.cipig.net:10060",
         "electrum3.cipig.net:10060",
     ]);
-    let mtp = block_on_f01(electrum.get_median_time_past(3631820, NonZeroU64::new(11).unwrap(), CoinVariant::Standard))
-        .unwrap();
+    let mtp = block_on_f01(electrum.get_median_time_past(3631820, NonZeroU64::new(11).unwrap())).unwrap();
     assert_eq!(mtp, 1614849084);
 }
 
@@ -3233,16 +3237,14 @@ fn firo_mtp() {
         "electrumx02.firo.org:50001",
         "electrumx03.firo.org:50001",
     ]);
-    let mtp = block_on_f01(electrum.get_median_time_past(356730, NonZeroU64::new(11).unwrap(), CoinVariant::Standard))
-        .unwrap();
+    let mtp = block_on_f01(electrum.get_median_time_past(356730, NonZeroU64::new(11).unwrap())).unwrap();
     assert_eq!(mtp, 1616492629);
 }
 
 #[test]
 fn verus_mtp() {
     let electrum = electrum_client_for_test(&["el0.verus.io:17485", "el1.verus.io:17485", "el2.verus.io:17485"]);
-    let mtp = block_on_f01(electrum.get_median_time_past(1480113, NonZeroU64::new(11).unwrap(), CoinVariant::Standard))
-        .unwrap();
+    let mtp = block_on_f01(electrum.get_median_time_past(1480113, NonZeroU64::new(11).unwrap())).unwrap();
     assert_eq!(mtp, 1618579909);
 }
 
@@ -3253,8 +3255,7 @@ fn sys_mtp() {
         "electrum2.cipig.net:10064",
         "electrum3.cipig.net:10064",
     ]);
-    let mtp = block_on_f01(electrum.get_median_time_past(1006678, NonZeroU64::new(11).unwrap(), CoinVariant::Standard))
-        .unwrap();
+    let mtp = block_on_f01(electrum.get_median_time_past(1006678, NonZeroU64::new(11).unwrap())).unwrap();
     assert_eq!(mtp, 1620019628);
 }
 
@@ -3265,8 +3266,7 @@ fn btc_mtp() {
         "electrum2.cipig.net:10000",
         "electrum3.cipig.net:10000",
     ]);
-    let mtp = block_on_f01(electrum.get_median_time_past(681659, NonZeroU64::new(11).unwrap(), CoinVariant::Standard))
-        .unwrap();
+    let mtp = block_on_f01(electrum.get_median_time_past(681659, NonZeroU64::new(11).unwrap())).unwrap();
     assert_eq!(mtp, 1620019527);
 }
 
@@ -3277,16 +3277,14 @@ fn rvn_mtp() {
         "electrum2.cipig.net:10051",
         "electrum3.cipig.net:10051",
     ]);
-    let mtp =
-        block_on_f01(electrum.get_median_time_past(1968120, NonZeroU64::new(11).unwrap(), CoinVariant::RVN)).unwrap();
+    let mtp = block_on_f01(electrum.get_median_time_past(1968120, NonZeroU64::new(11).unwrap())).unwrap();
     assert_eq!(mtp, 1633946264);
 }
 
 #[test]
 fn pivx_mtp() {
     let electrum = electrum_client_for_test(&["electrum01.chainster.org:50001", "electrum02.chainster.org:50001"]);
-    let mtp =
-        block_on_f01(electrum.get_median_time_past(5014894, NonZeroU64::new(11).unwrap(), CoinVariant::PIVX)).unwrap();
+    let mtp = block_on_f01(electrum.get_median_time_past(5014894, NonZeroU64::new(11).unwrap())).unwrap();
     assert_eq!(mtp, 1754356500);
 }
 
@@ -3297,8 +3295,7 @@ fn qtum_mtp() {
         "electrum2.cipig.net:10050",
         "electrum3.cipig.net:10050",
     ]);
-    let mtp =
-        block_on_f01(electrum.get_median_time_past(681659, NonZeroU64::new(11).unwrap(), CoinVariant::Qtum)).unwrap();
+    let mtp = block_on_f01(electrum.get_median_time_past(681659, NonZeroU64::new(11).unwrap())).unwrap();
     assert_eq!(mtp, 1598854128);
 }
 
@@ -3309,8 +3306,7 @@ fn zer_mtp() {
         "electrum2.cipig.net:10065",
         "electrum3.cipig.net:10065",
     ]);
-    let mtp = block_on_f01(electrum.get_median_time_past(1130915, NonZeroU64::new(11).unwrap(), CoinVariant::Standard))
-        .unwrap();
+    let mtp = block_on_f01(electrum.get_median_time_past(1130915, NonZeroU64::new(11).unwrap())).unwrap();
     assert_eq!(mtp, 1623240214);
 }
 
@@ -5492,7 +5488,7 @@ fn rick_blocker_5() -> BlockHeader {
     let header =
         "0400000028a4f1aa8be606c8bf8195b2e95d478a83314ff9ad7b017457d9e58d00d1710bb43f41db65677e3fdb83ddbd8cfb4a7ad2e110f74bc19726dc949576e003a1ecfbc2f4300c01f0b7820d00e3347c8da4ee614674376cbc45359daa54f9b5493e381b405d0f0f0f2001003cfb15008ad9f4fab1ff4076f8919f743193f007c0db28f5106e003b0000fd400500acba878991f600ed8c022758be9ff9752ef175e7530324df4d1b87f5a03ca5c2c3fce10b08743bd5ba03912703b8f305f7dd382487d437d9b1823cdc11a00f59a20b235ef57502a0a7ad6fc7d3d242e8f4477a01fb8834ac4dc6e2e40e4909f9edc0db07c0f98df40e5a61327311b005c98a727694ebaabcb366b92dda4af9e3f6e72c5461dd81d6daccbd1fca8ec17597df7585947b54deb83554859776b5bcefadfa566ff12c04ac624f9416e76beccec35694ae0ed11dc17a911f114225be62cf5b971628f364f57d8348d95fdc415b0d2a7a477ea130d3320108739edf761f85f81efd6c0e4eafa8166b05bd74af7928b0786b63ae499dba38065be13e7541b7f4e26727d0fa6887e265e09709b940ca87295ce5984de7d4058b5d340b162935fa46ee20cac955379e3c8fa1ff92fb354bb2a0fedf697b683a5875f4ed2bcef984d296b0c1e07a52920f1dd5a60140c7c1245a52ed196df3292db8bfff52923b0a8615b6a99a5fcf1e5f461f01a04b1c3bb517fe16553e1f8e8aa20bd3cc2cac6d3242a2ce373737b57cec4637907fd236e0d44d91d59533484ec23634b93645c10a858d83805d731f300aa27a162e172216d7fc21170b4d232767e4c66f9a871224f13480e89c2edb0e6e1ef5cf75d9203839cc0282fd7852319232057f30793bb5552d94ebf3ffcc67b73f44e80c3de79b9d8d7f0175939722054bc2ddfb84288dff8c7554f191d6ee1b65c40b75d4435712d4e88c64d6379ab7e578bcd8117501504faa7a3be3a6a2826fd7a3e5e9efb1d3642937f3a35be5793be8e1d4acf9dd2dcd356d6e4c7d0c8b87587b8ad901b9ce71792ae0bdae27811b52300e6809e4691bfc7f738252e7c197e228cce5fda6130f8f518e5059530b731fe8afbf51308aa8da3bd31b1d1eb22cca1a896aed281397925265cd861a7eadb80124363dec8cb508aea7c277f04b9841888dd932471349e651ce2622a59065932f463ffce6b19a975d6914336ab49394afd17dfb9a448157007ea1437b1483587bc7de0dec5103cafad76704e91e9ea2b0b9a8570b935d5c65478e7195b08161be4625b8d5fd3658e6164cf2d6898ecbf1f14945fdd75bb991a3d9ffac713a3a7a81a31a765b9c37a578976aa15e66c97c957f4651dc5fc492c2111d8724d375a8293a36e0ddcf2a01facf30401d8677611522882e1447e4c8be5fa9ad073fb3fdcc6f673981484089090fe4c05bfaae173503e0f99c7407b297852d216463924d365d26b4cd63401a46bd7ed969ddb235044eb2373645144976c7f713720c0238ade9d3aae1d2b153e82d093232d4b12b2108ec564ae0e855e09252f1434c28d90bb298ab6d1750498bf90d93c8797901911548b81af1ba185be52c0dff9c1b11812941d2d527c95c4382879298f364077710b5efd56d1bf39148aedc4fcd9e8bddb4c36a3f901dc11f9493d1fbdfe80c88fa8866c1465c939c0d71cb57e78822b5fc3023578aa2d6b9cd3ebaa54f22876b935f251183d8a68459cab30cd19bcb4e4c1e1a5a83e4687a4795dc23732e81b9f024f70db96e412831d26e61d4fa292a95648e0b614d9a148cd852df1bf26a34ea971e63f8c634133ab7b13ac8045f6d6e20af2313b38d12cb8cee54a7aba7a7cd7e8b1b5e0b0931d4665a0bb36b63f325161b571fdd4f159f470e443e9b0cfb193bf4eea5fa9715dc6132cb8ed97f7f097837471a5147d14f2066cd3dcd50460d70180a7a24e2b5b9ab20caf952d2ea1b51747afec975f76d0313a98e444f20938bf709530960f9fbf5af9857cbe3410d37f3cba10ff57642861586b7c1b1c57019602f1529df9d6e45ca2f7663519c58915e9e299d5beee73cb4553238566844f571374d3f6a247dd8ecbbc893";
 
-    BlockHeader::try_from_string_with_coin_variant(header.to_string(), "RICK".into()).unwrap()
+    BlockHeader::try_from_string_with_chain_variant(header.to_string(), ChainVariant::RICK).unwrap()
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -5510,7 +5506,7 @@ fn test_block_header_utxo_loop_with_reorg() {
     for (idx, header) in rick_headers.into_iter().enumerate() {
         rick_headers_map.insert(
             (idx + 2) as u64,
-            BlockHeader::try_from_string_with_coin_variant(header, "RICK".into()).unwrap(),
+            BlockHeader::try_from_string_with_chain_variant(header, ChainVariant::RICK).unwrap(),
         );
     }
 
@@ -5656,7 +5652,7 @@ fn test_electrum_v14_block_hash() {
         .into_iter()
         .chain(headers.hex.0)
         .collect::<Vec<_>>();
-    let headers = Reader::new_with_coin_variant(&serialized, CoinVariant::RICK)
+    let headers = Reader::new_with_chain_variant(&serialized, ChainVariant::RICK)
         .read_list::<BlockHeader>()
         .expect("Failed to deserialize headers");
 
@@ -5687,7 +5683,7 @@ fn test_electrum_v14_block_hash() {
         .into_iter()
         .chain(headers.hex.0)
         .collect::<Vec<_>>();
-    let headers = Reader::new_with_coin_variant(&serialized, CoinVariant::RICK)
+    let headers = Reader::new_with_chain_variant(&serialized, ChainVariant::RICK)
         .read_list::<BlockHeader>()
         .expect("Failed to deserialize headers");
 
@@ -5716,8 +5712,8 @@ fn test_electrum_v14_block_hash() {
 #[ignore = "This is a utility test for debugging header deserialization and must be run explicitly"]
 fn test_scan_and_deserialize_block_headers() {
     // ========================== CONFIGURATION ==========================
-    /// The ticker of the coin to test (e.g., "NMC", "CHTA", "RVN").
-    const COIN_TICKER: &str = "PIVX";
+    /// Header layout for the configured coin ticker.
+    const CHAIN_VARIANT: ChainVariant = ChainVariant::PIVX;
     /// A list of active Electrum servers for the specified coin.
     const ELECTRUM_URLS: &[&str] = &["electrum01.chainster.org:50001", "electrum02.chainster.org:50001"];
     /// The block height to start scanning from.
@@ -5755,7 +5751,7 @@ fn test_scan_and_deserialize_block_headers() {
         // This is the correct approach, inspired by your original test.
         // We create a single reader for the entire raw byte stream of concatenated headers.
         let raw_chunk_bytes = &headers_res.hex.0;
-        let mut reader = Reader::new_with_coin_variant(raw_chunk_bytes, COIN_TICKER.into());
+        let mut reader = Reader::new_with_chain_variant(raw_chunk_bytes, CHAIN_VARIANT);
 
         // We loop exactly `count` times, reading one header in each iteration.
         // The `read` method will correctly consume a variable number of bytes depending on the header's content.
