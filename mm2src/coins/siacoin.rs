@@ -2315,7 +2315,7 @@ mod wasm_tests {
 
     async fn init_client() -> SiaClientType {
         let conf = SiaClientConf {
-            server_url: Url::parse("https://sia-walletd.komodo.earth/").unwrap(),
+            server_url: Url::parse("https://api.siascan.com/wallet/api").unwrap(),
             headers: HashMap::new(),
         };
         SiaClientType::new(conf).await.unwrap()
