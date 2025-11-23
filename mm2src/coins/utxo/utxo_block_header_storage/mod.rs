@@ -381,7 +381,7 @@ mod wasm_test {
     #[wasm_bindgen_test]
     async fn test_storage_init() {
         let ctx = mm_ctx_with_custom_db();
-        let storage = IDBBlockHeadersStorage::new(&ctx, "RICK".to_string());
+        let storage = IDBBlockHeadersStorage::new(&ctx, "RICK".to_string(), ChainVariant::RICK);
 
         register_wasm_log();
 
