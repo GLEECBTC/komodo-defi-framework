@@ -6885,7 +6885,7 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 [[package]]
 name = "sia-rust"
 version = "0.1.0"
-source = "git+https://github.com/KomodoPlatform/sia-rust?branch=fix%2Fv2-file-contract-res-encoder#0f3985d7ad0b1ff4bd78069faa4cb751193336ba"
+source = "git+https://github.com/KomodoPlatform/sia-rust?branch=refactor%2Frc-cleanup#934e4d03954be62b13db42a15e6c3c281d2ec893"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
