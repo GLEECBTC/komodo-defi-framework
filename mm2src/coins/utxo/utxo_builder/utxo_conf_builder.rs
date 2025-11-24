@@ -348,10 +348,7 @@ impl<'a> UtxoConfBuilder<'a> {
 
     fn chain_variant(&self) -> UtxoConfResult<ChainVariant> {
         let chain_variant = match self.conf["protocol"]["chain_variant"].as_str() {
-            None => {
-                // Todo: For BCH we have to add BTC chain_variant in conf file
-                ChainVariant::Standard
-            },
+            None => ChainVariant::Standard,
             Some(other) => ChainVariant::try_from(other)
                 .map_err(|_| MmError::new(UtxoConfError::InvalidChainVariant(other.to_owned())))?,
         };
