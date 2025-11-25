@@ -177,6 +177,7 @@ pub(crate) mod tests {
     use lazy_static::lazy_static;
     use primitives::hash::H256;
     use serde::Deserialize;
+    use serialization::ChainVariant;
     use std::collections::HashMap;
 
     const BLOCK_HEADERS_STR: &str = include_str!("./for_tests/workTestVectors.json");
@@ -200,7 +201,11 @@ pub(crate) mod tests {
             .get(coin)
             .unwrap()
             .iter()
-            .map(|h| (h.height, h.hex.as_str().into()))
+            .map(|h| {
+                let header = BlockHeader::try_from_string_with_chain_variant(h.hex.clone(), ChainVariant::Standard)
+                    .expect("valid block header in test data");
+                (h.height, header)
+            })
             .collect()
     }
 

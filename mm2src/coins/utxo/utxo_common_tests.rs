@@ -21,6 +21,7 @@ use crypto::HDPathToAccount;
 use itertools::Itertools;
 use keys::prefixes::*;
 use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
+use serialization::ChainVariant;
 use std::convert::TryFrom;
 use std::num::NonZeroUsize;
 use std::str::FromStr;
@@ -137,6 +138,7 @@ pub(super) fn utxo_coin_fields_for_test(
             spv_conf: None,
             derivation_path: None,
             avg_blocktime: None,
+            chain_variant: ChainVariant::Standard,
         },
         decimals: TEST_COIN_DECIMALS,
         dust_amount: UTXO_DUST_AMOUNT,

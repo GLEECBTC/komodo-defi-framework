@@ -223,7 +223,7 @@ impl UtxoCommonOps for UtxoStandardCoin {
     }
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32> {
-        utxo_common::get_current_mtp(&self.utxo_arc, self.ticker().into()).await
+        utxo_common::get_current_mtp(&self.utxo_arc).await
     }
 
     fn is_unspent_mature(&self, output: &RpcTransaction) -> bool {
