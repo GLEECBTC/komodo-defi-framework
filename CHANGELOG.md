@@ -1,3 +1,126 @@
+## v2.6.0-beta - 2025-11-28
+
+### Features:
+
+**SIA Integration**:
+- Completed SIA coin integration, adding SIA as a new protocol with activation in both Iguana and HD modes using the `m/44'/1991'/0'/0'/0'` derivation path, wallet operations, transaction history v1, and legacy swaps are supported. [#2540](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2540)
+
+**WalletConnect**:
+- Implemented BTC/UTXO coin activation via WalletConnect, aligning UTXO with existing EVM/Cosmos activations. [#2499](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2499)
+
+**Trading**:
+- Added expirable maker orders controlled by an optional `timeout_in_minutes` field on `setprice`, so stale listings retire automatically while staying backwards compatible. [#2516](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2516)
+
+**UTXO Management**:
+- Introduced a `consolidate_utxos` RPC to merge small outputs and reduce fee overhead. [#2587](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2587)
+
+---
+
+### Work in Progress (WIP) Features:
+
+**Solana Protocol (feature-flagged)**:
+- Added the initial wallet-only Solana implementation (activation, token handling, WASM-compatible RPC wiring) behind the `enable-solana` flag, swaps and transaction history are not yet available. [#2586](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2586) [#2598](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2598) [#2622](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2622) [#2679](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2679)
+
+**Liquidity Routing**:
+- Added a `best_swap` RPC that performs ask-side liquidity routing to surface the optimal route for a desired outcome amount. [#2362](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2362)
+
+---
+
+### Enhancements/Fixes:
+
+**Swaps and Order Matching**:
+- Banned makers after failed negotiation attempts in legacy swaps to prevent repeated retries on the same maker. [#2688](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2688)
+- Reduced legacy swap payment broadcast intervals for faster propagation on mobiles. [#2680](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2680)
+- Hardened swap v2 offline validation by reusing the offline maker/taker checks, then added best‑effort visibility gates with one‑shot rebroadcast fallback to all coins. [#2646](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2646) [#2618](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2618)
+- Split the orderbook trie from the orderbook to cut lock contention during propagation. [#2661](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2661)
+- Ensured order subscriptions are set on kickstart and skipped GC of own pubkeys. [#2597](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2597)
+- Corrected dexfee balance checks for TPU swaps to avoid false failures. [#2600](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2600)
+
+**Wallet and Keys**:
+- Corrected shielded HD derivation path formatting in `get_private_keys` responses. [#2685](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2685)
+- Fixes a critical bug where `get_private_keys` returned incorrect keys in iguana mode that were derived from an empty passphrase when `passphrase` is null, this happened when loading wallets from KDF encrypted storage. [#2683](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2683)
+- Updated Trezor UTXO/EVM calls to match recent firmware changes. [#2565](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2565)
+
+**UTXO / Electrum**:
+- Switched Electrum block-count queries to sequential mode to avoid server bans on endpoints with strict per-IP limits. [#2666](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2666)
+- Added a fixed-fee option for DINGO-like chains. [#2454](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2454)
+- Revised minimum trading volume for fixed-fee UTXO coins to account for HTLC spend fees and avoid unprofitable swaps. [#2564](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2564)
+- Relaxed scriptSig signature parsing to stop rejecting valid inputs during validation. [#2591](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2591)
+- Overhauled UTXO block-header deserialization and fork handling for AuxPoW/KAWPOW variants, PIVX Sapling, Namecoin, XEC, Cheetahcoin, and many others to prevent parsing failures and false AuxPoW attempts. [#2583](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2583) [#2563](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2563) [#2572](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2572)
+- Made UTXO chain variants explicit via `chain_variant` config replacing hardcoded ticker handling. [#2692](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2692)
+
+**EVM / ETH**:
+- Refined gas fee policy handling (adjustment params, renamed RPC) for swap/signing flows. [#2533](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2533)
+- Added activation validation tweaks and increased EVM timeouts; aligned naming for platform balance helpers. [#2543](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2543)
+- Fixed ETH `max` withdrawal logic, prevented underflow on low balances, and now return structured EIP-1559 withdrawal errors that include network-required fee info. [#2531](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2531) [#2532](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2532)
+
+**WalletConnect**:
+- Returned the `pairing_topic` in `new_connection` responses. [#2538](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2538)
+
+**RPCs**:
+- Allowed `get_enabled_coins`, `task::init_trezor::init`, and `wc_get_sessions` to accept an empty `params` field so RPC callers can omit optional payloads without breaking compatibility. [#2612](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2612)
+- Returned JSON-formatted help responses from the `help` RPC. [#2613](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2613)
+
+**Event Streaming**:
+- Broadcast OS shutdown signals via the streaming manager (`stream::shutdown_signal::enable`). [#2667](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2667)
+- Stopped streamer errors from crashing dev builds by handling SIGINT/SIGTERM/SIGQUIT more gently when the signal handler runs. [#2669](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2669)
+- Fixed SSE client-id parsing and allowed query parameters to pass through to event-stream endpoints. [#2677](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2677) [#2678](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2678)
+- Fixed iOS certificate validation for Tendermint balance streaming. [#2674](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2674)
+
+**Tendermint / Cosmos**:
+- Implemented `get_trade_fee` RPC for Tendermint-based assets (trade/swap only, not wallet-only assets) that requires an existing on-chain account. [#2663](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2663)
+
+**CLI**:
+- Migrated the CLI to `clap`, standardizing `-h/--help` and version output, removing unused/undocumented modes. [#2510](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2510)
+
+**Graceful Shutdown**:
+- Refactored signal handling to cover more signals, and fail gracefully with the feature disabled on Windows/Web. [#2667](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2667)
+
+**Error Handling**:
+- Added an `map_mm_err` helper and applied it at key conversion sites to satisfy newer Rust coherence rules without changing error semantics for `MmError`. [#2443](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2443)
+
+---
+
+### Other Changes:
+
+**Toolchain**:
+- Switched the build to always use the latest available stable compiler (including WASM targets). [#2444](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2444) [#2528](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2528) [#2557](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2557)
+
+**Dependencies**:
+- Applied broad security/dependency updates (tokio, anstream, atty, mio, time, chrono, and more), removed some deprecated/duplicated crates. [#2562](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2562)
+
+**Infrastructure / CI**:
+- Updated the CI container base image to Debian 11 to keep dependencies working across host OSes. [#2534](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2534)
+- Added Node.js 20 to the CI container image to satisfy tooling needs for release builds and scripts. [#2536](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2536)
+- Added a git blame ignore list so toolchain/formatting churn no longer dominates blame views. [#2649](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2649)
+- Deployed a GitHub Action that publishes WASM playground previews on PRs with the `deploy: wasm-playground` label. [#2607](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2607)
+- Avoided using port 7000 for MYCOIN in docker tests to skirt macOS AirPlay receiver conflicts. [#2681](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2681)
+
+**Core Maintenance**:
+- Removed remaining `static mut` globals in favor of thread-safe primitives across executor/WASM/coins/swap tests. [#2590](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2590)
+
+**Documentation**:
+- Improved macOS docs for common Docker startup errors to ease initial setup and troubleshooting. [#2544](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2544) [#2550](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2550)
+
+
+---
+
+### NB - Backwards compatibility breaking changes:
+
+**ETH Clients**:
+- Parity client support was removed. [#2527](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2527)
+
+**EVM / ETH Withdrawal Errors**:
+- EIP-1559 withdrawal failures now return structured error objects containing network-required fees; clients parsing RPC strings should handle the new schema. [#2532](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2532)
+
+**Fixed-Fee UTXO Coins**:
+- Minimum trading volume calculation was revised for fixed-fee UTXO coins, which may change minimum order sizes on those networks (dynamic-fee/dust-based coins unchanged). [#2564](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2564) [#2591](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2591) [#2692](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2692)
+
+**CLI Modes**:
+- Unused/undocumented CLI modes were removed during the migration to `clap`; scripts relying on them may need updates (RPC API unchanged). [#2510](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2510)
+
+---
+
 ## v2.5.2-beta - 2025-10-10
 
 ### Enhancements/Fixes:
