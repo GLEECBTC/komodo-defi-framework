@@ -5,10 +5,6 @@ edition = "2018"
 
 [features]
 zhtlc-native-tests = []
-enable-sia = [
-    "dep:blake2b_simd",
-    "dep:sia-rust"
-]
 default = []
 run-docker-tests = []
 for-tests = ["dep:mocktopus"]
@@ -29,7 +25,7 @@ base64.workspace = true
 bip32.workspace = true
 bitcoin_hashes.workspace = true
 bitcrypto = { path = "../mm2_bitcoin/crypto" }
-blake2b_simd = { workspace = true, optional = true }
+blake2b_simd = { workspace = true }
 bs58.workspace = true
 byteorder.workspace = true
 bytes.workspace = true
@@ -44,6 +40,7 @@ crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
 derive_more.workspace = true
 ed25519-dalek.workspace = true
+ed25519-dalek-bip32 = { workspace = true }
 enum_derives = { path = "../derives/enum_derives" }
 kdf_walletconnect = { path = "../kdf_walletconnect" }
 ethabi.workspace = true
@@ -88,6 +85,7 @@ rlp.workspace = true
 rmp-serde.workspace = true
 rpc = { path = "../mm2_bitcoin/rpc" }
 rpc_task = { path = "../rpc_task" }
+sia-rust = { workspace = true }
 script = { path = "../mm2_bitcoin/script" }
 secp256k1.workspace = true
 ser_error = { path = "../derives/ser_error" }
@@ -98,7 +96,6 @@ serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 serde_with.workspace = true
 serialization = { path = "../mm2_bitcoin/serialization" }
 serialization_derive = { path = "../mm2_bitcoin/serialization_derive" }
-sia-rust = { git = "https://github.com/KomodoPlatform/sia-rust", rev = "9f188b80b3213bcb604e7619275251ce08fae808", optional = true }
 spv_validation = { path = "../mm2_bitcoin/spv_validation" }
 sha2.workspace = true
 sha3.workspace = true

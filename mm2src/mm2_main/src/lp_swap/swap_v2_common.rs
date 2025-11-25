@@ -507,16 +507,16 @@ pub(super) async fn swap_kickstart_handler_for_maker(
 ) {
     if let Some((maker_coin, taker_coin)) = swap_kickstart_coins(&ctx, &swap_repr, &uuid).await {
         match (maker_coin, taker_coin) {
-            (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
+            (MmCoinEnum::UtxoCoinVariant(m), MmCoinEnum::UtxoCoinVariant(t)) => {
                 swap_kickstart_handler::<MakerSwapStateMachine<_, _>, _, _>(swap_repr, storage, uuid, m, t).await
             },
-            (MmCoinEnum::EthCoin(m), MmCoinEnum::EthCoin(t)) => {
+            (MmCoinEnum::EthCoinVariant(m), MmCoinEnum::EthCoinVariant(t)) => {
                 swap_kickstart_handler::<MakerSwapStateMachine<_, _>, _, _>(swap_repr, storage, uuid, m, t).await
             },
-            (MmCoinEnum::UtxoCoin(m), MmCoinEnum::EthCoin(t)) => {
+            (MmCoinEnum::UtxoCoinVariant(m), MmCoinEnum::EthCoinVariant(t)) => {
                 swap_kickstart_handler::<MakerSwapStateMachine<_, _>, _, _>(swap_repr, storage, uuid, m, t).await
             },
-            (MmCoinEnum::EthCoin(m), MmCoinEnum::UtxoCoin(t)) => {
+            (MmCoinEnum::EthCoinVariant(m), MmCoinEnum::UtxoCoinVariant(t)) => {
                 swap_kickstart_handler::<MakerSwapStateMachine<_, _>, _, _>(swap_repr, storage, uuid, m, t).await
             },
             _ => {
@@ -538,16 +538,16 @@ pub(super) async fn swap_kickstart_handler_for_taker(
 ) {
     if let Some((maker_coin, taker_coin)) = swap_kickstart_coins(&ctx, &swap_repr, &uuid).await {
         match (maker_coin, taker_coin) {
-            (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
+            (MmCoinEnum::UtxoCoinVariant(m), MmCoinEnum::UtxoCoinVariant(t)) => {
                 swap_kickstart_handler::<TakerSwapStateMachine<_, _>, _, _>(swap_repr, storage, uuid, m, t).await
             },
-            (MmCoinEnum::EthCoin(m), MmCoinEnum::EthCoin(t)) => {
+            (MmCoinEnum::EthCoinVariant(m), MmCoinEnum::EthCoinVariant(t)) => {
                 swap_kickstart_handler::<TakerSwapStateMachine<_, _>, _, _>(swap_repr, storage, uuid, m, t).await
             },
-            (MmCoinEnum::UtxoCoin(m), MmCoinEnum::EthCoin(t)) => {
+            (MmCoinEnum::UtxoCoinVariant(m), MmCoinEnum::EthCoinVariant(t)) => {
                 swap_kickstart_handler::<TakerSwapStateMachine<_, _>, _, _>(swap_repr, storage, uuid, m, t).await
             },
-            (MmCoinEnum::EthCoin(m), MmCoinEnum::UtxoCoin(t)) => {
+            (MmCoinEnum::EthCoinVariant(m), MmCoinEnum::UtxoCoinVariant(t)) => {
                 swap_kickstart_handler::<TakerSwapStateMachine<_, _>, _, _>(swap_repr, storage, uuid, m, t).await
             },
             _ => {

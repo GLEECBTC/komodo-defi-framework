@@ -60,6 +60,7 @@ jobs:
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -130,6 +131,7 @@ jobs:
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -188,6 +190,7 @@ jobs:
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -252,6 +255,7 @@ jobs:
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -303,6 +307,12 @@ jobs:
           $SAFE_DIR_NAME = $Env:BRANCH_NAME -replace '/', '-'
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+
+          # Generate the SHA256 hash for the zip file
+          Get-FileHash ./$SAFE_DIR_NAME/$NAME -Algorithm SHA256 | Format-Table Hash | Out-File "./$SAFE_DIR_NAME/$NAME.sha256" -Encoding ascii
+
+          # Display the SHA256 hash in Actions logs
+          Get-Content "./$SAFE_DIR_NAME/$NAME.sha256"
 
       - name: Upload build artifact
         env:
@@ -356,6 +366,7 @@ jobs:
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -421,6 +432,7 @@ jobs:
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -474,6 +486,7 @@ jobs:
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -541,6 +554,7 @@ jobs:
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -608,6 +622,7 @@ jobs:
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:

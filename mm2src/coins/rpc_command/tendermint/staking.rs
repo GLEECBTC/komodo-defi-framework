@@ -110,11 +110,11 @@ pub async fn validators_rpc(
     }
 
     let validators = match coin {
-        MmCoinEnum::Tendermint(coin) => coin
+        MmCoinEnum::TendermintVariant(coin) => coin
             .validators_list(req.filter_by_status, req.paging)
             .await
             .map_mm_err()?,
-        MmCoinEnum::TendermintToken(token) => token
+        MmCoinEnum::TendermintTokenVariant(token) => token
             .platform_coin
             .validators_list(req.filter_by_status, req.paging)
             .await

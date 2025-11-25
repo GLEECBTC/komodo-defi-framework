@@ -46,7 +46,7 @@ pub async fn enable_fee_estimation(
         .ok_or(FeeStreamingRequestError::CoinNotFound)?;
 
     match coin {
-        MmCoinEnum::EthCoin(coin) => {
+        MmCoinEnum::EthCoinVariant(coin) => {
             let eth_fee_estimator_streamer = EthFeeEventStreamer::new(req.config, coin.clone());
             ctx.event_stream_manager
                 .add(client_id, eth_fee_estimator_streamer, coin.spawner())

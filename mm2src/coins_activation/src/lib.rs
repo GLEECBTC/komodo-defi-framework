@@ -9,7 +9,6 @@ mod l2;
 mod lightning_activation;
 mod platform_coin_with_tokens;
 mod prelude;
-#[cfg(feature = "enable-sia")]
 mod sia_coin_activation;
 mod slp_token_activation;
 mod solana_token_activation;

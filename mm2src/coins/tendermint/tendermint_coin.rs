@@ -3580,7 +3580,7 @@ impl MmCoin for TendermintCoin {
             ticker: &str,
         ) -> Result<Option<TendermintCoin>, MmError<OrderCreationPreCheckError>> {
             match lp_coinfind(ctx, ticker).await {
-                Ok(Some(MmCoinEnum::Tendermint(coin))) => Ok(Some(coin)),
+                Ok(Some(MmCoinEnum::TendermintVariant(coin))) => Ok(Some(coin)),
                 Ok(Some(other)) => MmError::err(OrderCreationPreCheckError::InternalError {
                     reason: format!(
                         "Expected a Tendermint coin for '{}', but found '{}'.",

@@ -313,9 +313,6 @@ impl ZCoin {
         &self.z_fields.consensus_params
     }
 
-    /// Asynchronously checks the synchronization status and returns `true` if
-    /// the Sapling state has finished synchronizing, meaning that the block number is available.
-    /// Otherwise, it returns `false`.
     #[cfg(any(test, feature = "run-docker-tests"))]
     #[inline]
     pub async fn is_sapling_state_synced(&self) -> bool {

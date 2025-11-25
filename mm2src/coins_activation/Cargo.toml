@@ -7,7 +7,6 @@ edition = "2018"
 doctest = false
 
 [features]
-enable-sia = []
 default = []
 for-tests = []
 

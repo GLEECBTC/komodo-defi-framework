@@ -28,11 +28,12 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
-use testcontainers::clients::Cli;
 
 mod docker_tests;
+mod sia_tests;
 use docker_tests::docker_tests_common::*;
 use docker_tests::qrc20_tests::{qtum_docker_node, QtumDockerOps, QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG};
+use sia_tests::utils::wait_for_dsia_node_ready;
 
 #[allow(dead_code)]
 mod integration_tests_common;
@@ -43,6 +44,7 @@ const ENV_VAR_NO_SLP_DOCKER: &str = "_KDF_NO_SLP_DOCKER";
 const ENV_VAR_NO_ETH_DOCKER: &str = "_KDF_NO_ETH_DOCKER";
 const ENV_VAR_NO_COSMOS_DOCKER: &str = "_KDF_NO_COSMOS_DOCKER";
 const ENV_VAR_NO_ZOMBIE_DOCKER: &str = "_KDF_NO_ZOMBIE_DOCKER";
+const ENV_VAR_NO_SIA_DOCKER: &str = "_KDF_NO_SIA_DOCKER";
 
 // AP: custom test runner is intended to initialize the required environment (e.g. coin daemons in the docker containers)
 // and then gracefully clear it by dropping the RAII docker container handlers
@@ -54,7 +56,6 @@ const ENV_VAR_NO_ZOMBIE_DOCKER: &str = "_KDF_NO_ZOMBIE_DOCKER";
 // Linux and MacOS - https://github.com/KomodoPlatform/komodo/blob/master/zcutil/fetch-params.sh
 pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
     // pretty_env_logger::try_init();
-    let docker = Cli::default();
     let mut containers = vec![];
     // skip Docker containers initialization if we are intended to run test_mm_start only
     if env::var("_MM2_TEST_CONF").is_err() {
@@ -66,6 +67,7 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
         let disable_eth: bool = env::var(ENV_VAR_NO_ETH_DOCKER).is_ok();
         let disable_cosmos: bool = env::var(ENV_VAR_NO_COSMOS_DOCKER).is_ok();
         let disable_zombie: bool = env::var(ENV_VAR_NO_ZOMBIE_DOCKER).is_ok();
+        let disable_sia: bool = env::var(ENV_VAR_NO_SIA_DOCKER).is_ok();
 
         if !disable_utxo || !disable_slp {
             images.push(UTXO_ASSET_DOCKER_IMAGE_WITH_TAG)
@@ -85,6 +87,10 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
             images.push(ZOMBIE_ASSET_DOCKER_IMAGE_WITH_TAG);
         }
 
+        if !disable_sia {
+            images.push(SIA_DOCKER_IMAGE_WITH_TAG);
+        }
+
         for image in images {
             pull_docker_image(image);
             remove_docker_containers(image);
@@ -92,41 +98,48 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
 
         let (nucleus_node, atom_node, ibc_relayer_node) = if !disable_cosmos {
             let runtime_dir = prepare_runtime_dir().unwrap();
-            let nucleus_node = nucleus_node(&docker, runtime_dir.clone());
-            let atom_node = atom_node(&docker, runtime_dir.clone());
-            let ibc_relayer_node = ibc_relayer_node(&docker, runtime_dir);
+            let nucleus_node = nucleus_node(runtime_dir.clone());
+            let atom_node = atom_node(runtime_dir.clone());
+            let ibc_relayer_node = ibc_relayer_node(runtime_dir);
             (Some(nucleus_node), Some(atom_node), Some(ibc_relayer_node))
         } else {
             (None, None, None)
         };
         let (utxo_node, utxo_node1) = if !disable_utxo {
-            let utxo_node = utxo_asset_docker_node(&docker, "MYCOIN", 8000);
-            let utxo_node1 = utxo_asset_docker_node(&docker, "MYCOIN1", 8001);
+            let utxo_node = utxo_asset_docker_node("MYCOIN", 8000);
+            let utxo_node1 = utxo_asset_docker_node("MYCOIN1", 8001);
             (Some(utxo_node), Some(utxo_node1))
         } else {
             (None, None)
         };
         let qtum_node = if !disable_qtum {
-            let qtum_node = qtum_docker_node(&docker, 9000);
+            let qtum_node = qtum_docker_node(9000);
             Some(qtum_node)
         } else {
             None
         };
         let for_slp_node = if !disable_slp {
-            let for_slp_node = utxo_asset_docker_node(&docker, "FORSLP", 10000);
+            let for_slp_node = utxo_asset_docker_node("FORSLP", 10000);
             Some(for_slp_node)
         } else {
             None
         };
         let geth_node = if !disable_eth {
-            let geth_node = geth_docker_node(&docker, "ETH", 8545);
+            let geth_node = geth_docker_node("ETH", 8545);
             Some(geth_node)
         } else {
             None
         };
         let zombie_node = if !disable_zombie {
-            let zombie_node = zombie_asset_docker_node(&docker, 7090);
+            let zombie_node = zombie_asset_docker_node(7090);
             Some(zombie_node)
+        } else {
+            None
+        };
+
+        let sia_node = if !disable_sia {
+            let sia_node = sia_docker_node("SIA", 9980);
+            Some(sia_node)
         } else {
             None
         };
@@ -170,6 +183,10 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
             containers.push(nucleus_node);
             containers.push(atom_node);
             containers.push(ibc_relayer_node);
+        }
+        if let Some(sia_node) = sia_node {
+            block_on(wait_for_dsia_node_ready());
+            containers.push(sia_node);
         }
     }
     // detect if docker is installed

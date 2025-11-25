@@ -77,7 +77,7 @@ pub async fn get_token_info(ctx: MmArc, req: TokenInfoRequest) -> MmResult<Token
     // Platform coin should be activated
     let platform_coin = lp_coinfind_or_err(&ctx, platform).await.map_mm_err()?;
     match platform_coin {
-        MmCoinEnum::EthCoin(eth_coin) => {
+        MmCoinEnum::EthCoinVariant(eth_coin) => {
             let contract_address_str =
                 req.protocol
                     .contract_address()
@@ -166,7 +166,7 @@ pub async fn approve_token_rpc(ctx: MmArc, req: Erc20ApproveRequest) -> MmResult
 
 async fn find_erc20_eth_coin(ctx: &MmArc, coin: &str) -> Result<EthCoin, MmError<Erc20CallError>> {
     match lp_coinfind_or_err(ctx, coin).await {
-        Ok(MmCoinEnum::EthCoin(eth_coin)) => Ok(eth_coin),
+        Ok(MmCoinEnum::EthCoinVariant(eth_coin)) => Ok(eth_coin),
         Ok(_) => Err(MmError::new(Erc20CallError::CoinNotSupported {
             coin: coin.to_string(),
         })),

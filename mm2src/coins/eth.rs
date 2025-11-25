@@ -5894,7 +5894,7 @@ impl EthCoin {
                 let ctx = MmArc::from_weak(&self.ctx).expect("No context");
                 let platform_coin = lp_coinfind_or_err(&ctx, platform).await?;
                 match platform_coin {
-                    MmCoinEnum::EthCoin(eth_coin) => Ok(eth_coin),
+                    MmCoinEnum::EthCoinVariant(eth_coin) => Ok(eth_coin),
                     _ => MmError::err(CoinFindError::NoSuchCoin {
                         coin: platform.to_string(),
                     }),
@@ -6960,7 +6960,7 @@ fn get_valid_nft_addr_to_withdraw(
     token_add: &str,
 ) -> MmResult<(Address, Address, EthCoin), GetValidEthWithdrawAddError> {
     let eth_coin = match coin_enum {
-        MmCoinEnum::EthCoin(eth_coin) => eth_coin,
+        MmCoinEnum::EthCoinVariant(eth_coin) => eth_coin,
         _ => {
             return MmError::err(GetValidEthWithdrawAddError::CoinDoesntSupportNftWithdraw {
                 coin: coin_enum.ticker().to_owned(),

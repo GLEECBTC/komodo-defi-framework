@@ -480,18 +480,6 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
                         event: event.clone(),
                     };
 
-                    // Send a notification to the swap status streamer about a new event.
-                    ctx.event_stream_manager
-                        .send_fn(&SwapStatusStreamer::derive_streamer_id(()), || {
-                            SwapStatusEvent::TakerV1 {
-                                uuid: running_swap.uuid,
-                                event: to_save.clone(),
-                            }
-                        })
-                        .ok();
-                    save_my_taker_swap_event(&ctx, &running_swap, to_save)
-                        .await
-                        .expect("!save_my_taker_swap_event");
                     if event.should_ban_maker() {
                         ban_pubkey_on_failed_swap(
                             &ctx,
@@ -505,8 +493,22 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
                         error!("[swap uuid={uuid_str}] {event:?}");
                     }
 
-                    status.status(&[&"swap", &("uuid", uuid_str.as_str())], &event.status_str());
+                    let event_status_str = event.status_str();
                     running_swap.apply_event(event);
+
+                    // Send a notification to the swap status streamer about a new event.
+                    ctx.event_stream_manager
+                        .send_fn(&SwapStatusStreamer::derive_streamer_id(()), || {
+                            SwapStatusEvent::TakerV1 {
+                                uuid: running_swap.uuid,
+                                event: to_save.clone(),
+                            }
+                        })
+                        .ok();
+                    save_my_taker_swap_event(&ctx, &running_swap, to_save)
+                        .await
+                        .expect("!save_my_taker_swap_event");
+                    status.status(&[&"swap", &("uuid", uuid_str.as_str())], &event_status_str);
                 }
                 match res.0 {
                     Some(c) => {
@@ -3016,8 +3018,8 @@ mod taker_swap_tests {
         });
         TestCoin::search_for_swap_tx_spend_other
             .mock_safe(|_, _| MockResult::Return(Box::pin(futures::future::ready(Ok(None)))));
-        let maker_coin = MmCoinEnum::Test(TestCoin::default());
-        let taker_coin = MmCoinEnum::Test(TestCoin::default());
+        let maker_coin = MmCoinEnum::TestVariant(TestCoin::default());
+        let taker_coin = MmCoinEnum::TestVariant(TestCoin::default());
         let (taker_swap, _) = block_on(TakerSwap::load_from_saved(
             ctx,
             maker_coin,
@@ -3064,8 +3066,8 @@ mod taker_swap_tests {
             TAKER_PAYMENT_REFUND_CALLED.store(true, Ordering::Relaxed);
             MockResult::Return(Box::pin(futures::future::ok(eth_tx_for_test().into())))
         });
-        let maker_coin = MmCoinEnum::Test(TestCoin::default());
-        let taker_coin = MmCoinEnum::Test(TestCoin::default());
+        let maker_coin = MmCoinEnum::TestVariant(TestCoin::default());
+        let taker_coin = MmCoinEnum::TestVariant(TestCoin::default());
         let (taker_swap, _) = block_on(TakerSwap::load_from_saved(
             ctx,
             maker_coin,
@@ -3117,8 +3119,8 @@ mod taker_swap_tests {
             MAKER_PAYMENT_SPEND_CALLED.store(true, Ordering::Relaxed);
             MockResult::Return(Box::pin(futures::future::ready(Ok(eth_tx_for_test().into()))))
         });
-        let maker_coin = MmCoinEnum::Test(TestCoin::default());
-        let taker_coin = MmCoinEnum::Test(TestCoin::default());
+        let maker_coin = MmCoinEnum::TestVariant(TestCoin::default());
+        let taker_coin = MmCoinEnum::TestVariant(TestCoin::default());
         let (taker_swap, _) = block_on(TakerSwap::load_from_saved(
             ctx,
             maker_coin,
@@ -3161,8 +3163,8 @@ mod taker_swap_tests {
             REFUND_CALLED.store(true, Ordering::Relaxed);
             MockResult::Return(Box::pin(futures::future::ok(eth_tx_for_test().into())))
         });
-        let maker_coin = MmCoinEnum::Test(TestCoin::default());
-        let taker_coin = MmCoinEnum::Test(TestCoin::default());
+        let maker_coin = MmCoinEnum::TestVariant(TestCoin::default());
+        let taker_coin = MmCoinEnum::TestVariant(TestCoin::default());
         let (taker_swap, _) = block_on(TakerSwap::load_from_saved(
             ctx,
             maker_coin,
@@ -3198,8 +3200,8 @@ mod taker_swap_tests {
             SEARCH_TX_SPEND_CALLED.store(true, Ordering::Relaxed);
             MockResult::Return(Box::pin(futures::future::ready(Ok(None))))
         });
-        let maker_coin = MmCoinEnum::Test(TestCoin::default());
-        let taker_coin = MmCoinEnum::Test(TestCoin::default());
+        let maker_coin = MmCoinEnum::TestVariant(TestCoin::default());
+        let taker_coin = MmCoinEnum::TestVariant(TestCoin::default());
         let (taker_swap, _) = block_on(TakerSwap::load_from_saved(
             ctx,
             maker_coin,
@@ -3238,8 +3240,8 @@ mod taker_swap_tests {
             MAKER_PAYMENT_SPEND_CALLED.store(true, Ordering::Relaxed);
             MockResult::Return(Box::pin(futures::future::ready(Ok(eth_tx_for_test().into()))))
         });
-        let maker_coin = MmCoinEnum::Test(TestCoin::default());
-        let taker_coin = MmCoinEnum::Test(TestCoin::default());
+        let maker_coin = MmCoinEnum::TestVariant(TestCoin::default());
+        let taker_coin = MmCoinEnum::TestVariant(TestCoin::default());
         let (taker_swap, _) = block_on(TakerSwap::load_from_saved(
             ctx,
             maker_coin,
@@ -3268,8 +3270,8 @@ mod taker_swap_tests {
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
-        let maker_coin = MmCoinEnum::Test(TestCoin::default());
-        let taker_coin = MmCoinEnum::Test(TestCoin::default());
+        let maker_coin = MmCoinEnum::TestVariant(TestCoin::default());
+        let taker_coin = MmCoinEnum::TestVariant(TestCoin::default());
         let (taker_swap, _) = block_on(TakerSwap::load_from_saved(
             ctx,
             maker_coin,
@@ -3309,8 +3311,8 @@ mod taker_swap_tests {
             SWAP_CONTRACT_ADDRESS_CALLED.fetch_add(1, Ordering::Relaxed);
             MockResult::Return(Some(BytesJson::default()))
         });
-        let maker_coin = MmCoinEnum::Test(TestCoin::default());
-        let taker_coin = MmCoinEnum::Test(TestCoin::default());
+        let maker_coin = MmCoinEnum::TestVariant(TestCoin::default());
+        let taker_coin = MmCoinEnum::TestVariant(TestCoin::default());
         let (taker_swap, _) = block_on(TakerSwap::load_from_saved(
             ctx,
             maker_coin,
@@ -3344,8 +3346,8 @@ mod taker_swap_tests {
             SWAP_CONTRACT_ADDRESS_CALLED.fetch_add(1, Ordering::Relaxed);
             MockResult::Return(Some(BytesJson::default()))
         });
-        let maker_coin = MmCoinEnum::Test(TestCoin::default());
-        let taker_coin = MmCoinEnum::Test(TestCoin::default());
+        let maker_coin = MmCoinEnum::TestVariant(TestCoin::default());
+        let taker_coin = MmCoinEnum::TestVariant(TestCoin::default());
         let (taker_swap, _) = block_on(TakerSwap::load_from_saved(
             ctx,
             maker_coin,
@@ -3516,8 +3518,8 @@ mod taker_swap_tests {
 
         let ctx = mm_ctx_with_iguana(PASSPHRASE);
 
-        let maker_coin = MmCoinEnum::Test(TestCoin::new("RICK"));
-        let taker_coin = MmCoinEnum::Test(TestCoin::new("MORTY"));
+        let maker_coin = MmCoinEnum::TestVariant(TestCoin::new("RICK"));
+        let taker_coin = MmCoinEnum::TestVariant(TestCoin::new("MORTY"));
 
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
         TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(BigDecimal::from(0)));

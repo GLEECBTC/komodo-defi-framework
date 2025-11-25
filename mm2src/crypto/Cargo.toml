@@ -20,6 +20,7 @@ cbc.workspace = true
 cipher.workspace = true
 common = { path = "../common" }
 derive_more.workspace = true
+ed25519-dalek-bip32.workspace = true
 enum_derives = { path = "../derives/enum_derives" }
 enum-primitive-derive.workspace = true
 futures.workspace = true
@@ -44,6 +45,7 @@ serde.workspace = true
 serde_derive.workspace = true
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 sha2.workspace = true
+thiserror.workspace = true
 trezor = { path = "../trezor" }
 zeroize.workspace = true
 

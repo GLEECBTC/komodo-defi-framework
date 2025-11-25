@@ -391,7 +391,7 @@ fn test_match_maker_order_and_taker_request() {
 // https://github.com/KomodoPlatform/atomicDEX-API/pull/739#discussion_r517275495
 #[test]
 fn maker_order_match_with_request_zero_volumes() {
-    let coin = MmCoinEnum::Test(TestCoin::default());
+    let coin = MmCoinEnum::TestVariant(TestCoin::default());
 
     let maker_order = MakerOrderBuilder::new(&coin, &coin)
         .with_max_base_vol(1.into())
@@ -2401,7 +2401,7 @@ fn test_taker_request_can_match_with_maker_pubkey() {
 #[test]
 fn test_taker_request_can_match_with_uuid() {
     let uuid = new_uuid();
-    let coin = MmCoinEnum::Test(TestCoin::default());
+    let coin = MmCoinEnum::TestVariant(TestCoin::default());
 
     // default has MatchBy::Any
     let mut order = TakerOrderBuilder::new(&coin, &coin).build_unchecked();

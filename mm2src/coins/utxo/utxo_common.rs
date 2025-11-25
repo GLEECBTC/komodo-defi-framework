@@ -2922,7 +2922,7 @@ pub async fn get_taker_watcher_reward<T: UtxoCommonOps + SwapOps + MarketCoinOps
     let is_exact_amount = reward_amount.is_some();
 
     let other_coin = match other_coin {
-        MmCoinEnum::EthCoin(coin) => coin,
+        MmCoinEnum::EthCoinVariant(coin) => coin,
         _ => {
             return Err(WatcherRewardError::InvalidCoinType(
                 "At least one coin must be Ethereum to use watcher rewards".to_string(),

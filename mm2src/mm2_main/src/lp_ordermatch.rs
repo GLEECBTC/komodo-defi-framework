@@ -3575,16 +3575,16 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
 
         // TODO try to handle it more gracefully during project redesign
         match (&maker_coin, &taker_coin) {
-            (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
+            (MmCoinEnum::UtxoCoinVariant(m), MmCoinEnum::UtxoCoinVariant(t)) => {
                 start_maker_swap_state_machine(&ctx, &maker_order, &taker_p2p_pubkey, &secret, m, t, &params).await;
             },
-            (MmCoinEnum::EthCoin(m), MmCoinEnum::EthCoin(t)) => {
+            (MmCoinEnum::EthCoinVariant(m), MmCoinEnum::EthCoinVariant(t)) => {
                 start_maker_swap_state_machine(&ctx, &maker_order, &taker_p2p_pubkey, &secret, m, t, &params).await;
             },
-            (MmCoinEnum::UtxoCoin(m), MmCoinEnum::EthCoin(t)) => {
+            (MmCoinEnum::UtxoCoinVariant(m), MmCoinEnum::EthCoinVariant(t)) => {
                 start_maker_swap_state_machine(&ctx, &maker_order, &taker_p2p_pubkey, &secret, m, t, &params).await;
             },
-            (MmCoinEnum::EthCoin(m), MmCoinEnum::UtxoCoin(t)) => {
+            (MmCoinEnum::EthCoinVariant(m), MmCoinEnum::UtxoCoinVariant(t)) => {
                 start_maker_swap_state_machine(&ctx, &maker_order, &taker_p2p_pubkey, &secret, m, t, &params).await;
             },
             _ => {
@@ -3822,19 +3822,19 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
 
         // TODO try to handle it more gracefully during project redesign
         match (&maker_coin, &taker_coin) {
-            (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
+            (MmCoinEnum::UtxoCoinVariant(m), MmCoinEnum::UtxoCoinVariant(t)) => {
                 start_taker_swap_state_machine(&ctx, &taker_order, &maker_p2p_pubkey, &taker_secret, m, t, &params)
                     .await;
             },
-            (MmCoinEnum::EthCoin(m), MmCoinEnum::EthCoin(t)) => {
+            (MmCoinEnum::EthCoinVariant(m), MmCoinEnum::EthCoinVariant(t)) => {
                 start_taker_swap_state_machine(&ctx, &taker_order, &maker_p2p_pubkey, &taker_secret, m, t, &params)
                     .await;
             },
-            (MmCoinEnum::UtxoCoin(m), MmCoinEnum::EthCoin(t)) => {
+            (MmCoinEnum::UtxoCoinVariant(m), MmCoinEnum::EthCoinVariant(t)) => {
                 start_taker_swap_state_machine(&ctx, &taker_order, &maker_p2p_pubkey, &taker_secret, m, t, &params)
                     .await;
             },
-            (MmCoinEnum::EthCoin(m), MmCoinEnum::UtxoCoin(t)) => {
+            (MmCoinEnum::EthCoinVariant(m), MmCoinEnum::UtxoCoinVariant(t)) => {
                 start_taker_swap_state_machine(&ctx, &taker_order, &maker_p2p_pubkey, &taker_secret, m, t, &params)
                     .await;
             },
@@ -4766,7 +4766,7 @@ pub async fn lp_auto_buy(
     // For non-HTLC Tendermint orders, include the channel information which will be used
     // later from the other pair.
     #[cfg(feature = "ibc-routing-for-swaps")]
-    if let MmCoinEnum::Tendermint(tendermint_coin) = &base_coin {
+    if let MmCoinEnum::TendermintVariant(tendermint_coin) = &base_coin {
         if !tendermint_coin.supports_htlc() {
             let channel_id = try_s!(tendermint_coin.get_healthy_ibc_channel_to_htlc_chain().await);
             order_builder.order_metadata.channel_id_if_ibc_routing = Some(channel_id);
@@ -5529,7 +5529,7 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
     // For non-HTLC Tendermint orders, include the channel information which will be used
     // later from the other pair.
     #[cfg(feature = "ibc-routing-for-swaps")]
-    if let MmCoinEnum::Tendermint(tendermint_coin) = &base_coin {
+    if let MmCoinEnum::TendermintVariant(tendermint_coin) = &base_coin {
         if !tendermint_coin.supports_htlc() {
             let channel_id = try_s!(tendermint_coin.get_healthy_ibc_channel_to_htlc_chain().await);
             builder.order_metadata.channel_id_if_ibc_routing = Some(channel_id);
@@ -6717,9 +6717,8 @@ fn orderbook_address(
         // Todo: a routing node will know about a payment it routed but not the sender or the receiver. This will require using a new keypair for every order/swap
         // Todo: similar to how it's done for zcoin.
         CoinProtocol::LIGHTNING { .. } => Ok(OrderbookAddress::Shielded),
-        // TODO implement for SIA "this is needed to show the address in the orderbook"
-        #[cfg(feature = "enable-sia")]
-        CoinProtocol::SIA => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
+        // TODO implement for SIA "this is needed to show the address in the orderbook", we leave is as shielded for now
+        CoinProtocol::SIA => Ok(OrderbookAddress::Shielded),
         CoinProtocol::SOLANA(_) => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
         CoinProtocol::SOLANATOKEN(_) => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
     }
