@@ -275,10 +275,11 @@ where
 pub fn create_parents(path: &impl AsRef<Path>) -> IoResult<()> {
     let parent_dir = path.as_ref().parent();
     let Some(parent_dir) = parent_dir else {
-        return MmError::err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("{} has no parent directory", path.as_ref().display()),
-        ));
+        return MmError::err(
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("{} has no parent directory", path.as_ref().display()),
+            ))
     };
     match fs::metadata(parent_dir) {
         // Path exists, make sure it's a directory (and not a file for example).
@@ -302,10 +303,11 @@ pub fn create_parents(path: &impl AsRef<Path>) -> IoResult<()> {
 pub async fn create_parents_async(path: &Path) -> IoResult<()> {
     let parent_dir = path.parent();
     let Some(parent_dir) = parent_dir else {
-        return MmError::err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("{} has no parent directory", path.display()),
-        ));
+        return MmError::err(
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("{} has no parent directory", path.display()),
+            ))
     };
     match async_fs::metadata(parent_dir).await {
         // Path exists, make sure it's a directory (and not a file, for instance).

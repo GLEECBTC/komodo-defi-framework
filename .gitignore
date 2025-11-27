@@ -62,9 +62,6 @@ scripts/mm2/seed/unparsed.txt
 # MM2 conf to avoid occasional adding to git by someone
 MM2.json
 
-# Local Claude configuration
-CLAUDE.local.md
-
 # vim
 [._]*.s[a-v][a-z]
 [._]*.sw[a-p]
