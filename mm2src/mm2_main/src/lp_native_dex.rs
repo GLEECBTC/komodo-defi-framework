@@ -23,8 +23,10 @@ use crate::database::init_and_migrate_sql_db;
 use crate::lp_healthcheck::peer_healthcheck_topic;
 use crate::lp_message_service::{init_message_service, InitMessageServiceError};
 use crate::lp_network::{lp_network_ports, p2p_event_process_loop, subscribe_to_topic, NetIdError};
-use crate::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_memory_loop, init_ordermatch_context,
-                           lp_ordermatch_loop, orders_kick_start, BalanceUpdateOrdermatchHandler, OrdermatchInitError};
+use crate::lp_ordermatch::{
+    broadcast_maker_orders_keep_alive_loop, clean_memory_loop, init_ordermatch_context, lp_ordermatch_loop,
+    orders_kick_start, BalanceUpdateOrdermatchHandler, OrdermatchInitError,
+};
 use crate::lp_swap::swap_kick_starts;
 use crate::lp_wallet::{initialize_wallet_passphrase, WalletInitError};
 use crate::rpc::spawn_rpc;
@@ -40,8 +42,9 @@ use mm2_err_handle::common_errors::InternalError;
 use mm2_err_handle::prelude::*;
 use mm2_libp2p::behaviours::atomicdex::{generate_ed25519_keypair, GossipsubConfig, DEPRECATED_NETID_LIST};
 use mm2_libp2p::p2p_ctx::P2PContext;
-use mm2_libp2p::{spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, SwarmRuntime,
-                 WssCerts};
+use mm2_libp2p::{
+    spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, SwarmRuntime, WssCerts,
+};
 use mm2_metrics::mm_gauge;
 use rpc_task::RpcTaskError;
 use serde_json as json;
@@ -59,8 +62,10 @@ cfg_native! {
     use rustls_pemfile as pemfile;
 }
 
-#[path = "lp_init/init_context.rs"] mod init_context;
-#[path = "lp_init/init_hw.rs"] pub mod init_hw;
+#[path = "lp_init/init_context.rs"]
+mod init_context;
+#[path = "lp_init/init_hw.rs"]
+pub mod init_hw;
 
 cfg_wasm32! {
     use mm2_net::event_streaming::wasm_event_stream::handle_worker_stream;
@@ -74,35 +79,33 @@ pub type MmInitResult<T> = Result<T, MmError<MmInitError>>;
 
 #[derive(Clone, Debug, Display, Serialize)]
 pub enum P2PInitError {
-    #[display(
-        fmt = "Invalid WSS key/cert at {:?}. The file must contain {}'",
-        path,
-        expected_format
-    )]
+    #[display(fmt = "Invalid WSS key/cert at {path:?}. The file must contain {expected_format}'")]
     InvalidWssCert { path: PathBuf, expected_format: String },
-    #[display(fmt = "Error deserializing '{}' config field: {}", field, error)]
+    #[display(fmt = "Error deserializing '{field}' config field: {error}")]
     ErrorDeserializingConfig { field: String, error: String },
-    #[display(fmt = "The '{}' field not found in the config", field)]
+    #[display(fmt = "The '{field}' field not found in the config")]
     FieldNotFoundInConfig { field: String },
-    #[display(fmt = "Error reading WSS key/cert file {:?}: {}", path, error)]
+    #[display(fmt = "Error reading WSS key/cert file {path:?}: {error}")]
     ErrorReadingCertFile { path: PathBuf, error: String },
-    #[display(fmt = "Error getting my IP address: '{}'", _0)]
+    #[display(fmt = "Error getting my IP address: '{_0}'")]
     ErrorGettingMyIpAddr(String),
-    #[display(fmt = "Invalid netid: '{}'", _0)]
+    #[display(fmt = "Invalid netid: '{_0}'")]
     InvalidNetId(NetIdError),
-    #[display(fmt = "Invalid relay address: '{}'", _0)]
+    #[display(fmt = "Invalid relay address: '{_0}'")]
     InvalidRelayAddress(RelayAddressError),
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     #[display(fmt = "WASM node can be a seed only if 'p2p_in_memory' is true")]
     WasmNodeCannotBeSeed,
-    #[display(fmt = "Precheck failed: '{}'", reason)]
+    #[display(fmt = "Precheck failed: '{reason}'")]
     Precheck { reason: String },
-    #[display(fmt = "Internal error: '{}'", _0)]
+    #[display(fmt = "Internal error: '{_0}'")]
     Internal(String),
 }
 
 impl From<NetIdError> for P2PInitError {
-    fn from(e: NetIdError) -> Self { P2PInitError::InvalidNetId(e) }
+    fn from(e: NetIdError) -> Self {
+        P2PInitError::InvalidNetId(e)
+    }
 }
 
 impl From<AdexBehaviourError> for P2PInitError {
@@ -118,54 +121,54 @@ impl From<AdexBehaviourError> for P2PInitError {
 pub enum MmInitError {
     Cancelled,
     #[from_trait(WithTimeout::timeout)]
-    #[display(fmt = "Initialization timeout {:?}", _0)]
+    #[display(fmt = "Initialization timeout {_0:?}")]
     Timeout(Duration),
-    #[display(fmt = "Error deserializing '{}' config field: {}", field, error)]
+    #[display(fmt = "Error deserializing '{field}' config field: {error}")]
     ErrorDeserializingConfig {
         field: String,
         error: String,
     },
-    #[display(fmt = "The '{}' field not found in the config", field)]
+    #[display(fmt = "The '{field}' field not found in the config")]
     FieldNotFoundInConfig {
         field: String,
     },
-    #[display(fmt = "The '{}' field has wrong value in the config: {}", field, error)]
+    #[display(fmt = "The '{field}' field has wrong value in the config: {error}")]
     FieldWrongValueInConfig {
         field: String,
         error: String,
     },
-    #[display(fmt = "P2P initializing error: '{}'", _0)]
+    #[display(fmt = "P2P initializing error: '{_0}'")]
     P2PError(P2PInitError),
-    #[display(fmt = "Error creating DB director '{:?}': {}", path, error)]
+    #[display(fmt = "Error creating DB director '{path:?}': {error}")]
     ErrorCreatingDbDir {
         path: PathBuf,
         error: String,
     },
-    #[display(fmt = "{} db dir is not writable", path)]
+    #[display(fmt = "{path} db dir is not writable")]
     DbDirectoryIsNotWritable {
         path: String,
     },
-    #[display(fmt = "{} db file is not writable", path)]
+    #[display(fmt = "{path} db file is not writable")]
     DbFileIsNotWritable {
         path: String,
     },
-    #[display(fmt = "sqlite initializing error: {}", _0)]
+    #[display(fmt = "sqlite initializing error: {_0}")]
     ErrorSqliteInitializing(String),
-    #[display(fmt = "DB migrating error: {}", _0)]
+    #[display(fmt = "DB migrating error: {_0}")]
     ErrorDbMigrating(String),
-    #[display(fmt = "Swap kick start error: {}", _0)]
+    #[display(fmt = "Swap kick start error: {_0}")]
     SwapsKickStartError(String),
-    #[display(fmt = "Order kick start error: {}", _0)]
+    #[display(fmt = "Order kick start error: {_0}")]
     OrdersKickStartError(String),
-    #[display(fmt = "Error initializing wallet: {}", _0)]
+    #[display(fmt = "Error initializing wallet: {_0}")]
     WalletInitError(String),
-    #[display(fmt = "Event streamer initialization failed: {}", _0)]
+    #[display(fmt = "Event streamer initialization failed: {_0}")]
     EventStreamerInitFailed(String),
     #[from_trait(WithHwRpcError::hw_rpc_error)]
-    #[display(fmt = "{}", _0)]
+    #[display(fmt = "{_0}")]
     HwError(HwRpcError),
     #[from_trait(WithInternal::internal)]
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
@@ -184,7 +187,9 @@ impl From<P2PInitError> for MmInitError {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<SqlError> for MmInitError {
-    fn from(e: SqlError) -> Self { MmInitError::ErrorSqliteInitializing(e.to_string()) }
+    fn from(e: SqlError) -> Self {
+        MmInitError::ErrorSqliteInitializing(e.to_string())
+    }
 }
 
 impl From<OrdermatchInitError> for MmInitError {
@@ -220,7 +225,9 @@ impl From<InitMessageServiceError> for MmInitError {
 }
 
 impl From<HwError> for MmInitError {
-    fn from(e: HwError) -> Self { from_hw_error(e) }
+    fn from(e: HwError) -> Self {
+        from_hw_error(e)
+    }
 }
 
 impl From<RpcTaskError> for MmInitError {
@@ -248,7 +255,9 @@ impl From<HwProcessingError<RpcTaskError>> for MmInitError {
 }
 
 impl From<InternalError> for MmInitError {
-    fn from(e: InternalError) -> Self { MmInitError::Internal(e.take()) }
+    fn from(e: InternalError) -> Self {
+        MmInitError::Internal(e.take())
+    }
 }
 
 impl MmInitError {

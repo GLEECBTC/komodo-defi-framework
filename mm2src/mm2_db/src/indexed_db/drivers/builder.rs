@@ -16,23 +16,20 @@ pub type InitDbResult<T> = Result<T, MmError<InitDbError>>;
 pub enum InitDbError {
     #[display(fmt = "Cannot initialize a Database without tables")]
     EmptyTableList,
-    #[display(fmt = "Database '{}' is open already", db_name)]
+    #[display(fmt = "Database '{db_name}' is open already")]
     DbIsOpenAlready { db_name: String },
-    #[display(fmt = "It seems this browser doesn't support 'IndexedDb': {}", _0)]
+    #[display(fmt = "It seems this browser doesn't support 'IndexedDb': {_0}")]
     NotSupported(String),
-    #[display(fmt = "Invalid Database version: {}", _0)]
+    #[display(fmt = "Invalid Database version: {_0}")]
     InvalidVersion(String),
-    #[display(fmt = "Couldn't open Database: {}", _0)]
+    #[display(fmt = "Couldn't open Database: {_0}")]
     OpeningError(String),
-    #[display(fmt = "Type mismatch: expected '{}', found '{}'", expected, found)]
+    #[display(fmt = "Type mismatch: expected '{expected}', found '{found}'")]
     TypeMismatch { expected: String, found: String },
-    #[display(fmt = "Error occurred due to an unexpected state: {:?}", _0)]
+    #[display(fmt = "Error occurred due to an unexpected state: {_0:?}")]
     UnexpectedState(String),
     #[display(
-        fmt = "Error occurred due to the Database upgrading from {} to {} version: {}",
-        old_version,
-        new_version,
-        error
+        fmt = "Error occurred due to the Database upgrading from {old_version} to {new_version} version: {error}"
     )]
     UpgradingError {
         old_version: u32,
@@ -105,6 +102,7 @@ impl IdbDatabaseBuilder {
                         db,
                         db_name: self.db_name,
                         tables: table_names,
+                        _not_send: common::NotSend::default(),
                     });
                 },
             }
@@ -134,7 +132,7 @@ impl IdbDatabaseBuilder {
             Err(e) => {
                 return MmError::err(InitDbError::TypeMismatch {
                     expected: "IdbVersionChangeEvent".to_owned(),
-                    found: format!("{:?}", e),
+                    found: format!("{e:?}"),
                 })
             },
         };
@@ -179,7 +177,7 @@ impl IdbDatabaseBuilder {
         db_result.dyn_into::<IdbDatabase>().map_err(|db_result| {
             MmError::new(InitDbError::TypeMismatch {
                 expected: "IdbDatabase".to_owned(),
-                found: format!("{:?}", db_result),
+                found: format!("{db_result:?}"),
             })
         })
     }
@@ -196,7 +194,7 @@ impl IdbDatabaseBuilder {
         transaction.dyn_into::<IdbTransaction>().map_err(|transaction| {
             MmError::new(InitDbError::TypeMismatch {
                 expected: "IdbTransaction".to_owned(),
-                found: format!("{:?}", transaction),
+                found: format!("{transaction:?}"),
             })
         })
     }

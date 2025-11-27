@@ -13,17 +13,23 @@ impl<'a> DeriveStreamerId<'a> for TxHistoryEventStreamer {
     type InitParam = String;
     type DeriveParam = &'a str;
 
-    fn new(coin: Self::InitParam) -> Self { Self { coin } }
+    fn new(coin: Self::InitParam) -> Self {
+        Self { coin }
+    }
 
     #[inline(always)]
-    fn derive_streamer_id(coin: Self::DeriveParam) -> StreamerId { StreamerId::TxHistory { coin: coin.to_string() } }
+    fn derive_streamer_id(coin: Self::DeriveParam) -> StreamerId {
+        StreamerId::TxHistory { coin: coin.to_string() }
+    }
 }
 
 #[async_trait]
 impl EventStreamer for TxHistoryEventStreamer {
     type DataInType = Vec<TransactionDetails>;
 
-    fn streamer_id(&self) -> StreamerId { Self::derive_streamer_id(&self.coin) }
+    fn streamer_id(&self) -> StreamerId {
+        Self::derive_streamer_id(&self.coin)
+    }
 
     async fn handle(
         self,

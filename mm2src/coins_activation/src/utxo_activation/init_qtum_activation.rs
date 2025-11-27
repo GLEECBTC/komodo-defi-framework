@@ -1,12 +1,15 @@
 use crate::context::CoinsActivationContext;
 use crate::prelude::TryFromCoinProtocol;
-use crate::standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoinTaskHandleShared,
-                             InitStandaloneCoinTaskManagerShared};
-use crate::utxo_activation::common_impl::{get_activation_result, priv_key_build_policy,
-                                          start_history_background_fetching};
+use crate::standalone_coin::{
+    InitStandaloneCoinActivationOps, InitStandaloneCoinTaskHandleShared, InitStandaloneCoinTaskManagerShared,
+};
+use crate::utxo_activation::common_impl::{
+    get_activation_result, priv_key_build_policy, start_history_background_fetching,
+};
 use crate::utxo_activation::init_utxo_standard_activation_error::InitUtxoStandardError;
-use crate::utxo_activation::init_utxo_standard_statuses::{UtxoStandardAwaitingStatus, UtxoStandardInProgressStatus,
-                                                          UtxoStandardUserAction};
+use crate::utxo_activation::init_utxo_standard_statuses::{
+    UtxoStandardAwaitingStatus, UtxoStandardInProgressStatus, UtxoStandardUserAction,
+};
 use crate::utxo_activation::utxo_standard_activation_result::UtxoStandardActivationResult;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
@@ -62,7 +65,7 @@ impl InitStandaloneCoinActivationOps for QtumCoin {
         _protocol_info: Self::StandaloneProtocol,
         _task_handle: QtumRpcTaskHandleShared,
     ) -> Result<Self, MmError<Self::ActivationError>> {
-        let priv_key_policy = priv_key_build_policy(&ctx, activation_request.priv_key_policy).map_mm_err()?;
+        let priv_key_policy = priv_key_build_policy(&ctx, &activation_request.priv_key_policy).map_mm_err()?;
 
         let coin = QtumCoinBuilder::new(&ctx, &ticker, &coin_conf, activation_request, priv_key_policy)
             .build()

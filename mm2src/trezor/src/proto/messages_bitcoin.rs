@@ -1,3 +1,5 @@
+// Generated protocol messages; many types are not instantiated in our build.
+#![allow(dead_code)]
 ///*
 /// Type of redeem script used in input
 /// @embed

@@ -1,4 +1,5 @@
-#[macro_use] extern crate serde_derive;
+#[macro_use]
+extern crate serde_derive;
 
 pub mod client;
 pub mod device_info;

@@ -1,15 +1,18 @@
 use crate::coin_balance::CoinBalanceReportOps;
 use crate::hd_wallet::{DisplayAddress, HDAccountOps, HDAddressOps, HDCoinAddress, HDWalletCoinOps, HDWalletOps};
-use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxDetailsBuilder,
-                              TxHistoryStorage};
+use crate::my_tx_history_v2::{
+    CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxDetailsBuilder, TxHistoryStorage,
+};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::rpc_clients::{electrum_script_hash, ElectrumClient, NativeClient, UtxoRpcClientEnum};
 use crate::utxo::utxo_common::{big_decimal_from_sat, HISTORY_TOO_LARGE_ERROR};
 use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsError, UtxoTxDetailsParams, UtxoTxHistoryOps};
 use crate::utxo::{output_script, RequestTxHistoryResult, UtxoCoinFields, UtxoCommonOps};
-use crate::{big_decimal_from_sat_unsigned, compare_transactions, BalanceResult, CoinWithDerivationMethod,
-            DerivationMethod, HDPathAccountToAddressId, MarketCoinOps, NumConversError, TransactionDetails,
-            TxFeeDetails, TxIdHeight, UtxoFeeDetails, UtxoTx};
+use crate::{
+    big_decimal_from_sat_unsigned, compare_transactions, BalanceResult, CoinWithDerivationMethod, DerivationMethod,
+    HDPathAccountToAddressId, MarketCoinOps, NumConversError, TransactionDetails, TxFeeDetails, TxIdHeight,
+    UtxoFeeDetails, UtxoTx,
+};
 use common::jsonrpc_client::JsonRpcErrorType;
 use crypto::Bip44Chain;
 use futures::compat::Future01CompatExt;
@@ -25,7 +28,9 @@ use std::convert::{TryFrom, TryInto};
 use std::num::TryFromIntError;
 
 /// [`CoinWithTxHistoryV2::history_wallet_id`] implementation.
-pub fn history_wallet_id(coin: &UtxoCoinFields) -> WalletId { WalletId::new(coin.conf.ticker.clone()) }
+pub fn history_wallet_id(coin: &UtxoCoinFields) -> WalletId {
+    WalletId::new(coin.conf.ticker.clone())
+}
 
 /// [`CoinWithTxHistoryV2::get_tx_history_filters`] implementation.
 /// Returns `GetTxHistoryFilters` according to the derivation method.
@@ -235,7 +240,7 @@ where
     Coin: CoinWithTxHistoryV2 + UtxoCommonOps,
     Storage: TxHistoryStorage,
 {
-    let tx_hash_str = format!("{:02x}", tx_hash);
+    let tx_hash_str = format!("{tx_hash:02x}");
     let wallet_id = coin.history_wallet_id();
     let tx_bytes = match storage
         .tx_bytes_from_cache(&wallet_id, &tx_hash_str)

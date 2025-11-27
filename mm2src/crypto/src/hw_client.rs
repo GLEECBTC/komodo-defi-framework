@@ -25,11 +25,15 @@ pub enum HwProcessingError<E> {
 }
 
 impl<E> From<HwError> for HwProcessingError<E> {
-    fn from(e: HwError) -> Self { HwProcessingError::HwError(e) }
+    fn from(e: HwError) -> Self {
+        HwProcessingError::HwError(e)
+    }
 }
 
 impl<E> From<TrezorError> for HwProcessingError<E> {
-    fn from(e: TrezorError) -> Self { HwProcessingError::HwError(HwError::from(e)) }
+    fn from(e: TrezorError) -> Self {
+        HwProcessingError::HwError(HwError::from(e))
+    }
 }
 
 impl<E> From<TrezorProcessingError<E>> for HwProcessingError<E> {
@@ -78,7 +82,9 @@ pub enum HwClient {
 }
 
 impl From<TrezorClient> for HwClient {
-    fn from(trezor: TrezorClient) -> Self { HwClient::Trezor(trezor) }
+    fn from(trezor: TrezorClient) -> Self {
+        HwClient::Trezor(trezor)
+    }
 }
 
 impl HwClient {

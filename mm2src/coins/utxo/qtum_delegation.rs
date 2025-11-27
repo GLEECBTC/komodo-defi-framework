@@ -1,14 +1,18 @@
 use crate::qrc20::rpc_clients::Qrc20ElectrumOps;
 use crate::qrc20::script_pubkey::generate_contract_call_script_pubkey;
-use crate::qrc20::{contract_addr_into_rpc_format, ContractCallOutput, GenerateQrc20TxResult, Qrc20AbiError,
-                   Qrc20FeeDetails, OUTPUT_QTUM_AMOUNT, QRC20_DUST, QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT};
+use crate::qrc20::{
+    contract_addr_into_rpc_format, ContractCallOutput, GenerateQrc20TxResult, Qrc20AbiError, Qrc20FeeDetails,
+    OUTPUT_QTUM_AMOUNT, QRC20_DUST, QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT,
+};
 use crate::utxo::qtum::{QtumBasedCoin, QtumCoin, QtumDelegationOps, QtumDelegationRequest, QtumStakingInfosDetails};
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder};
 use crate::utxo::{qtum, utxo_common, Address, GetUtxoListOps, UtxoCommonOps};
 use crate::utxo::{PrivKeyPolicyNotAllowed, UTXO_LOCK};
-use crate::{DelegationError, DelegationFut, DelegationResult, MarketCoinOps, StakingInfoError, StakingInfos,
-            StakingInfosFut, TransactionData, TransactionDetails, TransactionType};
+use crate::{
+    DelegationError, DelegationFut, DelegationResult, MarketCoinOps, StakingInfoError, StakingInfos, StakingInfosFut,
+    TransactionData, TransactionDetails, TransactionType,
+};
 use bitcrypto::dhash256;
 use common::now_sec;
 use derive_more::Display;
@@ -43,13 +47,13 @@ type StakingInfosResult = Result<StakingInfos, MmError<StakingInfoError>>;
 
 #[derive(Debug, Display)]
 pub enum QtumStakingAbiError {
-    #[display(fmt = "Invalid QRC20 ABI params: {}", _0)]
+    #[display(fmt = "Invalid QRC20 ABI params: {_0}")]
     InvalidParams(String),
-    #[display(fmt = "QRC20 ABI error: {}", _0)]
+    #[display(fmt = "QRC20 ABI error: {_0}")]
     ABIError(String),
-    #[display(fmt = "Qtum POD error: {}", _0)]
+    #[display(fmt = "Qtum POD error: {_0}")]
     PodSigningError(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
@@ -63,23 +67,33 @@ impl From<Qrc20AbiError> for QtumStakingAbiError {
 }
 
 impl From<QtumStakingAbiError> for DelegationError {
-    fn from(e: QtumStakingAbiError) -> Self { DelegationError::CannotInteractWithSmartContract(e.to_string()) }
+    fn from(e: QtumStakingAbiError) -> Self {
+        DelegationError::CannotInteractWithSmartContract(e.to_string())
+    }
 }
 
 impl From<ethabi::Error> for QtumStakingAbiError {
-    fn from(e: ethabi::Error) -> QtumStakingAbiError { QtumStakingAbiError::ABIError(e.to_string()) }
+    fn from(e: ethabi::Error) -> QtumStakingAbiError {
+        QtumStakingAbiError::ABIError(e.to_string())
+    }
 }
 
 impl From<ethabi::Error> for DelegationError {
-    fn from(e: ethabi::Error) -> Self { DelegationError::from(QtumStakingAbiError::from(e)) }
+    fn from(e: ethabi::Error) -> Self {
+        DelegationError::from(QtumStakingAbiError::from(e))
+    }
 }
 
 impl From<Qrc20AbiError> for DelegationError {
-    fn from(e: Qrc20AbiError) -> Self { DelegationError::from(QtumStakingAbiError::from(e)) }
+    fn from(e: Qrc20AbiError) -> Self {
+        DelegationError::from(QtumStakingAbiError::from(e))
+    }
 }
 
 impl From<PrivKeyPolicyNotAllowed> for QtumStakingAbiError {
-    fn from(e: PrivKeyPolicyNotAllowed) -> Self { QtumStakingAbiError::Internal(e.to_string()) }
+    fn from(e: PrivKeyPolicyNotAllowed) -> Self {
+        QtumStakingAbiError::Internal(e.to_string())
+    }
 }
 
 impl QtumDelegationOps for QtumCoin {

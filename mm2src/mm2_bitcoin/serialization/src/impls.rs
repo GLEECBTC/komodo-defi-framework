@@ -2,65 +2,95 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use bytes::Bytes;
 use compact::Compact;
 use compact_integer::CompactInteger;
-use hash::{CipherText, EncCipherText, EquihashSolution, OutCipherText, ZkProof, ZkProofSapling, H128, H160, H256,
-           H264, H32, H48, H512, H520, H64, H96};
+use hash::{
+    CipherText, EncCipherText, EquihashSolution, OutCipherText, ZkProof, ZkProofSapling, H128, H160, H256, H264, H32,
+    H48, H512, H520, H64, H96,
+};
 use std::io;
 use {Deserializable, Error, Reader, Serializable, Stream};
 
 impl Serializable for bool {
     #[inline]
-    fn serialize(&self, s: &mut Stream) { s.write_u8(*self as u8).unwrap(); }
+    fn serialize(&self, s: &mut Stream) {
+        s.write_u8(*self as u8).unwrap();
+    }
 
     #[inline]
-    fn serialized_size(&self) -> usize { 1 }
+    fn serialized_size(&self) -> usize {
+        1
+    }
 }
 
 impl Serializable for i32 {
     #[inline]
-    fn serialize(&self, s: &mut Stream) { s.write_i32::<LittleEndian>(*self).unwrap(); }
+    fn serialize(&self, s: &mut Stream) {
+        s.write_i32::<LittleEndian>(*self).unwrap();
+    }
 
     #[inline]
-    fn serialized_size(&self) -> usize { 4 }
+    fn serialized_size(&self) -> usize {
+        4
+    }
 }
 
 impl Serializable for i64 {
     #[inline]
-    fn serialize(&self, s: &mut Stream) { s.write_i64::<LittleEndian>(*self).unwrap(); }
+    fn serialize(&self, s: &mut Stream) {
+        s.write_i64::<LittleEndian>(*self).unwrap();
+    }
 
     #[inline]
-    fn serialized_size(&self) -> usize { 8 }
+    fn serialized_size(&self) -> usize {
+        8
+    }
 }
 
 impl Serializable for u8 {
     #[inline]
-    fn serialize(&self, s: &mut Stream) { s.write_u8(*self).unwrap(); }
+    fn serialize(&self, s: &mut Stream) {
+        s.write_u8(*self).unwrap();
+    }
 
     #[inline]
-    fn serialized_size(&self) -> usize { 1 }
+    fn serialized_size(&self) -> usize {
+        1
+    }
 }
 
 impl Serializable for u16 {
     #[inline]
-    fn serialize(&self, s: &mut Stream) { s.write_u16::<LittleEndian>(*self).unwrap(); }
+    fn serialize(&self, s: &mut Stream) {
+        s.write_u16::<LittleEndian>(*self).unwrap();
+    }
 
     #[inline]
-    fn serialized_size(&self) -> usize { 2 }
+    fn serialized_size(&self) -> usize {
+        2
+    }
 }
 
 impl Serializable for u32 {
     #[inline]
-    fn serialize(&self, s: &mut Stream) { s.write_u32::<LittleEndian>(*self).unwrap(); }
+    fn serialize(&self, s: &mut Stream) {
+        s.write_u32::<LittleEndian>(*self).unwrap();
+    }
 
     #[inline]
-    fn serialized_size(&self) -> usize { 4 }
+    fn serialized_size(&self) -> usize {
+        4
+    }
 }
 
 impl Serializable for u64 {
     #[inline]
-    fn serialize(&self, s: &mut Stream) { s.write_u64::<LittleEndian>(*self).unwrap(); }
+    fn serialize(&self, s: &mut Stream) {
+        s.write_u64::<LittleEndian>(*self).unwrap();
+    }
 
     #[inline]
-    fn serialized_size(&self) -> usize { 8 }
+    fn serialized_size(&self) -> usize {
+        8
+    }
 }
 
 impl Deserializable for bool {
@@ -177,10 +207,14 @@ impl Deserializable for String {
 macro_rules! impl_ser_for_hash {
     ($name: ident, $size: expr) => {
         impl Serializable for $name {
-            fn serialize(&self, stream: &mut Stream) { stream.append_slice(&**self); }
+            fn serialize(&self, stream: &mut Stream) {
+                stream.append_slice(&**self);
+            }
 
             #[inline]
-            fn serialized_size(&self) -> usize { $size }
+            fn serialized_size(&self) -> usize {
+                $size
+            }
         }
 
         impl Deserializable for $name {
@@ -214,10 +248,14 @@ impl_ser_for_hash!(CipherText, 601);
 impl_ser_for_hash!(EquihashSolution, 1344);
 
 impl Serializable for Bytes {
-    fn serialize(&self, stream: &mut Stream) { stream.append(&CompactInteger::from(self.len())).append_slice(self); }
+    fn serialize(&self, stream: &mut Stream) {
+        stream.append(&CompactInteger::from(self.len())).append_slice(self);
+    }
 
     #[inline]
-    fn serialized_size(&self) -> usize { CompactInteger::from(self.len()).serialized_size() + self.len() }
+    fn serialized_size(&self) -> usize {
+        CompactInteger::from(self.len()).serialized_size() + self.len()
+    }
 }
 
 impl Deserializable for Bytes {
@@ -238,7 +276,9 @@ impl Deserializable for Bytes {
 }
 
 impl Serializable for Compact {
-    fn serialize(&self, stream: &mut Stream) { stream.append(&u32::from(*self)); }
+    fn serialize(&self, stream: &mut Stream) {
+        stream.append(&u32::from(*self));
+    }
 }
 
 impl Deserializable for Compact {

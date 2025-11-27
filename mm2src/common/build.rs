@@ -32,7 +32,7 @@ fn _in_place(path: &dyn AsRef<Path>, update: &mut dyn FnMut(Vec<u8>) -> Vec<u8>)
     }
     let updated = update(bulk.clone());
     if bulk != updated {
-        let tmp = dir.join(format!("{}.tmp", name));
+        let tmp = dir.join(format!("{name}.tmp"));
         {
             let mut file = fs::File::create(&tmp).unwrap();
             file.write_all(&updated).unwrap();
@@ -56,7 +56,7 @@ impl TargetArch {
         match var("CARGO_CFG_TARGET_ARCH") {
             Ok(arch) => Some(TargetArch::from(arch)),
             Err(e) => {
-                eprintln!("Error on get CARGO_CFG_TARGET_ARCH env: {}", e);
+                eprintln!("Error on get CARGO_CFG_TARGET_ARCH env: {e}");
                 None
             },
         }
@@ -94,7 +94,7 @@ fn build_c_code() {
             cc::Build::new().file("seh.c").warnings(true).compile("seh");
         }
         println!("cargo:rustc-link-lib=static=seh");
-        println!("cargo:rustc-link-search=native={}", out_dir);
+        println!("cargo:rustc-link-search=native={out_dir}");
     }
 }
 

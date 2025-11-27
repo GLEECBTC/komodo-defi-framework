@@ -11,8 +11,9 @@ use common::log::LogState;
 use derive_more::Display;
 use lightning::chain::keysinterface::{InMemorySigner, KeysManager};
 use lightning::chain::{chainmonitor, BestBlock, ChannelMonitorUpdateStatus, Watch};
-use lightning::ln::channelmanager::{ChainParameters, ChannelManagerReadArgs, PaymentId, PaymentSendFailure,
-                                    SimpleArcChannelManager};
+use lightning::ln::channelmanager::{
+    ChainParameters, ChannelManagerReadArgs, PaymentId, PaymentSendFailure, SimpleArcChannelManager,
+};
 use lightning::routing::gossip::RoutingFees;
 use lightning::routing::router::{PaymentParameters, RouteHint, RouteHintHop, RouteParameters, Router as RouterTrait};
 use lightning::util::config::UserConfig;
@@ -228,8 +229,7 @@ pub async fn init_channel_manager(
             {
                 let channel_id = hex::encode(funding_outpoint.to_channel_id());
                 return MmError::err(EnableLightningError::IOError(format!(
-                    "Failure to persist channel: {}!",
-                    channel_id
+                    "Failure to persist channel: {channel_id}!"
                 )));
             }
         }
@@ -348,22 +348,26 @@ pub(crate) fn filter_channels(channels: Vec<ChannelDetails>, min_inbound_capacit
 
 #[derive(Debug, Display)]
 pub enum PaymentError {
-    #[display(fmt = "Final cltv expiry delta {} is below the required minimum of {}", _0, _1)]
+    #[display(fmt = "Final cltv expiry delta {_0} is below the required minimum of {_1}")]
     CLTVExpiry(u32, u32),
-    #[display(fmt = "Error paying invoice: {}", _0)]
+    #[display(fmt = "Error paying invoice: {_0}")]
     Invoice(String),
-    #[display(fmt = "Keysend error: {}", _0)]
+    #[display(fmt = "Keysend error: {_0}")]
     Keysend(String),
-    #[display(fmt = "DB error {}", _0)]
+    #[display(fmt = "DB error {_0}")]
     DbError(String),
 }
 
 impl From<SqlError> for PaymentError {
-    fn from(err: SqlError) -> PaymentError { PaymentError::DbError(err.to_string()) }
+    fn from(err: SqlError) -> PaymentError {
+        PaymentError::DbError(err.to_string())
+    }
 }
 
 impl From<InvoicePaymentError> for PaymentError {
-    fn from(err: InvoicePaymentError) -> PaymentError { PaymentError::Invoice(format!("{:?}", err)) }
+    fn from(err: InvoicePaymentError) -> PaymentError {
+        PaymentError::Invoice(format!("{err:?}"))
+    }
 }
 
 // Todo: This is imported from rust-lightning and modified by me, will need to open a PR there with this modification and update the dependency to remove this code and the code it depends on.

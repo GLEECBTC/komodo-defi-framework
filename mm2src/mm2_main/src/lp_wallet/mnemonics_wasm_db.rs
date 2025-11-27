@@ -4,8 +4,10 @@ use crypto::EncryptedData;
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_core::DbNamespaceId;
-use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbTransactionError, DbUpgrader, IndexedDb, IndexedDbBuilder,
-                         InitDbError, InitDbResult, OnUpgradeError, OnUpgradeResult, TableSignature};
+use mm2_db::indexed_db::{
+    DbIdentifier, DbInstance, DbTransactionError, DbUpgrader, IndexedDb, IndexedDbBuilder, InitDbError, InitDbResult,
+    OnUpgradeError, OnUpgradeResult, TableSignature,
+};
 use mm2_err_handle::prelude::*;
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -16,12 +18,12 @@ type WalletsDBResult<T> = Result<T, MmError<WalletsDBError>>;
 
 #[derive(Debug, Deserialize, Display, Serialize)]
 pub enum WalletsDBError {
-    #[display(fmt = "Error deserializing '{}': {}", field, error)]
+    #[display(fmt = "Error deserializing '{field}': {error}")]
     DeserializationError {
         field: String,
         error: String,
     },
-    #[display(fmt = "Error serializing '{}': {}", field, error)]
+    #[display(fmt = "Error serializing '{field}': {error}")]
     SerializationError {
         field: String,
         error: String,
@@ -30,11 +32,15 @@ pub enum WalletsDBError {
 }
 
 impl From<InitDbError> for WalletsDBError {
-    fn from(e: InitDbError) -> Self { WalletsDBError::Internal(e.to_string()) }
+    fn from(e: InitDbError) -> Self {
+        WalletsDBError::Internal(e.to_string())
+    }
 }
 
 impl From<DbTransactionError> for WalletsDBError {
-    fn from(e: DbTransactionError) -> Self { WalletsDBError::Internal(e.to_string()) }
+    fn from(e: DbTransactionError) -> Self {
+        WalletsDBError::Internal(e.to_string())
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -64,7 +70,9 @@ impl DbInstance for WalletsDb {
 impl Deref for WalletsDb {
     type Target = IndexedDb;
 
-    fn deref(&self) -> &Self::Target { &self.inner }
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
 }
 
 impl TableSignature for MnemonicsTable {

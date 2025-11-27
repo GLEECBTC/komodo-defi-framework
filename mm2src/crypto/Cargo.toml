@@ -20,6 +20,7 @@ cbc.workspace = true
 cipher.workspace = true
 common = { path = "../common" }
 derive_more.workspace = true
+ed25519-dalek-bip32.workspace = true
 enum_derives = { path = "../derives/enum_derives" }
 enum-primitive-derive.workspace = true
 futures.workspace = true
@@ -32,7 +33,7 @@ lazy_static.workspace = true
 mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
 num-traits.workspace = true
-parking_lot = { workspace = true, features = ["nightly"] }
+parking_lot = { workspace = true }
 primitives = { path = "../mm2_bitcoin/primitives" }
 rpc = { path = "../mm2_bitcoin/rpc" }
 rpc_task = { path = "../rpc_task" }
@@ -44,6 +45,7 @@ serde.workspace = true
 serde_derive.workspace = true
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 sha2.workspace = true
+thiserror.workspace = true
 trezor = { path = "../trezor" }
 zeroize.workspace = true
 

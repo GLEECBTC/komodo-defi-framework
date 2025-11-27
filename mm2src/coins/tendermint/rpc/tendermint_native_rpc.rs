@@ -12,8 +12,9 @@ use std::fmt;
 use std::time::Duration;
 use tendermint_rpc::endpoint::validators::DEFAULT_VALIDATORS_PER_PAGE;
 use tendermint_rpc::endpoint::*;
-pub use tendermint_rpc::endpoint::{abci_query::Request as AbciRequest, health::Request as HealthRequest,
-                                   tx_search::Request as TxSearchRequest};
+pub use tendermint_rpc::endpoint::{
+    abci_query::Request as AbciRequest, health::Request as HealthRequest, tx_search::Request as TxSearchRequest,
+};
 use tendermint_rpc::Paging;
 pub use tendermint_rpc::{query::Query as TendermintQuery, Error, Order, Scheme, SimpleRequest, Url};
 use tokio::time;
@@ -29,7 +30,9 @@ use tokio::time;
 #[allow(dead_code)]
 pub trait Client {
     /// `/abci_info`: get information about the ABCI application.
-    async fn abci_info(&self) -> Result<abci_info::Response, Error> { self.perform(abci_info::Request).await }
+    async fn abci_info(&self) -> Result<abci_info::Response, Error> {
+        self.perform(abci_info::Request).await
+    }
 
     /// `/abci_query`: query the ABCI application
     async fn abci_query<V>(
@@ -57,7 +60,9 @@ pub trait Client {
     }
 
     /// `/block`: get the latest block.
-    async fn latest_block(&self) -> Result<block::Response, Error> { self.perform(block::Request::default()).await }
+    async fn latest_block(&self) -> Result<block::Response, Error> {
+        self.perform(block::Request::default()).await
+    }
 
     /// `/block_results`: get ABCI results for a block at a particular height.
     async fn block_results<H>(&self, height: H) -> Result<block_results::Response, Error>
@@ -185,7 +190,9 @@ pub trait Client {
     }
 
     /// `/commit`: get the latest block commit
-    async fn latest_commit(&self) -> Result<commit::Response, Error> { self.perform(commit::Request::default()).await }
+    async fn latest_commit(&self) -> Result<commit::Response, Error> {
+        self.perform(commit::Request::default()).await
+    }
 
     /// `/health`: get node health.
     ///
@@ -204,11 +211,15 @@ pub trait Client {
     }
 
     /// `/net_info`: obtain information about P2P and other network connections.
-    async fn net_info(&self) -> Result<net_info::Response, Error> { self.perform(net_info::Request).await }
+    async fn net_info(&self) -> Result<net_info::Response, Error> {
+        self.perform(net_info::Request).await
+    }
 
     /// `/status`: get Tendermint status including node info, pubkey, latest
     /// block hash, app hash, block height and time.
-    async fn status(&self) -> Result<status::Response, Error> { self.perform(status::Request).await }
+    async fn status(&self) -> Result<status::Response, Error> {
+        self.perform(status::Request).await
+    }
 
     /// `/broadcast_evidence`: broadcast an evidence.
     async fn broadcast_evidence(&self, e: Evidence) -> Result<evidence::Response, Error> {
@@ -310,10 +321,14 @@ impl HttpClient {
     }
 
     #[inline]
-    pub fn uri(&self) -> Uri { self.inner.uri() }
+    pub fn uri(&self) -> Uri {
+        self.inner.uri()
+    }
 
     #[inline]
-    pub fn proxy_sign_keypair(&self) -> &Option<Keypair> { self.inner.proxy_sign_keypair() }
+    pub fn proxy_sign_keypair(&self) -> &Option<Keypair> {
+        self.inner.proxy_sign_keypair()
+    }
 }
 
 #[async_trait]
@@ -355,11 +370,15 @@ impl FromStr for HttpClientUrl {
 impl TryFrom<&str> for HttpClientUrl {
     type Error = Error;
 
-    fn try_from(value: &str) -> Result<Self, Error> { value.parse() }
+    fn try_from(value: &str) -> Result<Self, Error> {
+        value.parse()
+    }
 }
 
 impl From<HttpClientUrl> for Url {
-    fn from(url: HttpClientUrl) -> Self { url.0 }
+    fn from(url: HttpClientUrl) -> Self {
+        url.0
+    }
 }
 
 impl TryFrom<HttpClientUrl> for hyper::Uri {

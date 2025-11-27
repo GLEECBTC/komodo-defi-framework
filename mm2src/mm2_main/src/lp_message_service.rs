@@ -1,4 +1,5 @@
-#[path = "notification/telegram/telegram.rs"] pub mod telegram;
+#[path = "notification/telegram/telegram.rs"]
+pub mod telegram;
 
 use crate::lp_message_service::telegram::{ChatIdRegistry, TelegramError, TgClient};
 use async_trait::async_trait;
@@ -17,12 +18,14 @@ pub const DEFAULT_ROOM_ID: &str = "default";
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum MessageError {
-    #[display(fmt = "{}", _0)]
+    #[display(fmt = "{_0}")]
     TelegramError(TelegramError),
 }
 
 impl From<TelegramError> for MessageError {
-    fn from(e: TelegramError) -> Self { MessageError::TelegramError(e) }
+    fn from(e: TelegramError) -> Self {
+        MessageError::TelegramError(e)
+    }
 }
 
 #[async_trait]
@@ -56,10 +59,14 @@ impl MessageService {
     }
 
     #[cfg(all(test, not(target_arch = "wasm32")))]
-    pub fn nb_services(&self) -> usize { self.services.len() }
+    pub fn nb_services(&self) -> usize {
+        self.services.len()
+    }
 
     #[cfg(all(test, not(target_arch = "wasm32")))]
-    pub fn new() -> Self { Default::default() }
+    pub fn new() -> Self {
+        Default::default()
+    }
 }
 
 #[derive(Default)]
@@ -89,7 +96,7 @@ pub struct Telegram {
 
 #[derive(Display)]
 pub enum InitMessageServiceError {
-    #[display(fmt = "Error deserializing '{}' config field: {}", field, error)]
+    #[display(fmt = "Error deserializing '{field}' config field: {error}")]
     ErrorDeserializingConfig { field: String, error: String },
 }
 

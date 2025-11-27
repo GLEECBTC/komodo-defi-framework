@@ -5,10 +5,12 @@ use crypto::privkey::key_pair_from_seed;
 use mm2_main::{lp_main, lp_run, LpMainParams};
 use mm2_rpc::data::legacy::CoinInitResponse;
 use mm2_test_helpers::electrums::{doc_electrums, marty_electrums};
-use mm2_test_helpers::for_tests::{create_new_account_status, enable_native as enable_native_impl,
-                                  init_create_new_account, MarketMakerIt};
-use mm2_test_helpers::structs::{CreateNewAccountStatus, HDAccountAddressId, HDAccountBalanceMap, InitTaskResult,
-                                RpcV2Response};
+use mm2_test_helpers::for_tests::{
+    create_new_account_status, enable_native as enable_native_impl, init_create_new_account, MarketMakerIt,
+};
+use mm2_test_helpers::structs::{
+    CreateNewAccountStatus, HDAccountAddressId, HDAccountBalanceMap, InitTaskResult, RpcV2Response,
+};
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 use std::env::var;
@@ -17,7 +19,9 @@ use std::str::FromStr;
 /// This is not a separate test but a helper used by `MarketMakerIt` to run the MarketMaker from the test binary.
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
-fn test_mm_start() { test_mm_start_impl(); }
+fn test_mm_start() {
+    test_mm_start_impl();
+}
 
 pub fn test_mm_start_impl() {
     if let Ok(conf) = var("_MM2_TEST_CONF") {

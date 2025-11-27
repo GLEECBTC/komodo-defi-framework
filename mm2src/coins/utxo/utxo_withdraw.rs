@@ -1,9 +1,13 @@
 use crate::rpc_command::init_withdraw::{WithdrawInProgressStatus, WithdrawTaskHandleShared};
 use crate::utxo::utxo_common::{big_decimal_from_sat, UtxoTxBuilder};
-use crate::utxo::{output_script, sat_from_big_decimal, ActualFeeRate, Address, FeePolicy, GetUtxoListOps,
-                  PrivKeyPolicy, UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails, UtxoTx, UTXO_LOCK};
-use crate::{CoinWithDerivationMethod, GetWithdrawSenderAddress, MarketCoinOps, TransactionData, TransactionDetails,
-            UnexpectedDerivationMethod, WithdrawError, WithdrawFee, WithdrawRequest, WithdrawResult};
+use crate::utxo::{
+    output_script, sat_from_big_decimal, ActualFeeRate, Address, FeePolicy, GetUtxoListOps, PrivKeyPolicy,
+    UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails, UtxoTx, UTXO_LOCK,
+};
+use crate::{
+    CoinWithDerivationMethod, GetWithdrawSenderAddress, MarketCoinOps, TransactionData, TransactionDetails,
+    UnexpectedDerivationMethod, WithdrawError, WithdrawFee, WithdrawRequest, WithdrawResult,
+};
 use async_trait::async_trait;
 use chain::TransactionOutput;
 use common::log::info;
@@ -56,7 +60,9 @@ impl From<TrezorProcessingError<RpcTaskError>> for WithdrawError {
 }
 
 impl From<HwError> for WithdrawError {
-    fn from(e: HwError) -> Self { from_hw_error(e) }
+    fn from(e: HwError) -> Self {
+        from_hw_error(e)
+    }
 }
 
 impl From<TrezorError> for WithdrawError {
@@ -69,7 +75,9 @@ impl From<TrezorError> for WithdrawError {
 }
 
 impl From<CryptoCtxError> for WithdrawError {
-    fn from(e: CryptoCtxError) -> Self { WithdrawError::InternalError(e.to_string()) }
+    fn from(e: CryptoCtxError) -> Self {
+        WithdrawError::InternalError(e.to_string())
+    }
 }
 
 impl From<RpcTaskError> for WithdrawError {
@@ -88,7 +96,9 @@ impl From<RpcTaskError> for WithdrawError {
 }
 
 impl From<keys::Error> for WithdrawError {
-    fn from(e: keys::Error) -> Self { WithdrawError::InternalError(e.to_string()) }
+    fn from(e: keys::Error) -> Self {
+        WithdrawError::InternalError(e.to_string())
+    }
 }
 
 fn derive_hd_key_pair<Coin>(
@@ -191,10 +201,7 @@ where
                 tx_builder = tx_builder.with_fee(ActualFeeRate::Dynamic(dynamic_fee_rate));
             },
             Some(ref fee_policy) => {
-                let error = format!(
-                    "Expected 'UtxoFixed' or 'UtxoPerKbyte' fee types, found {:?}",
-                    fee_policy
-                );
+                let error = format!("Expected 'UtxoFixed' or 'UtxoPerKbyte' fee types, found {fee_policy:?}");
                 return MmError::err(WithdrawError::InvalidFeePolicy(error));
             },
             None => (),
@@ -257,13 +264,21 @@ impl<Coin> UtxoWithdraw<Coin> for InitUtxoWithdraw<Coin>
 where
     Coin: UtxoCommonOps + GetUtxoListOps + UtxoSignerOps,
 {
-    fn coin(&self) -> &Coin { &self.coin }
+    fn coin(&self) -> &Coin {
+        &self.coin
+    }
 
-    fn sender_address(&self) -> Address { self.from_address.clone() }
+    fn sender_address(&self) -> Address {
+        self.from_address.clone()
+    }
 
-    fn sender_address_string(&self) -> String { self.from_address_string.clone() }
+    fn sender_address_string(&self) -> String {
+        self.from_address_string.clone()
+    }
 
-    fn request(&self) -> &WithdrawRequest { &self.req }
+    fn request(&self) -> &WithdrawRequest {
+        &self.req
+    }
 
     fn on_generating_transaction(&self) -> Result<(), MmError<WithdrawError>> {
         let amount_display = if self.req.max {
@@ -328,7 +343,7 @@ where
                 }));
             },
             unexpected => {
-                let error = format!("Unexpected number of outputs: {}", unexpected);
+                let error = format!("Unexpected number of outputs: {unexpected}");
                 return MmError::err(WithdrawError::InternalError(error));
             },
         }
@@ -440,17 +455,29 @@ impl<Coin> UtxoWithdraw<Coin> for StandardUtxoWithdraw<Coin>
 where
     Coin: UtxoCommonOps + GetUtxoListOps,
 {
-    fn coin(&self) -> &Coin { &self.coin }
+    fn coin(&self) -> &Coin {
+        &self.coin
+    }
 
-    fn sender_address(&self) -> Address { self.from_address.clone() }
+    fn sender_address(&self) -> Address {
+        self.from_address.clone()
+    }
 
-    fn sender_address_string(&self) -> String { self.from_address_string.clone() }
+    fn sender_address_string(&self) -> String {
+        self.from_address_string.clone()
+    }
 
-    fn request(&self) -> &WithdrawRequest { &self.req }
+    fn request(&self) -> &WithdrawRequest {
+        &self.req
+    }
 
-    fn on_generating_transaction(&self) -> Result<(), MmError<WithdrawError>> { Ok(()) }
+    fn on_generating_transaction(&self) -> Result<(), MmError<WithdrawError>> {
+        Ok(())
+    }
 
-    fn on_finishing(&self) -> Result<(), MmError<WithdrawError>> { Ok(()) }
+    fn on_finishing(&self) -> Result<(), MmError<WithdrawError>> {
+        Ok(())
+    }
 
     async fn sign_tx(&self, unsigned_tx: TransactionInputSigner) -> Result<UtxoTx, MmError<WithdrawError>> {
         Ok(with_key_pair::sign_tx(

@@ -76,7 +76,9 @@ pub struct TrezorSession<'a> {
 
 impl<'a> TrezorSession<'a> {
     #[cfg(target_arch = "wasm32")]
-    pub async fn is_connected(&mut self) -> TrezorResult<bool> { self.inner.transport.is_connected().await }
+    pub async fn is_connected(&mut self) -> TrezorResult<bool> {
+        self.inner.transport.is_connected().await
+    }
 
     /// Sends a message and returns a TrezorResponse with either the
     /// expected response message, a failure or an interaction request.

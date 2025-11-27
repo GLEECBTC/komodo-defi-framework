@@ -7,7 +7,8 @@ use std::fmt;
 use std::sync::Arc;
 
 pub mod dummy_tx_cache;
-#[cfg(not(target_arch = "wasm32"))] pub mod fs_tx_cache;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod fs_tx_cache;
 
 #[cfg(target_arch = "wasm32")]
 pub mod wasm_tx_cache {

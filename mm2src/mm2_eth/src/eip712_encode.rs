@@ -181,7 +181,7 @@ fn encode_type(custom_types: &CustomTypes, data_type: &str) -> Result<String> {
                     .iter()
                     .map(|value| format!("{} {}", value.property_type, value.name))
                     .join(",");
-                format!("{}({})", dep, types)
+                format!("{dep}({types})")
             })
         })
         .collect::<Vec<_>>()
@@ -387,7 +387,7 @@ mod tests {
         let typed_data = serde_json::from_str::<Eip712Raw>(JSON).expect("alas error!");
         let hash = hash_typed_data_raw(typed_data).expect("alas error!");
         assert_eq!(
-            format!("{:02x}", hash),
+            format!("{hash:02x}"),
             "be609aee343fb3c4b28e1df9e632fca64fcfaede20f02e86244efddf30957bd2",
         );
     }

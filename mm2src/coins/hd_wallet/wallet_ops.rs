@@ -6,7 +6,7 @@ use crypto::{Bip44Chain, HDPathToCoin};
 #[async_trait]
 pub trait HDWalletOps {
     /// Any type that represents a Hierarchical Deterministic (HD) wallet account.
-    type HDAccount: HDAccountOps + Clone + Send + Sync;
+    type HDAccount: HDAccountOps + Send + Sync;
 
     /// Returns the coin type associated with this HD Wallet.
     ///

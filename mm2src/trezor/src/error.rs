@@ -16,7 +16,7 @@ use hw_common::transport::WebUsbError;
 
 #[derive(Debug, Display)]
 pub enum TrezorError {
-    #[display(fmt = "'{}' transport is not available on this platform", transport)]
+    #[display(fmt = "'{transport}' transport is not available on this platform")]
     TransportNotSupported {
         transport: String,
     },
@@ -28,10 +28,10 @@ pub enum TrezorError {
     /// The error depends on transport implementation.
     UnderlyingError(String),
     ProtocolError(String),
-    #[display(fmt = "Received unexpected message type: {:?}", _0)]
+    #[display(fmt = "Received unexpected message type: {_0:?}")]
     UnexpectedMessageType(MessageType),
     Failure(OperationFailure),
-    #[display(fmt = "Unexpected interaction request: {:?}", _0)]
+    #[display(fmt = "Unexpected interaction request: {_0:?}")]
     UnexpectedInteractionRequest(TrezorUserInteraction),
     Internal(String),
     PongMessageMismatch,
@@ -83,11 +83,15 @@ impl From<Failure> for OperationFailure {
 }
 
 impl From<DecodeError> for TrezorError {
-    fn from(e: DecodeError) -> Self { TrezorError::ProtocolError(e.to_string()) }
+    fn from(e: DecodeError) -> Self {
+        TrezorError::ProtocolError(e.to_string())
+    }
 }
 
 impl From<EncodeError> for TrezorError {
-    fn from(e: EncodeError) -> Self { TrezorError::Internal(e.to_string()) }
+    fn from(e: EncodeError) -> Self {
+        TrezorError::Internal(e.to_string())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -117,5 +121,7 @@ impl From<UsbError> for TrezorError {
 
 #[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
 impl From<std::io::Error> for TrezorError {
-    fn from(e: std::io::Error) -> Self { TrezorError::UnderlyingError(e.to_string()) }
+    fn from(e: std::io::Error) -> Self {
+        TrezorError::UnderlyingError(e.to_string())
+    }
 }

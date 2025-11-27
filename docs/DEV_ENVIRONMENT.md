@@ -38,6 +38,14 @@
        ```
 9. Try `cargo test --all --features run-docker-tests -- --test-threads=16`.
 
+   Warning:
+
+   Running the tests will start several Docker containers. If any container fails to start, check for potential port conflicts with existing services on your system. For example, on MacOS, the testblockchain container (used for UTXO testing) may not start because it uses port 7000, which is also used by the MacOS AirPlay Receiver. To resolve this issue, disable AirPlay Receiver in your system settings.
+
+   Note for MacOS users:
+
+   The nucleusd container (and its dependent ibc-relayer container) requires host network access. However, on MacOS, Docker does not support host networking by default. To ensure the nucleusd container runs correctly, make sure to turn on the "Enable host networking" option in your Docker settings.
+
 ## Running WASM tests
 
 1. Set up [WASM Build Environment](../docs/WASM_BUILD.md#Setting-up-the-environment)

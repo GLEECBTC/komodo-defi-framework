@@ -17,11 +17,15 @@ pub trait StateMachineTrait: Send + Sized + 'static {
 
     /// Asynchronous method called when the state machine starts its execution.
     /// This method can be overridden by implementing types.
-    async fn on_start(&mut self) -> Result<(), Self::Error> { Ok(()) }
+    async fn on_start(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
 
     /// Asynchronous method called when the state machine finishes its execution.
     /// This method can be overridden by implementing types.
-    async fn on_finished(&mut self) -> Result<(), Self::Error> { Ok(()) }
+    async fn on_finished(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
 
     /// Asynchronous method to run the state machine.
     /// It transitions between states and handles state-specific logic.
@@ -143,7 +147,9 @@ pub struct ResultGuard<T> {
 
 impl<T> ResultGuard<T> {
     /// The private constructor.
-    fn new(result: T) -> Self { ResultGuard { result } }
+    fn new(result: T) -> Self {
+        ResultGuard { result }
+    }
 }
 
 /// An instance of `ErrorGuard` can be initialized within the `mm2_state_machine` crate only.
@@ -153,7 +159,9 @@ pub struct ErrorGuard<E> {
 
 impl<E> ErrorGuard<E> {
     /// The private constructor.
-    pub(crate) fn new(error: E) -> Self { ErrorGuard { error } }
+    pub(crate) fn new(error: E) -> Self {
+        ErrorGuard { error }
+    }
 }
 
 #[cfg(test)]
@@ -216,14 +224,18 @@ mod tests {
     impl LastState for SuccessfulState {
         type StateMachine = AuthStateMachine;
 
-        async fn on_changed(self: Box<Self>, _ctx: &mut AuthStateMachine) -> AuthResult { Ok(self.user_id) }
+        async fn on_changed(self: Box<Self>, _ctx: &mut AuthStateMachine) -> AuthResult {
+            Ok(self.user_id)
+        }
     }
 
     #[async_trait]
     impl LastState for ErrorState {
         type StateMachine = AuthStateMachine;
 
-        async fn on_changed(self: Box<Self>, _ctx: &mut AuthStateMachine) -> AuthResult { Err(self.error) }
+        async fn on_changed(self: Box<Self>, _ctx: &mut AuthStateMachine) -> AuthResult {
+            Err(self.error)
+        }
     }
 
     #[async_trait]

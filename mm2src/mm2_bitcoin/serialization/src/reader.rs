@@ -1,5 +1,6 @@
 use compact_integer::CompactInteger;
 use derive_more::Display;
+use std::convert::TryFrom;
 use std::{io, marker};
 
 pub fn deserialize<R, T>(buffer: R) -> Result<T, Error>
@@ -39,7 +40,9 @@ pub enum Error {
 impl std::error::Error for Error {}
 
 impl From<io::Error> for Error {
-    fn from(_: io::Error) -> Self { Error::UnexpectedEnd }
+    fn from(_: io::Error) -> Self {
+        Error::UnexpectedEnd
+    }
 }
 
 pub trait Deserializable {
@@ -49,8 +52,8 @@ pub trait Deserializable {
         T: io::Read;
 }
 
-#[derive(Debug)]
-pub enum CoinVariant {
+#[derive(Debug, Clone, Copy)]
+pub enum ChainVariant {
     // Todo: https://github.com/KomodoPlatform/atomicDEX-API/issues/1345
     BTC,
     Qtum,
@@ -62,38 +65,49 @@ pub enum CoinVariant {
     RICK,
     /// Same reason as RICK.
     MORTY,
+    RVN,
+    PIVX,
 }
 
-impl CoinVariant {
-    pub fn is_btc(&self) -> bool { matches!(self, CoinVariant::BTC) }
-    pub fn is_qtum(&self) -> bool { matches!(self, CoinVariant::Qtum) }
-    pub fn is_lbc(&self) -> bool { matches!(self, CoinVariant::LBC) }
-    pub fn is_ppc(&self) -> bool { matches!(self, CoinVariant::PPC) }
-    pub fn is_kmd_assetchain(&self) -> bool { matches!(self, CoinVariant::RICK | CoinVariant::MORTY) }
+impl ChainVariant {
+    pub fn is_btc(&self) -> bool {
+        matches!(self, ChainVariant::BTC)
+    }
+    pub fn is_qtum(&self) -> bool {
+        matches!(self, ChainVariant::Qtum)
+    }
+    pub fn is_lbc(&self) -> bool {
+        matches!(self, ChainVariant::LBC)
+    }
+    pub fn is_ppc(&self) -> bool {
+        matches!(self, ChainVariant::PPC)
+    }
+    pub fn is_kmd_assetchain(&self) -> bool {
+        matches!(self, ChainVariant::RICK | ChainVariant::MORTY)
+    }
+    pub fn is_rvn(&self) -> bool {
+        matches!(self, ChainVariant::RVN)
+    }
+
+    pub fn is_pivx(&self) -> bool {
+        matches!(self, ChainVariant::PIVX)
+    }
 }
 
-fn ticker_matches(ticker: &str, with: &str) -> bool {
-    ticker == with || ticker.contains(&format!("{with}-")) || ticker.contains(&format!("{with}_"))
-}
+impl TryFrom<&str> for ChainVariant {
+    type Error = String;
 
-impl From<&str> for CoinVariant {
-    fn from(ticker: &str) -> Self {
-        match ticker {
-            // "BTC", "BTC-segwit", "tBTC", "tBTC-segwit", etc..
-            t if ticker_matches(t, "BTC") => CoinVariant::BTC,
-            // "BCH", "tBCH", etc..
-            t if ticker_matches(t, "BCH") => CoinVariant::BTC,
-            // "QTUM", "QTUM-segwit", "tQTUM", "tQTUM-segwit", etc..
-            t if ticker_matches(t, "QTUM") => CoinVariant::Qtum,
-            // "LBC", "LBC-segwit", etc..
-            t if ticker_matches(t, "LBC") => CoinVariant::LBC,
-            // "PPC", "PPC-segwit", etc..
-            t if ticker_matches(t, "PPC") => CoinVariant::PPC,
-            // "RICK"
-            t if ticker_matches(t, "RICK") => CoinVariant::RICK,
-            // "MORTY
-            t if ticker_matches(t, "MORTY") => CoinVariant::MORTY,
-            _ => CoinVariant::Standard,
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "BTC" => Ok(ChainVariant::BTC),
+            "QTUM" => Ok(ChainVariant::Qtum),
+            "LBC" => Ok(ChainVariant::LBC),
+            "PPC" => Ok(ChainVariant::PPC),
+            "RICK" => Ok(ChainVariant::RICK),
+            "MORTY" => Ok(ChainVariant::MORTY),
+            "RVN" => Ok(ChainVariant::RVN),
+            "PIVX" => Ok(ChainVariant::PIVX),
+            _ => Err(format!("Unknown chain variant: {}", value)),
         }
     }
 }
@@ -103,7 +117,7 @@ impl From<&str> for CoinVariant {
 pub struct Reader<T> {
     buffer: T,
     peeked: Option<u8>,
-    coin_variant: CoinVariant,
+    chain_variant: ChainVariant,
 }
 
 impl<'a> Reader<&'a [u8]> {
@@ -112,16 +126,16 @@ impl<'a> Reader<&'a [u8]> {
         Reader {
             buffer,
             peeked: None,
-            coin_variant: CoinVariant::Standard,
+            chain_variant: ChainVariant::Standard,
         }
     }
 
     /// Convenient way of creating for slice of bytes
-    pub fn new_with_coin_variant(buffer: &'a [u8], coin_variant: CoinVariant) -> Self {
+    pub fn new_with_chain_variant(buffer: &'a [u8], chain_variant: ChainVariant) -> Self {
         Reader {
             buffer,
             peeked: None,
-            coin_variant,
+            chain_variant,
         }
     }
 }
@@ -156,7 +170,15 @@ where
         Reader {
             buffer: read,
             peeked: None,
-            coin_variant: CoinVariant::Standard,
+            chain_variant: ChainVariant::Standard,
+        }
+    }
+
+    pub fn from_read_with_chain_variant(read: R, chain_variant: ChainVariant) -> Self {
+        Reader {
+            buffer: read,
+            peeked: None,
+            chain_variant,
         }
     }
 
@@ -227,7 +249,9 @@ where
         }
     }
 
-    pub fn coin_variant(&self) -> &CoinVariant { &self.coin_variant }
+    pub fn chain_variant(&self) -> &ChainVariant {
+        &self.chain_variant
+    }
 }
 
 /// Should be used to iterate over structures of the same type
@@ -258,7 +282,9 @@ struct Proxy<F, T> {
 }
 
 impl<F, T> Proxy<F, T> {
-    fn new(from: F, to: T) -> Self { Proxy { from, to } }
+    fn new(from: F, to: T) -> Self {
+        Proxy { from, to }
+    }
 }
 
 impl<F, T> io::Read for Proxy<F, T>

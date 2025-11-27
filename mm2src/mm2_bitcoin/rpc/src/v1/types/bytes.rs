@@ -12,21 +12,29 @@ pub struct Bytes(pub Vec<u8>);
 
 impl Bytes {
     /// Simple constructor.
-    pub fn new(bytes: Vec<u8>) -> Bytes { Bytes(bytes) }
+    pub fn new(bytes: Vec<u8>) -> Bytes {
+        Bytes(bytes)
+    }
 
     /// Convert back to vector
-    pub fn into_vec(self) -> Vec<u8> { self.0 }
+    pub fn into_vec(self) -> Vec<u8> {
+        self.0
+    }
 }
 
 impl<T> From<T> for Bytes
 where
     GlobalBytes: From<T>,
 {
-    fn from(other: T) -> Self { Bytes(GlobalBytes::from(other).take()) }
+    fn from(other: T) -> Self {
+        Bytes(GlobalBytes::from(other).take())
+    }
 }
 
 impl From<Bytes> for Vec<u8> {
-    fn from(bytes: Bytes) -> Self { bytes.0 }
+    fn from(bytes: Bytes) -> Self {
+        bytes.0
+    }
 }
 
 impl Serialize for Bytes {
@@ -54,7 +62,9 @@ struct BytesVisitor;
 impl Visitor<'_> for BytesVisitor {
     type Value = Bytes;
 
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result { formatter.write_str("a bytes") }
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a bytes")
+    }
 
     fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
     where
@@ -82,13 +92,15 @@ impl Visitor<'_> for BytesVisitor {
 impl ops::Deref for Bytes {
     type Target = Vec<u8>;
 
-    fn deref(&self) -> &Self::Target { &self.0 }
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl ::std::fmt::LowerHex for Bytes {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         for i in &self.0[..] {
-            write!(f, "{:02x}", i)?;
+            write!(f, "{i:02x}")?;
         }
         Ok(())
     }

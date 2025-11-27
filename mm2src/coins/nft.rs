@@ -9,23 +9,29 @@ pub(crate) mod nft_errors;
 pub mod nft_structs;
 pub(crate) mod storage;
 
-#[cfg(any(test, target_arch = "wasm32"))] mod nft_tests;
+#[cfg(any(test, target_arch = "wasm32"))]
+mod nft_tests;
 
 use crate::hd_wallet::AddrToString;
-use crate::{lp_coinfind_or_err, CoinWithDerivationMethod, CoinsContext, MarketCoinOps, MmCoinEnum, MmCoinStruct,
-            WithdrawError};
+use crate::{
+    lp_coinfind_or_err, CoinWithDerivationMethod, CoinsContext, MarketCoinOps, MmCoinEnum, MmCoinStruct, WithdrawError,
+};
 use nft_errors::{GetNftInfoError, UpdateNftError};
-use nft_structs::{Chain, ContractType, ConvertChain, Nft, NftFromMoralis, NftList, NftListReq, NftMetadataReq,
-                  NftTransferHistory, NftTransferHistoryFromMoralis, NftTransfersReq, NftsTransferHistoryList,
-                  TransactionNftDetails, UpdateNftReq, WithdrawNftReq};
+use nft_structs::{
+    Chain, ContractType, ConvertChain, Nft, NftFromMoralis, NftList, NftListReq, NftMetadataReq, NftTransferHistory,
+    NftTransferHistoryFromMoralis, NftTransfersReq, NftsTransferHistoryList, TransactionNftDetails, UpdateNftReq,
+    WithdrawNftReq,
+};
 
-use crate::eth::{withdraw_erc1155, withdraw_erc721, EthCoin, EthCoinType, EthTxFeeDetails, LegacyGasPrice,
-                 PayForGasOption};
-use crate::nft::nft_errors::{ClearNftDbError, MetaFromUrlError, ProtectFromSpamError, TransferConfirmationsError,
-                             UpdateSpamPhishingError};
-use crate::nft::nft_structs::{build_nft_with_empty_meta, BuildNftFields, ClearNftDbReq, NftCommon, NftCtx, NftInfo,
-                              NftTransferCommon, PhishingDomainReq, PhishingDomainRes, RefreshMetadataReq,
-                              SpamContractReq, SpamContractRes, TransferMeta, TransferStatus, UriMeta};
+use crate::eth::{withdraw_erc1155, withdraw_erc721, EthCoin, EthCoinType, EthTxFeeDetails, PayForGasOption};
+use crate::nft::nft_errors::{
+    ClearNftDbError, MetaFromUrlError, ProtectFromSpamError, TransferConfirmationsError, UpdateSpamPhishingError,
+};
+use crate::nft::nft_structs::{
+    build_nft_with_empty_meta, BuildNftFields, ClearNftDbReq, NftCommon, NftCtx, NftInfo, NftTransferCommon,
+    PhishingDomainReq, PhishingDomainRes, RefreshMetadataReq, SpamContractReq, SpamContractRes, TransferMeta,
+    TransferStatus, UriMeta,
+};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::nft::storage::NftMigrationOps;
 use crate::nft::storage::{NftListStorageOps, NftTransferHistoryStorageOps};
@@ -204,7 +210,7 @@ async fn process_transfers_confirmations(
         let ticker = chain.to_ticker();
         let coin_enum = lp_coinfind_or_err(ctx, ticker).await.map_mm_err()?;
         match coin_enum {
-            MmCoinEnum::EthCoin(eth_coin) => {
+            MmCoinEnum::EthCoinVariant(eth_coin) => {
                 let current_block = current_block_impl(eth_coin).await?;
                 Ok((ticker, current_block))
             },
@@ -261,7 +267,7 @@ pub async fn update_nft(ctx: MmArc, req: UpdateNftReq) -> MmResult<(), UpdateNft
         };
         let coin_enum = lp_coinfind_or_err(&ctx, chain.to_nft_ticker()).await.map_mm_err()?;
         let global_nft = match coin_enum {
-            MmCoinEnum::EthCoin(eth_coin) => eth_coin,
+            MmCoinEnum::EthCoinVariant(eth_coin) => eth_coin,
             _ => {
                 return MmError::err(UpdateNftError::CoinDoesntSupportNft {
                     coin: coin_enum.ticker().to_owned(),
@@ -353,7 +359,7 @@ where
     let ticker = chain.to_nft_ticker();
 
     if let Some(MmCoinStruct {
-        inner: MmCoinEnum::EthCoin(nft_global),
+        inner: MmCoinEnum::EthCoinVariant(nft_global),
         ..
     }) = coins.get_mut(ticker)
     {
@@ -699,7 +705,7 @@ async fn get_moralis_nft_list(
     let mut cursor = String::new();
     loop {
         // Create a new URL instance from uri_without_cursor and modify its query to include the cursor if present
-        let uri = format!("{}{}", uri_without_cursor, cursor);
+        let uri = format!("{uri_without_cursor}{cursor}");
         let response = build_and_send_request(uri.as_str(), &wrapper.proxy_sign).await?;
         if let Some(nfts_list) = response["result"].as_array() {
             for nft_json in nfts_list {
@@ -716,7 +722,7 @@ async fn get_moralis_nft_list(
             // if cursor is not null, there are other NFTs on next page,
             // and we need to send new request with cursor to get info from the next page.
             if let Some(cursor_res) = response["cursor"].as_str() {
-                cursor = format!("&cursor={}", cursor_res);
+                cursor = format!("&cursor={cursor_res}");
                 continue;
             } else {
                 break;
@@ -741,14 +747,14 @@ pub(crate) async fn get_nfts_for_activation(
     let mut cursor = String::new();
     loop {
         // Create a new URL instance from uri_without_cursor and modify its query to include the cursor if present
-        let uri = format!("{}{}", uri_without_cursor, cursor);
+        let uri = format!("{uri_without_cursor}{cursor}");
         let response = build_and_send_request(uri.as_str(), &proxy_sign).await?;
         if let Some(nfts_list) = response["result"].as_array() {
             process_nft_list_for_activation(nfts_list, chain, &mut nfts_map)?;
             // if cursor is not null, there are other NFTs on next page,
             // and we need to send new request with cursor to get info from the next page.
             if let Some(cursor_res) = response["cursor"].as_str() {
-                cursor = format!("&cursor={}", cursor_res);
+                cursor = format!("&cursor={cursor_res}");
                 continue;
             } else {
                 break;
@@ -818,14 +824,14 @@ async fn get_moralis_nft_transfers(
     let mut cursor = String::new();
     loop {
         // Create a new URL instance from uri_without_cursor and modify its query to include the cursor if present
-        let uri = format!("{}{}", uri_without_cursor, cursor);
+        let uri = format!("{uri_without_cursor}{cursor}");
         let response = build_and_send_request(uri.as_str(), &wrapper.proxy_sign).await?;
         if let Some(transfer_list) = response["result"].as_array() {
             process_transfer_list(transfer_list, chain, wallet_address, &global_nft, &mut res_list).await?;
             // if the cursor is not null, there are other NFTs transfers on next page,
             // and we need to send new request with cursor to get info from the next page.
             if let Some(cursor_res) = response["cursor"].as_str() {
-                cursor = format!("&cursor={}", cursor_res);
+                cursor = format!("&cursor={cursor_res}");
                 continue;
             } else {
                 break;
@@ -905,7 +911,8 @@ async fn get_fee_details(eth_coin: &EthCoin, transaction_hash: &str) -> Option<E
             match r.effective_gas_price {
                 Some(gas_price) => EthTxFeeDetails::new(
                     gas_used,
-                    PayForGasOption::Legacy(LegacyGasPrice { gas_price }),
+                    // TODO: is this always legacy?
+                    PayForGasOption::Legacy { gas_price },
                     fee_coin,
                 )
                 .ok(),
@@ -919,12 +926,8 @@ async fn get_fee_details(eth_coin: &EthCoin, transaction_hash: &str) -> Option<E
                         .await
                         .ok()??;
                     let gas_price = web3_tx.gas_price.unwrap_or_default();
-                    EthTxFeeDetails::new(
-                        gas_used,
-                        PayForGasOption::Legacy(LegacyGasPrice { gas_price }),
-                        fee_coin,
-                    )
-                    .ok()
+                    // TODO: is this always legacy?
+                    EthTxFeeDetails::new(gas_used, PayForGasOption::Legacy { gas_price }, fee_coin).ok()
                 },
             }
         },
@@ -1597,7 +1600,7 @@ pub async fn clear_nft_db(ctx: MmArc, req: ClearNftDbReq) -> MmResult<(), ClearN
         }
     }
     if !errors.is_empty() {
-        return MmError::err(ClearNftDbError::DbError(format!("{:?}", errors)));
+        return MmError::err(ClearNftDbError::DbError(format!("{errors:?}")));
     }
 
     Ok(())

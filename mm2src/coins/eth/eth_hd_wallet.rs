@@ -1,7 +1,8 @@
 use super::*;
 use crate::coin_balance::HDAddressBalanceScanner;
-use crate::hd_wallet::{ExtractExtendedPubkey, HDAccount, HDAddress, HDExtractPubkeyError, HDWallet, HDXPubExtractor,
-                       TrezorCoinError};
+use crate::hd_wallet::{
+    ExtractExtendedPubkey, HDAccount, HDAddress, HDExtractPubkeyError, HDWallet, HDXPubExtractor, TrezorCoinError,
+};
 use async_trait::async_trait;
 use bip32::DerivationPath;
 use crypto::Secp256k1ExtendedPublicKey;
@@ -14,7 +15,9 @@ pub type EthHDWallet = HDWallet<EthHDAccount>;
 impl DisplayAddress for Address {
     /// converts `Address` to mixed-case checksum form.
     #[inline]
-    fn display_address(&self) -> String { checksum_address(&self.addr_to_string()) }
+    fn display_address(&self) -> String {
+        checksum_address(&self.addr_to_string())
+    }
 }
 
 #[async_trait]
@@ -95,7 +98,9 @@ impl HDWalletBalanceOps for EthCoin {
     type HDAddressScanner = Self;
     type BalanceObject = CoinBalanceMap;
 
-    async fn produce_hd_address_scanner(&self) -> BalanceResult<Self::HDAddressScanner> { Ok(self.clone()) }
+    async fn produce_hd_address_scanner(&self) -> BalanceResult<Self::HDAddressScanner> {
+        Ok(self.clone())
+    }
 
     async fn enable_hd_wallet<XPubExtractor>(
         &self,

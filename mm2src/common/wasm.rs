@@ -9,7 +9,7 @@ use wasm_bindgen::prelude::*;
 /// Generally, the `JsValue` error contains the stack trace of an error.
 /// This function cuts off the stack trace.
 pub fn stringify_js_error(error: &JsValue) -> String {
-    format!("{:?}", error)
+    format!("{error:?}")
         .lines()
         .next()
         .map(|e| e.to_owned())
@@ -42,10 +42,7 @@ impl<T, E: fmt::Debug> WasmUnwrapExt<T> for Result<T, E> {
             Ok(t) => t,
             Err(e) => {
                 let (file, line) = caller_file_line();
-                let error = format!(
-                    "{}:{}] 'Result::unwrap_w' called on an 'Err' value: {:?}",
-                    file, line, e
-                );
+                let error = format!("{file}:{line}] 'Result::unwrap_w' called on an 'Err' value: {e:?}");
                 wasm_bindgen::throw_str(&error)
             },
         }
@@ -57,7 +54,7 @@ impl<T, E: fmt::Debug> WasmUnwrapExt<T> for Result<T, E> {
             Ok(t) => t,
             Err(e) => {
                 let (file, line) = caller_file_line();
-                let error = format!("{}:{}] {}: {:?}", file, line, description, e);
+                let error = format!("{file}:{line}] {description}: {e:?}");
                 wasm_bindgen::throw_str(&error)
             },
         }
@@ -71,7 +68,7 @@ impl<T> WasmUnwrapExt<T> for Option<T> {
             Some(t) => t,
             None => {
                 let (file, line) = caller_file_line();
-                let error = format!("{}:{}] 'Option::unwrap_w' called on a 'None' value", file, line);
+                let error = format!("{file}:{line}] 'Option::unwrap_w' called on a 'None' value");
                 wasm_bindgen::throw_str(&error)
             },
         }
@@ -83,7 +80,7 @@ impl<T> WasmUnwrapExt<T> for Option<T> {
             Some(t) => t,
             None => {
                 let (file, line) = caller_file_line();
-                let error = format!("{}:{}] {}", file, line, description);
+                let error = format!("{file}:{line}] {description}");
                 wasm_bindgen::throw_str(&error)
             },
         }
@@ -96,10 +93,7 @@ impl<T: fmt::Debug, E> WasmUnwrapErrExt<E> for Result<T, E> {
         match self {
             Ok(t) => {
                 let (file, line) = caller_file_line();
-                let error = format!(
-                    "{}:{}] 'Result::unwrap_err_w' called on an 'Ok' value: {:?}",
-                    file, line, t
-                );
+                let error = format!("{file}:{line}] 'Result::unwrap_err_w' called on an 'Ok' value: {t:?}");
                 wasm_bindgen::throw_str(&error)
             },
             Err(e) => e,
@@ -111,7 +105,7 @@ impl<T: fmt::Debug, E> WasmUnwrapErrExt<E> for Result<T, E> {
         match self {
             Ok(t) => {
                 let (file, line) = caller_file_line();
-                let error = format!("{}:{}] {}: {:?}", file, line, description, t);
+                let error = format!("{file}:{line}] {description}: {t:?}");
                 wasm_bindgen::throw_str(&error)
             },
             Err(e) => e,
@@ -122,7 +116,7 @@ impl<T: fmt::Debug, E> WasmUnwrapErrExt<E> for Result<T, E> {
 #[track_caller]
 pub fn panic_w(description: &str) {
     let (file, line) = caller_file_line();
-    let error = format!("{}:{}] 'panic_w' called: {:?}", file, line, description);
+    let error = format!("{file}:{line}] 'panic_w' called: {description:?}");
     wasm_bindgen::throw_str(&error)
 }
 

@@ -12,8 +12,7 @@ pub fn validate_watcher_reward(
     if is_exact {
         if actual_reward != expected_reward {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "Payment tx reward_amount arg {} is invalid, expected {}",
-                actual_reward, expected_reward,
+                "Payment tx reward_amount arg {actual_reward} is invalid, expected {expected_reward}",
             )));
         }
     } else {
@@ -21,14 +20,17 @@ pub fn validate_watcher_reward(
         let max_acceptable_reward = get_reward_upper_boundary(expected_reward);
         if actual_reward < min_acceptable_reward || actual_reward > max_acceptable_reward {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "Provided watcher reward {} is not within the expected interval {} - {}",
-                actual_reward, min_acceptable_reward, max_acceptable_reward
+                "Provided watcher reward {actual_reward} is not within the expected interval {min_acceptable_reward} - {max_acceptable_reward}"
             )));
         }
     }
     Ok(())
 }
 
-fn get_reward_lower_boundary(reward: u64) -> u64 { (reward as f64 * (1. - REWARD_MARGIN)) as u64 }
+fn get_reward_lower_boundary(reward: u64) -> u64 {
+    (reward as f64 * (1. - REWARD_MARGIN)) as u64
+}
 
-fn get_reward_upper_boundary(reward: u64) -> u64 { (reward as f64 * (1. + REWARD_MARGIN)) as u64 }
+fn get_reward_upper_boundary(reward: u64) -> u64 {
+    (reward as f64 * (1. + REWARD_MARGIN)) as u64
+}

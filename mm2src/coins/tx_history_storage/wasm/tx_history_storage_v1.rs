@@ -61,13 +61,19 @@ pub async fn clear_tx_history(db: &TxHistoryDb, ticker: &str, wallet_address: &s
 struct HistoryId(String);
 
 impl HistoryId {
-    fn new(ticker: &str, wallet_address: &str) -> HistoryId { HistoryId(format!("{}_{}", ticker, wallet_address)) }
+    fn new(ticker: &str, wallet_address: &str) -> HistoryId {
+        HistoryId(format!("{ticker}_{wallet_address}"))
+    }
 
-    fn as_str(&self) -> &str { &self.0 }
+    fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 impl std::fmt::Display for HistoryId {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "{}", &self.0) }
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", &self.0)
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]

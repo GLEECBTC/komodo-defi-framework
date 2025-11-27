@@ -1,8 +1,9 @@
 use crate::context::CoinsActivationContext;
 use crate::prelude::*;
-use crate::standalone_coin::init_standalone_coin_error::{CancelInitStandaloneCoinError, InitStandaloneCoinError,
-                                                         InitStandaloneCoinStatusError,
-                                                         InitStandaloneCoinUserActionError};
+use crate::standalone_coin::init_standalone_coin_error::{
+    CancelInitStandaloneCoinError, InitStandaloneCoinError, InitStandaloneCoinStatusError,
+    InitStandaloneCoinUserActionError,
+};
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBuilder};
@@ -14,8 +15,9 @@ use mm2_event_stream::StreamingManager;
 use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use rpc_task::rpc_common::{CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusRequest, RpcTaskUserActionRequest};
-use rpc_task::{RpcInitReq, RpcTask, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus,
-               RpcTaskTypes};
+use rpc_task::{
+    RpcInitReq, RpcTask, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes,
+};
 use serde_derive::Deserialize;
 use serde_json::Value as Json;
 use std::collections::HashMap;

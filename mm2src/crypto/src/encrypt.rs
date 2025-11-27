@@ -15,9 +15,9 @@ type Aes256CbcEnc = cbc::Encryptor<Aes256>;
 
 #[derive(Debug, Display, PartialEq)]
 pub enum EncryptionError {
-    #[display(fmt = "Error generating random bytes: {}", _0)]
+    #[display(fmt = "Error generating random bytes: {_0}")]
     UnableToGenerateRandomBytes(String),
-    #[display(fmt = "AES cipher error: {}", _0)]
+    #[display(fmt = "AES cipher error: {_0}")]
     AESCipherError(String),
     Internal(String),
 }

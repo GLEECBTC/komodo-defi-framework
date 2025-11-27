@@ -10,27 +10,27 @@ use std::time::Duration;
 #[derive(Clone, Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum HDAccountBalanceRpcError {
-    #[display(fmt = "No such coin {}", coin)]
+    #[display(fmt = "No such coin {coin}")]
     NoSuchCoin { coin: String },
-    #[display(fmt = "RPC timed out {:?}", _0)]
+    #[display(fmt = "RPC timed out {_0:?}")]
     Timeout(Duration),
     #[display(fmt = "Coin is expected to be activated with the HD wallet derivation method")]
     CoinIsActivatedNotWithHDWallet,
-    #[display(fmt = "HD account '{}' is not activated", account_id)]
+    #[display(fmt = "HD account '{account_id}' is not activated")]
     UnknownAccount { account_id: u32 },
-    #[display(fmt = "Coin doesn't support the given BIP44 chain: {:?}", chain)]
+    #[display(fmt = "Coin doesn't support the given BIP44 chain: {chain:?}")]
     InvalidBip44Chain { chain: Bip44Chain },
-    #[display(fmt = "Error deriving an address: {}", _0)]
+    #[display(fmt = "Error deriving an address: {_0}")]
     ErrorDerivingAddress(String),
-    #[display(fmt = "Wallet storage error: {}", _0)]
+    #[display(fmt = "Wallet storage error: {_0}")]
     WalletStorageError(String),
-    #[display(fmt = "Electrum/Native RPC invalid response: {}", _0)]
+    #[display(fmt = "Electrum/Native RPC invalid response: {_0}")]
     RpcInvalidResponse(String),
     #[display(fmt = "Failed scripthash subscription. Error: {_0}")]
     FailedScripthashSubscription(String),
-    #[display(fmt = "Transport: {}", _0)]
+    #[display(fmt = "Transport: {_0}")]
     Transport(String),
-    #[display(fmt = "Internal: {}", _0)]
+    #[display(fmt = "Internal: {_0}")]
     Internal(String),
 }
 
@@ -76,12 +76,15 @@ impl From<BalanceError> for HDAccountBalanceRpcError {
             BalanceError::InvalidResponse(rpc) => HDAccountBalanceRpcError::RpcInvalidResponse(rpc),
             BalanceError::UnexpectedDerivationMethod(der_method) => HDAccountBalanceRpcError::from(der_method),
             BalanceError::WalletStorageError(e) | BalanceError::Internal(e) => HDAccountBalanceRpcError::Internal(e),
+            BalanceError::NoSuchCoin { coin } => HDAccountBalanceRpcError::NoSuchCoin { coin },
         }
     }
 }
 
 impl From<InvalidBip44ChainError> for HDAccountBalanceRpcError {
-    fn from(e: InvalidBip44ChainError) -> Self { HDAccountBalanceRpcError::InvalidBip44Chain { chain: e.chain } }
+    fn from(e: InvalidBip44ChainError) -> Self {
+        HDAccountBalanceRpcError::InvalidBip44Chain { chain: e.chain }
+    }
 }
 
 impl From<AddressDerivingError> for HDAccountBalanceRpcError {

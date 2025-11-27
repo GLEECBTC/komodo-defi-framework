@@ -1,14 +1,17 @@
 use crate::context::CoinsActivationContext;
 use crate::prelude::*;
-use crate::standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoinError,
-                             InitStandaloneCoinInitialStatus, InitStandaloneCoinTaskHandleShared,
-                             InitStandaloneCoinTaskManagerShared};
+use crate::standalone_coin::{
+    InitStandaloneCoinActivationOps, InitStandaloneCoinError, InitStandaloneCoinInitialStatus,
+    InitStandaloneCoinTaskHandleShared, InitStandaloneCoinTaskManagerShared,
+};
 use async_trait::async_trait;
 use coins::coin_balance::{CoinBalanceReport, IguanaWalletBalance};
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tx_history_storage::CreateTxHistoryStorageError;
-use coins::z_coin::{z_coin_from_conf_and_params, BlockchainScanStopped, FirstSyncBlock, SyncStatus, ZCoin,
-                    ZCoinBuildError, ZcoinActivationParams, ZcoinProtocolInfo};
+use coins::z_coin::{
+    z_coin_from_conf_and_params, BlockchainScanStopped, FirstSyncBlock, SyncStatus, ZCoin, ZCoinBuildError,
+    ZcoinActivationParams, ZcoinProtocolInfo,
+};
 use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, PrivKeyBuildPolicy, RegisterCoinError};
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use crypto::CryptoCtxError;
@@ -49,7 +52,9 @@ pub struct ZcoinActivationResult {
 }
 
 impl CurrentBlock for ZcoinActivationResult {
-    fn current_block(&self) -> u64 { self.current_block }
+    fn current_block(&self) -> u64 {
+        self.current_block
+    }
 }
 
 impl GetAddressesBalances for ZcoinActivationResult {
@@ -99,14 +104,16 @@ pub enum ZcoinInProgressStatus {
 }
 
 impl InitStandaloneCoinInitialStatus for ZcoinInProgressStatus {
-    fn initial_status() -> Self { ZcoinInProgressStatus::ActivatingCoin }
+    fn initial_status() -> Self {
+        ZcoinInProgressStatus::ActivatingCoin
+    }
 }
 
 #[derive(Clone, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 #[non_exhaustive]
 pub enum ZcoinInitError {
-    #[display(fmt = "Error on coin {} creation: {}", ticker, error)]
+    #[display(fmt = "Error on coin {ticker} creation: {error}")]
     CoinCreationError {
         ticker: String,
         error: String,
@@ -115,7 +122,7 @@ pub enum ZcoinInitError {
         ticker: String,
     },
     HardwareWalletsAreNotSupportedYet,
-    #[display(fmt = "Initialization task has timed out {:?}", duration)]
+    #[display(fmt = "Initialization task has timed out {duration:?}")]
     TaskTimedOut {
         duration: Duration,
     },
@@ -134,7 +141,9 @@ impl ZcoinInitError {
 }
 
 impl From<BalanceError> for ZcoinInitError {
-    fn from(err: BalanceError) -> Self { ZcoinInitError::CouldNotGetBalance(err.to_string()) }
+    fn from(err: BalanceError) -> Self {
+        ZcoinInitError::CouldNotGetBalance(err.to_string())
+    }
 }
 
 impl From<RegisterCoinError> for ZcoinInitError {
@@ -158,11 +167,15 @@ impl From<RpcTaskError> for ZcoinInitError {
 }
 
 impl From<CryptoCtxError> for ZcoinInitError {
-    fn from(err: CryptoCtxError) -> Self { ZcoinInitError::Internal(err.to_string()) }
+    fn from(err: CryptoCtxError) -> Self {
+        ZcoinInitError::Internal(err.to_string())
+    }
 }
 
 impl From<BlockchainScanStopped> for ZcoinInitError {
-    fn from(e: BlockchainScanStopped) -> Self { ZcoinInitError::Internal(e.to_string()) }
+    fn from(e: BlockchainScanStopped) -> Self {
+        ZcoinInitError::Internal(e.to_string())
+    }
 }
 
 impl From<CreateTxHistoryStorageError> for ZcoinInitError {
@@ -195,7 +208,9 @@ impl From<ZcoinInitError> for InitStandaloneCoinError {
 }
 
 impl From<CryptoCtxError> for InitStandaloneCoinError {
-    fn from(e: CryptoCtxError) -> Self { InitStandaloneCoinError::Internal(e.to_string()) }
+    fn from(e: CryptoCtxError) -> Self {
+        InitStandaloneCoinError::Internal(e.to_string())
+    }
 }
 
 impl TryFromCoinProtocol for ZcoinProtocolInfo {

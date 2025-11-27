@@ -3,9 +3,11 @@ use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 
-use crate::{lp_coinfind_or_err,
-            utxo::{rpc_clients::UtxoRpcError, UtxoCommonOps},
-            CoinFindError, MmCoinEnum};
+use crate::{
+    lp_coinfind_or_err,
+    utxo::{rpc_clients::UtxoRpcError, UtxoCommonOps},
+    CoinFindError, MmCoinEnum,
+};
 
 pub type GetCurrentMtpRpcResult<T> = Result<T, MmError<GetCurrentMtpError>>;
 
@@ -23,7 +25,7 @@ pub struct GetCurrentMtpResponse {
 #[serde(tag = "error_type", content = "error_data")]
 pub enum GetCurrentMtpError {
     NoSuchCoin(String),
-    #[display(fmt = "Requested coin: {}; is not supported for this action.", _0)]
+    #[display(fmt = "Requested coin: {_0}; is not supported for this action.")]
     NotSupportedCoin(String),
     RpcError(String),
 }
@@ -39,11 +41,15 @@ impl HttpStatusCode for GetCurrentMtpError {
 }
 
 impl From<UtxoRpcError> for GetCurrentMtpError {
-    fn from(err: UtxoRpcError) -> Self { Self::RpcError(err.to_string()) }
+    fn from(err: UtxoRpcError) -> Self {
+        Self::RpcError(err.to_string())
+    }
 }
 
 impl From<CoinFindError> for GetCurrentMtpError {
-    fn from(err: CoinFindError) -> Self { Self::NoSuchCoin(err.to_string()) }
+    fn from(err: CoinFindError) -> Self {
+        Self::NoSuchCoin(err.to_string())
+    }
 }
 
 pub async fn get_current_mtp_rpc(
@@ -51,20 +57,20 @@ pub async fn get_current_mtp_rpc(
     req: GetCurrentMtpRequest,
 ) -> GetCurrentMtpRpcResult<GetCurrentMtpResponse> {
     match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
-        MmCoinEnum::UtxoCoin(utxo) => Ok(GetCurrentMtpResponse {
+        MmCoinEnum::UtxoCoinVariant(utxo) => Ok(GetCurrentMtpResponse {
             mtp: utxo.get_current_mtp().await.map_mm_err()?,
         }),
-        MmCoinEnum::QtumCoin(qtum) => Ok(GetCurrentMtpResponse {
+        MmCoinEnum::QtumCoinVariant(qtum) => Ok(GetCurrentMtpResponse {
             mtp: qtum.get_current_mtp().await.map_mm_err()?,
         }),
-        MmCoinEnum::Qrc20Coin(qrc) => Ok(GetCurrentMtpResponse {
+        MmCoinEnum::Qrc20CoinVariant(qrc) => Ok(GetCurrentMtpResponse {
             mtp: qrc.get_current_mtp().await.map_mm_err()?,
         }),
         #[cfg(not(target_arch = "wasm32"))]
-        MmCoinEnum::ZCoin(zcoin) => Ok(GetCurrentMtpResponse {
+        MmCoinEnum::ZCoinVariant(zcoin) => Ok(GetCurrentMtpResponse {
             mtp: zcoin.get_current_mtp().await.map_mm_err()?,
         }),
-        MmCoinEnum::Bch(bch) => Ok(GetCurrentMtpResponse {
+        MmCoinEnum::BchVariant(bch) => Ok(GetCurrentMtpResponse {
             mtp: bch.get_current_mtp().await.map_mm_err()?,
         }),
         _ => Err(MmError::new(GetCurrentMtpError::NotSupportedCoin(req.coin))),

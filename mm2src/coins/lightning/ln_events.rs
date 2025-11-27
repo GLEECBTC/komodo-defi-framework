@@ -95,7 +95,7 @@ impl EventHandler for LightningEventHandler {
             // Todo: Add spent UTXOs to RecentlySpentOutPoints if it's not discarded
             Event::DiscardFunding { channel_id, transaction } => info!(
                 "Discarding funding tx: {} for channel {}",
-                transaction.txid().to_string(),
+                transaction.txid(),
                 hex::encode(channel_id),
             ),
 
@@ -180,9 +180,9 @@ pub async fn init_abortable_events(platform: Arc<Platform>, db: SqliteLightningD
 
 #[derive(Display)]
 pub enum SignFundingTransactionError {
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
-    #[display(fmt = "Error signing transaction: {}", _0)]
+    #[display(fmt = "Error signing transaction: {_0}")]
     TxSignFailed(String),
 }
 
@@ -199,8 +199,7 @@ async fn sign_funding_transaction(
             .get(&uuid)
             .ok_or_else(|| {
                 SignFundingTransactionError::Internal(format!(
-                    "Unsigned funding tx not found for channel with uuid: {}",
-                    uuid
+                    "Unsigned funding tx not found for channel with uuid: {uuid}"
                 ))
             })?
             .clone()
@@ -300,8 +299,7 @@ impl LightningEventHandler {
                 Err(e) => {
                     error!(
                         "Error generating funding transaction for channel with uuid {}: {}",
-                        uuid,
-                        e.to_string()
+                        uuid, e
                     );
                     return;
                 },
@@ -527,8 +525,7 @@ impl LightningEventHandler {
                 Err(err) => {
                     error!(
                         "Could not create witness script for change output {}: {}",
-                        my_address.to_string(),
-                        err.to_string()
+                        my_address, err
                     );
                     return;
                 },

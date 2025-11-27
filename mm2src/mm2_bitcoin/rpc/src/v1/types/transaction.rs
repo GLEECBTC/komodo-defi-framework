@@ -63,7 +63,9 @@ pub struct TransactionOutputScript {
 }
 
 impl TransactionOutputScript {
-    pub fn is_empty(&self) -> bool { self.asm.is_empty() && self.hex.is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.asm.is_empty() && self.hex.is_empty()
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -113,7 +115,9 @@ pub struct SparkInput {
 }
 
 impl TransactionInputEnum {
-    pub fn is_coinbase(&self) -> bool { matches!(self, TransactionInputEnum::Coinbase(_)) }
+    pub fn is_coinbase(&self) -> bool {
+        matches!(self, TransactionInputEnum::Coinbase(_))
+    }
 }
 
 /// Signed transaction input
@@ -154,7 +158,9 @@ pub struct SignedTransactionOutput {
 }
 
 impl SignedTransactionOutput {
-    pub fn is_empty(&self) -> bool { self.value == Some(0.0) && self.script.is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.value == Some(0.0) && self.script.is_empty()
+    }
 }
 
 fn deserialize_null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
@@ -213,7 +219,9 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    pub fn is_coinbase(&self) -> bool { self.vin.iter().any(|input| input.is_coinbase()) }
+    pub fn is_coinbase(&self) -> bool {
+        self.vin.iter().any(|input| input.is_coinbase())
+    }
 }
 
 /// Return value of `getrawtransaction` method
@@ -253,9 +261,13 @@ mod tests {
         static ref TRANSACTIONS_MAP: HashMap<String, serde_json::Value> = parse_transactions();
     }
 
-    fn parse_transactions() -> HashMap<String, serde_json::Value> { serde_json::from_str(TRANSACTIONS_STR).unwrap() }
+    fn parse_transactions() -> HashMap<String, serde_json::Value> {
+        serde_json::from_str(TRANSACTIONS_STR).unwrap()
+    }
 
-    fn get_transaction_json(key: &str) -> serde_json::Value { TRANSACTIONS_MAP.get(key).cloned().unwrap() }
+    fn get_transaction_json(key: &str) -> serde_json::Value {
+        TRANSACTIONS_MAP.get(key).cloned().unwrap()
+    }
 
     #[test]
     fn transaction_input_serialize() {

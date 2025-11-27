@@ -37,11 +37,15 @@ impl Event {
 
     /// Returns whether this event is an error or not
     #[inline(always)]
-    pub fn is_error(&self) -> bool { self.error }
+    pub fn is_error(&self) -> bool {
+        self.error
+    }
 
     /// Returns the `streamer_id` (the ID of the streamer firing this event).
     #[inline(always)]
-    pub fn origin(&self) -> &StreamerId { &self.streamer_id }
+    pub fn origin(&self) -> &StreamerId {
+        &self.streamer_id
+    }
 
     /// Returns the event type and message as a pair.
     pub fn get(&self) -> (String, &Json) {

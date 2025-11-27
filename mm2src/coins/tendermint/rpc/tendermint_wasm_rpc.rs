@@ -10,9 +10,11 @@ use mm2_p2p::Keypair;
 use proxy_signature::RawMessage;
 use std::str::FromStr;
 use tendermint_rpc::endpoint::{abci_info, broadcast};
-pub use tendermint_rpc::endpoint::{abci_query::{AbciQuery, Request as AbciRequest},
-                                   health::Request as HealthRequest,
-                                   tx_search::Request as TxSearchRequest};
+pub use tendermint_rpc::endpoint::{
+    abci_query::{AbciQuery, Request as AbciRequest},
+    health::Request as HealthRequest,
+    tx_search::Request as TxSearchRequest,
+};
 use tendermint_rpc::error::Error as TendermintRpcError;
 use tendermint_rpc::request::SimpleRequest;
 pub use tendermint_rpc::Order;
@@ -30,7 +32,9 @@ pub(crate) enum HttpClientInitError {
 }
 
 impl From<InvalidUri> for HttpClientInitError {
-    fn from(err: InvalidUri) -> Self { HttpClientInitError::InvalidUri(err) }
+    fn from(err: InvalidUri) -> Self {
+        HttpClientInitError::InvalidUri(err)
+    }
 }
 
 #[derive(Debug, Display)]
@@ -38,7 +42,7 @@ pub enum PerformError {
     TendermintRpc(TendermintRpcError),
     Slurp(SlurpError),
     Internal(String),
-    #[display(fmt = "Request failed with status code {}, response {}", status_code, response)]
+    #[display(fmt = "Request failed with status code {status_code}, response {response}")]
     StatusCode {
         status_code: StatusCode,
         response: String,
@@ -46,11 +50,15 @@ pub enum PerformError {
 }
 
 impl From<SlurpError> for PerformError {
-    fn from(err: SlurpError) -> Self { PerformError::Slurp(err) }
+    fn from(err: SlurpError) -> Self {
+        PerformError::Slurp(err)
+    }
 }
 
 impl From<TendermintRpcError> for PerformError {
-    fn from(err: TendermintRpcError) -> Self { PerformError::TendermintRpc(err) }
+    fn from(err: TendermintRpcError) -> Self {
+        PerformError::TendermintRpc(err)
+    }
 }
 
 impl HttpClient {
@@ -63,10 +71,14 @@ impl HttpClient {
     }
 
     #[inline]
-    pub fn uri(&self) -> http::Uri { Uri::from_str(&self.uri).expect("This should never happen.") }
+    pub fn uri(&self) -> http::Uri {
+        Uri::from_str(&self.uri).expect("This should never happen.")
+    }
 
     #[inline]
-    pub fn proxy_sign_keypair(&self) -> &Option<Keypair> { &self.proxy_sign_keypair }
+    pub fn proxy_sign_keypair(&self) -> &Option<Keypair> {
+        &self.proxy_sign_keypair
+    }
 
     pub(crate) async fn perform<R>(&self, request: R) -> Result<R::Output, PerformError>
     where

@@ -1,3 +1,5 @@
+// Generated protocol messages; many types are not instantiated in our build.
+#![allow(dead_code)]
 ///*
 /// Request: Reset device to default state and ask for device details
 /// @start

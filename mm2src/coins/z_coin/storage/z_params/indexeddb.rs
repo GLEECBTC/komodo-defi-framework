@@ -1,8 +1,10 @@
 use crate::z_coin::z_coin_errors::ZcoinStorageError;
 
 use mm2_core::mm_ctx::MmArc;
-use mm2_db::indexed_db::{ConstructibleDb, DbIdentifier, DbInstance, DbLocked, DbUpgrader, IndexedDb, IndexedDbBuilder,
-                         InitDbResult, OnUpgradeResult, SharedDb, TableSignature};
+use mm2_db::indexed_db::{
+    ConstructibleDb, DbIdentifier, DbInstance, DbLocked, DbUpgrader, IndexedDb, IndexedDbBuilder, InitDbResult,
+    OnUpgradeResult, SharedDb, TableSignature,
+};
 use mm2_err_handle::prelude::*;
 
 const CHAIN: &str = "z_coin";
@@ -62,7 +64,9 @@ impl DbInstance for ZcashParamsWasmInner {
 }
 
 impl ZcashParamsWasmInner {
-    pub(crate) fn get_inner(&self) -> &IndexedDb { &self.0 }
+    pub(crate) fn get_inner(&self) -> &IndexedDb {
+        &self.0
+    }
 }
 
 #[derive(Clone)]

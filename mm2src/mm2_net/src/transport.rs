@@ -17,20 +17,22 @@ pub type SlurpResultJson = Result<(StatusCode, HeaderMap, Json), MmError<SlurpEr
 
 #[derive(Debug, Deserialize, Display, Serialize)]
 pub enum SlurpError {
-    #[display(fmt = "Error deserializing '{}' response: {}", uri, error)]
+    #[display(fmt = "Error deserializing '{uri}' response: {error}")]
     ErrorDeserializing { uri: String, error: String },
-    #[display(fmt = "Invalid request: {}", _0)]
+    #[display(fmt = "Invalid request: {_0}")]
     InvalidRequest(String),
-    #[display(fmt = "Request '{}' timeout: {}", uri, error)]
+    #[display(fmt = "Request '{uri}' timeout: {error}")]
     Timeout { uri: String, error: String },
-    #[display(fmt = "Transport '{}' error: {}", uri, error)]
+    #[display(fmt = "Transport '{uri}' error: {error}")]
     Transport { uri: String, error: String },
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
 impl From<serde_json::Error> for SlurpError {
-    fn from(e: Error) -> Self { SlurpError::Internal(e.to_string()) }
+    fn from(e: Error) -> Self {
+        SlurpError::Internal(e.to_string())
+    }
 }
 
 impl From<SlurpError> for JsonRpcErrorType {
@@ -71,23 +73,27 @@ where
 /// Errors encountered when making HTTP requests to fetch information from a URI.
 #[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
 pub enum GetInfoFromUriError {
-    #[display(fmt = "Invalid request: {}", _0)]
+    #[display(fmt = "Invalid request: {_0}")]
     InvalidRequest(String),
-    #[display(fmt = "Transport: {}", _0)]
+    #[display(fmt = "Transport: {_0}")]
     Transport(String),
-    #[display(fmt = "Invalid response: {}", _0)]
+    #[display(fmt = "Invalid response: {_0}")]
     InvalidResponse(String),
-    #[display(fmt = "Internal: {}", _0)]
+    #[display(fmt = "Internal: {_0}")]
     Internal(String),
 }
 
 /// `http::Error` can appear on an HTTP request [`http::Builder::build`] building.
 impl From<http::Error> for GetInfoFromUriError {
-    fn from(e: http::Error) -> Self { GetInfoFromUriError::InvalidRequest(e.to_string()) }
+    fn from(e: http::Error) -> Self {
+        GetInfoFromUriError::InvalidRequest(e.to_string())
+    }
 }
 
 impl From<serde_json::Error> for GetInfoFromUriError {
-    fn from(e: serde_json::Error) -> Self { GetInfoFromUriError::InvalidRequest(e.to_string()) }
+    fn from(e: serde_json::Error) -> Self {
+        GetInfoFromUriError::InvalidRequest(e.to_string())
+    }
 }
 
 impl From<SlurpError> for GetInfoFromUriError {
@@ -104,7 +110,9 @@ impl From<SlurpError> for GetInfoFromUriError {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<hyper::header::InvalidHeaderValue> for GetInfoFromUriError {
-    fn from(e: hyper::header::InvalidHeaderValue) -> Self { GetInfoFromUriError::Internal(e.to_string()) }
+    fn from(e: hyper::header::InvalidHeaderValue) -> Self {
+        GetInfoFromUriError::Internal(e.to_string())
+    }
 }
 
 /// Sends a POST request to the given URI and expects a 2xx status code in response.
@@ -116,8 +124,7 @@ pub async fn send_post_request_to_uri(uri: &str, body: String) -> MmResult<Vec<u
     let (status, _header, body) = slurp_post_json(uri, body).await.map_mm_err()?;
     if !status.is_success() {
         return Err(MmError::new(GetInfoFromUriError::Transport(format!(
-            "Status code not in 2xx range from {}: {}",
-            uri, status,
+            "Status code not in 2xx range from {uri}: {status}",
         ))));
     }
     Ok(body)

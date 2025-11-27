@@ -9,7 +9,9 @@ use std::fmt;
 pub struct MmJsonError(Json);
 
 impl fmt::Display for MmJsonError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self.0) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
 
 /// We are sure that `MmJsonError` is constructed from a type that implements `SerializeErrorTypeImpl`.

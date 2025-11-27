@@ -1,7 +1,8 @@
 use crate::standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoinTaskHandleShared};
 use crate::utxo_activation::init_utxo_standard_activation_error::InitUtxoStandardError;
-use crate::utxo_activation::init_utxo_standard_statuses::{UtxoStandardAwaitingStatus, UtxoStandardInProgressStatus,
-                                                          UtxoStandardUserAction};
+use crate::utxo_activation::init_utxo_standard_statuses::{
+    UtxoStandardAwaitingStatus, UtxoStandardInProgressStatus, UtxoStandardUserAction,
+};
 use crate::utxo_activation::utxo_standard_activation_result::UtxoStandardActivationResult;
 use coins::coin_balance::EnableCoinBalanceOps;
 use coins::hd_wallet::RpcTaskXPubExtractor;
@@ -48,7 +49,8 @@ where
                 ctx,
                 task_handle.clone(),
                 xpub_extractor_rpc_statuses(),
-                coins::CoinProtocol::UTXO,
+                // Note that the actual UtxoProtocolInfo isn't needed by trezor XPUB extractor.
+                coins::CoinProtocol::UTXO(Default::default()),
             )
             .mm_err(|_| InitUtxoStandardError::HwError(HwRpcError::NotInitialized))?,
         )
@@ -92,11 +94,14 @@ fn xpub_extractor_rpc_statuses() -> HwConnectStatuses<UtxoStandardInProgressStat
 
 pub(crate) fn priv_key_build_policy(
     ctx: &MmArc,
-    activation_policy: PrivKeyActivationPolicy,
+    activation_policy: &PrivKeyActivationPolicy,
 ) -> MmResult<PrivKeyBuildPolicy, CryptoCtxError> {
     match activation_policy {
         PrivKeyActivationPolicy::ContextPrivKey => PrivKeyBuildPolicy::detect_priv_key_policy(ctx),
         PrivKeyActivationPolicy::Trezor => Ok(PrivKeyBuildPolicy::Trezor),
+        PrivKeyActivationPolicy::WalletConnect { session_topic } => Ok(PrivKeyBuildPolicy::WalletConnect {
+            session_topic: session_topic.clone(),
+        }),
     }
 }
 

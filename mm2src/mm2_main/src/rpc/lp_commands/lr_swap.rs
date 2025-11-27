@@ -6,8 +6,10 @@ use crate::rpc::lp_commands::one_inch::rpcs::get_coin_for_one_inch;
 use lr_impl::find_best_swap_path_with_lr;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::{map_mm_error::MapMmError, mm_error::MmResult};
-use types::{LrExecuteRoutedTradeRequest, LrExecuteRoutedTradeResponse, LrFindBestQuoteRequest,
-            LrFindBestQuoteResponse, LrGetQuotesForTokensRequest};
+use types::{
+    LrExecuteRoutedTradeRequest, LrExecuteRoutedTradeResponse, LrFindBestQuoteRequest, LrFindBestQuoteResponse,
+    LrGetQuotesForTokensRequest,
+};
 
 mod lr_impl;
 mod types;

@@ -1,16 +1,18 @@
 use crate::context::CoinsActivationContext;
 use crate::prelude::*;
-use crate::standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoinError,
-                             InitStandaloneCoinInitialStatus, InitStandaloneCoinTaskHandleShared,
-                             InitStandaloneCoinTaskManagerShared};
+use crate::standalone_coin::{
+    InitStandaloneCoinActivationOps, InitStandaloneCoinError, InitStandaloneCoinInitialStatus,
+    InitStandaloneCoinTaskHandleShared, InitStandaloneCoinTaskManagerShared,
+};
 use async_trait::async_trait;
 use coins::coin_balance::{CoinBalanceReport, IguanaWalletBalance};
 use coins::coin_errors::MyAddressError;
 use coins::my_tx_history_v2::TxHistoryStorage;
-use coins::siacoin::{sia_coin_from_conf_and_params, SiaCoin, SiaCoinActivationParams, SiaCoinBuildError,
-                     SiaCoinProtocolInfo};
+use coins::siacoin::{SiaCoin, SiaCoinActivationRequest, SiaCoinNewError, SiaCoinProtocolInfo};
 use coins::tx_history_storage::CreateTxHistoryStorageError;
-use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, PrivKeyBuildPolicy, RegisterCoinError};
+use coins::{
+    lp_spawn_tx_history, BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, PrivKeyBuildPolicy, RegisterCoinError,
+};
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use crypto::CryptoCtxError;
 use derive_more::Display;
@@ -42,7 +44,9 @@ pub struct SiaCoinActivationResult {
 }
 
 impl CurrentBlock for SiaCoinActivationResult {
-    fn current_block(&self) -> u64 { self.current_block }
+    fn current_block(&self) -> u64 {
+        self.current_block
+    }
 }
 
 impl GetAddressesBalances for SiaCoinActivationResult {
@@ -68,14 +72,16 @@ pub enum SiaCoinInProgressStatus {
 }
 
 impl InitStandaloneCoinInitialStatus for SiaCoinInProgressStatus {
-    fn initial_status() -> Self { SiaCoinInProgressStatus::ActivatingCoin }
+    fn initial_status() -> Self {
+        SiaCoinInProgressStatus::ActivatingCoin
+    }
 }
 
 #[derive(Clone, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 #[non_exhaustive]
 pub enum SiaCoinInitError {
-    #[display(fmt = "Error on coin {} creation: {}", ticker, error)]
+    #[display(fmt = "Error on coin {ticker} creation: {error}")]
     CoinCreationError {
         ticker: String,
         error: String,
@@ -84,7 +90,7 @@ pub enum SiaCoinInitError {
         ticker: String,
     },
     HardwareWalletsAreNotSupportedYet,
-    #[display(fmt = "Initialization task has timed out {:?}", duration)]
+    #[display(fmt = "Initialization task has timed out {duration:?}")]
     TaskTimedOut {
         duration: Duration,
     },
@@ -94,7 +100,7 @@ pub enum SiaCoinInitError {
 }
 
 impl SiaCoinInitError {
-    pub fn from_build_err(build_err: SiaCoinBuildError, ticker: String) -> Self {
+    pub fn from_build_err(build_err: SiaCoinNewError, ticker: String) -> Self {
         SiaCoinInitError::CoinCreationError {
             ticker,
             error: build_err.to_string(),
@@ -103,7 +109,9 @@ impl SiaCoinInitError {
 }
 
 impl From<BalanceError> for SiaCoinInitError {
-    fn from(err: BalanceError) -> Self { SiaCoinInitError::CouldNotGetBalance(err.to_string()) }
+    fn from(err: BalanceError) -> Self {
+        SiaCoinInitError::CouldNotGetBalance(err.to_string())
+    }
 }
 
 impl From<RegisterCoinError> for SiaCoinInitError {
@@ -127,7 +135,9 @@ impl From<RpcTaskError> for SiaCoinInitError {
 }
 
 impl From<CryptoCtxError> for SiaCoinInitError {
-    fn from(err: CryptoCtxError) -> Self { SiaCoinInitError::Internal(err.to_string()) }
+    fn from(err: CryptoCtxError) -> Self {
+        SiaCoinInitError::Internal(err.to_string())
+    }
 }
 
 impl From<SiaCoinInitError> for InitStandaloneCoinError {
@@ -182,7 +192,7 @@ impl TryFromCoinProtocol for SiaCoinProtocolInfo {
 
 #[async_trait]
 impl InitStandaloneCoinActivationOps for SiaCoin {
-    type ActivationRequest = SiaCoinActivationParams;
+    type ActivationRequest = SiaCoinActivationRequest;
     type StandaloneProtocol = SiaCoinProtocolInfo;
     type ActivationResult = SiaCoinActivationResult;
     type ActivationError = SiaCoinInitError;
@@ -198,13 +208,13 @@ impl InitStandaloneCoinActivationOps for SiaCoin {
         ctx: MmArc,
         ticker: String,
         coin_conf: Json,
-        activation_request: &SiaCoinActivationParams,
+        activation_request: &SiaCoinActivationRequest,
         _protocol_info: SiaCoinProtocolInfo,
         _task_handle: SiaCoinRpcTaskHandleShared,
     ) -> MmResult<Self, SiaCoinInitError> {
         let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&ctx).map_mm_err()?;
 
-        let coin = sia_coin_from_conf_and_params(&ctx, &ticker, &coin_conf, activation_request, priv_key_policy)
+        let coin = SiaCoin::new(&ctx, coin_conf, activation_request, priv_key_policy)
             .await
             .mm_err(|e| SiaCoinInitError::from_build_err(e, ticker))?;
 
@@ -213,7 +223,7 @@ impl InitStandaloneCoinActivationOps for SiaCoin {
 
     async fn get_activation_result(
         &self,
-        _ctx: MmArc,
+        ctx: MmArc,
         task_handle: SiaCoinRpcTaskHandleShared,
         _activation_request: &Self::ActivationRequest,
     ) -> MmResult<Self::ActivationResult, SiaCoinInitError> {
@@ -230,6 +240,8 @@ impl InitStandaloneCoinActivationOps for SiaCoin {
         let balance = self.my_balance().compat().await.map_mm_err()?;
         let address = self.my_address().map_mm_err()?;
 
+        lp_spawn_tx_history(ctx, self.clone().into()).map_to_mm(SiaCoinInitError::Internal)?;
+
         Ok(SiaCoinActivationResult {
             ticker: self.ticker().into(),
             current_block,
@@ -245,5 +257,6 @@ impl InitStandaloneCoinActivationOps for SiaCoin {
         _streaming_manager: StreamingManager,
         _current_balances: HashMap<String, BigDecimal>,
     ) {
+        // TODO: Implement v2 transaction history fetching for SiaCoin
     }
 }

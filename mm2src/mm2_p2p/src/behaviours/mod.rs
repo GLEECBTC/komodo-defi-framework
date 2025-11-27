@@ -16,12 +16,15 @@ mod tests {
     use std::collections::{HashMap, HashSet};
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::Arc;
-    #[cfg(target_os = "linux")] use std::sync::Mutex;
+    #[cfg(target_os = "linux")]
+    use std::sync::Mutex;
     use std::time::Duration;
 
     use crate::behaviours::peers_exchange::{PeerIdSerde, PeersExchange};
-    use crate::{spawn_gossipsub, AdexBehaviourCmd, AdexBehaviourEvent, AdexResponse, AdexResponseChannel, NetworkInfo,
-                NetworkPorts, NodeType, RelayAddress, RequestResponseBehaviourEvent, SwarmRuntime};
+    use crate::{
+        spawn_gossipsub, AdexBehaviourCmd, AdexBehaviourEvent, AdexResponse, AdexResponseChannel, NetworkInfo,
+        NetworkPorts, NodeType, RelayAddress, RequestResponseBehaviourEvent, SwarmRuntime,
+    };
 
     use super::atomicdex::GossipsubConfig;
 
@@ -31,7 +34,9 @@ mod tests {
         static ref SYSTEM: AbortableQueue = AbortableQueue::default();
     }
 
-    fn next_port() -> u64 { TEST_LISTEN_PORT.fetch_add(1, Ordering::Relaxed) }
+    fn next_port() -> u64 {
+        TEST_LISTEN_PORT.fetch_add(1, Ordering::Relaxed)
+    }
 
     struct Node {
         peer_id: PeerId,
@@ -70,7 +75,9 @@ mod tests {
             Node { peer_id, cmd_tx }
         }
 
-        async fn send_cmd(&mut self, cmd: AdexBehaviourCmd) { self.cmd_tx.send(cmd).await.unwrap(); }
+        async fn send_cmd(&mut self, cmd: AdexBehaviourCmd) {
+            self.cmd_tx.send(cmd).await.unwrap();
+        }
 
         async fn wait_peers(&mut self, number: usize) {
             let mut attempts = 0;
@@ -91,7 +98,7 @@ mod tests {
                 }
                 attempts += 1;
                 if attempts >= 10 {
-                    panic!("wait_peers {} attempts exceeded", attempts);
+                    panic!("wait_peers {attempts} attempts exceeded");
                 }
             }
         }
@@ -363,12 +370,18 @@ mod tests {
 
         let mut expected = vec![
             (receiver1.peer_id, AdexResponse::None),
-            (receiver2.peer_id, AdexResponse::Err {
-                error: "test error".into(),
-            }),
-            (receiver3.peer_id, AdexResponse::Ok {
-                response: b"test response".to_vec(),
-            }),
+            (
+                receiver2.peer_id,
+                AdexResponse::Err {
+                    error: "test error".into(),
+                },
+            ),
+            (
+                receiver3.peer_id,
+                AdexResponse::Ok {
+                    response: b"test response".to_vec(),
+                },
+            ),
         ];
         expected.sort_by(|x, y| x.0.cmp(&y.0));
 

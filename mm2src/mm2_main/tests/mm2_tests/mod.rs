@@ -7,6 +7,8 @@ mod mm2_tests_inner;
 mod orderbook_sync_tests;
 mod z_coin_tests;
 
+mod solana_tests;
+
 #[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
 use mm2_test_helpers::for_tests::MarketMakerIt;
 #[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
@@ -15,8 +17,10 @@ use mm2_test_helpers::structs::ZCoinActivationResult;
 #[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
 async fn enable_z_coin(mm: &MarketMakerIt, coin: &str) -> ZCoinActivationResult {
     use common::{executor::Timer, wait_until_ms};
-    use mm2_test_helpers::{for_tests::{init_z_coin_native, init_z_coin_status},
-                           structs::{InitTaskResult, InitZcoinStatus, RpcV2Response}};
+    use mm2_test_helpers::{
+        for_tests::{init_z_coin_native, init_z_coin_status},
+        structs::{InitTaskResult, InitZcoinStatus, RpcV2Response},
+    };
 
     let init = init_z_coin_native(mm, coin).await;
     let init: RpcV2Response<InitTaskResult> = serde_json::from_value(init).unwrap();
@@ -40,4 +44,6 @@ async fn enable_z_coin(mm: &MarketMakerIt, coin: &str) -> ZCoinActivationResult 
 // dummy test helping IDE to recognize this as test module
 #[test]
 #[allow(clippy::assertions_on_constants)]
-fn dummy() { assert!(true) }
+fn dummy() {
+    assert!(true)
+}

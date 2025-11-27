@@ -12,9 +12,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::str::FromStr;
-use trading_api::one_inch_api::{self,
-                                classic_swap_types::{ProtocolImage, ProtocolInfo, TokenInfo as LrTokenInfo},
-                                client::ApiClient};
+use trading_api::one_inch_api::{
+    self,
+    classic_swap_types::{ProtocolImage, ProtocolInfo, TokenInfo as LrTokenInfo},
+    client::ApiClient,
+};
 
 construct_detailed!(DetailedAmount, amount);
 

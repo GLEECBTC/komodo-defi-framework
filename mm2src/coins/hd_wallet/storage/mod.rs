@@ -3,17 +3,21 @@ use crypto::{Bip32Error, CryptoCtx, CryptoCtxError, HDPathToCoin, StandardHDPath
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-#[cfg(test)] use mocktopus::macros::*;
+#[cfg(test)]
+use mocktopus::macros::*;
 use primitives::hash::H160;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::Formatter;
 use std::ops::Deref;
 
-#[cfg(not(target_arch = "wasm32"))] mod sqlite_storage;
-#[cfg(target_arch = "wasm32")] mod wasm_storage;
+#[cfg(not(target_arch = "wasm32"))]
+mod sqlite_storage;
+#[cfg(target_arch = "wasm32")]
+mod wasm_storage;
 
-#[cfg(any(test, target_arch = "wasm32"))] mod mock_storage;
+#[cfg(any(test, target_arch = "wasm32"))]
+mod mock_storage;
 #[cfg(any(test, target_arch = "wasm32"))]
 pub(crate) use mock_storage::HDWalletMockStorage;
 
@@ -33,34 +37,42 @@ type HDWalletStorageBoxed = Box<dyn HDWalletStorageInternalOps + Send + Sync>;
 pub enum HDWalletStorageError {
     #[display(fmt = "HD wallet not allowed")]
     HDWalletUnavailable,
-    #[display(fmt = "HD account '{:?}':{} not found", wallet_id, account_id)]
+    #[display(fmt = "HD account '{wallet_id:?}':{account_id} not found")]
     HDAccountNotFound { wallet_id: HDWalletId, account_id: u32 },
-    #[display(fmt = "Error saving changes in HD wallet storage: {}", _0)]
+    #[display(fmt = "Error saving changes in HD wallet storage: {_0}")]
     ErrorSaving(String),
-    #[display(fmt = "Error loading from HD wallet storage: {}", _0)]
+    #[display(fmt = "Error loading from HD wallet storage: {_0}")]
     ErrorLoading(String),
-    #[display(fmt = "Error deserializing a swap: {}", _0)]
+    #[display(fmt = "Error deserializing a swap: {_0}")]
     ErrorDeserializing(String),
-    #[display(fmt = "Error serializing a swap: {}", _0)]
+    #[display(fmt = "Error serializing a swap: {_0}")]
     ErrorSerializing(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
 impl From<Bip32Error> for HDWalletStorageError {
-    fn from(e: Bip32Error) -> Self { HDWalletStorageError::ErrorDeserializing(e.to_string()) }
+    fn from(e: Bip32Error) -> Self {
+        HDWalletStorageError::ErrorDeserializing(e.to_string())
+    }
 }
 
 impl From<CryptoCtxError> for HDWalletStorageError {
-    fn from(e: CryptoCtxError) -> Self { HDWalletStorageError::Internal(e.to_string()) }
+    fn from(e: CryptoCtxError) -> Self {
+        HDWalletStorageError::Internal(e.to_string())
+    }
 }
 
 impl From<StandardHDPathError> for HDWalletStorageError {
-    fn from(e: StandardHDPathError) -> Self { HDWalletStorageError::ErrorDeserializing(e.to_string()) }
+    fn from(e: StandardHDPathError) -> Self {
+        HDWalletStorageError::ErrorDeserializing(e.to_string())
+    }
 }
 
 impl HDWalletStorageError {
-    pub fn is_deserializing_err(&self) -> bool { matches!(self, HDWalletStorageError::ErrorDeserializing(_)) }
+    pub fn is_deserializing_err(&self) -> bool {
+        matches!(self, HDWalletStorageError::ErrorDeserializing(_))
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -253,7 +265,9 @@ impl HDWalletCoinStorage {
         })
     }
 
-    pub fn wallet_id(&self) -> HDWalletId { HDWalletId::new(self.coin.clone(), &self.hd_wallet_rmd160) }
+    pub fn wallet_id(&self) -> HDWalletId {
+        HDWalletId::new(self.coin.clone(), &self.hd_wallet_rmd160)
+    }
 
     pub async fn load_all_accounts(&self) -> HDWalletStorageResult<Vec<HDAccountStorageItem>> {
         let wallet_id = self.wallet_id();
@@ -298,7 +312,9 @@ impl HDWalletCoinStorage {
     }
 }
 
-fn display_rmd160(rmd160: &H160) -> String { hex::encode(rmd160.deref()) }
+fn display_rmd160(rmd160: &H160) -> String {
+    hex::encode(rmd160.deref())
+}
 
 #[cfg(any(test, target_arch = "wasm32"))]
 mod tests {
@@ -383,12 +399,15 @@ mod tests {
             .into_iter()
             .sorted_by(|x, y| x.external_addresses_number.cmp(&y.external_addresses_number))
             .collect();
-        assert_eq!(all_accounts, vec![
-            rick_device0_account0.clone(),
-            rick_device0_account1.clone(),
-            rick_device1_account0.clone(),
-            morty_device0_account0.clone()
-        ]);
+        assert_eq!(
+            all_accounts,
+            vec![
+                rick_device0_account0.clone(),
+                rick_device0_account1.clone(),
+                rick_device1_account0.clone(),
+                morty_device0_account0.clone()
+            ]
+        );
 
         let mut actual = rick_device0_db
             .load_all_accounts()
@@ -533,25 +552,37 @@ mod tests {
 
     #[cfg(target_arch = "wasm32")]
     #[wasm_bindgen_test]
-    async fn test_unique_wallets() { test_unique_wallets_impl().await }
+    async fn test_unique_wallets() {
+        test_unique_wallets_impl().await
+    }
 
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
-    fn test_unique_wallets() { block_on(test_unique_wallets_impl()) }
+    fn test_unique_wallets() {
+        block_on(test_unique_wallets_impl())
+    }
 
     #[cfg(target_arch = "wasm32")]
     #[wasm_bindgen_test]
-    async fn test_delete_accounts() { test_delete_accounts_impl().await }
+    async fn test_delete_accounts() {
+        test_delete_accounts_impl().await
+    }
 
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
-    fn test_delete_accounts() { block_on(test_delete_accounts_impl()) }
+    fn test_delete_accounts() {
+        block_on(test_delete_accounts_impl())
+    }
 
     #[cfg(target_arch = "wasm32")]
     #[wasm_bindgen_test]
-    async fn test_update_account() { test_update_account_impl().await }
+    async fn test_update_account() {
+        test_update_account_impl().await
+    }
 
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
-    fn test_update_account() { block_on(test_update_account_impl()) }
+    fn test_update_account() {
+        block_on(test_update_account_impl())
+    }
 }

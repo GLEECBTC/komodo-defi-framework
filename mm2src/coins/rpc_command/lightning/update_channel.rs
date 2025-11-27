@@ -12,13 +12,13 @@ type UpdateChannelResult<T> = Result<T, MmError<UpdateChannelError>>;
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum UpdateChannelError {
-    #[display(fmt = "Lightning network is not supported for {}", _0)]
+    #[display(fmt = "Lightning network is not supported for {_0}")]
     UnsupportedCoin(String),
-    #[display(fmt = "No such coin {}", _0)]
+    #[display(fmt = "No such coin {_0}")]
     NoSuchCoin(String),
-    #[display(fmt = "No such channel with uuid {}", _0)]
+    #[display(fmt = "No such channel with uuid {_0}")]
     NoSuchChannel(Uuid),
-    #[display(fmt = "Failure to channel {}: {}", _0, _1)]
+    #[display(fmt = "Failure to channel {_0}: {_1}")]
     FailureToUpdateChannel(Uuid, String),
 }
 
@@ -55,7 +55,7 @@ pub struct UpdateChannelResponse {
 /// Updates configuration for an open channel.
 pub async fn update_channel(ctx: MmArc, req: UpdateChannelReq) -> UpdateChannelResult<UpdateChannelResponse> {
     let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
-        MmCoinEnum::LightningCoin(c) => c,
+        MmCoinEnum::LightningCoinVariant(c) => c,
         e => return MmError::err(UpdateChannelError::UnsupportedCoin(e.ticker().to_string())),
     };
 
@@ -78,7 +78,7 @@ pub async fn update_channel(ctx: MmArc, req: UpdateChannelReq) -> UpdateChannelR
         ln_coin
             .channel_manager
             .update_channel_config(&counterparty_node_id, channel_ids, &channel_options.clone().into())
-            .map_to_mm(|e| UpdateChannelError::FailureToUpdateChannel(req.uuid, format!("{:?}", e)))?;
+            .map_to_mm(|e| UpdateChannelError::FailureToUpdateChannel(req.uuid, format!("{e:?}")))?;
         Ok(UpdateChannelResponse { channel_options })
     })
     .await

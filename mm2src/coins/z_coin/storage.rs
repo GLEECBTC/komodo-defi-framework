@@ -10,15 +10,14 @@ pub(crate) use walletdb::*;
 pub(crate) mod z_locked_notes;
 pub(crate) use z_locked_notes::{LockedNotesStorage, LockedNotesStorageError};
 
-#[cfg(target_arch = "wasm32")] mod z_params;
+#[cfg(target_arch = "wasm32")]
+mod z_params;
 #[cfg(target_arch = "wasm32")]
 pub(crate) use z_params::ZcashParamsWasmImpl;
 
 use mm2_err_handle::mm_error::MmResult;
 #[cfg(target_arch = "wasm32")]
 use walletdb::wasm::storage::DataConnStmtCacheWasm;
-#[cfg(debug_assertions)]
-use zcash_client_backend::data_api::error::Error;
 use zcash_client_backend::data_api::PrunedBlock;
 use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_client_backend::wallet::{AccountId, WalletTx};
@@ -44,15 +43,23 @@ pub struct DataConnStmtCacheWrapper {
 
 impl DataConnStmtCacheWrapper {
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn new(cache: DataConnStmtCacheAsync<ZcoinConsensusParams>) -> Self { Self { cache } }
+    pub fn new(cache: DataConnStmtCacheAsync<ZcoinConsensusParams>) -> Self {
+        Self { cache }
+    }
     #[cfg(target_arch = "wasm32")]
-    pub fn new(cache: DataConnStmtCacheWasm) -> Self { Self { cache } }
+    pub fn new(cache: DataConnStmtCacheWasm) -> Self {
+        Self { cache }
+    }
     #[cfg(not(target_arch = "wasm32"))]
     #[inline]
-    pub fn inner(&self) -> &DataConnStmtCacheAsync<ZcoinConsensusParams> { &self.cache }
+    pub fn inner(&self) -> &DataConnStmtCacheAsync<ZcoinConsensusParams> {
+        &self.cache
+    }
     #[cfg(target_arch = "wasm32")]
     #[inline]
-    pub fn inner(&self) -> &DataConnStmtCacheWasm { &self.cache }
+    pub fn inner(&self) -> &DataConnStmtCacheWasm {
+        &self.cache
+    }
 }
 
 pub struct CompactBlockRow {

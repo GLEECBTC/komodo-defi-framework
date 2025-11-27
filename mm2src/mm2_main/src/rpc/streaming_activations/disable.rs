@@ -24,7 +24,9 @@ pub struct DisableStreamingResponse {
 }
 
 impl DisableStreamingResponse {
-    fn new() -> Self { Self { result: "Success" } }
+    fn new() -> Self {
+        Self { result: "Success" }
+    }
 }
 
 #[derive(Display, Serialize, SerializeErrorType)]
@@ -35,7 +37,9 @@ pub enum DisableStreamingRequestError {
 }
 
 impl HttpStatusCode for DisableStreamingRequestError {
-    fn status_code(&self) -> StatusCode { StatusCode::BAD_REQUEST }
+    fn status_code(&self) -> StatusCode {
+        StatusCode::BAD_REQUEST
+    }
 }
 
 /// Disables a streamer.

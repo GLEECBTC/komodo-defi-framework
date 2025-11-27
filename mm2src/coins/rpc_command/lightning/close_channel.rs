@@ -11,13 +11,13 @@ type CloseChannelResult<T> = Result<T, MmError<CloseChannelError>>;
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum CloseChannelError {
-    #[display(fmt = "Lightning network is not supported for {}", _0)]
+    #[display(fmt = "Lightning network is not supported for {_0}")]
     UnsupportedCoin(String),
-    #[display(fmt = "No such coin {}", _0)]
+    #[display(fmt = "No such coin {_0}")]
     NoSuchCoin(String),
-    #[display(fmt = "No such channel with uuid {}", _0)]
+    #[display(fmt = "No such channel with uuid {_0}")]
     NoSuchChannel(Uuid),
-    #[display(fmt = "Closing channel error: {}", _0)]
+    #[display(fmt = "Closing channel error: {_0}")]
     CloseChannelError(String),
 }
 
@@ -49,7 +49,7 @@ pub struct CloseChannelReq {
 
 pub async fn close_channel(ctx: MmArc, req: CloseChannelReq) -> CloseChannelResult<String> {
     let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
-        MmCoinEnum::LightningCoin(c) => c,
+        MmCoinEnum::LightningCoinVariant(c) => c,
         e => return MmError::err(CloseChannelError::UnsupportedCoin(e.ticker().to_string())),
     };
 
@@ -65,7 +65,7 @@ pub async fn close_channel(ctx: MmArc, req: CloseChannelReq) -> CloseChannelResu
             ln_coin
                 .channel_manager
                 .force_close_broadcasting_latest_txn(&channel_id, &counterparty_node_id)
-                .map_to_mm(|e| CloseChannelError::CloseChannelError(format!("{:?}", e)))
+                .map_to_mm(|e| CloseChannelError::CloseChannelError(format!("{e:?}")))
         })
         .await?;
     } else {
@@ -73,7 +73,7 @@ pub async fn close_channel(ctx: MmArc, req: CloseChannelReq) -> CloseChannelResu
             ln_coin
                 .channel_manager
                 .close_channel(&channel_id, &counterparty_node_id)
-                .map_to_mm(|e| CloseChannelError::CloseChannelError(format!("{:?}", e)))
+                .map_to_mm(|e| CloseChannelError::CloseChannelError(format!("{e:?}")))
         })
         .await?;
     }

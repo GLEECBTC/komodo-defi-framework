@@ -29,11 +29,15 @@ pub enum Bip32DerPathError {
 }
 
 impl From<Bip32Error> for Bip32DerPathError {
-    fn from(e: Bip32Error) -> Self { Bip32DerPathError::Bip32Error(e) }
+    fn from(e: Bip32Error) -> Self {
+        Bip32DerPathError::Bip32Error(e)
+    }
 }
 
 pub trait Bip32DerPathOps: Sized {
-    fn to_derivation_path(&self) -> DerivationPath { DerivationPath::default() }
+    fn to_derivation_path(&self) -> DerivationPath {
+        DerivationPath::default()
+    }
 
     fn derive<T>(&self, bip32_number: ChildNumber) -> Result<T, Bip32DerPathError>
     where
@@ -47,7 +51,9 @@ pub trait Bip32DerPathOps: Sized {
 
 pub trait Bip32InternalOps: Sized {
     /// This method is used to get the number of expected children.
-    fn depth() -> usize { 0 }
+    fn depth() -> usize {
+        0
+    }
 
     fn from_iter<I>(iter: I, current_depth: usize) -> Result<Self, Bip32DerPathError>
     where
@@ -55,7 +61,9 @@ pub trait Bip32InternalOps: Sized {
 
     fn fill_derivation_path(&self, _derivation_path: &mut DerivationPath) {}
 
-    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result { Ok(()) }
+    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Ok(())
+    }
 }
 
 pub trait Bip32ChildValue: Sized {
@@ -82,11 +90,17 @@ pub struct AnyValue<const HARDENED: bool> {
 impl<const HARDENED: bool> Bip32ChildValue for AnyValue<HARDENED> {
     type Value = u32;
 
-    fn hardened() -> bool { HARDENED }
+    fn hardened() -> bool {
+        HARDENED
+    }
 
-    fn number(&self) -> u32 { self.number }
+    fn number(&self) -> u32 {
+        self.number
+    }
 
-    fn value(&self) -> Self::Value { self.number }
+    fn value(&self) -> Self::Value {
+        self.number
+    }
 
     fn from_bip32_number(child_number: ChildNumber, child_at: usize) -> Result<Self, Bip32DerPathError> {
         if child_number.is_hardened() == HARDENED {
@@ -109,7 +123,9 @@ pub struct Bip32Child<Value, Child> {
 }
 
 impl<Value: Bip32ChildValue, Child: Bip32InternalOps> fmt::Debug for Bip32Child<Value, Child> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{self}")
+    }
 }
 
 impl<Value: Bip32ChildValue, Child: Bip32InternalOps> fmt::Display for Bip32Child<Value, Child> {
@@ -142,7 +158,7 @@ where
         D: Deserializer<'de>,
     {
         let derivation_path: RpcDerivationPath = Deserialize::deserialize(deserializer)?;
-        Self::try_from(derivation_path.0).map_err(|e| serde::de::Error::custom(format!("{:?}", e)))
+        Self::try_from(derivation_path.0).map_err(|e| serde::de::Error::custom(format!("{e:?}")))
     }
 }
 
@@ -190,7 +206,9 @@ where
     Child: Bip32InternalOps,
     Value: Bip32ChildValue,
 {
-    fn depth() -> usize { Child::depth() + 1 }
+    fn depth() -> usize {
+        Child::depth() + 1
+    }
 
     fn from_iter<I>(mut iter: I, current_depth: usize) -> Result<Self, Bip32DerPathError>
     where
@@ -221,9 +239,13 @@ where
 }
 
 impl<Value: Bip32ChildValue, Child> Bip32Child<Value, Child> {
-    pub fn value(&self) -> Value::Value { self.value.value() }
+    pub fn value(&self) -> Value::Value {
+        self.value.value()
+    }
 
-    pub fn child(&self) -> &Child { &self.child }
+    pub fn child(&self) -> &Child {
+        &self.child
+    }
 }
 
 #[derive(Clone, PartialEq)]

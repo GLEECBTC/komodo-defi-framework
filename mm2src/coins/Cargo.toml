@@ -5,11 +5,6 @@ edition = "2018"
 
 [features]
 zhtlc-native-tests = []
-enable-sia = [
-	"dep:reqwest",
-	"dep:blake2b_simd",
-	"dep:sia-rust"
-]
 default = []
 run-docker-tests = []
 for-tests = ["dep:mocktopus"]
@@ -25,12 +20,12 @@ doctest = false
 
 [dependencies]
 async-std = { workspace = true, features = ["unstable"] }
-async-trait.workspace = true 
+async-trait.workspace = true
 base64.workspace = true
 bip32.workspace = true
 bitcoin_hashes.workspace = true
 bitcrypto = { path = "../mm2_bitcoin/crypto" }
-blake2b_simd = { workspace = true, optional = true }
+blake2b_simd = { workspace = true }
 bs58.workspace = true
 byteorder.workspace = true
 bytes.workspace = true
@@ -45,6 +40,7 @@ crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
 derive_more.workspace = true
 ed25519-dalek.workspace = true
+ed25519-dalek-bip32 = { workspace = true }
 enum_derives = { path = "../derives/enum_derives" }
 kdf_walletconnect = { path = "../kdf_walletconnect" }
 ethabi.workspace = true
@@ -56,7 +52,7 @@ futures-util.workspace = true
 futures-ticker.workspace = true
 futures = { workspace = true, features = ["compat", "async-await"] }
 group.workspace = true
-gstuff.workspace = true 
+gstuff.workspace = true
 hex.workspace = true
 http.workspace = true
 itertools = { workspace = true, features = ["use_std"] }
@@ -78,20 +74,20 @@ mm2_rpc = { path = "../mm2_rpc" }
 mm2_state_machine = { path = "../mm2_state_machine" }
 mocktopus = { workspace =  true, optional = true }
 num-traits.workspace = true
-parking_lot = { workspace = true, features = ["nightly"] }
+parking_lot = { workspace = true }
 primitives = { path = "../mm2_bitcoin/primitives" }
 prost.workspace = true
 protobuf.workspace = true
 proxy_signature = { path = "../proxy_signature" }
 rand = { workspace = true, features = ["std", "small_rng"] }
 regex.workspace = true
-reqwest = { workspace = true, optional = true }
 rlp.workspace = true
 rmp-serde.workspace = true
 rpc = { path = "../mm2_bitcoin/rpc" }
 rpc_task = { path = "../rpc_task" }
+sia-rust = { workspace = true }
 script = { path = "../mm2_bitcoin/script" }
-secp256k1.workspace = true 
+secp256k1.workspace = true
 ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
 serde.workspace = true
@@ -100,26 +96,42 @@ serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 serde_with.workspace = true
 serialization = { path = "../mm2_bitcoin/serialization" }
 serialization_derive = { path = "../mm2_bitcoin/serialization_derive" }
-sia-rust = { git = "https://github.com/KomodoPlatform/sia-rust", rev = "9f188b80b3213bcb604e7619275251ce08fae808", optional = true }
 spv_validation = { path = "../mm2_bitcoin/spv_validation" }
 sha2.workspace = true
 sha3.workspace = true
 utxo_signer = { path = "utxo_signer" }
 # using the same version as cosmrs
 tendermint-rpc.workspace = true
-tokio-tungstenite-wasm = { workspace = true, features = ["rustls-tls-native-roots"]}
+thiserror.workspace = true
 url.workspace = true
-uuid.workspace = true 
+uuid.workspace = true
 # One of web3 dependencies is the old `tokio-uds 0.1.7` which fails cross-compiling to ARM.
 # We don't need the default web3 features at all since we added our own web3 transport using shared HYPER instance.
 web3 = { workspace = true, default-features = false }
 zbase32.workspace = true
 zcash_client_backend.workspace = true
 zcash_extras.workspace = true
-zcash_primitives.workspace = true 
+zcash_primitives.workspace = true
+
+# Solana
+bincode = { version = "1.3", default-features = false }
+solana-account = { version = "2.2", default-features = false }
+solana-account-decoder-client-types = { version = "2.3", default-features = false }
+solana-bincode = { version = "2.2", default-features = false }
+solana-hash = { version = "2.2", default-features = false }
+solana-keypair = { version = "2.2", default-features = false }
+solana-message = { version = "2.2", default-features = false }
+solana-pubkey = { version = "2.4", default-features = false }
+solana-rpc-client-types= { version = "2.3", default-features = false }
+solana-signature = { version = "2.2", default-features = false }
+solana-signer = { version = "2.2", default-features = false }
+solana-system-transaction = { version = "2.2", default-features = false }
+solana-transaction = { version = "2.2", default-features = false }
+spl-associated-token-account-client = { version = "2.0", default-features = false }
+spl-token = { version = "8", default-features = false }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-blake2b_simd.workspace = true 
+blake2b_simd.workspace = true
 ff.workspace = true
 futures-util.workspace = true
 jubjub.workspace = true
@@ -138,7 +150,6 @@ web-sys = { workspace = true, features = ["console", "Headers", "Request", "Requ
 zcash_proofs = { workspace = true, features = ["local-prover"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-dirs.workspace = true
 bitcoin.workspace = true
 hyper = { workspace = true, features = ["client", "http2", "server", "tcp"] }
 hyper-rustls = { workspace = true, default-features = false, features = ["http1", "http2", "webpki-tokio"] }
@@ -153,12 +164,23 @@ timed-map = { workspace = true, features = ["rustc-hash"] }
 tokio.workspace = true
 tokio-rustls.workspace = true
 tonic = { workspace = true, features = ["codegen", "prost", "gzip", "tls", "tls-webpki-roots"] }
-webpki-roots.workspace = true
-zcash_client_sqlite.workspace = true 
+zcash_client_sqlite.workspace = true
 zcash_proofs = { workspace = true, features = ["local-prover", "multicore"] }
+
+[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))'.dependencies]
+webpki-roots.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 winapi.workspace = true
+
+# iOS-specific dependencies to fix certificate validation issues with Let's Encrypt ECDSA certificates
+[target.'cfg(target_os = "ios")'.dependencies]
+tokio-tungstenite-wasm = { workspace = true, features = ["rustls-tls-webpki-roots"] }
+webpki-roots = "0.26"
+
+# Non-iOS platforms use native certificate roots
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+tokio-tungstenite-wasm = { workspace = true, features = ["rustls-tls-native-roots"] }
 
 [dev-dependencies]
 mm2_test_helpers = { path = "../mm2_test_helpers" }
@@ -166,10 +188,9 @@ mocktopus.workspace = true
 mm2_p2p = { path = "../mm2_p2p", features = ["application"] }
 ff.workspace = true
 jubjub.workspace = true
-reqwest.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
-wagyu-zcash-parameters.workspace = true 
+wagyu-zcash-parameters.workspace = true
 
 [build-dependencies]
 prost-build.workspace = true

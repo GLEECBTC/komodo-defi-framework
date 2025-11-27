@@ -15,12 +15,14 @@ const XPUB_PREFIX_RAW: [u8; 4] = [4, 136, 178, 30];
 pub enum XpubError {
     #[display(fmt = "Unknown prefix")]
     UnknownPrefix,
-    #[display(fmt = "base58 error: {}", _0)]
+    #[display(fmt = "base58 error: {_0}")]
     Base58Error(Base58Error),
 }
 
 impl From<Base58Error> for XpubError {
-    fn from(e: Base58Error) -> Self { XpubError::Base58Error(e) }
+    fn from(e: Base58Error) -> Self {
+        XpubError::Base58Error(e)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -1,4 +1,5 @@
-#[path = "activation/utxo.rs"] pub mod utxo;
+#[path = "activation/utxo.rs"]
+pub mod utxo;
 
 use common::serde_derive::{Deserialize, Serialize};
 use mm2_number::BigDecimal;

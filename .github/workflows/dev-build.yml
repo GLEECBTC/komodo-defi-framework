@@ -10,7 +10,6 @@ concurrency:
 
 env:
   BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
-  JEMALLOC_SYS_WITH_MALLOC_CONF: "background_thread:true,narenas:1,tcache:false,dirty_decay_ms:0,muzzy_decay_ms:0,metadata_thp:auto"
 
 jobs:
   linux-x86-64:
@@ -29,8 +28,8 @@ jobs:
 
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
-          rustup default nightly-2025-01-03
+          rustup toolchain install stable --no-self-update --profile=minimal
+          rustup default stable
 
       - name: Install build deps
         uses: ./.github/actions/deps-install
@@ -61,6 +60,7 @@ jobs:
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -92,8 +92,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
-          rustup default nightly-2025-01-03
+          rustup toolchain install stable --no-self-update --profile=minimal
+          rustup default stable
           rustup target add x86_64-apple-darwin
 
       - name: Install build deps
@@ -115,6 +115,12 @@ jobs:
       - name: Build
         run: cargo build --release --target x86_64-apple-darwin
 
+      - name: Upload build for next job
+        uses: actions/upload-artifact@v4
+        with:
+          name: x86_64-apple-darwin-release-kdf
+          path: target/x86_64-apple-darwin/release/kdf
+
       - name: Compress kdf build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
@@ -125,6 +131,7 @@ jobs:
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -144,8 +151,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
-          rustup default nightly-2025-01-03
+          rustup toolchain install stable --no-self-update --profile=minimal
+          rustup default stable
           rustup target add aarch64-apple-darwin
 
       - name: Install build deps
@@ -167,6 +174,12 @@ jobs:
       - name: Build
         run: cargo build --release --target aarch64-apple-darwin
 
+      - name: Upload build for next job
+        uses: actions/upload-artifact@v4
+        with:
+          name: aarch64-apple-darwin-release-kdf
+          path: target/aarch64-apple-darwin/release/kdf
+
       - name: Compress kdf build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
@@ -177,6 +190,72 @@ jobs:
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
+
+      - name: Upload build artifact
+        env:
+          FILE_SERVER_HOST: ${{ secrets.FILE_SERVER_HOST }}
+          FILE_SERVER_USERNAME: ${{ secrets.FILE_SERVER_USERNAME }}
+          FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
+          FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.FILE_SERVER_KEY != '' }}
+        run: |
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
+
+  mac-universal:
+    timeout-minutes: 60
+    runs-on: macos-latest
+    needs: [mac-x86-64, mac-arm64] 
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc', 'python3', 'paramiko')
+
+      - name: Calculate build tag (commit hash) for PR commit
+        if: github.event_name == 'pull_request'
+        run: echo "KDF_BUILD_TAG=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+
+      - name: Calculate build tag (commit hash) for merge commit
+        if: github.event_name != 'pull_request'
+        run: echo "KDF_BUILD_TAG=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
+
+      - name: Download macos x86_64 build
+        uses: actions/download-artifact@v5
+        with:
+          name: x86_64-apple-darwin-release-kdf
+          path: target/x86_64-apple-darwin/release
+
+      - name: Download macos aarch64 build
+        uses: actions/download-artifact@v5
+        with:
+          name: aarch64-apple-darwin-release-kdf
+          path: target/aarch64-apple-darwin/release
+
+      - name: Make universal kdf build output
+        run: |
+          AARCH64_BIN="target/aarch64-apple-darwin/release/kdf"
+          X86_64_BIN="target/x86_64-apple-darwin/release/kdf"
+          OUT_DIR="target/universal-apple-darwin/release"
+          OUT_BIN="$OUT_DIR/kdf"
+          mkdir -p "$OUT_DIR"
+          lipo -create "$AARCH64_BIN" "$X86_64_BIN" -output "$OUT_BIN"
+          lipo -info "$OUT_BIN"
+
+      - name: Compress kdf build output
+        env:
+          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.AVAILABLE != '' }}
+        run: |
+          NAME="kdf_$KDF_BUILD_TAG-mac-universal.zip"
+          zip $NAME target/universal-apple-darwin/release/kdf -j
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
+          mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -196,8 +275,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
-          rustup default nightly-2025-01-03
+          rustup toolchain install stable --no-self-update --profile=minimal
+          rustup default stable
 
       - name: Install build deps
         uses: ./.github/actions/deps-install
@@ -229,6 +308,12 @@ jobs:
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
 
+          # Generate the SHA256 hash for the zip file
+          Get-FileHash ./$SAFE_DIR_NAME/$NAME -Algorithm SHA256 | Format-Table Hash | Out-File "./$SAFE_DIR_NAME/$NAME.sha256" -Encoding ascii
+
+          # Display the SHA256 hash in Actions logs
+          Get-Content "./$SAFE_DIR_NAME/$NAME.sha256"
+
       - name: Upload build artifact
         env:
           FILE_SERVER_HOST: ${{ secrets.FILE_SERVER_HOST }}
@@ -247,8 +332,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
-          rustup default nightly-2025-01-03
+          rustup toolchain install stable --no-self-update --profile=minimal
+          rustup default stable
           rustup target add x86_64-apple-darwin
 
       - name: Install build deps
@@ -281,6 +366,7 @@ jobs:
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -314,8 +400,8 @@ jobs:
 
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
-          rustup default nightly-2025-01-03
+          rustup toolchain install stable --no-self-update --profile=minimal
+          rustup default stable
           rustup target add wasm32-unknown-unknown
 
       - name: Install wasm-pack
@@ -346,6 +432,7 @@ jobs:
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -365,8 +452,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
-          rustup default nightly-2025-01-03
+          rustup toolchain install stable --no-self-update --profile=minimal
+          rustup default stable
           rustup target add aarch64-apple-ios
 
       - name: Install build deps
@@ -399,6 +486,7 @@ jobs:
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -427,8 +515,8 @@ jobs:
 
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
-          rustup default nightly-2025-01-03
+          rustup toolchain install stable --no-self-update --profile=minimal
+          rustup default stable
           rustup target add aarch64-linux-android
 
       - name: Install build deps
@@ -466,6 +554,7 @@ jobs:
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -494,8 +583,8 @@ jobs:
 
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
-          rustup default nightly-2025-01-03
+          rustup toolchain install stable --no-self-update --profile=minimal
+          rustup default stable
           rustup target add armv7-linux-androideabi
 
       - name: Install build deps
@@ -533,6 +622,7 @@ jobs:
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:

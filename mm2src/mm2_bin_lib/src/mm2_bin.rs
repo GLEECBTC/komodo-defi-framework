@@ -1,4 +1,5 @@
-#[cfg(not(target_arch = "wasm32"))] use mm2_main::mm2_main;
+#[cfg(not(target_arch = "wasm32"))]
+use mm2_main::mm2_main;
 
 #[cfg(not(target_arch = "wasm32"))]
 const KDF_VERSION: &str = env!("KDF_VERSION");
