@@ -47,27 +47,6 @@ To build WASM release binary run one of the following commands according to your
 
 Please note `CC` and `AR` must be specified in the same line as `wasm-pack build`.
 
-### Troubleshooting wasm-opt errors
-
-If you encounter errors during the wasm-opt optimization step (e.g., "Bulk memory operations require bulk memory" or sign extension errors), this is a known issue with wasm-pack 0.10.0 on macOS when using Rust 1.72+ with certain WASM features.
-
-**Solution: Build with cargo and wasm-bindgen directly**
-```bash
-# Build WASM with cargo (macOS Apple Silicon)
-CC=/opt/homebrew/opt/llvm/bin/clang AR=/opt/homebrew/opt/llvm/bin/llvm-ar \
-cargo build --release --target wasm32-unknown-unknown -p mm2_bin_lib
-
-# Generate JS bindings without wasm-opt
-wasm-bindgen target/wasm32-unknown-unknown/release/kdflib.wasm \
---out-dir wasm_build/deps/pkg --target web
-```
-
-For macOS Intel, use `/usr/local/opt/llvm/bin/clang` and `/usr/local/opt/llvm/bin/llvm-ar` instead.
-
-Note: This approach bypasses wasm-opt entirely - the resulting WASM file is larger but functionally identical, with all Rust release optimizations still applied. Linux environments typically don't experience this issue.
-
-This workaround is only necessary when using Rust 1.72+ with wasm-pack 0.10.0 on macOS. Updating to a newer Rust toolchain and compatible wasm-pack version would eliminate the need for this workaround.
-
 ## Compiling WASM binary with debug symbols
 
 If you want to disable optimizations to reduce the compilation time, run `wasm-pack build mm2src/mm2_bin_lib` with an additional `--dev` flag:
