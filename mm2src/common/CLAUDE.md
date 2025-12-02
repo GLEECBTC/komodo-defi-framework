@@ -15,21 +15,22 @@ Foundation crate providing utilities used across all KDF crates. Platform-aware 
 
 ```
 ├── common.rs              # Main module, re-exports, helpers
+├── log.rs                 # Logging (includes log/ submodule)
 ├── executor/              # Async task management
 │   ├── mod.rs            # spawn, Timer, AbortSettings
 │   ├── native_executor.rs # Tokio-based (native)
 │   ├── wasm_executor.rs   # Browser-based (WASM)
 │   ├── abortable_system/  # AbortableQueue, graceful shutdown
 │   └── spawner.rs         # SpawnFuture trait
-├── log/                   # Logging
-│   ├── mod.rs            # log!, LogLevel, LOG_CALLBACK
+├── log/                   # Logging implementations
 │   ├── native_log.rs     # File/stdout logging
 │   └── wasm_log.rs       # console.log
-├── custom_futures/        # Future utilities
+├── custom_futures/        # Future utilities (timeout, repeatable)
 ├── jsonrpc_client.rs      # JSON-RPC macros
 ├── password_policy.rs     # Password validation
 ├── crash_reports.rs       # Panic/signal handlers
-└── wio.rs / wasm.rs       # Platform I/O
+├── wio.rs / wasm.rs       # Platform I/O
+└── write_safe/            # Safe write abstractions
 ```
 
 ## Executor Module
@@ -95,10 +96,10 @@ log!("Custom message");
 ### Custom Log Callback
 
 ```rust
-use common::log::{LOG_CALLBACK, LogCallback};
+use common::log::{register_callback, LogCallback};
 
 // Set custom handler (e.g., for GUI)
-*LOG_CALLBACK.lock().unwrap() = Some(my_callback);
+register_callback(my_callback);
 ```
 
 ## Time Utilities
@@ -200,7 +201,7 @@ This crate is imported by virtually all other crates in the workspace:
 | Feature | Native | WASM |
 |---------|--------|------|
 | `spawn()` | Tokio runtime | `wasm_bindgen_futures` |
-| `Timer::sleep()` | `tokio::time` | `gloo_timers` |
+| `Timer::sleep()` | `tokio::time` | `setTimeout` |
 | `block_on()` | Works | Panics |
 | `LOG_FILE` | File output | N/A |
 | `writeln()` | stdout/file | `console.log` |

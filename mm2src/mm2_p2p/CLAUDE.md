@@ -64,6 +64,7 @@ enum AdexBehaviourCmd {
     SendResponse { res, response_channel }, // Reply to request
     GetPeersInfo { result_tx },       // Query connected peers
     GetGossipMesh { result_tx },      // Get gossip mesh state
+    GetGossipPeerTopics { result_tx }, // Get topics per peer
     GetGossipTopicPeers { result_tx }, // Get peers per topic
     GetRelayMesh { result_tx },       // Get relay mesh
     AddReservedPeer { peer, addresses }, // Add reserved peer
@@ -86,27 +87,28 @@ enum NodeType {
 
 ## Message Topics
 
-P2P messages are organized by topic prefix:
+P2P messages are organized by topic prefix (defined in mm2_main):
 
 | Prefix | Purpose | Handler Location |
 |--------|---------|------------------|
-| `orderbook/` | Order broadcasts | `lp_ordermatch` |
-| `swaps/` | Swap protocol messages | `lp_swap` |
-| `swpwtchr/` | Watcher coordination | `swap_watcher` |
-| `txhlp/` | Transaction helpers | `lp_swap` |
-| `PEERS` | Peer address announcements | Floodsub |
+| `orbk` | Order broadcasts | `lp_ordermatch` |
+| `swap` | Swap protocol messages (V1) | `lp_swap` |
+| `swapv2` | Swap protocol messages (V2) | `lp_swap` |
+| `swpwtchr` | Watcher coordination | `swap_watcher` |
+| `txhlp` | Transaction helpers | `lp_swap` |
+| `PEERS` | Peer address announcements | Floodsub (in mm2_p2p) |
 
 ## Initialization Flow
 
 ```rust
 // 1. Create config
-let config = GossipsubConfig::new(netid, runtime, node_type, p2p_key);
-config.to_dial(seednodes);
+let mut config = GossipsubConfig::new(netid, runtime, node_type, p2p_key);
+config.to_dial(seednodes);  // Add seed nodes to dial
 
-// 2. Spawn swarm
+// 2. Spawn swarm (returns cmd channel, event receiver, local peer ID)
 let (cmd_tx, event_rx, peer_id) = spawn_gossipsub(config, on_poll).await?;
 
-// 3. Store context
+// 3. Store context in MmArc
 P2PContext::new(cmd_tx, keypair).store_to_mm_arc(&ctx);
 ```
 
@@ -171,6 +173,12 @@ AdexBehaviourCmd::GetPeersInfo { result_tx }
 
 // Get gossip mesh state
 AdexBehaviourCmd::GetGossipMesh { result_tx }
+
+// Get topics per peer
+AdexBehaviourCmd::GetGossipPeerTopics { result_tx }
+
+// Get peers per topic
+AdexBehaviourCmd::GetGossipTopicPeers { result_tx }
 
 // Get relay mesh
 AdexBehaviourCmd::GetRelayMesh { result_tx }

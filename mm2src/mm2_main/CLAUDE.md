@@ -23,13 +23,14 @@ src/
 │   │   ├── dispatcher.rs # Main v2 dispatcher
 │   │   └── dispatcher_legacy.rs
 │   ├── lp_commands/      # Handler implementations
-│   │   ├── pubkey.rs, tokens.rs, trezor.rs
-│   │   ├── one_inch/     # 1inch integration
-│   │   └── lr_swap/      # Liquidity routing
+│   │   ├── pubkey.rs, tokens.rs, trezor.rs, db_id.rs, legacy.rs
+│   │   ├── one_inch.rs, one_inch/  # 1inch integration
+│   │   └── lr_swap.rs, lr_swap/    # Liquidity routing
 │   ├── streaming_activations/  # SSE handlers
-│   │   ├── balance.rs, orderbook.rs, swaps.rs
-│   │   ├── heartbeat.rs, network.rs
-│   │   └── tx_history.rs, fee_estimation.rs
+│   │   ├── balance.rs, orderbook.rs, swaps.rs, orders.rs
+│   │   ├── heartbeat.rs, network.rs, shutdown_signal.rs
+│   │   ├── tx_history.rs, fee_estimation.rs, disable.rs
+│   │   └── mod.rs
 │   ├── wc_commands/      # WalletConnect RPCs
 │   └── rate_limiter.rs   # Request rate limiting
 ├── lp_swap/
@@ -39,14 +40,19 @@ src/
 │   ├── taker_swap_v2.rs  # V2 taker (TPU protocol)
 │   ├── swap_watcher.rs   # Watcher node logic
 │   ├── swap_v2_rpcs.rs   # V2 RPC handlers
-│   └── trade_preimage.rs # Fee estimation
+│   ├── trade_preimage.rs # Fee estimation
+│   ├── swap_lock.rs, swap_events.rs, saved_swap.rs
+│   └── pubkey_banning.rs, check_balance.rs
 ├── lp_ordermatch/        # Order matching engine
 │   ├── best_orders.rs    # Best order selection
 │   ├── orderbook_rpc.rs  # Orderbook RPCs
-│   └── simple_market_maker.rs  # Market maker bot
+│   ├── simple_market_maker.rs  # Market maker bot
+│   └── order_events.rs, orderbook_events.rs
 ├── lp_wallet/            # Wallet management, mnemonic storage
 ├── lp_init/              # Hardware wallet init (Trezor, MetaMask)
+│   ├── init_hw.rs, init_metamask.rs, init_context.rs
 ├── lp_network.rs         # P2P message handling
+├── lp_healthcheck.rs     # Peer health checking
 ├── lp_stats.rs           # Version statistics
 └── database/             # Swap/order persistence
 ```
@@ -77,7 +83,7 @@ pub async fn my_handler(ctx: MmArc, req: MyRequest) -> MmResult<MyResponse, MyEr
 | (none) | `dispatcher_v2` | Stable APIs |
 | `task::` | `rpc_task_dispatcher` | Long-running ops |
 | `stream::` | `rpc_streaming_dispatcher` | SSE subscriptions |
-| `gui_storage::` | `gui_storage_dispatcher` | GUI state |
+| `gui_storage::` | `gui_storage_dispatcher` | GUI state (planned for removal) |
 | `experimental::` | `experimental_rpcs_dispatcher` | Unstable APIs |
 | `lightning::` | `lightning_dispatcher` | Lightning Network (native only) |
 
@@ -106,7 +112,7 @@ Use `RpcTaskManager` for task lifecycle management.
 - Deterministic phases via `mm2_state_machine`
 - Persistence and reentrancy support
 - Watcher rewards integration
-- Coin implements `MakerCoinSwapOpsV2` / `TakerCoinSwapOpsV2`
+- Both coins implement `MakerCoinSwapOpsV2` + `TakerCoinSwapOpsV2`
 - Use for: all new features
 
 ### Key Invariants
@@ -127,15 +133,16 @@ Third-party nodes assisting swap completion when participants offline.
 
 ## Streaming (SSE)
 
-Enable/disable via `stream::` namespace:
-- `balance` — Account balance updates
-- `swap_status` — Swap state changes
-- `orderbook` — Orderbook changes
-- `orders` — Order state changes
-- `heartbeat` — Keep-alive
-- `network` — Network connectivity
-- `tx_history` — Transaction history updates
-- `fee_estimation` — Gas fee updates
+Enable via `stream::<event>::enable`, disable via `stream::disable`:
+- `balance::enable` — Account balance updates
+- `swap_status::enable` — Swap state changes
+- `orderbook::enable` — Orderbook changes
+- `order_status::enable` — Order state changes
+- `heartbeat::enable` — Keep-alive
+- `network::enable` — Network connectivity
+- `tx_history::enable` — Transaction history updates
+- `fee_estimator::enable` — Gas fee updates
+- `shutdown_signal::enable` — Shutdown notifications (native, non-Windows only)
 
 ## Interactions
 
@@ -151,6 +158,7 @@ Enable/disable via `stream::` namespace:
 | **kdf_walletconnect** | WalletConnect session management |
 | **mm2_number** | MmNumber for amounts |
 | **mm2_net** | HTTP transport (native) |
+| **mm2_gui_storage** | GUI state persistence (planned for removal, unused) |
 | **trading_api** | 1inch integration |
 
 ## Common Pitfalls

@@ -73,16 +73,17 @@ Address and key management:
 ### Address Types
 ```rust
 pub enum AddressFormat {
-    Standard,      // Legacy P2PKH/P2SH
-    Segwit,        // Native SegWit (bech32)
-    CashAddress,   // Bitcoin Cash format
+    Standard,                    // Legacy P2PKH/P2SH
+    Segwit,                      // Native SegWit (bech32)
+    CashAddress { network, .. }, // Bitcoin Cash format (with network prefix)
 }
 
+// Simplified view (actual struct has more internal fields)
 pub struct Address {
-    pub format: AddressFormat,
-    pub network: Network,
+    pub addr_format: AddressFormat,
     pub script_type: AddressScriptType,
     pub hash: AddressHashEnum,
+    // Internal: prefix, hrp, checksum_type, pubkey
 }
 ```
 
@@ -105,10 +106,10 @@ pub enum AddressHashEnum {
 
 ## chain
 
-Block and transaction structures:
+Block and transaction structures. **Note:** Actual structs have many additional optional fields for coin-specific features (Zcash shielded, Qtum PoS, AuxPow, etc.).
 
 ```rust
-// Block header
+// Block header (core fields, actual struct has ~20 optional fields)
 pub struct BlockHeader {
     pub version: u32,
     pub previous_header_hash: H256,
@@ -116,6 +117,8 @@ pub struct BlockHeader {
     pub time: u32,
     pub bits: BlockHeaderBits,
     pub nonce: BlockHeaderNonce,
+    // Optional: claim_trie_root, hash_final_sapling_root, solution,
+    // aux_pow, prog_pow, mtp_pow, hash_state_root, etc.
 }
 
 // Transaction output reference
@@ -124,12 +127,14 @@ pub struct OutPoint {
     pub index: u32,
 }
 
-// Full transaction
+// Full transaction (core fields, actual struct has ~15 optional fields)
 pub struct Transaction {
     pub version: i32,
     pub inputs: Vec<TransactionInput>,
     pub outputs: Vec<TransactionOutput>,
     pub lock_time: u32,
+    // Optional: n_time, overwintered, expiry_height, shielded_spends,
+    // shielded_outputs, join_splits, binding_sig, etc.
 }
 ```
 
@@ -157,11 +162,14 @@ pub enum ScriptType {
     NullData,
     WitnessScript,
     WitnessKey,
+    Taproot,
+    CallSender,   // Qtum
+    CreateSender, // Qtum
 }
 
 // Transaction signing
 pub struct TransactionInputSigner { /* ... */ }
-pub enum SignatureVersion { Base, WitnessV0 }
+pub enum SignatureVersion { Base, WitnessV0, ForkId }
 ```
 
 ## serialization
@@ -190,17 +198,18 @@ Simplified Payment Verification:
 ```rust
 // SPV configuration
 pub struct SPVConf {
-    pub starting_block_header: BlockHeader,
-    pub validation_params: BlockHeaderValidationParams,
+    pub starting_block_header: SPVBlockHeader,
+    pub max_stored_block_headers: Option<NonZeroU64>,
+    pub validation_params: Option<BlockHeaderValidationParams>,
 }
 
-// Validate headers
-helpers_validation::validate_headers(&headers, &params)?;
-
 // Storage trait for headers
+#[async_trait]
 pub trait BlockHeaderStorageOps {
-    fn get_header(&self, height: u64) -> Result<BlockHeader>;
-    fn add_headers(&self, headers: &[BlockHeader]) -> Result<()>;
+    async fn init(&self) -> Result<(), BlockHeaderStorageError>;
+    async fn add_block_headers_to_storage(&self, headers: HashMap<u64, BlockHeader>) -> Result<()>;
+    async fn get_block_header(&self, height: u64) -> Result<Option<BlockHeader>>;
+    async fn get_last_block_height(&self) -> Result<Option<u64>>;
 }
 ```
 
@@ -232,21 +241,39 @@ pub trait BlockHeaderStorageOps {
 ### Creating Address from Public Key
 ```rust
 let pubkey_hash = dhash160(&public_key.serialize());
-let address = AddressBuilder::new()
-    .network(Network::Mainnet)
-    .address_type(AddressScriptType::P2PKH)
-    .hash(pubkey_hash.into())
+let address = AddressBuilder::new(
+    AddressFormat::Standard,
+    ChecksumType::DSHA256,
+    prefixes,  // NetworkAddressPrefixes
+    None,      // hrp for segwit
+)
+    .as_pkh(AddressHashEnum::AddressHash(pubkey_hash))
     .build()?;
 ```
 
 ### Signing Transaction
 ```rust
-let signer = TransactionInputSigner::new(tx, script_pubkey, amount);
-let signature = signer.sign(
-    &private_key,
+// Create signer from transaction
+let signer: TransactionInputSigner = transaction.into();
+
+// Get signature hash
+let sighash = signer.signature_hash(
     input_index,
+    input_amount,
+    &script_pubkey,
     SignatureVersion::Base,
-)?;
+    SIGHASH_ALL,
+);
+
+// Sign with keypair
+let signed_input = signer.signed_input(
+    &keypair,
+    input_index,
+    input_amount,
+    &script_pubkey,
+    SignatureVersion::Base,
+    SIGHASH_ALL,
+);
 ```
 
 ## Tests

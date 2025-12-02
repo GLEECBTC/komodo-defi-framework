@@ -6,7 +6,7 @@ Manages the lifecycle of cryptocurrency activation. Handles standalone coins, pl
 
 - Task-based coin activation via `RpcTaskManager`
 - Platform coin + token initialization (ETH+ERC20, BCH+SLP, Tendermint+IBC, Solana+SPL)
-- Standalone coin activation (ZCash, Sia)
+- Standalone coin activation (UTXO, Qtum, ZCash, Sia)
 - L2/Lightning activation (native only)
 - Hardware wallet interaction during activation
 - Transaction history fetching initiation
@@ -21,12 +21,14 @@ src/
 ├── platform_coin_with_tokens.rs  # Platform + tokens activation trait/impl
 ├── standalone_coin/              # Standalone coin activation
 │   ├── init_standalone_coin.rs   # Generic standalone activation
-│   └── init_standalone_coin_error.rs
+│   ├── init_standalone_coin_error.rs # Standalone activation errors
+│   └── mod.rs                    # Module exports
 ├── token.rs                      # Token-only activation (enable_token)
 ├── init_token.rs                 # Task-based token init
 ├── l2/                           # Lightning/L2 activation
-│   ├── init_l2.rs
-│   └── init_l2_error.rs
+│   ├── init_l2.rs                # L2 activation logic
+│   ├── init_l2_error.rs          # L2 activation errors
+│   └── mod.rs                    # Module exports
 ├── eth_with_token_activation.rs  # ETH + ERC20/NFT
 ├── erc20_token_activation.rs     # ERC20 token activation
 ├── init_erc20_token_activation.rs # Task-based ERC20 init
@@ -37,10 +39,14 @@ src/
 ├── solana_with_assets.rs         # Solana + SPL (experimental)
 ├── solana_token_activation.rs    # SPL token activation
 ├── utxo_activation/              # UTXO coin activation
-│   ├── init_utxo_standard_activation.rs
-│   ├── init_bch_activation.rs
-│   ├── init_qtum_activation.rs
-│   └── common_impl.rs
+│   ├── init_utxo_standard_activation.rs # UTXO standard activation
+│   ├── init_utxo_standard_activation_error.rs # UTXO activation errors
+│   ├── init_utxo_standard_statuses.rs # UTXO activation status types
+│   ├── utxo_standard_activation_result.rs # UTXO activation result types
+│   ├── init_bch_activation.rs    # BCH standalone activation
+│   ├── init_qtum_activation.rs   # Qtum standalone activation
+│   ├── common_impl.rs            # Shared UTXO activation logic
+│   └── mod.rs                    # Module exports
 ├── z_coin_activation.rs          # ZCash
 ├── sia_coin_activation.rs        # Sia
 └── lightning_activation.rs       # Lightning (native only)
@@ -50,7 +56,7 @@ src/
 
 ### 1. Platform Coin with Tokens
 
-For coins that host tokens (ETH, BCH, Tendermint):
+For coins that host tokens (ETH, BCH, Tendermint, Solana):
 
 ```rust
 // RPC: "task::enable_eth_with_tokens::init"
@@ -74,7 +80,7 @@ Flow:
 
 ### 2. Standalone Coins
 
-For coins without token support (ZCash, Sia):
+For coins without token support (UTXO, Qtum, ZCash, Sia):
 
 ```rust
 // RPC: "task::enable_z_coin::init"
@@ -90,9 +96,27 @@ trait InitStandaloneCoinActivationOps {
 For adding tokens to already-active platform:
 
 ```rust
-// RPC: "enable_erc20", "enable_slp"
+// Task-based (preferred): "task::enable_erc20::init"
+trait InitTokenActivationOps {
+    async fn init_token(...) -> Result<Self, Error>;
+    async fn get_activation_result(...) -> Result<ActivationResult, Error>;
+}
+
+// Request-response: "enable_erc20", "enable_slp"
 trait TokenActivationOps {
     async fn enable_token(...) -> Result<Self, Error>;
+}
+```
+
+### 4. L2 Activation
+
+For Lightning Network (native only):
+
+```rust
+// RPC: "task::enable_lightning::init"
+trait InitL2ActivationOps {
+    async fn init_l2(...) -> Result<Self, Error>;
+    async fn get_activation_result(...) -> Result<ActivationResult, Error>;
 }
 ```
 
@@ -126,6 +150,7 @@ Handles async activation lifecycle:
 enum InitPlatformCoinWithTokensInProgressStatus {
     ActivatingCoin,
     SyncingBlockHeaders { current_scanned_block, last_block },
+    TemporaryError(String),
     RequestingWalletBalance,
     WaitingForTrezorToConnect,
     FollowHwDeviceInstructions,
@@ -135,21 +160,31 @@ enum InitPlatformCoinWithTokensInProgressStatus {
 
 ## RPC Endpoints
 
-| Pattern | Init | Status | User Action | Cancel |
-|---------|------|--------|-------------|--------|
-| Platform+Tokens | `task::enable_eth_with_tokens::init` | `::status` | `::user_action` | `::cancel` |
-| Standalone | `task::enable_z_coin::init` | `::status` | `::user_action` | `::cancel` |
-| Token | `enable_erc20` | - | - | - |
-| L2 | `task::enable_lightning::init` | `::status` | `::user_action` | `::cancel` |
+Task-based (supports `::init`, `::status`, `::user_action`, `::cancel`):
+| Pattern | Example |
+|---------|---------|
+| Platform+Tokens | `task::enable_eth::init`, `task::enable_tendermint::init` |
+| Standalone | `task::enable_utxo::init`, `task::enable_z_coin::init`, `task::enable_sia::init` |
+| Token | `task::enable_erc20::init` |
+| L2 | `task::enable_lightning::init` |
+
+Request-response (no task management):
+| Pattern | Example |
+|---------|---------|
+| Platform+Tokens | `enable_eth_with_tokens`, `enable_bch_with_tokens` |
+| Standalone | `enable_sia` |
+| Token | `enable_erc20`, `enable_slp`, `enable_tendermint_token` |
 
 ## Key Traits
 
 | Trait | Purpose | Implementors |
 |-------|---------|--------------|
-| `PlatformCoinWithTokensActivationOps` | Platform + tokens | EthCoin, BchCoin, TendermintCoin |
-| `InitStandaloneCoinActivationOps` | Standalone coins | ZCoin, SiaCoin |
-| `TokenActivationOps` | Token-only | Erc20Token, SlpToken |
-| `TokenInitializer` | Token creation | Erc20TokenActivator, SlpTokenActivator |
+| `PlatformCoinWithTokensActivationOps` | Platform + tokens | EthCoin, BchCoin, TendermintCoin, SolanaCoin |
+| `InitStandaloneCoinActivationOps` | Standalone coins | UtxoStandardCoin, QtumCoin, BchCoin, ZCoin, SiaCoin |
+| `InitTokenActivationOps` | Token (task-based) | EthCoin |
+| `TokenActivationOps` | Token (request-response) | EthCoin, SlpToken, TendermintToken, SolanaToken |
+| `InitL2ActivationOps` | L2 activation | LightningCoin |
+| `TokenInitializer` | Token creation | Erc20Initializer, SlpTokenInitializer, TendermintTokenInitializer |
 
 ## Interactions
 
@@ -162,11 +197,14 @@ enum InitPlatformCoinWithTokensInProgressStatus {
 | **mm2_core** | MmArc context, CoinsContext registration |
 | **mm2_err_handle** | MmError framework |
 | **mm2_event_stream** | Progress event streaming |
-| **trezor** | Hardware wallet prompts during activation |
+| **common** | Utilities, HttpStatusCode, executor |
+| **mm2_number** | BigDecimal for balances |
+| **kdf_walletconnect** | WalletConnect context for external wallets |
 
 ## Key Invariants
 
-- Platform coin must be activated before its tokens
+- Platform coin must be activated before its tokens or L2
+- Duplicate activation prevented (checked at start of each activation)
 - Task-based activation required for hardware wallet flows
 - Coin registered with `CoinsContext` only after successful activation
 - Activation can be cancelled; partially activated coins are cleaned up
@@ -175,6 +213,8 @@ enum InitPlatformCoinWithTokensInProgressStatus {
 
 Common activation errors:
 - `PlatformIsAlreadyActivated` — Coin already active
+- `CoinIsAlreadyActivated` — Standalone coin already active
+- `PlatformCoinIsNotActivated` — Token/L2 activated before platform
 - `PlatformConfigIsNotFound` — Missing coin config
 - `TokenConfigIsNotFound` — Missing token config
 - `UnexpectedPlatformProtocol` — Protocol mismatch
@@ -191,5 +231,4 @@ All errors implement `HttpStatusCode` for proper RPC responses.
 
 ## Tests
 
-- Unit: `cargo test -p coins_activation --lib`
 - Integration: Platform activation tests in `mm2_main/tests/`

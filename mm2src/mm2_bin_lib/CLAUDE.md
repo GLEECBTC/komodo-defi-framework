@@ -113,7 +113,7 @@ async function mm2_stop(): Promise<void>;
 ### WASM Usage Example
 
 ```javascript
-import init, { mm2_main, mm2_rpc, LogLevel } from "./mm2.js";
+import init, { mm2_main, mm2_rpc, LogLevel } from "./kdflib.js";
 
 const params = {
     conf: {
@@ -206,7 +206,7 @@ static CTX: AtomicU32 = AtomicU32::new(0);  // FFI handle to MmArc
 | Target | Output |
 |--------|--------|
 | Native | `kdf` binary |
-| WASM | `mm2_lib_bg.wasm` + `mm2_lib.js` |
+| WASM | `kdflib_bg.wasm` + `kdflib.js` |
 | iOS | `libkdf.a` (static library) |
 | Android | `libkdf.a` (static library) |
 

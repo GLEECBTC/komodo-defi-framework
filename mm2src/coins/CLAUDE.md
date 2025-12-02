@@ -4,38 +4,33 @@ Abstraction layer for blockchain protocols. Defines traits for swaps, balances, 
 
 ## Responsibilities
 
-- Unified coin interface via `MmCoin` and `MmCoinEnum`
+- Unified coin interface (`MmCoin` trait, `MmCoinEnum` wrapper)
 - Protocol implementations: UTXO, EVM, Tendermint, Zcash, Lightning, Sia, Solana
-- HTLC operations for atomic swaps
-- HD wallet address derivation
-- Transaction building and signing
-- NFT operations (EVM)
+- Swap trait implementations for atomic swap protocols
+- HD wallet management (accounts, addresses, derivation, storage)
+- Transaction building, signing, broadcasting, and history
+- Balance tracking
+- NFT support (EVM chains)
+- Price fetching
 
-## Trait Hierarchy
+## Core Traits
 
-```
-MmCoinEnum (wrapper for all coin types)
-    ↓ Deref to dyn MmCoin
+`MmCoinEnum` wraps all coin types, derefs to `dyn MmCoin`.
 
-MmCoin (universal interface)
-├── MarketCoinOps   # Balance, fees, addresses, signing
-├── SwapOps         # V1 HTLC: send, validate, refund
-├── MakerCoinSwapOpsV2  # V2 maker operations
-├── TakerCoinSwapOpsV2  # V2 taker operations
-├── WatcherOps      # Third-party spend/refund
-└── HDWalletCoinOps # HD address derivation (optional)
-```
+| Trait | Purpose | Key Methods |
+|-------|---------|-------------|
+| `MmCoin` | Universal interface | Base trait all coins implement |
+| `MarketCoinOps` | Balance, fees, addresses | `ticker()`, `my_balance()`, `send_raw_tx()` |
+| `SwapOps` | V1 HTLC operations | `send_maker_payment()`, `validate_taker_payment()` |
+| `CommonSwapOpsV2` | Shared V2 swap operations | `derive_htlc_pubkey_v2()` |
+| `MakerCoinSwapOpsV2` | V2 maker operations | `send_maker_payment_v2()`, `refund_maker_payment_v2()` |
+| `TakerCoinSwapOpsV2` | V2 taker operations | `send_taker_funding()`, `sign_and_send_taker_funding_spend()` |
+| `MakerNftSwapOpsV2` | V2 NFT maker operations | NFT-specific swap methods |
+| `WatcherOps` | Third-party spend/refund | `watcher_validate_taker_fee()` |
+| `HDWalletCoinOps` | HD wallet coin operations | `derive_address()`, `derive_addresses()` |
+| `CoinWithPrivKeyPolicy` | Key policy access | `priv_key_policy()` |
 
-### Core Traits (lp_coins.rs)
-
-| Trait | Required For | Key Methods |
-|-------|--------------|-------------|
-| `MarketCoinOps` | All coins | `ticker()`, `my_balance()`, `send_raw_tx()` |
-| `SwapOps` | V1 swaps | `send_maker_payment()`, `validate_taker_payment()` |
-| `MakerCoinSwapOpsV2` | V2 maker | `send_maker_payment_v2()`, `refund_maker_payment_v2()` |
-| `TakerCoinSwapOpsV2` | V2 taker | `send_taker_funding()`, `sign_and_send_taker_funding_spend()` |
-| `WatcherOps` | Watcher support | `watcher_validate_taker_fee()` |
-| `HDWalletCoinOps` | HD wallets | `derive_address()`, `create_new_account()` |
+*Additional specialized traits exist for RPC transport, EIP-1559, balance updates, etc.*
 
 ## Adding a New Coin
 
@@ -44,19 +39,31 @@ MmCoin (universal interface)
 | Type | Base | Examples |
 |------|------|----------|
 | UTXO | `UtxoStandardCoin` | BTC, LTC, KMD |
+| UTXO (Qtum) | `QtumCoin` | QTUM |
+| UTXO (BCH) | `BchCoin` | BCH (with SLP support) |
+| SLP Token | `SlpToken` | SLP tokens on BCH |
+| QRC20 | `Qrc20Coin` | QRC20 tokens on Qtum |
 | EVM | `EthCoin` | ETH, MATIC, BNB |
-| ERC20 | `EthCoin` (token) | USDT, WBTC |
+| ERC20/NFT | `EthCoin` (token) | USDT, WBTC, NFTs |
 | Tendermint | `TendermintCoin` | ATOM, OSMO |
-| Custom | New struct | ZEC, SIA |
+| Tendermint Token | `TendermintToken` | IBC tokens |
+| Lightning | `LightningCoin` | BTC Lightning (native only) |
+| Solana | `SolanaCoin` | SOL |
+| SPL Token | `SolanaToken` | SPL tokens on Solana |
+| Zcash-based | `ZCoin` | ZEC, ARRR (Pirate) |
+| Sia | `SiaCoin` | SIA |
 
 ### 2. Implement Traits
 
-Minimum for swap support:
+Required for `MmCoin` (trait bound: `SwapOps + WatcherOps + MarketCoinOps`):
 ```rust
-impl MarketCoinOps for MyCoin { ... }
-impl SwapOps for MyCoin { ... }  // Or V2 traits
-impl MmCoin for MyCoin { ... }
+impl MarketCoinOps for MyCoin { ... }  // Addresses, balance, tx broadcast, signing
+impl SwapOps for MyCoin { ... }        // HTLC operations
+impl WatcherOps for MyCoin { ... }     // Default impls available
+impl MmCoin for MyCoin { ... }         // Withdraw, history, fees, confirmations
 ```
+
+See Core Traits table and existing implementations for additional traits (V2 swaps, HD wallet, NFT).
 
 ### 3. Add to MmCoinEnum
 
@@ -64,17 +71,17 @@ In `lp_coins.rs`:
 ```rust
 pub enum MmCoinEnum {
     // ...existing
-    MyCoin(MyCoin),
+    MyCoinVariant(MyCoin),
 }
 impl From<MyCoin> for MmCoinEnum { ... }
 ```
 
 ### 4. Add Activation
 
-In `coins_activation/`:
-- Platform: `platform_coin_with_tokens.rs`
-- Standalone: `standalone_coin/init_standalone_coin.rs`
-- Token: `init_token.rs`
+See `coins_activation/CLAUDE.md`. Activation traits (task-based `Init*` traits take precedence as they support all wallet types):
+- Platform: `PlatformCoinWithTokensActivationOps`
+- Standalone: `InitStandaloneCoinActivationOps` (preferred), `StandaloneCoinActivationOps`
+- Token: `InitTokenActivationOps` (preferred), `TokenActivationOps`
 
 ## Protocol Specifics
 
@@ -99,31 +106,28 @@ In `coins_activation/`:
 - Shielded transactions (Sapling proofs)
 - Lightwalletd or Electrum data source
 
+### Lightning (lightning.rs)
+- Native only, uses rust-lightning (LDK)
+- Channel management, invoice payments
+- Swap support via HTLC invoices
+
+### Sia (siacoin.rs)
+- Minimal implementation
+- Basic wallet operations, HTLC swaps
+- Missing: watchers, tx history v2, dynamic fees
+
+### Solana (solana/)
+- Work in progress
+- Basic wallet operations implemented
+- Missing: swap operations, most MmCoin methods
+
 ## HD Wallet Integration
 
-### Key Traits (hd_wallet/)
+Key traits in `hd_wallet/`:
 - `HDWalletCoinOps`: Coin-level derivation
+- `HDWalletOps`: Wallet operations (accounts, gap limit)
 - `HDAccountOps`: Account management
 - `HDAddressOps`: Address operations
-
-### Task RPCs
-- `task::get_new_address::{init,status,user_action,cancel}`
-- `task::init_account_balance::{init,status}`
-- `task::init_create_account::{init,status,user_action,cancel}`
-
-## Activation Patterns
-
-### Platform + Tokens
-```rust
-"enable_eth_with_tokens" → enable_platform_coin_with_tokens()
-"enable_erc20" → enable_token()
-```
-
-### Task-Based (complex init)
-```rust
-"task::enable_utxo::init" → init_standalone_coin()
-"task::enable_utxo::status" → init_standalone_coin_status()
-```
 
 ## Interactions
 
@@ -132,6 +136,7 @@ In `coins_activation/`:
 | **mm2_main** | Swap engines call coin traits |
 | **crypto** | `PrivKeyBuildPolicy` for key derivation |
 | **coins_activation** | Initialization flows |
+| **common** | Time utilities, DEX fee constants |
 | **mm2_bitcoin** | UTXO primitives (chain, keys, script, serialization) |
 | **mm2_number** | MmNumber for amounts |
 | **mm2_core** | MmArc context access, CoinsContext storage |
@@ -144,22 +149,10 @@ In `coins_activation/`:
 
 ## Key Invariants
 
-- `MmCoinEnum` wraps all coin types for unified handling
 - Coins must be activated before use (`lp_coinfind_or_err`)
 - Token activation requires platform coin first
 - HD mode requires `GlobalHDAccountCtx` in crypto context
 
-## Common Errors
+## Common Pitfalls
 
-| Error | Cause | Fix |
-|-------|-------|-----|
-| `NoSuchCoin` | Coin not activated | Call activation RPC first |
-| `UnexpectedDerivationMethod` | Wrong key policy | Check HD vs Iguana mode |
-| `BalanceError` | RPC failure | Verify node connectivity |
-| `InvalidAddress` | Format mismatch | Check address prefix/format |
-
-## Tests
-
-- Unit: `cargo test -p coins --lib`
-- Integration: Tests in `mm2_main/tests/`
-- Docker: Protocol-specific tests in `docker_tests/`
+*Add pitfalls here when the same issue is encountered multiple times.*

@@ -26,8 +26,8 @@ Central crypto context stored in `MmArc`.
 
 ```rust
 pub enum KeyPairPolicy {
-    Iguana,           // Single key from passphrase
-    GlobalHDAccount,  // BIP39 HD wallet
+    Iguana,                              // Single key from passphrase
+    GlobalHDAccount(GlobalHDAccountArc), // BIP39 HD wallet
 }
 ```
 
@@ -37,10 +37,11 @@ CryptoCtx::is_init(&ctx)?;           // Check initialized
 let crypto = CryptoCtx::from_ctx(&ctx)?;  // Get context
 ```
 
-**Exposed (safe) data:**
-- `secp256k1_key_pair` — Internal mm2 keypair
-- `rmd160` — Public key hash (address ID)
-- `shared_db_id` — Database namespace
+**Key access methods:**
+- `mm2_internal_key_pair()` — Internal mm2 keypair
+- `mm2_internal_pubkey()` — Public key for P2P
+- `mm2_internal_public_id()` — 32-byte public ID
+- `hw_wallet_rmd160()` — Hardware wallet address hash (if HW active)
 
 ### GlobalHDAccountCtx (global_hd_ctx.rs)
 
@@ -60,15 +61,16 @@ let secret = hd_ctx.derive_secp256k1_secret(&path)?;
 let key = hd_ctx.derive_ed25519_signing_key(&path)?;
 ```
 
-### PrivKeyBuildPolicy
+### PrivKeyBuildPolicy (in coins crate)
 
-Determines key source during coin activation:
+Determines key source during coin activation. Defined in `coins/lp_coins.rs`:
 
 ```rust
 pub enum PrivKeyBuildPolicy {
-    IguanaPrivKey(IguanaPrivKey),    // Legacy single-key
-    GlobalHDAccount(GlobalHDAccountArc), // HD derivation
-    Trezor,                          // Hardware wallet
+    IguanaPrivKey(IguanaPrivKey),
+    GlobalHDAccount(GlobalHDAccountArc),
+    Trezor,
+    WalletConnect { session_topic },
 }
 
 // Auto-detect from context
@@ -84,7 +86,8 @@ m / 44'      / 141'       / 0'       / 0      / 0   (KMD first address)
 ```
 
 **Path types:**
-- `HDPathToCoin`: Account-level path (purpose + coin_type)
+- `HDPathToCoin`: Coin-level path (purpose + coin_type)
+- `HDPathToAccount`: Account-level path (purpose + coin_type + account_id)
 - `DerivationPath`: Full path including address index
 
 ## Hardware Wallets
@@ -92,13 +95,15 @@ m / 44'      / 141'       / 0'       / 0      / 0   (KMD first address)
 ### Trezor (Native Only)
 ```rust
 #[cfg(not(target_arch = "wasm32"))]
-CryptoCtx::init_hw_ctx_with_trezor(processor, expected_pubkey)?;
+let crypto_ctx = CryptoCtx::from_ctx(&ctx)?;
+crypto_ctx.init_hw_ctx_with_trezor(processor, expected_pubkey).await?;
 ```
 
 ### MetaMask (WASM Only)
 ```rust
 #[cfg(target_arch = "wasm32")]
-CryptoCtx::init_metamask_ctx(project_name)?;
+let crypto_ctx = CryptoCtx::from_ctx(&ctx)?;
+crypto_ctx.init_metamask_ctx(project_name).await?;
 ```
 
 ## Common Patterns
@@ -158,13 +163,19 @@ pub enum CryptoInitError {
 | `privkey.rs` | Key generation from seed |
 | `hw_ctx.rs` | Hardware wallet context |
 | `hw_client.rs` | Hardware wallet client traits |
+| `hw_error.rs` | Hardware wallet error types |
+| `hw_rpc_task.rs` | Hardware wallet RPC task types |
 | `metamask_ctx.rs` | MetaMask context (WASM) |
+| `metamask_login.rs` | MetaMask login request types (WASM) |
 | `mnemonic.rs` | BIP39 mnemonic handling |
 | `encrypt.rs` / `decrypt.rs` | Mnemonic encryption |
 | `secret_hash_algo.rs` | Swap secret hash algorithm |
 | `slip21.rs` | SLIP-21 symmetric key derivation |
-| `standard_hd_path.rs` | BIP44 path types |
+| `standard_hd_path.rs` | BIP44 path types (StandardHDPath, HDPathToCoin) |
+| `bip32_child.rs` | BIP32 derivation path building blocks |
 | `shared_db_id.rs` | Database namespace derivation |
+| `xpub.rs` | Extended public key handling |
+| `key_derivation.rs` | Key derivation utilities |
 
 ## Tests
 

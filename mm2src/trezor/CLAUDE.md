@@ -36,7 +36,8 @@ src/
 │   ├── messages_common.rs
 │   ├── messages_management.rs
 │   ├── messages_bitcoin.rs
-│   └── messages_ethereum.rs
+│   ├── messages_ethereum.rs
+│   └── messages_ethereum_definitions.rs
 ├── utxo/                 # Bitcoin/UTXO operations
 │   ├── mod.rs
 │   ├── utxo_command.rs  # get_utxo_address, get_public_key
@@ -45,7 +46,8 @@ src/
 │   └── prev_tx.rs       # Previous transaction data
 └── eth/                  # Ethereum operations
     ├── mod.rs
-    └── eth_command.rs   # get_eth_address, sign_eth_tx
+    ├── eth_command.rs   # get_eth_address, sign_eth_tx
+    └── definitions/     # Network definition files (.dat)
 ```
 
 ## Core Types
@@ -61,7 +63,7 @@ pub struct TrezorClient {
 // Holds exclusive device access during operations
 pub struct TrezorSession<'a> {
     inner: AsyncMutexGuard<'a, TrezorClientImpl>,
-    pub processor: Option<Arc<dyn TrezorRequestProcessor>>,
+    pub processor: Option<Arc<dyn TrezorRequestProcessor<Error = RpcTaskError>>>,
 }
 
 // Create and use
@@ -89,13 +91,13 @@ Trait for handling user interactions during device operations:
 
 ```rust
 #[async_trait]
-pub trait TrezorRequestProcessor {
+pub trait TrezorRequestProcessor: Send + Sync {
     type Error: NotMmError + Send;
 
-    async fn on_button_request(&self) -> Result<()>;
-    async fn on_pin_request(&self) -> Result<TrezorPinMatrix3x3Response>;
-    async fn on_passphrase_request(&self) -> Result<TrezorPassphraseResponse>;
-    async fn on_ready(&self) -> Result<()>;
+    async fn on_button_request(&self) -> MmResult<(), TrezorProcessingError<Self::Error>>;
+    async fn on_pin_request(&self) -> MmResult<TrezorPinMatrix3x3Response, TrezorProcessingError<Self::Error>>;
+    async fn on_passphrase_request(&self) -> MmResult<TrezorPassphraseResponse, TrezorProcessingError<Self::Error>>;
+    async fn on_ready(&self) -> MmResult<(), TrezorProcessingError<Self::Error>>;
 }
 ```
 
@@ -160,7 +162,8 @@ Note: iOS not supported (no USB access).
 
 ```rust
 pub enum TrezorError {
-    TransportNotSupported { transport: String },
+    TransportNotSupported { transport },
+    ErrorRequestingAccessPermission(String),  // Browser permission denied
     DeviceDisconnected,
     UnderlyingError(String),
     ProtocolError(String),
@@ -168,14 +171,25 @@ pub enum TrezorError {
     Failure(OperationFailure),
     UnexpectedInteractionRequest(TrezorUserInteraction),
     Internal(String),
+    PongMessageMismatch,
+    InternalNoProcessor,
 }
 
 pub enum OperationFailure {
     InvalidPin,
-    UserCancelled,
-    NotEnoughFunds,
+    UnexpectedMessage,
+    ButtonExpected,
+    DataError,
+    PinExpected,
     InvalidSignature,
-    // ... more
+    ProcessError,
+    NotEnoughFunds,
+    NotInitialized,
+    WipeCodeMismatch,
+    InvalidSession,
+    FirmwareError,
+    FailureMessageNotFound,
+    UserCancelled,
 }
 ```
 
