@@ -1,4 +1,4 @@
-# CLAUDE.md — Komodo DeFi Framework
+# AGENTS.md — Komodo DeFi Framework
 
 Guide for AI-assisted development. Keep changes small, follow patterns.
 
@@ -16,20 +16,20 @@ Targets: Linux (x86-64), macOS (x86-64, ARM64, Universal), Windows (x86-64), WAS
 
 ## Workspace Layout
 
-All crates reside in `mm2src/`. Crates with CLAUDE.md files are marked with `→`.
+All crates reside in `mm2src/`. Crates with AGENTS.md files are marked with `→`.
 
 ```
 mm2src/
-├── mm2_bin_lib/         # Platform entry points (native/WASM/mobile) → see CLAUDE.md
-├── mm2_main/            # App entry, RPC, swaps, ordermatch → see CLAUDE.md
-├── coins/               # Multi-protocol coin support → see CLAUDE.md
+├── mm2_bin_lib/         # Platform entry points (native/WASM/mobile) → see AGENTS.md
+├── mm2_main/            # App entry, RPC, swaps, ordermatch → see AGENTS.md
+├── coins/               # Multi-protocol coin support → see AGENTS.md
 │   └── utxo_signer/     # UTXO transaction signing (keypair/Trezor)
-├── crypto/              # Key management, HD derivation → see CLAUDE.md
+├── crypto/              # Key management, HD derivation → see AGENTS.md
 ├── mm2_core/            # MmArc/MmCtx central context, event dispatch
-├── mm2_p2p/             # libp2p networking, gossipsub → see CLAUDE.md
-├── coins_activation/    # Coin activation flows → see CLAUDE.md
-├── trezor/              # Trezor hardware wallet → see CLAUDE.md
-├── mm2_bitcoin/         # UTXO primitives → see CLAUDE.md
+├── mm2_p2p/             # libp2p networking, gossipsub → see AGENTS.md
+├── coins_activation/    # Coin activation flows → see AGENTS.md
+├── trezor/              # Trezor hardware wallet → see AGENTS.md
+├── mm2_bitcoin/         # UTXO primitives → see AGENTS.md
 │   ├── chain/           # Block/transaction structures
 │   ├── crypto/          # Hash functions (bitcrypto)
 │   ├── keys/            # Address and key management
@@ -40,7 +40,7 @@ mm2src/
 │   ├── rpc/             # RPC response types
 │   ├── spv_validation/  # SPV proof verification
 │   └── test_helpers/    # Testing utilities
-├── common/              # Shared utilities → see CLAUDE.md
+├── common/              # Shared utilities → see AGENTS.md
 │   └── shared_ref_counter/ # Debug-instrumented Arc
 ├── kdf_walletconnect/   # WalletConnect v2 protocol
 ├── mm2_event_stream/    # SSE streaming infrastructure
@@ -195,7 +195,7 @@ See `docs/DEV_ENVIRONMENT.md` for full setup and running specific tests.
 | `lightning::` | `"lightning::channels::open_channel"` | Lightning Network (native only) |
 | `experimental::` | `"experimental::..."` | Unstable APIs (may have sub-namespaces) |
 
-See `mm2_main/src/rpc/dispatcher/dispatcher.rs` for all methods, `mm2_main/CLAUDE.md` for adding new handlers.
+See `mm2_main/src/rpc/dispatcher/dispatcher.rs` for all methods, `mm2_main/AGENTS.md` for adding new handlers.
 
 ## Key File Locations
 

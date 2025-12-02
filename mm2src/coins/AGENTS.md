@@ -78,7 +78,7 @@ impl From<MyCoin> for MmCoinEnum { ... }
 
 ### 4. Add Activation
 
-See `coins_activation/CLAUDE.md`. Activation traits (task-based `Init*` traits take precedence as they support all wallet types):
+See `coins_activation/AGENTS.md`. Activation traits (task-based `Init*` traits take precedence as they support all wallet types):
 - Platform: `PlatformCoinWithTokensActivationOps`
 - Standalone: `InitStandaloneCoinActivationOps` (preferred), `StandaloneCoinActivationOps`
 - Token: `InitTokenActivationOps` (preferred), `TokenActivationOps`

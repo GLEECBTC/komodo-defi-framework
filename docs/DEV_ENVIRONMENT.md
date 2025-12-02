@@ -105,3 +105,35 @@ There are two primary methods for running specific tests:
     ```
 
 PS If you notice that this guide is outdated, please submit a PR.
+
+## AI coding agents setup
+
+This project uses `AGENTS.md` as the canonical source for AI agent instructions, following the emerging standard for AI-assisted development.
+
+### File layout
+
+- Root `AGENTS.md` — main instructions for the entire project.
+- `mm2src/<crate>/AGENTS.md` — crate-specific instructions (mm2_main, coins, mm2_bitcoin, common, etc.).
+- Crates without their own AGENTS.md inherit the root instructions.
+
+### Claude Code
+
+Claude Code does not yet support `AGENTS.md` directly—it expects a file named `CLAUDE.md`. Run this script from the repo root to create all necessary symlinks:
+
+```bash
+#!/bin/bash
+# Create CLAUDE.md symlinks for Claude Code compatibility
+
+# Root symlink
+[ -f AGENTS.md ] && [ ! -e CLAUDE.md ] && ln -s AGENTS.md CLAUDE.md
+
+# Crate symlinks
+for agents_file in mm2src/*/AGENTS.md; do
+    dir=$(dirname "$agents_file")
+    [ ! -e "$dir/CLAUDE.md" ] && ln -s AGENTS.md "$dir/CLAUDE.md"
+done
+
+echo "Symlinks created."
+```
+
+When working in a crate, run Claude Code from that crate directory so it loads the crate's AGENTS.md via the symlink.
