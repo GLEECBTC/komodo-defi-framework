@@ -28,8 +28,8 @@ use std::process::Command;
 use std::str::FromStr;
 use std::sync::Mutex;
 use std::time::Duration;
-use testcontainers::clients::Cli;
 use testcontainers::core::WaitFor;
+use testcontainers::runners::SyncRunner;
 use testcontainers::{GenericImage, RunnableImage};
 
 pub const QTUM_REGTEST_DOCKER_IMAGE: &str = "docker.io/sergeyboyko/qtumregtest";
@@ -55,7 +55,7 @@ impl QtumDockerOps {
     pub fn new() -> QtumDockerOps {
         let ctx = MmCtxBuilder::new().into_mm_arc();
         let confpath = unsafe { QTUM_CONF_PATH.as_ref().expect("Qtum config is not set yet") };
-        let conf = json!({"decimals":8,"network":"regtest","confpath":confpath});
+        let conf = json!({"coin":"QTUM","decimals":8,"network":"regtest","confpath":confpath});
         let req = json!({
             "method": "enable",
         });
@@ -90,7 +90,7 @@ impl QtumDockerOps {
     }
 }
 
-pub fn qtum_docker_node(docker: &Cli, port: u16) -> DockerNode<'_> {
+pub fn qtum_docker_node(port: u16) -> DockerNode {
     let image = GenericImage::new(QTUM_REGTEST_DOCKER_IMAGE, "latest")
         .with_env_var("CLIENTS", "2")
         .with_env_var("COIN_RPC_PORT", port.to_string())
@@ -98,7 +98,7 @@ pub fn qtum_docker_node(docker: &Cli, port: u16) -> DockerNode<'_> {
         .with_env_var("FILL_MEMPOOL", "true")
         .with_wait_for(WaitFor::message_on_stdout("config is ready"));
     let image = RunnableImage::from(image).with_mapped_port((port, port));
-    let container = docker.run(image);
+    let container = image.start().expect("Failed to start Qtum regtest docker container");
 
     let name = "qtum";
     let mut conf_path = temp_dir().join("qtum-regtest");

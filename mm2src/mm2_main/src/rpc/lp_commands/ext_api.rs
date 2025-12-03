@@ -1,7 +1,7 @@
 //! RPC implementation for use API of external trading service providers (1inch etc).
 
 use crate::lr_swap::lr_helpers::{check_if_one_inch_supports_pair, get_coin_for_one_inch};
-use coins::eth::wei_from_big_decimal;
+use coins::eth::u256_from_big_decimal;
 use coins::{CoinWithDerivationMethod, MmCoin};
 use ext_api_errors::ExtApiRpcError;
 use ext_api_helpers::{make_classic_swap_create_params, make_classic_swap_quote_params};
@@ -40,7 +40,7 @@ pub async fn one_inch_v6_0_classic_swap_quote_rpc(
     let base_chain_id = base.chain_id().ok_or(ExtApiRpcError::ChainNotSupported)?;
     let rel_chain_id = rel.chain_id().ok_or(ExtApiRpcError::ChainNotSupported)?;
     check_if_one_inch_supports_pair(base_chain_id, rel_chain_id).map_mm_err()?;
-    let sell_amount = wei_from_big_decimal(&req.amount.to_decimal(), base.decimals())
+    let sell_amount = u256_from_big_decimal(&req.amount.to_decimal(), base.decimals())
         .mm_err(|err| ExtApiRpcError::InvalidParam(err.to_string()))?;
     let query_params = make_classic_swap_quote_params(base_contract, rel_contract, sell_amount, req.opt_params)
         .build_query_params()
@@ -67,7 +67,7 @@ pub async fn one_inch_v6_0_classic_swap_create_rpc(
     let base_chain_id = base.chain_id().ok_or(ExtApiRpcError::ChainNotSupported)?;
     let rel_chain_id = rel.chain_id().ok_or(ExtApiRpcError::ChainNotSupported)?;
     check_if_one_inch_supports_pair(base_chain_id, rel_chain_id).map_mm_err()?;
-    let sell_amount = wei_from_big_decimal(&req.amount.to_decimal(), base.decimals())
+    let sell_amount = u256_from_big_decimal(&req.amount.to_decimal(), base.decimals())
         .mm_err(|err| ExtApiRpcError::InvalidParam(err.to_string()))?;
     let single_address = base.derivation_method().single_addr_or_err().await.map_mm_err()?;
 

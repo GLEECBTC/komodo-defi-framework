@@ -201,6 +201,7 @@ impl From<TradePreimageError> for ExtApiRpcError {
             TradePreimageError::Transport(nested_err) => Self::TransportError(nested_err),
             TradePreimageError::InternalError(nested_err) => Self::InternalError(nested_err),
             TradePreimageError::NftProtocolNotSupported => Self::NftProtocolNotSupported,
+            TradePreimageError::NoSuchCoin { coin } => Self::NoSuchCoin { coin },
         }
     }
 }

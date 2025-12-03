@@ -2,7 +2,8 @@
 
 use super::ext_api_errors::FromApiValueError;
 use coins::eth::erc20::{get_erc20_ticker_by_contract_address, get_platform_ticker};
-use coins::eth::{wei_to_coins_mm_number, wei_to_eth_decimal, wei_to_gwei_decimal};
+use coins::eth::eth_utils::wei_to_coins_mm_number;
+use coins::eth::{wei_to_eth_decimal, wei_to_gwei_decimal};
 use coins::Ticker;
 use common::true_f;
 use ethereum_types::{Address, U256};

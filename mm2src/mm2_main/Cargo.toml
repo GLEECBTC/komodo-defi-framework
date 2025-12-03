@@ -21,7 +21,6 @@ run-docker-tests = ["coins/run-docker-tests"]
 default = []
 trezor-udp = ["crypto/trezor-udp"] # use for tests to connect to trezor emulator over udp
 run-device-tests = []
-enable-sia = ["coins/enable-sia", "coins_activation/enable-sia"]
 sepolia-maker-swap-v2-tests = []
 sepolia-taker-swap-v2-tests = []
 test-ext-api = ["trading_api/test-ext-api"]
@@ -45,7 +44,7 @@ coins = { path = "../coins" }
 coins_activation = { path = "../coins_activation" }
 common = { path = "../common" }
 compatible-time.workspace = true
-crc32fast.workspace = true 
+crc32fast.workspace = true
 crossbeam.workspace = true
 crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
@@ -56,7 +55,7 @@ enum_derives = { path = "../derives/enum_derives" }
 enum-primitive-derive.workspace = true
 futures01.workspace = true
 futures = { workspace = true, features = ["compat", "async-await"] }
-gstuff.workspace = true 
+gstuff.workspace = true
 hash256-std-hasher.workspace = true
 hash-db.workspace = true
 hex.workspace = true
@@ -81,7 +80,6 @@ mm2_rpc = { path = "../mm2_rpc", features = ["rpc_facilities"] }
 mm2_state_machine = { path = "../mm2_state_machine" }
 trading_api = { path = "../trading_api" }
 num-traits.workspace = true
-parity-util-mem.workspace = true
 parking_lot = { workspace = true }
 primitives = { path = "../mm2_bitcoin/primitives" }
 primitive-types.workspace = true
@@ -106,7 +104,7 @@ sp-trie.workspace = true
 tempfile.workspace = true
 trie-db.workspace = true
 trie-root.workspace = true
-uuid.workspace = true 
+uuid.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # TODO: Removing this causes `wasm-pack` to fail when starting a web session (even though we don't use this crate).
@@ -128,12 +126,16 @@ rcgen.workspace = true
 rustls = { workspace = true, default-features = false }
 rustls-pemfile.workspace = true
 timed-map = { workspace = true, features = ["rustc-hash"] }
-tokio = { workspace = true, features = ["io-util", "rt-multi-thread", "net", "signal"] }
+tokio = { workspace = true, features = ["io-util", "rt-multi-thread", "net"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi.workspace = true
 
+[target.'cfg(not(any(target_arch = "wasm32", target_os = "windows")))'.dependencies]
+signal-hook-tokio = { version = "0.3", features = [ "futures-v0_3" ] }
+
 [dev-dependencies]
+base64.workspace = true
 coins = { path = "../coins", features = ["for-tests"] }
 coins_activation = { path = "../coins_activation", features = ["for-tests"] }
 common = { path = "../common", features = ["for-tests"] }
@@ -141,7 +143,6 @@ mm2_test_helpers = { path = "../mm2_test_helpers" }
 trading_api = { path = "../trading_api", features = ["for-tests"] }
 env_logger.workspace = true
 mocktopus.workspace = true
-testcontainers.workspace = true
 web3 = { workspace = true, default-features = false, features = ["http-rustls-tls"] }
 ethabi.workspace = true
 rlp.workspace = true
@@ -149,6 +150,11 @@ ethcore-transaction.workspace = true
 rustc-hex.workspace = true
 sia-rust.workspace = true
 url.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+# todo: try to use async features
+testcontainers = { workspace = true, features = ["blocking"] }
+reqwest = { workspace = true, features = ["json"] }
 
 [build-dependencies]
 chrono.workspace = true

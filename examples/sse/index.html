@@ -8,7 +8,8 @@
 
   <script>
     if (typeof (EventSource) !== "undefined") {
-      var source = new EventSource("http://localhost:7783/event-stream", {
+      const urlParams = new URLSearchParams(window.location.search);
+      var source = new EventSource("http://localhost:7783/event-stream?" + urlParams.toString(), {
         withCredentials: false,
       });
       source.onmessage = function (event) {

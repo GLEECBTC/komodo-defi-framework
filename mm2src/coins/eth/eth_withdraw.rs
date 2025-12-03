@@ -1,5 +1,5 @@
 use super::{
-    checksum_address, u256_to_big_decimal, wei_from_big_decimal, ChainSpec, EthCoinType, EthDerivationMethod,
+    checksum_address, u256_from_big_decimal, u256_to_big_decimal, ChainSpec, EthCoinType, EthDerivationMethod,
     EthPrivKeyPolicy, Public, WithdrawError, WithdrawRequest, WithdrawResult, ERC20_CONTRACT, H160, H256,
 };
 use crate::eth::wallet_connect::WcEthTxParams;
@@ -237,7 +237,7 @@ where
         let (mut wei_amount, dec_amount) = if req.max {
             (my_balance, my_balance_dec.clone())
         } else {
-            let wei_amount = wei_from_big_decimal(&req.amount, coin.decimals).map_mm_err()?;
+            let wei_amount = u256_from_big_decimal(&req.amount, coin.decimals).map_mm_err()?;
             (wei_amount, req.amount.clone())
         };
         if wei_amount > my_balance {
@@ -287,7 +287,7 @@ where
 
         let (tx_hash, tx_hex) = match coin.priv_key_policy {
             EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. } | EthPrivKeyPolicy::Trezor => {
-                let address_lock = coin.get_address_lock(my_address.to_string()).await;
+                let address_lock = coin.get_address_lock(my_address).await;
                 let _nonce_lock = address_lock.lock().await;
                 let (nonce, _) = coin
                     .clone()
@@ -338,6 +338,7 @@ where
                 ))?;
                 let gas_price = pay_for_gas_option.get_gas_price();
                 let (max_fee_per_gas, max_priority_fee_per_gas) = pay_for_gas_option.get_fee_per_gas();
+                // TODO: we should get _nonce_lock here (when WalletConnect is supported for swaps)
                 let (nonce, _) = coin
                     .clone()
                     .get_addr_nonce(my_address)

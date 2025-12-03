@@ -4542,7 +4542,7 @@ fn test_mm2_db_migration() {
 
     let coins = json!([rick_conf(), morty_conf(), eth_dev_conf(),]);
 
-    let mm2_folder = new_mm2_temp_folder_path(None);
+    let mm2_folder = new_mm2_temp_folder_path(None, None);
     let swaps_dir = mm2_folder.join(format!(
         "{}/SWAPS/STATS/MAKER",
         hex::encode(rmd160_from_passphrase(&bob_passphrase))
@@ -6725,7 +6725,7 @@ mod trezor_tests {
 
         CryptoCtx::init_with_iguana_passphrase(ctx.clone(), "123456").unwrap(); // for now we need passphrase seed for init
         let req: RpcInitReq<InitHwRequest> = serde_json::from_value(json!({ "device_pubkey": null })).unwrap();
-        let res = match init_trezor(ctx.clone(), req).await {
+        let res = match init_trezor(ctx.clone(), Some(req)).await {
             Ok(res) => res,
             _ => {
                 panic!("cannot start init trezor task");
@@ -7064,7 +7064,7 @@ mod trezor_tests {
         .unwrap();
 
         let coin = block_on(lp_coinfind(&ctx, ticker_coin)).unwrap();
-        let eth_coin = if let Some(MmCoinEnum::EthCoin(eth_coin)) = coin {
+        let eth_coin = if let Some(MmCoinEnum::EthCoinVariant(eth_coin)) = coin {
             eth_coin
         } else {
             panic!("eth coin not enabled");

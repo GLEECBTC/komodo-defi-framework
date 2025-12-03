@@ -6,7 +6,7 @@ use db_common::{
     owned_named_params,
     sqlite::{
         rusqlite::{params_from_iter, Connection, OptionalExtension},
-        AsSqlNamedParams, OwnedSqlNamedParams,
+        AsSqlNamedParams, OwnedSqlNamedParams, SqlValue,
     },
 };
 use mm2_core::mm_ctx::MmArc;
@@ -47,14 +47,9 @@ const INSERT_STATS_SWAP: &str = "INSERT INTO stats_swaps (
     finished_at,
     maker_amount,
     taker_amount,
-    is_success,
-    maker_coin_usd_price,
-    taker_coin_usd_price,
-    maker_pubkey,
-    taker_pubkey
+    is_success
 ) VALUES (:maker_coin, :maker_coin_ticker, :maker_coin_platform, :taker_coin, :taker_coin_ticker, 
-:taker_coin_platform, :uuid, :started_at, :finished_at, :maker_amount, :taker_amount, :is_success, 
-:maker_coin_usd_price, :taker_coin_usd_price, :maker_pubkey, :taker_pubkey)";
+:taker_coin_platform, :uuid, :started_at, :finished_at, :maker_amount, :taker_amount, :is_success)";
 
 pub const ADD_STARTED_AT_INDEX: &str = "CREATE INDEX timestamp_index ON stats_swaps (started_at);";
 
@@ -101,7 +96,7 @@ pub const ADD_MAKER_TAKER_GUI_AND_VERSION: &[&str] = &[
 pub const SELECT_ID_BY_UUID: &str = "SELECT id FROM stats_swaps WHERE uuid = ?1";
 
 /// Returns SQL statements to initially fill stats_swaps table using existing DB with JSON files
-pub async fn create_and_fill_stats_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
+pub async fn create_and_fill_stats_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<SqlValue>)> {
     let maker_swaps = SavedSwap::load_all_from_maker_stats_db(ctx).await.unwrap_or_default();
     let taker_swaps = SavedSwap::load_all_from_taker_stats_db(ctx).await.unwrap_or_default();
 
@@ -122,6 +117,54 @@ pub async fn create_and_fill_stats_swaps_from_json_statements(ctx: &MmArc) -> Ve
             result.push(sql_with_params);
         }
     }
+    result
+}
+
+pub async fn fix_maker_and_taker_pubkeys_in_stats_db(ctx: &MmArc) -> Vec<(&'static str, Vec<SqlValue>)> {
+    let maker_swaps = SavedSwap::load_all_from_maker_stats_db(ctx).await.unwrap_or_default();
+    let taker_swaps = SavedSwap::load_all_from_taker_stats_db(ctx).await.unwrap_or_default();
+
+    let mut result = Vec::new();
+
+    // Update all the `maker_pubkey`s using maker's `my_persistent_pub` field
+    for maker_swap in maker_swaps {
+        const UPDATE_MAKER_PUBKEY: &str = "UPDATE stats_swaps SET maker_pubkey = ?1 WHERE uuid = ?2;";
+        match maker_swap.maker_pubkey() {
+            Ok(maker_pubkey) => {
+                result.push((
+                    UPDATE_MAKER_PUBKEY,
+                    vec![maker_pubkey.into(), maker_swap.uuid.to_string().into()],
+                ));
+            },
+            Err(e) => {
+                covered_error!("Error {} on getting maker_pubkey for swap {}", e, maker_swap.uuid);
+                result.push((
+                    UPDATE_MAKER_PUBKEY,
+                    vec![SqlValue::Null, maker_swap.uuid.to_string().into()],
+                ));
+            },
+        }
+    }
+    // Update all the `taker_pubkey`s using taker's `my_persistent_pub` field
+    for taker_swap in taker_swaps {
+        const UPDATE_TAKER_PUBKEY: &str = "UPDATE stats_swaps SET taker_pubkey = ?1 WHERE uuid = ?2;";
+        match taker_swap.taker_pubkey() {
+            Ok(taker_pubkey) => {
+                result.push((
+                    UPDATE_TAKER_PUBKEY,
+                    vec![taker_pubkey.into(), taker_swap.uuid.to_string().into()],
+                ));
+            },
+            Err(e) => {
+                covered_error!("Error {} on getting taker_pubkey for swap {}", e, taker_swap.uuid);
+                result.push((
+                    UPDATE_TAKER_PUBKEY,
+                    vec![SqlValue::Null, taker_swap.uuid.to_string().into()],
+                ));
+            },
+        }
+    }
+
     result
 }
 
@@ -149,14 +192,6 @@ fn insert_stats_maker_swap_sql(swap: &MakerSavedSwap) -> Option<(&'static str, O
         },
     };
 
-    let pubkeys = match swap.swap_pubkeys() {
-        Ok(p) => p,
-        Err(e) => {
-            error!("Error {} on getting swap {} pubkeys", e, swap.uuid);
-            return None;
-        },
-    };
-
     let is_success = swap
         .is_success()
         .expect("is_success can return error only when swap is not finished");
@@ -177,28 +212,12 @@ fn insert_stats_maker_swap_sql(swap: &MakerSavedSwap) -> Option<(&'static str, O
         ":maker_amount": swap_data.maker_amount.to_string(),
         ":taker_amount": swap_data.taker_amount.to_string(),
         ":is_success": (is_success as u32).to_string(),
-        ":maker_coin_usd_price": swap.maker_coin_usd_price.as_ref().map(|p| p.to_string()),
-        ":taker_coin_usd_price": swap.taker_coin_usd_price.as_ref().map(|p| p.to_string()),
-        ":maker_pubkey": pubkeys.maker,
-        ":taker_pubkey": pubkeys.taker,
     };
 
     Some((INSERT_STATS_SWAP, params))
 }
 
-fn update_stats_maker_gui_version(swap: &MakerSavedSwap) -> (&'static str, OwnedSqlNamedParams) {
-    const UPDATE_STATS_SWAP_GUI_AND_VERSION_MAKER: &str =
-        "UPDATE stats_swaps set maker_gui = :maker_gui, maker_version = :maker_version WHERE uuid = :uuid;";
-    let params = owned_named_params! {
-        ":maker_gui": swap.gui.clone(),
-        ":maker_version": swap.mm_version.clone(),
-        ":uuid": swap.uuid.to_string(),
-    };
-
-    (UPDATE_STATS_SWAP_GUI_AND_VERSION_MAKER, params)
-}
-
-fn insert_stats_maker_swap_sql_init(swap: &MakerSavedSwap) -> Option<(&'static str, Vec<String>)> {
+fn insert_stats_maker_swap_sql_init(swap: &MakerSavedSwap) -> Option<(&'static str, Vec<SqlValue>)> {
     let swap_data = match swap.swap_data() {
         Ok(d) => d,
         Err(e) => {
@@ -226,7 +245,11 @@ fn insert_stats_maker_swap_sql_init(swap: &MakerSavedSwap) -> Option<(&'static s
         swap_data.maker_amount.to_string(),
         swap_data.taker_amount.to_string(),
         (is_success as u32).to_string(),
-    ];
+    ]
+    .into_iter()
+    .map(SqlValue::from)
+    .collect();
+
     Some((INSERT_STATS_SWAP_ON_INIT, params))
 }
 
@@ -246,14 +269,6 @@ fn insert_stats_taker_swap_sql(swap: &TakerSavedSwap) -> Option<(&'static str, O
         },
     };
 
-    let pubkeys = match swap.swap_pubkeys() {
-        Ok(p) => p,
-        Err(e) => {
-            error!("Error {} on getting swap {} pubkeys", e, swap.uuid);
-            return None;
-        },
-    };
-
     let is_success = swap
         .is_success()
         .expect("is_success can return error only when swap is not finished");
@@ -274,27 +289,11 @@ fn insert_stats_taker_swap_sql(swap: &TakerSavedSwap) -> Option<(&'static str, O
         ":maker_amount": swap_data.maker_amount.to_string(),
         ":taker_amount": swap_data.taker_amount.to_string(),
         ":is_success": (is_success as u32).to_string(),
-        ":maker_coin_usd_price": swap.maker_coin_usd_price.as_ref().map(|p| p.to_string()),
-        ":taker_coin_usd_price": swap.taker_coin_usd_price.as_ref().map(|p| p.to_string()),
-        ":maker_pubkey": pubkeys.maker,
-        ":taker_pubkey": pubkeys.taker,
     };
     Some((INSERT_STATS_SWAP, params))
 }
 
-fn update_stats_taker_gui_version(swap: &TakerSavedSwap) -> (&'static str, OwnedSqlNamedParams) {
-    const UPDATE_STATS_SWAP_GUI_AND_VERSION_TAKER: &str =
-        "UPDATE stats_swaps set taker_gui = :taker_gui, taker_version = :taker_version WHERE uuid = :uuid;";
-    let params = owned_named_params! {
-        ":taker_gui": swap.gui.clone(),
-        ":taker_version": swap.mm_version.clone(),
-        ":uuid": swap.uuid.to_string(),
-    };
-
-    (UPDATE_STATS_SWAP_GUI_AND_VERSION_TAKER, params)
-}
-
-fn insert_stats_taker_swap_sql_init(swap: &TakerSavedSwap) -> Option<(&'static str, Vec<String>)> {
+fn insert_stats_taker_swap_sql_init(swap: &TakerSavedSwap) -> Option<(&'static str, Vec<SqlValue>)> {
     let swap_data = match swap.swap_data() {
         Ok(d) => d,
         Err(e) => {
@@ -322,8 +321,77 @@ fn insert_stats_taker_swap_sql_init(swap: &TakerSavedSwap) -> Option<(&'static s
         swap_data.maker_amount.to_string(),
         swap_data.taker_amount.to_string(),
         (is_success as u32).to_string(),
-    ];
+    ]
+    .into_iter()
+    .map(SqlValue::from)
+    .collect();
+
     Some((INSERT_STATS_SWAP_ON_INIT, params))
+}
+
+/// Constructs the update query for optional fields of the swap.
+/// These are fields which are usually sent unilaterally from one side and combined together based on the shared UUID.
+fn update_optional_info(swap: &SavedSwap) -> Option<(String, OwnedSqlNamedParams)> {
+    let mut extra_args = Vec::new();
+    let mut params = OwnedSqlNamedParams::new();
+
+    if let Some(maker_pubkey) = swap.maker_pubkey() {
+        match maker_pubkey {
+            Ok(maker_pubkey) => {
+                extra_args.push("maker_pubkey = :maker_pubkey");
+                params.push((":maker_pubkey", maker_pubkey.into()));
+            },
+            Err(e) => {
+                covered_error!("[{}] Error on getting maker_pubkey for stats: {}", swap.uuid(), e);
+            },
+        }
+    }
+    if let Some(taker_pubkey) = swap.taker_pubkey() {
+        match taker_pubkey {
+            Ok(taker_pubkey) => {
+                extra_args.push("taker_pubkey = :taker_pubkey");
+                params.push((":taker_pubkey", taker_pubkey.into()));
+            },
+            Err(e) => {
+                covered_error!("[{}] Error on getting taker_pubkey for stats: {}", swap.uuid(), e);
+            },
+        }
+    }
+    if let Some(maker_coin_usd_price) = swap.maker_usd_price() {
+        extra_args.push("maker_coin_usd_price = :maker_coin_usd_price");
+        params.push((":maker_coin_usd_price", maker_coin_usd_price.to_string().into()));
+    }
+    if let Some(taker_coin_usd_price) = swap.taker_usd_price() {
+        extra_args.push("taker_coin_usd_price = :taker_coin_usd_price");
+        params.push((":taker_coin_usd_price", taker_coin_usd_price.to_string().into()));
+    }
+    if let Some(maker_gui) = swap.maker_gui() {
+        extra_args.push("maker_gui = :maker_gui");
+        params.push((":maker_gui", maker_gui.clone().into()));
+    }
+    if let Some(maker_version) = swap.maker_mm_version() {
+        extra_args.push("maker_version = :maker_version");
+        params.push((":maker_version", maker_version.clone().into()));
+    }
+    if let Some(taker_gui) = swap.taker_gui() {
+        extra_args.push("taker_gui = :taker_gui");
+        params.push((":taker_gui", taker_gui.clone().into()));
+    }
+    if let Some(taker_version) = swap.taker_mm_version() {
+        extra_args.push("taker_version = :taker_version");
+        params.push((":taker_version", taker_version.clone().into()));
+    }
+
+    // If no updates were needed, return None
+    if extra_args.is_empty() {
+        return None;
+    }
+
+    let update_query = format!("UPDATE stats_swaps set {} WHERE uuid = :uuid;", extra_args.join(", "));
+
+    params.push((":uuid", swap.uuid().to_string().into()));
+
+    Some((update_query, params))
 }
 
 fn execute_query_with_params(conn: &Connection, sql: &str, params: OwnedSqlNamedParams) {
@@ -361,12 +429,9 @@ pub fn add_swap_to_index(conn: &Connection, swap: &SavedSwap) {
         },
     };
 
-    let (sql, params) = match swap {
-        SavedSwap::Maker(maker) => update_stats_maker_gui_version(maker),
-        SavedSwap::Taker(taker) => update_stats_taker_gui_version(taker),
-    };
-
-    execute_query_with_params(conn, sql, params);
+    if let Some((sql, params)) = update_optional_info(swap) {
+        execute_query_with_params(conn, &sql, params);
+    }
 }
 
 #[test]

@@ -78,13 +78,13 @@ impl RpcTask for InitAccountBalanceTask {
         _task_handle: InitAccountBalanceTaskHandleShared,
     ) -> Result<Self::Item, MmError<Self::Error>> {
         match self.coin {
-            MmCoinEnum::UtxoCoin(ref utxo) => Ok(HDAccountBalanceEnum::Map(
+            MmCoinEnum::UtxoCoinVariant(ref utxo) => Ok(HDAccountBalanceEnum::Map(
                 utxo.init_account_balance_rpc(self.req.params.clone()).await?,
             )),
-            MmCoinEnum::QtumCoin(ref qtum) => Ok(HDAccountBalanceEnum::Map(
+            MmCoinEnum::QtumCoinVariant(ref qtum) => Ok(HDAccountBalanceEnum::Map(
                 qtum.init_account_balance_rpc(self.req.params.clone()).await?,
             )),
-            MmCoinEnum::EthCoin(ref eth) => Ok(HDAccountBalanceEnum::Map(
+            MmCoinEnum::EthCoinVariant(ref eth) => Ok(HDAccountBalanceEnum::Map(
                 eth.init_account_balance_rpc(self.req.params.clone()).await?,
             )),
             _ => MmError::err(HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet),

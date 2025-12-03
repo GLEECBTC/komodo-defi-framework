@@ -64,7 +64,7 @@ use rpc_clients::NativeClientImpl;
 use script::{Builder, Opcode, Script, ScriptAddress, TransactionInputSigner, UnsignedTransactionInput};
 use secp256k1::{PublicKey, Signature as SecpSignature};
 use serde_json::{self as json};
-use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, SERIALIZE_TRANSACTION_WITNESS};
+use serialization::{deserialize, serialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
 use std::cmp::Ordering;
 use std::collections::hash_map::{Entry, HashMap};
 use std::convert::TryFrom;
@@ -417,10 +417,10 @@ pub fn checked_address_from_str<T: UtxoCommonOps>(coin: &T, address: &str) -> Mm
     Ok(addr)
 }
 
-pub async fn get_current_mtp(coin: &UtxoCoinFields, coin_variant: CoinVariant) -> UtxoRpcResult<u32> {
+pub async fn get_current_mtp(coin: &UtxoCoinFields) -> UtxoRpcResult<u32> {
     let current_block = coin.rpc_client.get_block_count().compat().await?;
     coin.rpc_client
-        .get_median_time_past(current_block, coin.conf.mtp_block_count, coin_variant)
+        .get_median_time_past(current_block, coin.conf.mtp_block_count)
         .compat()
         .await
 }
@@ -630,7 +630,7 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
     fn make_kmd_rewards_data(coin: &T, interest: u64) -> Option<KmdRewardsDetails> {
         let rewards_amount = big_decimal_from_sat_unsigned(interest, coin.as_ref().decimals);
         if coin.supports_interest() {
-            Some(KmdRewardsDetails::claimed_by_me(rewards_amount))
+            Some(KmdRewardsDetails::new(rewards_amount))
         } else {
             None
         }
@@ -2152,20 +2152,26 @@ fn verify_p2pk_input_pubkey(
     index: usize,
     signature_version: SignatureVersion,
     fork_id: u32,
-) -> Result<bool, String> {
+) -> Result<bool, ValidatePaymentError> {
     // Extract the signature from the scriptSig.
-    let signature = script.extract_signature()?;
+    let signature = script
+        .extract_signature()
+        .map_err(|e| ValidatePaymentError::CheckSignatureError(format!("Signature parsing error: {}", e)))?;
     // Validate the signature.
-    try_s!(SecpSignature::from_der(&signature[..signature.len() - 1]));
+    SecpSignature::from_der(&signature[..signature.len().saturating_sub(1)])
+        .map_err(|e| ValidatePaymentError::CheckSignatureError(format!("Signature parsing error: {}", e)))?;
     let signature = signature.into();
     // Make sure we have no more instructions. P2PK scriptSigs consist of a single instruction only containing the signature.
     if script.get_instruction(1).is_some() {
-        return ERR!("Unexpected instruction at position 2 of script {:?}", script);
+        return Err(ValidatePaymentError::TxDeserializationError(format!(
+            "Unexpected instruction at position 2 of script {:?}",
+            script
+        )));
     };
     // Get the scriptPub for this input. We need it to get the transaction sig_hash to sign (but actually "to verify" in this case).
     let pubkey = expected_pubkey
         .to_secp256k1_pubkey()
-        .map_err(|e| ERRL!("Error converting plain pubkey to secp256k1 pubkey: {}", e))?;
+        .map_err(|e| ValidatePaymentError::InvalidData(format!("Parsing expected pubkey error: {}", e)))?;
     // P2PK scriptPub has two valid possible formats depending on whether the public key is written in compressed or uncompressed form.
     let possible_pubkey_scripts = [
         Builder::build_p2pk(&Public::Compressed(pubkey.serialize().into())),
@@ -2182,14 +2188,24 @@ fn verify_p2pk_input_pubkey(
             fork_id,
         ) {
             Ok(hash) => hash,
-            Err(e) => return ERR!("Error calculating signature hash: {}", e),
+            Err(e) => {
+                return Err(ValidatePaymentError::CheckSignatureError(format!(
+                    "Error calculating signature hash: {}",
+                    e
+                )))
+            },
         };
         // Verify that the signature is valid for the transaction hash with respect to the expected public key.
         return match expected_pubkey.verify(&hash, &signature) {
             Ok(true) => Ok(true),
             // The signature is invalid for this pubkey, try the other possible pubkey script.
             Ok(false) => continue,
-            Err(e) => ERR!("Error verifying signature: {}", e),
+            Err(e) => {
+                return Err(ValidatePaymentError::CheckSignatureError(format!(
+                    "Error verifying signature: {}",
+                    e
+                )))
+            },
         };
     }
 
@@ -2202,15 +2218,12 @@ fn pubkey_from_script_sig(script: &Script) -> Result<H264, String> {
     // Extract the signature from the scriptSig.
     let signature = script.extract_signature()?;
     // Validate the signature.
-    try_s!(SecpSignature::from_der(&signature[..signature.len() - 1]));
+    try_s!(SecpSignature::from_der(&signature[..signature.len().saturating_sub(1)]));
 
     let pubkey = match script.get_instruction(1) {
-        Some(Ok(instruction)) => match instruction.opcode {
-            Opcode::OP_PUSHBYTES_33 => match instruction.data {
-                Some(bytes) => try_s!(PublicKey::from_slice(bytes)),
-                None => return ERR!("No data at instruction 1 of script {:?}", script),
-            },
-            _ => return ERR!("Unexpected opcode {:?}", instruction.opcode),
+        Some(Ok(instruction)) => match instruction.data {
+            Some(bytes) => try_s!(PublicKey::from_slice(bytes)),
+            None => return ERR!("No data at instruction 1 of script {:?}", script),
         },
         Some(Err(e)) => return ERR!("Error {} on getting instruction 1 of script {:?}", e, script),
         None => return ERR!("None instruction 1 of script {:?}", script),
@@ -2298,8 +2311,7 @@ pub async fn check_all_utxo_inputs_signed_by_pub<T: UtxoCommonOps>(
                 idx,
                 coin.as_ref().conf.signature_version,
                 coin.as_ref().conf.fork_id,
-            )
-            .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
+            )?;
             if successful_verification {
                 // No pubkey extraction for P2PK inputs. Continue.
                 continue;
@@ -2910,7 +2922,7 @@ pub async fn get_taker_watcher_reward<T: UtxoCommonOps + SwapOps + MarketCoinOps
     let is_exact_amount = reward_amount.is_some();
 
     let other_coin = match other_coin {
-        MmCoinEnum::EthCoin(coin) => coin,
+        MmCoinEnum::EthCoinVariant(coin) => coin,
         _ => {
             return Err(WatcherRewardError::InvalidCoinType(
                 "At least one coin must be Ethereum to use watcher rewards".to_string(),
@@ -4090,11 +4102,8 @@ pub async fn tx_details_by_hash<T: UtxoCommonOps>(
     //     // `fee = input_amount - actual_output_amount` or simplified `fee = input_amount - output_amount + kmd_rewards`
     //     let fee = input_amount as i64 - output_amount as i64 + kmd_rewards as i64;
     //
-    //     let my_address = &coin.as_ref().my_address;
-    //     let claimed_by_me = from_addresses.iter().all(|from| from == my_address) && to_addresses.contains(my_address);
     //     let kmd_rewards_details = KmdRewardsDetails {
     //         amount: big_decimal_from_sat_unsigned(kmd_rewards, coin.as_ref().decimals),
-    //         claimed_by_me,
     //     };
     //     (
     //         big_decimal_from_sat(fee, coin.as_ref().decimals),
@@ -4241,14 +4250,7 @@ where
         }));
     }
 
-    // Todo: https://github.com/KomodoPlatform/komodo-defi-framework/issues/1625
-    let my_address = &coin.my_address().map_mm_err()?;
-    let claimed_by_me = tx_details.from.iter().all(|from| from == my_address) && tx_details.to.contains(my_address);
-
-    tx_details.kmd_rewards = Some(KmdRewardsDetails {
-        amount: kmd_rewards,
-        claimed_by_me,
-    });
+    tx_details.kmd_rewards = Some(KmdRewardsDetails::new(kmd_rewards));
     Ok(())
 }
 
@@ -4792,6 +4794,8 @@ where
     let expected_redeem = tx_type_with_secret_hash.redeem_script(time_lock, first_pub0, second_pub0);
     let tx_hash = tx.tx_hash_as_bytes();
 
+    // TODO: This is redundant when used in swaps v2.
+    // It will be removed if we implemented cross-publishing swap payments in swaps v1.
     let tx_from_rpc = retry_on_err!(async {
         coin.as_ref()
             .rpc_client
@@ -5431,21 +5435,6 @@ where
         )));
     }
 
-    let tx_bytes_from_rpc = coin
-        .as_ref()
-        .rpc_client
-        .get_transaction_bytes(&args.funding_tx.hash().reversed().into())
-        .compat()
-        .await
-        .map_mm_err()?;
-    let actual_tx_bytes = serialize(args.funding_tx).take();
-    if tx_bytes_from_rpc.0 != actual_tx_bytes {
-        return MmError::err(ValidateSwapV2TxError::TxBytesMismatch {
-            from_rpc: tx_bytes_from_rpc,
-            actual: actual_tx_bytes.into(),
-        });
-    }
-
     // import funding address in native mode to track funding tx spend
     let funding_address = AddressBuilder::new(
         AddressFormat::Standard,
@@ -5675,6 +5664,22 @@ fn test_pubkey_from_script_sig() {
 }
 
 #[test]
+fn test_pubkey_from_axe_script_sig() {
+    let script_sig = Script::from("45304202205fa91d3dc0c88b1b0c2b5ecdf08b49c0458b6f10ff6b758b82c1934210f367fc021e51a96cf672048a44fef3256ba9a061b408f842b6b523624c28d6b5bbd1680121023c5ba1d7ef6fa015eb33defb3aba2a961898a51bbb7ff30344d07ba75ad3f289");
+    let expected_pub = H264::from("023c5ba1d7ef6fa015eb33defb3aba2a961898a51bbb7ff30344d07ba75ad3f289");
+    let actual_pub = pubkey_from_script_sig(&script_sig).unwrap();
+    assert_eq!(expected_pub, actual_pub);
+}
+
+#[test]
+fn test_pubkey_from_empty_script_sig() {
+    let script_sig = Script::from("");
+    assert!(pubkey_from_script_sig(&script_sig).is_err());
+    let script_sig = Script::from("00");
+    assert!(pubkey_from_script_sig(&script_sig).is_err());
+}
+
+#[test]
 fn test_verify_p2pk_input_pubkey() {
     // 65-byte (uncompressed) pubkey example.
     // https://mempool.space/tx/1db6251a9afce7025a2061a19e63c700dffc3bec368bd1883decfac353357a9d
@@ -5706,11 +5711,14 @@ fn test_check_all_utxo_inputs_signed_by_pub_overwintered() {
     use common::block_on;
 
     // We need a running electrum client for this test to test the functionality of fetching a tx from the network, parsing it, and using its input amount for sig_hash calculations.
-    let client = UtxoRpcClientEnum::Electrum(electrum_client_for_test(&[
-        "electrum3.cipig.net:10001",
-        "electrum1.cipig.net:10001",
-        "electrum2.cipig.net:10001",
-    ]));
+    let client = UtxoRpcClientEnum::Electrum(electrum_client_for_test(
+        &[
+            "electrum3.cipig.net:10001",
+            "electrum1.cipig.net:10001",
+            "electrum2.cipig.net:10001",
+        ],
+        ChainVariant::Standard,
+    ));
     let mut fields = utxo_coin_fields_for_test(client, None, false);
     fields.conf.ticker = "KMD".to_owned();
     let coin = utxo_coin_from_fields(fields);

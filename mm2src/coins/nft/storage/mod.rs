@@ -1,4 +1,3 @@
-use crate::eth::EthTxFeeDetails;
 use crate::nft::nft_structs::{
     Chain, Nft, NftList, NftListFilters, NftTokenAddrId, NftTransferHistory, NftTransferHistoryFilters,
     NftsTransferHistoryList, TransferMeta,
@@ -7,10 +6,15 @@ use async_trait::async_trait;
 use ethereum_types::Address;
 use mm2_err_handle::mm_error::MmResult;
 use mm2_err_handle::mm_error::NotMmError;
-use mm2_number::{BigDecimal, BigUint};
-use serde::{Deserialize, Serialize};
+use mm2_number::BigUint;
 use std::collections::HashSet;
 use std::num::NonZeroUsize;
+
+cfg_native! {
+    use crate::eth::EthTxFeeDetails;
+    use mm2_number::BigDecimal;
+    use serde::{Deserialize, Serialize};
+}
 
 #[cfg(any(test, target_arch = "wasm32"))]
 pub(crate) mod db_test_helpers;
@@ -231,6 +235,7 @@ fn get_offset_limit(max: bool, limit: usize, page_number: Option<NonZeroUsize>, 
 
 /// `NftDetailsJson` structure contains immutable parameters that are not needed for queries.
 /// This is what `details_json` string contains in db table.
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub(crate) struct NftDetailsJson {
     pub(crate) owner_of: Address,
@@ -241,6 +246,7 @@ pub(crate) struct NftDetailsJson {
 
 /// `TransferDetailsJson` structure contains immutable parameters that are not needed for queries.
 /// This is what `details_json` string contains in db table.
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub(crate) struct TransferDetailsJson {
     pub(crate) block_hash: Option<String>,

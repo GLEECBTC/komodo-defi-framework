@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright © 2023 Pampex LTD and TillyHK LTD                                *
+ * Copyright © 2025 Gleec Holding OÜ                                *
  *                                                                            *
  * See the CONTRIBUTOR-LICENSE-AGREEMENT, COPYING, LICENSE-COPYRIGHT-NOTICE   *
  * and DEVELOPER-CERTIFICATE-OF-ORIGIN files in the LEGAL directory in        *
@@ -18,7 +18,7 @@
 //  utxo.rs
 //  marketmaker
 //
-//  Copyright © 2023 Pampex LTD and TillyHK LTD. All rights reserved.
+//  Copyright © 2025 Gleec Holding OÜ. All rights reserved.
 //
 
 pub mod bch;
@@ -83,7 +83,9 @@ use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as 
 use script::{Builder, Script, SignatureVersion, TransactionInputSigner};
 use secp256k1::Signature as SecpSignature;
 use serde_json::{self as json, Value as Json};
-use serialization::{deserialize, serialize, serialize_with_flags, Error as SerError, SERIALIZE_TRANSACTION_WITNESS};
+use serialization::{
+    deserialize, serialize, serialize_with_flags, ChainVariant, Error as SerError, SERIALIZE_TRANSACTION_WITNESS,
+};
 use spv_validation::conf::SPVConf;
 use spv_validation::helpers_validation::SPVError;
 use spv_validation::storage::BlockHeaderStorageError;
@@ -626,6 +628,8 @@ pub struct UtxoCoinConf {
     pub derivation_path: Option<HDPathToCoin>,
     /// The average time in seconds needed to mine a new block for this coin.
     pub avg_blocktime: Option<u64>,
+    /// How to interpret block headers for this coin (BTC, Qtum, RVN, etc.).
+    pub chain_variant: ChainVariant,
 }
 
 pub struct UtxoCoinFields {
@@ -1856,6 +1860,26 @@ async fn generate_and_send_tx<T>(
 where
     T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps + UtxoTxBroadcastOps,
 {
+    let (signed, spent_unspents) = generate_tx(coin, unspents, required_inputs, fee_policy, outputs).await?;
+
+    try_tx_s!(coin.broadcast_tx(&signed).await, signed);
+
+    recently_spent.add_spent(spent_unspents, signed.hash(), signed.outputs.clone());
+
+    Ok(signed)
+}
+
+/// Generates tx using unspents and outputs. Returns the signed transaction and spent unspents.
+async fn generate_tx<T>(
+    coin: &T,
+    unspents: Vec<UnspentInfo>,
+    required_inputs: Option<Vec<UnspentInfo>>,
+    fee_policy: FeePolicy,
+    outputs: Vec<TransactionOutput>,
+) -> Result<(UtxoTx, Vec<UnspentInfo>), TransactionErr>
+where
+    T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps + UtxoTxBroadcastOps,
+{
     let my_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err().await);
     let key_pair = try_tx_s!(coin.as_ref().priv_key_policy.activated_key_or_err());
     let mut builder = UtxoTxBuilder::new(coin)
@@ -1891,11 +1915,7 @@ where
         coin.as_ref().conf.fork_id
     ));
 
-    try_tx_s!(coin.broadcast_tx(&signed).await, signed);
-
-    recently_spent.add_spent(spent_unspents, signed.hash(), signed.outputs.clone());
-
-    Ok(signed)
+    Ok((signed, spent_unspents))
 }
 
 /// Builds transaction output script for an Address struct

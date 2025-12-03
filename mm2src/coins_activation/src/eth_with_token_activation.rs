@@ -337,7 +337,7 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
             None => return Ok(None),
         };
         let nft_global = self.initialize_global_nft(url, proxy_auth).await.map_mm_err()?;
-        Ok(Some(MmCoinEnum::EthCoin(nft_global)))
+        Ok(Some(MmCoinEnum::EthCoinVariant(nft_global)))
     }
 
     fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
@@ -345,7 +345,7 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
         Self: Sized,
     {
         match coin {
-            MmCoinEnum::EthCoin(coin) => Some(coin),
+            MmCoinEnum::EthCoinVariant(coin) => Some(coin),
             _ => None,
         }
     }
@@ -370,7 +370,7 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
             .await
             .map_err(EthActivationV2Error::InternalError)?;
 
-        let nfts_map = if let Some(MmCoinEnum::EthCoin(nft_global)) = nft_global {
+        let nfts_map = if let Some(MmCoinEnum::EthCoinVariant(nft_global)) = nft_global {
             nft_global.nfts_infos.lock().await.clone()
         } else {
             Default::default()

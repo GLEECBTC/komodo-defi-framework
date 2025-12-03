@@ -110,7 +110,7 @@ pub enum InitHwInProgressStatus {
     FollowHwDeviceInstructions,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Default, Deserialize, Clone)]
 pub struct InitHwRequest {
     device_pubkey: Option<HwPubkey>,
 }
@@ -183,7 +183,12 @@ impl RpcTask for InitHwTask {
     }
 }
 
-pub async fn init_trezor(ctx: MmArc, req: RpcInitReq<InitHwRequest>) -> MmResult<InitRpcTaskResponse, InitHwError> {
+pub async fn init_trezor(
+    ctx: MmArc,
+    req: Option<RpcInitReq<InitHwRequest>>,
+) -> MmResult<InitRpcTaskResponse, InitHwError> {
+    let req = req.unwrap_or_default();
+
     let (client_id, req) = (req.client_id, req.inner);
     let init_ctx = MmInitContext::from_ctx(&ctx).map_to_mm(InitHwError::Internal)?;
     let spawner = ctx.spawner();
