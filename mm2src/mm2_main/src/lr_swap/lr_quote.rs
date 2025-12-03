@@ -724,7 +724,7 @@ impl LrSwapCandidates {
             quote_futs.push(quote_fut);
             idx.push(candidate.0);
         }
-        let lr_quotes = join_all(quote_futs).await.into_iter().map(|res| res.ok()); // if a bad result received (for e.g. low liguidity) set to None to preserve swap_data length
+        let lr_quotes = join_all(quote_futs).await.into_iter().map(|res| res.ok()); // if a bad result received (for e.g. low liquidity) set to None to preserve swap_data length
         let lr_quotes_indexed = idx.into_iter().zip(lr_quotes).collect();
         self.update_lr_0_swap_data(lr_quotes_indexed);
         Ok(())
@@ -745,7 +745,7 @@ impl LrSwapCandidates {
             quote_futs.push(fut);
             idx.push(candidate.0);
         }
-        let lr_quotes = join_all(quote_futs).await.into_iter().map(|res| res.ok()); // if a bad result received (for e.g. low liguidity) set to None to preserve swap_data length
+        let lr_quotes = join_all(quote_futs).await.into_iter().map(|res| res.ok()); // if a bad result received (for e.g. low liquidity) set to None to preserve swap_data length
         let lr_quotes_indexed = idx.into_iter().zip(lr_quotes).collect();
         self.update_lr_1_swap_data(lr_quotes_indexed);
         Ok(())
@@ -1045,7 +1045,6 @@ fn cross_prices_average(series: Option<CrossPricesSeries>) -> Option<MmNumber> {
 }
 
 /// Get the latest close price from cross_prices history
-#[allow(unused)]
 fn cross_prices_close(series: Option<CrossPricesSeries>) -> Option<MmNumber> {
     let series = series?;
     if series.is_empty() {
@@ -1057,7 +1056,7 @@ fn cross_prices_close(series: Option<CrossPricesSeries>) -> Option<MmNumber> {
 fn log_cross_prices(prices: &HashMap<(Ticker, Ticker), Option<MmNumber>>) {
     for p in prices {
         log::debug!(
-            "1inch cross_prices result(averaged)={:?} {:?}",
+            "1inch cross_prices result(close)={:?} {:?}",
             p,
             p.1.clone().map(|v| v.to_decimal())
         );
