@@ -71,6 +71,9 @@ mm2src/
 
 ## Global Conventions
 
+### Performance
+- Prefer optimal solutions over quick fixes—check other crates for existing efficient implementations before writing new code. Consider algorithmic complexity.
+
 ### Rust Style
 - `cargo fmt` before commit
 - `cargo clippy --all-targets --all-features -- -D warnings` (zero warnings)
@@ -214,9 +217,21 @@ See `mm2_main/src/rpc/dispatcher/dispatcher.rs` for all methods, `mm2_main/AGENT
 | P2P behaviour | `mm2_p2p/src/behaviours/atomicdex.rs` |
 | Coin activation | `coins_activation/src/platform_coin_with_tokens.rs` |
 
+## Working on Large Features
+
+For significant features or large refactors, make small, self-contained commits incrementally. Each commit should be a logical unit that leaves the codebase working.
+
+## Keeping Documentation Current
+
+Update relevant AGENTS.md files when changing module structure, key types, patterns, or conventions.
+
 ## Common Pitfalls
 
-*Add pitfalls here when the same issue is encountered multiple times across sessions.*
+| Issue | Solution |
+|-------|----------|
+| Wrote suboptimal code when efficient implementation existed in another crate | Search other crates for reusable functions; make private functions public if needed |
+| Large refactor done in one massive commit | Break into small, self-contained commits as you work |
+| Changed public API but didn't update AGENTS.md | Update documentation alongside code changes |
 
 ## Documentation
 
