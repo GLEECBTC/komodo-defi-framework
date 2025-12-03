@@ -79,3 +79,7 @@ hidden
 # It is recreated from container-state data each time test containers are started,
 # and should not be tracked in version control.
 .docker/container-runtime/
+
+# Claude Code symlinks (generated from AGENTS.md)
+CLAUDE.md
+mm2src/*/CLAUDE.md
