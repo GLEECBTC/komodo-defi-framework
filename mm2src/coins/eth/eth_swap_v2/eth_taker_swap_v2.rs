@@ -20,7 +20,7 @@ use ethkey::public_to_address;
 use futures::compat::Future01CompatExt;
 use mm2_err_handle::prelude::{MapToMmResult, MmError, MmResult, MmResultExt};
 use std::convert::TryInto;
-use web3::types::{BlockNumber, TransactionId};
+use web3::types::BlockNumber;
 
 const ETH_TAKER_PAYMENT: &str = "ethTakerPayment";
 const ERC20_TAKER_PAYMENT: &str = "erc20TakerPayment";
@@ -117,7 +117,7 @@ impl EthCoin {
                     eth_total_payment,
                     Action::Call(taker_swap_v2_contract),
                     data,
-                    U256::from(self.gas_limit_v2.taker.eth_payment),
+                    Some(U256::from(self.gas_limit_v2.taker.eth_payment)),
                 )
                 .compat()
                 .await
@@ -133,7 +133,7 @@ impl EthCoin {
                     U256::from(ZERO_VALUE),
                     Action::Call(taker_swap_v2_contract),
                     data,
-                    U256::from(self.gas_limit_v2.taker.erc20_payment),
+                    Some(U256::from(self.gas_limit_v2.taker.erc20_payment)),
                 )
                 .compat()
                 .await
@@ -164,15 +164,9 @@ impl EthCoin {
         validate_amount(&args.trading_amount).map_err(ValidateSwapV2TxError::Internal)?;
         let swap_id = self.etomic_swap_id_v2(args.payment_time_lock, args.maker_secret_hash);
 
-        let tx_from_rpc = self.transaction(TransactionId::Hash(args.funding_tx.tx_hash())).await?;
-        let tx_from_rpc = tx_from_rpc.as_ref().ok_or_else(|| {
-            ValidateSwapV2TxError::TxDoesNotExist(format!(
-                "Didn't find provided tx {:?} on ETH node",
-                args.funding_tx.tx_hash()
-            ))
-        })?;
+        let tx = args.funding_tx;
         let taker_address = public_to_address(args.taker_pub);
-        validate_from_to_addresses(tx_from_rpc, taker_address, taker_swap_v2_contract).map_mm_err()?;
+        validate_from_to_addresses(tx, taker_address, taker_swap_v2_contract).map_mm_err()?;
 
         let validation_args = {
             let dex_fee = u256_from_big_decimal(&args.dex_fee.fee_amount().into(), self.decimals).map_mm_err()?;
@@ -192,12 +186,12 @@ impl EthCoin {
         match self.coin_type {
             EthCoinType::Eth => {
                 let function = TAKER_SWAP_V2.function(ETH_TAKER_PAYMENT)?;
-                let decoded = decode_contract_call(function, &tx_from_rpc.input.0)?;
-                validate_eth_taker_payment_data(&decoded, &validation_args, function, tx_from_rpc.value)?;
+                let decoded = decode_contract_call(function, tx.unsigned().data())?;
+                validate_eth_taker_payment_data(&decoded, &validation_args, function, tx.unsigned().value())?;
             },
             EthCoinType::Erc20 { token_addr, .. } => {
                 let function = TAKER_SWAP_V2.function(ERC20_TAKER_PAYMENT)?;
-                let decoded = decode_contract_call(function, &tx_from_rpc.input.0)?;
+                let decoded = decode_contract_call(function, tx.unsigned().data())?;
                 validate_erc20_taker_payment_data(&decoded, &validation_args, function, token_addr)?;
             },
             EthCoinType::Nft { .. } => {
@@ -236,7 +230,7 @@ impl EthCoin {
                 U256::from(ZERO_VALUE),
                 Action::Call(taker_swap_v2_contract),
                 data,
-                gas_limit,
+                Some(gas_limit),
             )
             .compat()
             .await?;
@@ -301,7 +295,7 @@ impl EthCoin {
             U256::from(ZERO_VALUE),
             Action::Call(taker_swap_v2_contract),
             data,
-            U256::from(gas_limit),
+            Some(U256::from(gas_limit)),
         )
         .compat()
         .await
@@ -355,7 +349,7 @@ impl EthCoin {
             U256::from(ZERO_VALUE),
             Action::Call(taker_swap_v2_contract),
             data,
-            U256::from(gas_limit),
+            Some(U256::from(gas_limit)),
         )
         .compat()
         .await
@@ -416,7 +410,7 @@ impl EthCoin {
                 U256::from(ZERO_VALUE),
                 Action::Call(taker_swap_v2_contract),
                 data,
-                U256::from(gas_limit),
+                Some(U256::from(gas_limit)),
             )
             .compat()
             .await?;

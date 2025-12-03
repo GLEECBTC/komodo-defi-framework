@@ -16,7 +16,7 @@ impl TryPlatformCoinFromMmCoinEnum for BchCoin {
         Self: Sized,
     {
         match coin {
-            MmCoinEnum::Bch(coin) => Some(coin),
+            MmCoinEnum::BchVariant(coin) => Some(coin),
             _ => None,
         }
     }

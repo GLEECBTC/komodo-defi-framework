@@ -23,16 +23,15 @@ use crate::utxo::{
     UtxoTxGenerationOps, VerboseTransactionFrom, UTXO_LOCK,
 };
 use crate::{
-    BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInput, DexFee, Eip1559Ops,
-    FeeApproxStage, FoundSwapTxSpend, HistorySyncState, IguanaPrivKey, MarketCoinOps, MmCoin,
-    NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionFut,
-    RawTransactionRequest, RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs,
-    SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps, SwapTxFeePolicy, TradeFee,
-    TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionData, TransactionDetails,
-    TransactionEnum, TransactionErr, TransactionResult, TransactionType, TxMarshalingErr, UnexpectedDerivationMethod,
-    ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentInput, VerificationResult,
-    WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest,
-    WithdrawResult,
+    BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInput, DexFee, FeeApproxStage,
+    FoundSwapTxSpend, HistorySyncState, IguanaPrivKey, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
+    PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest, RawTransactionResult,
+    RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SignRawTransactionRequest, SignatureResult,
+    SpendPaymentArgs, SwapOps, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue,
+    TransactionData, TransactionDetails, TransactionEnum, TransactionErr, TransactionResult, TransactionType,
+    TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr,
+    ValidatePaymentInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawError,
+    WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult,
 };
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256, sign_message_hash};
@@ -60,7 +59,7 @@ use rpc::v1::types::{
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use script_pubkey::generate_contract_call_script_pubkey;
 use serde_json::{self as json, Value as Json};
-use serialization::{deserialize, serialize, CoinVariant};
+use serialization::{deserialize, serialize};
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use std::num::TryFromIntError;
@@ -350,6 +349,9 @@ pub async fn qrc20_coin_with_policy(
     priv_key_policy: PrivKeyBuildPolicy,
     contract_address: H160,
 ) -> Result<Qrc20Coin, String> {
+    if conf["coin"].as_str() != Some(ticker) {
+        return ERR!("Failed to activate '{}': ticker does not match coins config", ticker);
+    }
     let builder = Qrc20CoinBuilder::new(
         ctx,
         ticker,
@@ -729,7 +731,7 @@ impl UtxoCommonOps for Qrc20Coin {
     }
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32> {
-        utxo_common::get_current_mtp(&self.utxo, CoinVariant::Qtum).await
+        utxo_common::get_current_mtp(&self.utxo).await
     }
 
     fn is_unspent_mature(&self, output: &RpcTransaction) -> bool {
@@ -1626,12 +1628,4 @@ fn transfer_event_from_log(log: &LogEntry) -> Result<TransferEventDetails, Strin
         sender,
         receiver,
     })
-}
-
-impl Eip1559Ops for Qrc20Coin {
-    fn get_swap_transaction_fee_policy(&self) -> SwapTxFeePolicy {
-        SwapTxFeePolicy::Unsupported
-    }
-
-    fn set_swap_transaction_fee_policy(&self, _swap_txfee_policy: SwapTxFeePolicy) {}
 }

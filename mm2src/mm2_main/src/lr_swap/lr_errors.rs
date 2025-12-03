@@ -181,6 +181,7 @@ impl From<TradePreimageError> for LrSwapError {
             TradePreimageError::Transport(nested_err) => Self::TransportError(nested_err),
             TradePreimageError::InternalError(nested_err) => Self::InternalError(nested_err),
             TradePreimageError::NftProtocolNotSupported => Self::NftProtocolNotSupported,
+            TradePreimageError::NoSuchCoin { coin } => Self::NoSuchCoin { coin },
         }
     }
 }
@@ -192,6 +193,7 @@ impl From<BalanceError> for LrSwapError {
             BalanceError::InvalidResponse(rpc) => Self::TransportError(rpc),
             BalanceError::UnexpectedDerivationMethod(_) => Self::InternalError(e.to_string()),
             BalanceError::WalletStorageError(e) | BalanceError::Internal(e) => Self::InternalError(e),
+            BalanceError::NoSuchCoin { coin } => Self::NoSuchCoin { coin },
         }
     }
 }

@@ -55,7 +55,7 @@ pub struct UpdateChannelResponse {
 /// Updates configuration for an open channel.
 pub async fn update_channel(ctx: MmArc, req: UpdateChannelReq) -> UpdateChannelResult<UpdateChannelResponse> {
     let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
-        MmCoinEnum::LightningCoin(c) => c,
+        MmCoinEnum::LightningCoinVariant(c) => c,
         e => return MmError::err(UpdateChannelError::UnsupportedCoin(e.ticker().to_string())),
     };
 

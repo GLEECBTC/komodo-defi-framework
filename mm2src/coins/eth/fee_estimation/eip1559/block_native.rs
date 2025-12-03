@@ -1,4 +1,4 @@
-use super::{EstimationSource, FeePerGasEstimated, FeePerGasLevel, FEE_PER_GAS_LEVELS};
+use super::{EstimationSource, FeePerGasEstimated, FeePerGasLevel, FEE_PRIORITY_LEVEL_N};
 use crate::eth::{wei_from_gwei_decimal, Web3RpcError, Web3RpcResult};
 use crate::NumConversError;
 use mm2_err_handle::mm_error::MmError;
@@ -66,7 +66,7 @@ impl TryFrom<BlocknativeBlockPricesResponse> for FeePerGasEstimated {
         if block_prices.block_prices.is_empty() {
             return Ok(FeePerGasEstimated::default());
         }
-        if block_prices.block_prices[0].estimated_prices.len() < FEE_PER_GAS_LEVELS {
+        if block_prices.block_prices[0].estimated_prices.len() < FEE_PRIORITY_LEVEL_N {
             return Ok(FeePerGasEstimated::default());
         }
         Ok(Self {

@@ -42,7 +42,7 @@
 //! ```
 
 /******************************************************************************
- * Copyright © 2023 Pampex LTD and TillyHK LTD                                *
+ * Copyright © 2025 Gleec Holding OÜ                                *
  *                                                                            *
  * See the CONTRIBUTOR-LICENSE-AGREEMENT, COPYING, LICENSE-COPYRIGHT-NOTICE   *
  * and DEVELOPER-CERTIFICATE-OF-ORIGIN files in the LEGAL directory in        *
@@ -460,7 +460,7 @@ const PAYMENT_LOCKTIME: u64 = 3600 * 2 + 300 * 2;
 /// Default atomic swap payment locktime, in seconds.
 /// Maker sends payment with LOCKTIME * 2
 /// Taker sends payment with LOCKTIME
-pub(crate) static PAYMENT_LOCKTIME: AtomicU64 = AtomicU64::new(super::CUSTOM_PAYMENT_LOCKTIME_DEFAULT);
+pub static PAYMENT_LOCKTIME: AtomicU64 = AtomicU64::new(super::CUSTOM_PAYMENT_LOCKTIME_DEFAULT);
 
 #[inline]
 /// Returns `PAYMENT_LOCKTIME`
@@ -1643,11 +1643,16 @@ pub async fn active_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
 #[cfg(not(target_arch = "wasm32"))]
 pub fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> SecretHashAlgo {
     match (maker_coin, taker_coin) {
-        (MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_) | MmCoinEnum::LightningCoin(_), _) => {
-            SecretHashAlgo::SHA256
-        },
+        (
+            MmCoinEnum::TendermintVariant(_)
+            | MmCoinEnum::TendermintTokenVariant(_)
+            | MmCoinEnum::LightningCoinVariant(_),
+            _,
+        ) => SecretHashAlgo::SHA256,
         // If taker is lightning coin the SHA256 of the secret will be sent as part of the maker signed invoice
-        (_, MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_)) => SecretHashAlgo::SHA256,
+        (_, MmCoinEnum::TendermintVariant(_) | MmCoinEnum::TendermintTokenVariant(_)) => SecretHashAlgo::SHA256,
+        (_, MmCoinEnum::SiaCoinVariant(_)) => SecretHashAlgo::SHA256,
+        (MmCoinEnum::SiaCoinVariant(_), _) => SecretHashAlgo::SHA256,
         (_, _) => SecretHashAlgo::DHASH160,
     }
 }
@@ -1656,8 +1661,10 @@ pub fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum)
 #[cfg(target_arch = "wasm32")]
 pub fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> SecretHashAlgo {
     match (maker_coin, taker_coin) {
-        (MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_), _) => SecretHashAlgo::SHA256,
-        (_, MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_)) => SecretHashAlgo::SHA256,
+        (MmCoinEnum::TendermintVariant(_) | MmCoinEnum::TendermintTokenVariant(_), _) => SecretHashAlgo::SHA256,
+        (_, MmCoinEnum::TendermintVariant(_) | MmCoinEnum::TendermintTokenVariant(_)) => SecretHashAlgo::SHA256,
+        (_, MmCoinEnum::SiaCoinVariant(_)) => SecretHashAlgo::SHA256,
+        (MmCoinEnum::SiaCoinVariant(_), _) => SecretHashAlgo::SHA256,
         (_, _) => SecretHashAlgo::DHASH160,
     }
 }
@@ -1673,11 +1680,6 @@ pub fn detect_secret_hash_algo_v2(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEn
     } else {
         SecretHashAlgo::DHASH160
     }
-}
-
-pub struct SwapPubkeys {
-    pub maker: String,
-    pub taker: String,
 }
 
 /// P2P topic used to broadcast messages during execution of the upgraded swap protocol.

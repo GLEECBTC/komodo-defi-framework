@@ -25,7 +25,7 @@ pub trait RpcTask: RpcTaskTypes + Sized + Send + 'static {
 ///
 /// `client_id` is used to identify the client to which the task should stream out update events
 /// to and is common in each request. Other data is request-specific.
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
 pub struct RpcInitReq<T> {
     // If the client ID isn't included, assume it's 0.
     #[serde(default)]

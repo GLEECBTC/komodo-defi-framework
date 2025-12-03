@@ -178,6 +178,18 @@ macro_rules! covered_warn {
     };
 }
 
+/// A macro to log errors in production environment and panic in tests.
+#[macro_export]
+macro_rules! covered_error {
+    ($($arg:tt)+) => {
+        if cfg!(not(test)) {
+            common::log::error!($($arg)+)
+        } else {
+            panic!($($arg)+)
+        }
+    };
+}
+
 /// Debug logging.
 ///
 /// This logging SHOULD be human-readable but it is not intended for the end users specifically.

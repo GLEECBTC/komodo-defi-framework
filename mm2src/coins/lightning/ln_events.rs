@@ -95,7 +95,7 @@ impl EventHandler for LightningEventHandler {
             // Todo: Add spent UTXOs to RecentlySpentOutPoints if it's not discarded
             Event::DiscardFunding { channel_id, transaction } => info!(
                 "Discarding funding tx: {} for channel {}",
-                transaction.txid().to_string(),
+                transaction.txid(),
                 hex::encode(channel_id),
             ),
 
@@ -299,8 +299,7 @@ impl LightningEventHandler {
                 Err(e) => {
                     error!(
                         "Error generating funding transaction for channel with uuid {}: {}",
-                        uuid,
-                        e.to_string()
+                        uuid, e
                     );
                     return;
                 },
@@ -526,8 +525,7 @@ impl LightningEventHandler {
                 Err(err) => {
                     error!(
                         "Could not create witness script for change output {}: {}",
-                        my_address.to_string(),
-                        err.to_string()
+                        my_address, err
                     );
                     return;
                 },

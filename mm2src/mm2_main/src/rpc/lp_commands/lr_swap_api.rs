@@ -262,7 +262,7 @@ pub async fn lr_execute_routed_trade_rpc(
         .map_mm_err()?;
 
     // Add tx fee for LR_1:
-    if let (Some(lr_swap_1), MmCoinEnum::EthCoin(eth_coin)) = (&req.lr_swap_1, &maker_coin) {
+    if let (Some(lr_swap_1), MmCoinEnum::EthCoinVariant(eth_coin)) = (&req.lr_swap_1, &maker_coin) {
         let lr_trade_fee = eth_coin
             .estimate_trade_fee(
                 lr_swap_1.swap_details.gas.unwrap_or_default().into(),

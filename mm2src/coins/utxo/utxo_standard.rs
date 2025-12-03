@@ -88,6 +88,9 @@ pub async fn utxo_standard_coin_with_policy(
     activation_params: &UtxoActivationParams,
     priv_key_policy: PrivKeyBuildPolicy,
 ) -> Result<UtxoStandardCoin, String> {
+    if conf["coin"].as_str() != Some(ticker) {
+        return ERR!("Failed to activate '{}': ticker does not match coins config", ticker);
+    }
     let coin = try_s!(
         UtxoArcBuilder::new(
             ctx,
@@ -220,7 +223,7 @@ impl UtxoCommonOps for UtxoStandardCoin {
     }
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32> {
-        utxo_common::get_current_mtp(&self.utxo_arc, self.ticker().into()).await
+        utxo_common::get_current_mtp(&self.utxo_arc).await
     }
 
     fn is_unspent_mature(&self, output: &RpcTransaction) -> bool {

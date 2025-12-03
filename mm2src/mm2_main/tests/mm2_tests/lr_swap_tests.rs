@@ -17,7 +17,7 @@ use mm2_test_helpers::for_tests::{
     POLYGON_MAINNET_SWAP_V2_MAKER_CONTRACT, POLYGON_MAINNET_SWAP_V2_NFT_CONTRACT,
     POLYGON_MAINNET_SWAP_V2_TAKER_CONTRACT,
 };
-use mm2_test_helpers::for_tests::{best_orders_v2_by_number, enable_eth_coin_v2, orderbook_v2};
+use mm2_test_helpers::for_tests::{best_orders_v2_by_number, enable_eth_coin_with_tokens_v2, orderbook_v2};
 use mm2_test_helpers::structs::lr_test_structs::{
     ClassicSwapResponse, LrExecuteRoutedTradeResponse, LrFindBestQuoteResponse,
 };
@@ -1045,14 +1045,14 @@ async fn enable_pol_tokens(mm: &MarketMakerIt, tickers: &[&str]) -> Value {
         .map(|ip| TestNode { url: (*ip).to_owned() })
         .collect::<Vec<_>>();
 
-    enable_eth_coin_v2(
+    enable_eth_coin_with_tokens_v2(
         mm,
         MATIC,
+        tickers,
         POLYGON_MAINNET_SWAP_CONTRACT,
         pol_contracts_v2,
         None,
         &polygon_nodes,
-        tickers,
     )
     .await
 }
@@ -1068,14 +1068,14 @@ async fn enable_arb_tokens(mm: &MarketMakerIt, tickers: &[&str]) -> Value {
         .map(|ip| TestNode { url: (*ip).to_owned() })
         .collect::<Vec<_>>();
 
-    enable_eth_coin_v2(
+    enable_eth_coin_with_tokens_v2(
         mm,
         eth_arb_conf()["coin"].as_str().unwrap(),
+        tickers,
         ARBITRUM_MAINNET_SWAP_CONTRACT,
         arb_contracts_v2,
         None,
         &arb_nodes,
-        tickers,
     )
     .await
 }

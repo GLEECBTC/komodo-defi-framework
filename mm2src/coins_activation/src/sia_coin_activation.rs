@@ -8,11 +8,11 @@ use async_trait::async_trait;
 use coins::coin_balance::{CoinBalanceReport, IguanaWalletBalance};
 use coins::coin_errors::MyAddressError;
 use coins::my_tx_history_v2::TxHistoryStorage;
-use coins::siacoin::{
-    sia_coin_from_conf_and_params, SiaCoin, SiaCoinActivationParams, SiaCoinBuildError, SiaCoinProtocolInfo,
-};
+use coins::siacoin::{SiaCoin, SiaCoinActivationRequest, SiaCoinNewError, SiaCoinProtocolInfo};
 use coins::tx_history_storage::CreateTxHistoryStorageError;
-use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, PrivKeyBuildPolicy, RegisterCoinError};
+use coins::{
+    lp_spawn_tx_history, BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, PrivKeyBuildPolicy, RegisterCoinError,
+};
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use crypto::CryptoCtxError;
 use derive_more::Display;
@@ -100,7 +100,7 @@ pub enum SiaCoinInitError {
 }
 
 impl SiaCoinInitError {
-    pub fn from_build_err(build_err: SiaCoinBuildError, ticker: String) -> Self {
+    pub fn from_build_err(build_err: SiaCoinNewError, ticker: String) -> Self {
         SiaCoinInitError::CoinCreationError {
             ticker,
             error: build_err.to_string(),
@@ -192,7 +192,7 @@ impl TryFromCoinProtocol for SiaCoinProtocolInfo {
 
 #[async_trait]
 impl InitStandaloneCoinActivationOps for SiaCoin {
-    type ActivationRequest = SiaCoinActivationParams;
+    type ActivationRequest = SiaCoinActivationRequest;
     type StandaloneProtocol = SiaCoinProtocolInfo;
     type ActivationResult = SiaCoinActivationResult;
     type ActivationError = SiaCoinInitError;
@@ -208,13 +208,13 @@ impl InitStandaloneCoinActivationOps for SiaCoin {
         ctx: MmArc,
         ticker: String,
         coin_conf: Json,
-        activation_request: &SiaCoinActivationParams,
+        activation_request: &SiaCoinActivationRequest,
         _protocol_info: SiaCoinProtocolInfo,
         _task_handle: SiaCoinRpcTaskHandleShared,
     ) -> MmResult<Self, SiaCoinInitError> {
         let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&ctx).map_mm_err()?;
 
-        let coin = sia_coin_from_conf_and_params(&ctx, &ticker, &coin_conf, activation_request, priv_key_policy)
+        let coin = SiaCoin::new(&ctx, coin_conf, activation_request, priv_key_policy)
             .await
             .mm_err(|e| SiaCoinInitError::from_build_err(e, ticker))?;
 
@@ -223,7 +223,7 @@ impl InitStandaloneCoinActivationOps for SiaCoin {
 
     async fn get_activation_result(
         &self,
-        _ctx: MmArc,
+        ctx: MmArc,
         task_handle: SiaCoinRpcTaskHandleShared,
         _activation_request: &Self::ActivationRequest,
     ) -> MmResult<Self::ActivationResult, SiaCoinInitError> {
@@ -240,6 +240,8 @@ impl InitStandaloneCoinActivationOps for SiaCoin {
         let balance = self.my_balance().compat().await.map_mm_err()?;
         let address = self.my_address().map_mm_err()?;
 
+        lp_spawn_tx_history(ctx, self.clone().into()).map_to_mm(SiaCoinInitError::Internal)?;
+
         Ok(SiaCoinActivationResult {
             ticker: self.ticker().into(),
             current_block,
@@ -255,5 +257,6 @@ impl InitStandaloneCoinActivationOps for SiaCoin {
         _streaming_manager: StreamingManager,
         _current_balances: HashMap<String, BigDecimal>,
     ) {
+        // TODO: Implement v2 transaction history fetching for SiaCoin
     }
 }

@@ -86,7 +86,7 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
         "get_relay_mesh" => hyres(get_relay_mesh(ctx)),
         "get_trade_fee" => hyres(get_trade_fee(ctx, req)),
         // "fundvalue" => lp_fundvalue (ctx, req, false),
-        "help" => help(),
+        "help" => help(ctx),
         "import_swaps" => hyres(import_swaps(ctx, req)),
         "kmd_rewards_info" => hyres(kmd_rewards_info(ctx)),
         // "inventory" => inventory (ctx, req),

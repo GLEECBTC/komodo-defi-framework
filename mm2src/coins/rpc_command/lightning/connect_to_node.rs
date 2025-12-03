@@ -74,7 +74,7 @@ pub struct ConnectToNodeRequest {
 /// Connect to a certain node on the lightning network.
 pub async fn connect_to_node(ctx: MmArc, req: ConnectToNodeRequest) -> ConnectToNodeResult<String> {
     let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
-        MmCoinEnum::LightningCoin(c) => c,
+        MmCoinEnum::LightningCoinVariant(c) => c,
         e => return MmError::err(ConnectToNodeError::UnsupportedCoin(e.ticker().to_string())),
     };
 

@@ -1483,7 +1483,7 @@ impl AggTakerSwapStateMachine {
 
     async fn wait_for_lr_tx_confirmation(&self, coin: &Ticker, tx_bytes: BytesJson) -> MmResult<(), LrSwapError> {
         match lp_coinfind_or_err(&self.ctx, coin).await.map_mm_err()? {
-            MmCoinEnum::EthCoin(eth_coin) => {
+            MmCoinEnum::EthCoinVariant(eth_coin) => {
                 info!("{LOG_SWAP_LR_NAME}: waiting for liquidity routing tx to confirm");
                 let confirm_lr_swap_input = ConfirmPaymentInput {
                     payment_tx: tx_bytes.0,

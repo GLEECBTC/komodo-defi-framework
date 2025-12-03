@@ -88,10 +88,10 @@ pub async fn connect_to_ln_nodes_loop(open_channels_nodes: NodesAddressesMapShar
             match connect_to_ln_node(pubkey, node_addr, peer_manager.clone()).await {
                 Ok(res) => {
                     if let ConnectToNodeRes::ConnectedSuccessfully { .. } = res {
-                        log::info!("{}", res.to_string());
+                        log::info!("{}", res);
                     }
                 },
-                Err(e) => log::error!("{}", e.to_string()),
+                Err(e) => log::error!("{}", e),
             }
         }
 
