@@ -185,7 +185,7 @@ services:
     container_name: kdf-nucleus
     network_mode: host
     volumes:
-      - ${KDF_CONTAINER_RUNTIME_DIR:-./.docker/container-runtime}/nucleus-testnet-data:/root/.nucleus
+      - ${KDF_CONTAINER_RUNTIME_DIR:-./container-runtime}/nucleus-testnet-data:/root/.nucleus
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:26657/status || exit 1"]
       interval: 5s
@@ -199,7 +199,7 @@ services:
     container_name: kdf-atom
     network_mode: host
     volumes:
-      - ${KDF_CONTAINER_RUNTIME_DIR:-./.docker/container-runtime}/atom-testnet-data:/root/.gaia
+      - ${KDF_CONTAINER_RUNTIME_DIR:-./container-runtime}/atom-testnet-data:/root/.gaia
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:26658/status || exit 1"]
       interval: 5s
@@ -213,7 +213,7 @@ services:
     container_name: kdf-ibc-relayer
     network_mode: host
     volumes:
-      - ${KDF_CONTAINER_RUNTIME_DIR:-./.docker/container-runtime}/ibc-relayer-data:/root/.relayer
+      - ${KDF_CONTAINER_RUNTIME_DIR:-./container-runtime}/ibc-relayer-data:/root/.relayer
     depends_on:
       nucleus:
         condition: service_healthy
@@ -233,7 +233,7 @@ services:
     environment:
       - WALLETD_CONFIG_FILE=/config/walletd.yml
     volumes:
-      - ${KDF_CONTAINER_RUNTIME_DIR:-./.docker/container-runtime}/sia-config:/config:ro
+      - ${KDF_CONTAINER_RUNTIME_DIR:-./container-runtime}/sia-config:/config:ro
       - sia-data:/data
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- --header='Authorization: Basic cGFzc3dvcmQ=' http://localhost:9980/api/state || exit 1"]
