@@ -1,0 +1,230 @@
+# Docker Compose file for KDF test nodes
+#
+# Usage:
+#   Start all nodes:     docker compose -f .docker/test-nodes.yml up -d
+#   Start specific:      docker compose -f .docker/test-nodes.yml --profile utxo up -d
+#   Stop all:            docker compose -f .docker/test-nodes.yml down -v
+#   View logs:           docker compose -f .docker/test-nodes.yml logs -f <service>
+#
+# Profiles:
+#   - utxo:   MYCOIN, MYCOIN1 (basic UTXO testing)
+#   - slp:    FORSLP (BCH/SLP token testing)
+#   - qrc20:  QTUM (Qtum/QRC20 testing)
+#   - evm:    GETH (Ethereum/ERC20 testing)
+#   - zombie: ZOMBIE (Zcash-based testing)
+#   - cosmos: NUCLEUS, ATOM, IBC-RELAYER (Tendermint/IBC testing)
+#   - sia:    SIA (Sia testing)
+#
+# Environment variables (set to skip specific node groups):
+#   _KDF_NO_UTXO_DOCKER=1   - Skip MYCOIN/MYCOIN1
+#   _KDF_NO_SLP_DOCKER=1    - Skip FORSLP
+#   _KDF_NO_QTUM_DOCKER=1   - Skip QTUM
+#   _KDF_NO_ETH_DOCKER=1    - Skip GETH
+#   _KDF_NO_ZOMBIE_DOCKER=1 - Skip ZOMBIE
+#   _KDF_NO_COSMOS_DOCKER=1 - Skip NUCLEUS/ATOM/IBC-RELAYER
+#   _KDF_NO_SIA_DOCKER=1    - Skip SIA
+#
+# For CI/local reuse:
+#   KDF_DOCKER_COMPOSE_ENV=1        - Test harness attaches to running containers
+#   KDF_DOCKER_ENV_STATE_FILE=path  - Skip initialization, load from metadata
+
+name: kdf-test-nodes
+
+services:
+  # ============================================================================
+  # UTXO Test Nodes
+  # ============================================================================
+
+  mycoin:
+    image: docker.io/artempikulin/testblockchain:multiarch
+    profiles: ["utxo", "all"]
+    container_name: kdf-mycoin
+    ports:
+      - "8000:8000"
+    environment:
+      - CLIENTS=2
+      - COIN_RPC_PORT=8000
+    volumes:
+      - ${ZCASH_PARAMS_PATH:-~/.zcash-params}:/root/.zcash-params:ro
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+  mycoin1:
+    image: docker.io/artempikulin/testblockchain:multiarch
+    profiles: ["utxo", "all"]
+    container_name: kdf-mycoin1
+    ports:
+      - "8001:8001"
+    environment:
+      - CLIENTS=2
+      - COIN_RPC_PORT=8001
+    volumes:
+      - ${ZCASH_PARAMS_PATH:-~/.zcash-params}:/root/.zcash-params:ro
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8001"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+  # ============================================================================
+  # BCH/SLP Test Node
+  # ============================================================================
+
+  forslp:
+    image: docker.io/artempikulin/testblockchain:multiarch
+    profiles: ["slp", "all"]
+    container_name: kdf-forslp
+    ports:
+      - "10000:10000"
+    environment:
+      - CLIENTS=2
+      - COIN_RPC_PORT=10000
+    volumes:
+      - ${ZCASH_PARAMS_PATH:-~/.zcash-params}:/root/.zcash-params:ro
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:10000"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+  # ============================================================================
+  # Qtum/QRC20 Test Node
+  # ============================================================================
+
+  qtum:
+    image: docker.io/sergeyboyko/qtumregtest:latest
+    profiles: ["qrc20", "all"]
+    container_name: kdf-qtum
+    ports:
+      - "9000:9000"
+    environment:
+      - CLIENTS=2
+      - COIN_RPC_PORT=9000
+      - ADDRESS_LABEL=MM2_ADDRESS_LABEL
+      - FILL_MEMPOOL=true
+    volumes:
+      - qtum-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "qtum-cli -rpcport=9000 getblockchaininfo || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 15s
+
+  # ============================================================================
+  # Ethereum/Geth Dev Node
+  # ============================================================================
+
+  geth:
+    image: docker.io/ethereum/client-go:stable
+    profiles: ["evm", "all"]
+    container_name: kdf-geth
+    ports:
+      - "8545:8545"
+    command: ["--dev", "--http", "--http.addr=0.0.0.0", "--http.api=eth,net,web3,personal,debug", "--http.corsdomain=*"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8545 --post-data='{\"jsonrpc\":\"2.0\",\"method\":\"eth_blockNumber\",\"params\":[],\"id\":1}' --header='Content-Type: application/json' || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  # ============================================================================
+  # Zcash-based (Zombie) Test Node
+  # ============================================================================
+
+  zombie:
+    image: docker.io/borngraced/zombietestrunner:multiarch
+    profiles: ["zombie", "all"]
+    container_name: kdf-zombie
+    ports:
+      - "7090:7090"
+    environment:
+      - COIN_RPC_PORT=7090
+    volumes:
+      - ${ZCASH_PARAMS_PATH:-~/.zcash-params}:/root/.zcash-params:ro
+      - zombie-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:7090"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+      start_period: 30s
+
+  # ============================================================================
+  # Cosmos/Tendermint Test Nodes (use host network for IBC)
+  # ============================================================================
+
+  nucleus:
+    image: docker.io/komodoofficial/nucleusd:latest
+    profiles: ["cosmos", "all"]
+    container_name: kdf-nucleus
+    network_mode: host
+    volumes:
+      - ${KDF_CONTAINER_RUNTIME_DIR:-./.docker/container-runtime}/nucleus-testnet-data:/root/.nucleus
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:26657/status || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 15s
+
+  atom:
+    image: docker.io/komodoofficial/gaiad:kdf-ci
+    profiles: ["cosmos", "all"]
+    container_name: kdf-atom
+    network_mode: host
+    volumes:
+      - ${KDF_CONTAINER_RUNTIME_DIR:-./.docker/container-runtime}/atom-testnet-data:/root/.gaia
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:26658/status || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 15s
+
+  ibc-relayer:
+    image: docker.io/komodoofficial/ibc-relayer:kdf-ci
+    profiles: ["cosmos", "all"]
+    container_name: kdf-ibc-relayer
+    network_mode: host
+    volumes:
+      - ${KDF_CONTAINER_RUNTIME_DIR:-./.docker/container-runtime}/ibc-relayer-data:/root/.relayer
+    depends_on:
+      nucleus:
+        condition: service_healthy
+      atom:
+        condition: service_healthy
+
+  # ============================================================================
+  # Sia Test Node
+  # ============================================================================
+
+  sia:
+    image: ghcr.io/siafoundation/walletd:latest
+    profiles: ["sia", "all"]
+    container_name: kdf-sia
+    ports:
+      - "9980:9980"
+    environment:
+      - WALLETD_CONFIG_FILE=/config/walletd.yml
+    volumes:
+      - ${KDF_CONTAINER_RUNTIME_DIR:-./.docker/container-runtime}/sia-config:/config:ro
+      - sia-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- --header='Authorization: Basic cGFzc3dvcmQ=' http://localhost:9980/api/state || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+volumes:
+  qtum-data:
+  zombie-data:
+  sia-data:
