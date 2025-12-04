@@ -20,6 +20,7 @@ zhtlc-native-tests = ["coins/zhtlc-native-tests"]
 run-docker-tests = ["coins/run-docker-tests"]
 # Split docker test features - each enables a specific test group
 docker-tests-slp = ["run-docker-tests"]
+docker-tests-sia = ["run-docker-tests"]
 default = []
 trezor-udp = ["crypto/trezor-udp"] # use for tests to connect to trezor emulator over udp
 run-device-tests = []

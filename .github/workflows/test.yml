@@ -245,6 +245,56 @@ jobs:
         if: always()
         run: docker compose -f .docker/test-nodes.yml down -v
 
+  # Sia-only docker tests
+  docker-tests-sia:
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    env:
+      BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_LINUX }}
+      BOB_USERPASS: ${{ secrets.BOB_USERPASS_LINUX }}
+      ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_LINUX }}
+      ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install toolchain
+        run: |
+          rustup toolchain install stable --no-self-update --profile=minimal
+          rustup default stable
+
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
+
+      - name: Build cache
+        uses: ./.github/actions/build-cache
+
+      - name: Prepare Sia node
+        run: ./scripts/ci/docker-test-nodes-setup.sh --skip-cosmos
+
+      - name: Start Sia node
+        run: |
+          docker compose -f .docker/test-nodes.yml --profile sia up -d
+          echo "Waiting for Sia container..."
+          sleep 15
+          docker compose -f .docker/test-nodes.yml ps
+
+      - name: Test Sia
+        env:
+          KDF_DOCKER_COMPOSE_ENV: "1"
+          _KDF_NO_UTXO_DOCKER: "1"
+          _KDF_NO_SLP_DOCKER: "1"
+          _KDF_NO_QTUM_DOCKER: "1"
+          _KDF_NO_ETH_DOCKER: "1"
+          _KDF_NO_COSMOS_DOCKER: "1"
+          _KDF_NO_ZOMBIE_DOCKER: "1"
+        run: |
+          cargo test --test 'docker_tests_main' --features docker-tests-sia --no-fail-fast -- sia_docker_tests::
+
+      - name: Stop docker nodes
+        if: always()
+        run: docker compose -f .docker/test-nodes.yml down -v
+
   # Remaining docker tests (all other nodes, excludes feature-flagged tests)
   docker-tests:
     timeout-minutes: 90
