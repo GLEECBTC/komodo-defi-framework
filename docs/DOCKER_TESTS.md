@@ -225,6 +225,22 @@ wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/v0.8.1/zcutil/
 
 ## CI Integration
 
+### Split Test Jobs
+
+The CI runs docker tests in two separate jobs to improve parallelism and reduce resource usage:
+
+1. **`docker-tests-slp`** - Isolated SLP/BCH token tests (~45 min timeout)
+   - Starts only the `slp` profile (FORSLP node)
+   - Uses `--features docker-tests-slp` plus test filtering `-- slp_tests::`
+   - Skip env vars disable all other node groups
+
+2. **`docker-tests`** - All remaining tests (~90 min timeout)
+   - Starts all nodes (`--profile all`)
+   - Uses `--features run-docker-tests`
+   - Runs all docker tests
+
+### Main docker-tests Job
+
 The GitHub Actions workflow (`.github/workflows/test.yml`) runs docker tests in the `docker-tests` job:
 
 1. Checks out code
@@ -267,3 +283,62 @@ else:
 ### Health Checks
 
 When loading metadata in ReuseMetadata mode, the harness validates that all initialized nodes are reachable before proceeding. If any health check fails, tests abort with an error message indicating which node is unreachable.
+
+## Future Refactoring
+
+### Modularizing docker_tests_common.rs
+
+The current `docker_tests_common.rs` file contains helpers for all blockchain types mixed together. This makes it difficult to use feature flags to compile only the tests needed for a specific chain.
+
+**Current state:**
+- ETH, UTXO, SLP, Cosmos, Sia, and other helpers are in one file
+- Functions reference types from multiple chain implementations
+- Feature-flag based test isolation requires scattered `#[cfg(...)]` annotations
+
+**Planned refactoring:**
+1. Split `docker_tests_common.rs` into chain-specific modules:
+   ```
+   docker_tests/
+   ├── helpers/
+   │   ├── mod.rs          # Truly shared utilities (mm2 setup, test framework)
+   │   ├── utxo.rs         # UTXO-specific helpers
+   │   ├── eth.rs          # ETH/ERC20 helpers
+   │   ├── slp.rs          # SLP token helpers
+   │   ├── cosmos.rs       # Tendermint/IBC helpers
+   │   ├── sia.rs          # Sia helpers
+   │   └── zcoin.rs        # Z-coin helpers
+   ```
+
+2. Add feature flags for each chain type:
+   ```toml
+   # Cargo.toml
+   docker-tests-slp = ["run-docker-tests"]
+   docker-tests-eth = ["run-docker-tests"]
+   docker-tests-utxo = ["run-docker-tests"]
+   docker-tests-cosmos = ["run-docker-tests"]
+   docker-tests-sia = ["run-docker-tests"]
+   docker-tests-zcoin = ["run-docker-tests"]
+   ```
+
+3. Apply feature flags at module level:
+   ```rust
+   // helpers/mod.rs
+   #[cfg(feature = "docker-tests-eth")]
+   pub mod eth;
+
+   #[cfg(feature = "docker-tests-slp")]
+   pub mod slp;
+
+   #[cfg(feature = "docker-tests-utxo")]
+   pub mod utxo;
+   // etc.
+   ```
+
+4. Each chain module would only depend on relevant imports
+
+**Benefits:**
+- Clean feature-flag isolation without scattered cfg annotations
+- Faster compilation for targeted test runs
+- Easier maintenance and testing of individual chains
+- Better separation of concerns
+- CI jobs can run in parallel with minimal resource usage per job
