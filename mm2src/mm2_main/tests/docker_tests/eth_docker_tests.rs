@@ -41,7 +41,7 @@ use mm2_test_helpers::for_tests::{
     account_balance, active_swaps, check_recent_swaps, coins_needed_for_kickstart, disable_coin, enable_erc20_token_v2,
     enable_eth_coin_with_tokens_v2, erc20_dev_conf, eth_dev_conf, get_locked_amount, get_new_address, get_token_info,
     mm_dump, my_balance, my_swap_status, nft_dev_conf, start_swaps, task_enable_eth_with_tokens,
-    wait_for_swap_finished, MarketMakerIt, Mm2TestConf, SwapV2TestContracts, TestNode, ETH_SEPOLIA_CHAIN_ID,
+    wait_for_swap_finished, MarketMakerIt, Mm2TestConf, SwapV2TestContracts, TestNode,
 };
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use mm2_test_helpers::for_tests::{eth_sepolia_conf, sepolia_erc20_dev_conf};

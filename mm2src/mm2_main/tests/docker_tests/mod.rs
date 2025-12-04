@@ -1,4 +1,5 @@
 #![allow(static_mut_refs)]
+pub mod docker_env_metadata;
 pub mod docker_tests_common;
 
 mod docker_ordermatch_tests;
