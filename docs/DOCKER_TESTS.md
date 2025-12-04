@@ -230,7 +230,40 @@ The GitHub Actions workflow (`.github/workflows/test.yml`) runs docker tests in 
 1. Checks out code
 2. Installs Rust toolchain
 3. Fetches zcash-params
-4. Prepares runtime environment
-5. Runs `cargo test --test 'docker_tests_main' --features run-docker-tests`
+4. Prepares runtime environment (`./scripts/ci/docker-test-nodes-setup.sh`)
+5. Starts all test nodes via docker-compose (`--profile all`)
+6. Runs tests with `KDF_DOCKER_COMPOSE_ENV=1` (attaches to compose containers)
+7. Stops containers (`docker compose down -v`) - runs even if tests fail
 
-Container lifecycle is managed by testcontainers within the test binary.
+The workflow uses docker-compose mode rather than testcontainers, which enables:
+- Faster startup (containers already running when tests start)
+- Better visibility into container state during debugging
+- Future ability to run multiple test binaries against the same nodes
+
+## Execution Modes
+
+The test harness supports three execution modes:
+
+| Mode | Trigger | Container Start | Initialization |
+|------|---------|-----------------|----------------|
+| **Testcontainers** | Default (no env vars) | ✅ Via testcontainers | ✅ Full |
+| **ComposeInit** | `KDF_DOCKER_COMPOSE_ENV=1` | ❌ Assumes running | ✅ Full (saves metadata) |
+| **ReuseMetadata** | `KDF_DOCKER_ENV_STATE_FILE=path` | ❌ Assumes running | ❌ Loads from file |
+
+### Mode Selection Logic
+
+```
+if KDF_DOCKER_ENV_STATE_FILE is set:
+    → ReuseMetadata mode
+    → Load metadata, validate node health, skip initialization
+elif KDF_DOCKER_COMPOSE_ENV is set:
+    → ComposeInit mode
+    → Attach to running containers, run initialization, save metadata
+else:
+    → Testcontainers mode
+    → Start fresh containers, run initialization
+```
+
+### Health Checks
+
+When loading metadata in ReuseMetadata mode, the harness validates that all initialized nodes are reachable before proceeding. If any health check fails, tests abort with an error message indicating which node is unreachable.
