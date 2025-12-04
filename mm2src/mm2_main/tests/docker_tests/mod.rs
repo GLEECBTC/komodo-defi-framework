@@ -7,6 +7,7 @@ mod docker_tests_inner;
 mod eth_docker_tests;
 pub mod qrc20_tests;
 mod sia_docker_tests;
+#[cfg(feature = "docker-tests-slp")]
 mod slp_tests;
 mod swap_proto_v2_tests;
 mod swap_watcher_tests;

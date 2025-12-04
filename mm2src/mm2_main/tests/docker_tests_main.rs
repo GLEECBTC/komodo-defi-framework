@@ -32,9 +32,8 @@ use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
 mod docker_tests;
 mod sia_tests;
 use docker_tests::docker_env_metadata::{
-    is_docker_compose_mode, should_load_metadata, get_metadata_file_path,
-    DockerEnvMetadata, GethNodeState, QtumNodeState, SlpNodeState, CosmosNodeState, SiaNodeState,
-    UtxoNodeState, ZombieNodeState,
+    get_metadata_file_path, is_docker_compose_mode, should_load_metadata, CosmosNodeState, DockerEnvMetadata,
+    GethNodeState, QtumNodeState, SiaNodeState, SlpNodeState, UtxoNodeState, ZombieNodeState,
 };
 use docker_tests::docker_tests_common::*;
 use docker_tests::qrc20_tests::{qtum_docker_node, QtumDockerOps, QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG};
@@ -95,8 +94,8 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
             DockerTestMode::ReuseMetadata => {
                 // Load metadata and set global state without starting containers or initialization
                 let metadata_path = get_metadata_file_path().expect("KDF_DOCKER_ENV_STATE_FILE must be set");
-                let metadata = DockerEnvMetadata::load(&metadata_path)
-                    .expect("Failed to load docker environment metadata");
+                let metadata =
+                    DockerEnvMetadata::load(&metadata_path).expect("Failed to load docker environment metadata");
 
                 // Validate that nodes are healthy before proceeding
                 if let Err(e) = validate_nodes_health(&metadata) {
@@ -420,7 +419,7 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
                         log!("Saved docker environment metadata to {:?}", metadata_path);
                     }
                 }
-            }
+            },
         }
     }
 

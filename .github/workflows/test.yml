@@ -193,6 +193,53 @@ jobs:
           Invoke-WebRequest -Uri https://raw.githubusercontent.com/KomodoPlatform/komodo/635112d590618165a152dfa0f31e95a9be39a8f6/zcutil/fetch-params-alt.bat -OutFile \cmd.bat && \cmd.bat
           cargo test --test 'mm2_tests_main' --no-fail-fast
 
+  # SLP tests - isolated BCH/SLP token tests (FORSLP node only)
+  # Uses docker-tests-slp feature flag to compile only SLP tests
+  docker-tests-slp:
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    env:
+      BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_LINUX }}
+      BOB_USERPASS: ${{ secrets.BOB_USERPASS_LINUX }}
+      ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_LINUX }}
+      ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
+      TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install toolchain
+        run: |
+          rustup toolchain install stable --no-self-update --profile=minimal
+          rustup default stable
+
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
+
+      - name: Build cache
+        uses: ./.github/actions/build-cache
+
+      - name: Fetch zcash params
+        run: wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/v0.8.1/zcutil/fetch-params-alt.sh | bash
+
+      - name: Start SLP node
+        run: |
+          docker compose -f .docker/test-nodes.yml --profile slp up -d
+          echo "Waiting for SLP container..."
+          sleep 15
+          docker compose -f .docker/test-nodes.yml ps
+
+      - name: Test SLP
+        env:
+          KDF_DOCKER_COMPOSE_ENV: "1"
+        run: |
+          cargo test --test 'docker_tests_main' --features docker-tests-slp --no-fail-fast
+
+      - name: Stop docker nodes
+        if: always()
+        run: docker compose -f .docker/test-nodes.yml down -v
+
+  # Remaining docker tests (all other nodes, excludes feature-flagged tests)
   docker-tests:
     timeout-minutes: 90
     runs-on: ubuntu-latest
@@ -218,7 +265,7 @@ jobs:
         uses: ./.github/actions/build-cache
 
       - name: Fetch zcash params
-        run: wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/v0.8.1//zcutil/fetch-params-alt.sh | bash
+        run: wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/v0.8.1/zcutil/fetch-params-alt.sh | bash
 
       - name: Prepare docker test environment
         run: ./scripts/ci/docker-test-nodes-setup.sh
@@ -226,7 +273,6 @@ jobs:
       - name: Start docker test nodes
         run: |
           docker compose -f .docker/test-nodes.yml --profile all up -d
-          # Wait for containers to be healthy
           echo "Waiting for containers to initialize..."
           sleep 30
           docker compose -f .docker/test-nodes.yml ps

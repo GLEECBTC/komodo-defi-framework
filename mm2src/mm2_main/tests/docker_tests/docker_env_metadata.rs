@@ -184,9 +184,8 @@ impl DockerEnvMetadata {
 
     /// Save metadata to file
     pub fn save(&self, path: &std::path::Path) -> std::io::Result<()> {
-        let json = serde_json::to_string_pretty(self).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, e)
-        })?;
+        let json =
+            serde_json::to_string_pretty(self).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
         // Write to temp file first, then rename for atomicity
         let temp_path = path.with_extension("json.tmp");
@@ -200,11 +199,14 @@ impl DockerEnvMetadata {
     /// Load metadata from file
     pub fn load(path: &std::path::Path) -> std::io::Result<Self> {
         let json = std::fs::read_to_string(path)?;
-        let metadata: Self = serde_json::from_str(&json).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, e)
-        })?;
+        let metadata: Self =
+            serde_json::from_str(&json).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
-        log!("Loaded docker environment metadata from {:?} (created at {})", path, metadata.created_at);
+        log!(
+            "Loaded docker environment metadata from {:?} (created at {})",
+            path,
+            metadata.created_at
+        );
         Ok(metadata)
     }
 

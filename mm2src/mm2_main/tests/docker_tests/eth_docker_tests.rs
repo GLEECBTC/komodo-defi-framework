@@ -44,7 +44,7 @@ use mm2_test_helpers::for_tests::{
     wait_for_swap_finished, MarketMakerIt, Mm2TestConf, SwapV2TestContracts, TestNode,
 };
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
-use mm2_test_helpers::for_tests::{eth_sepolia_conf, sepolia_erc20_dev_conf};
+use mm2_test_helpers::for_tests::{eth_sepolia_conf, sepolia_erc20_dev_conf, ETH_SEPOLIA_CHAIN_ID};
 use mm2_test_helpers::structs::{
     Bip44Chain, EnableCoinBalanceMap, EthWithTokensActivationResult, HDAccountAddressId, TokenInfo,
 };

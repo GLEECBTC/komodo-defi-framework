@@ -1,6 +1,6 @@
 use super::eth_docker_tests::{erc20_contract_checksum, fill_eth, fill_eth_erc20_with_private_key, swap_contract};
 use super::z_coin_docker_tests::z_coin_from_spending_key;
-use bitcrypto::{dhash160, ChecksumType};
+use bitcrypto::dhash160;
 use chain::TransactionOutput;
 use coins::eth::addr_from_raw_pubkey;
 use coins::qrc20::rpc_clients::for_tests::Qrc20NativeWalletOps;
@@ -12,8 +12,7 @@ use coins::utxo::slp::{slp_genesis_output, SlpOutput, SlpToken};
 use coins::utxo::utxo_common::send_outputs_from_my_address;
 use coins::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 use coins::utxo::{
-    coin_daemon_data_dir, sat_from_big_decimal, zcash_params_path, UtxoActivationParams, UtxoAddressFormat,
-    UtxoCoinFields, UtxoCommonOps,
+    coin_daemon_data_dir, sat_from_big_decimal, zcash_params_path, UtxoActivationParams, UtxoCoinFields, UtxoCommonOps,
 };
 use coins::z_coin::ZCoin;
 use coins::{ConfirmPaymentInput, MarketCoinOps, Transaction};
@@ -26,20 +25,15 @@ use ethabi::Token;
 use ethereum_types::{H160 as H160Eth, U256};
 use futures::TryFutureExt;
 use http::StatusCode;
-use keys::{
-    Address, AddressBuilder, AddressHashEnum, AddressPrefix, KeyPair, NetworkAddressPrefixes,
-    NetworkPrefix as CashAddrPrefix,
-};
+use keys::{AddressBuilder, KeyPair, NetworkPrefix as CashAddrPrefix};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::BigDecimal;
 pub use mm2_number::MmNumber;
-use mm2_rpc::data::legacy::BalanceResponse;
 pub use mm2_test_helpers::for_tests::{
     check_my_swap_status, check_recent_swaps, enable_eth_coin, enable_native, enable_native_bch, erc20_dev_conf,
     eth_dev_conf, mm_dump, wait_check_stats_swap_status, MarketMakerIt,
 };
 use mm2_test_helpers::get_passphrase;
-use mm2_test_helpers::structs::TransactionDetails;
 use primitives::hash::{H160, H256};
 use script::Builder;
 use secp256k1::Secp256k1;
@@ -1225,80 +1219,6 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
 
     block_on(mm_bob.stop()).unwrap();
     block_on(mm_alice.stop()).unwrap();
-}
-
-pub fn slp_supplied_node() -> MarketMakerIt {
-    let coins = json! ([
-        {"coin":"FORSLP","asset":"FORSLP","required_confirmations":0,"txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"BCH","protocol_data":{"slp_prefix":"slptest"}}},
-        {"coin":"ADEXSLP","protocol":{"type":"SLPTOKEN","protocol_data":{"decimals":8,"token_id":get_slp_token_id(),"platform":"FORSLP"}}}
-    ]);
-
-    let priv_key = get_prefilled_slp_privkey();
-    MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 9000,
-            "dht": "on",  // Enable DHT without delay.
-            "passphrase": format!("0x{}", hex::encode(priv_key)),
-            "coins": coins,
-            "rpc_password": "pass",
-            "i_am_seed": true,
-            "is_bootstrap_node": true
-        }),
-        "pass".to_string(),
-        None,
-    )
-    .unwrap()
-}
-
-pub fn get_balance(mm: &MarketMakerIt, coin: &str) -> BalanceResponse {
-    let rc = block_on(mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "method": "my_balance",
-        "coin": coin,
-    })))
-    .unwrap();
-    assert_eq!(rc.0, StatusCode::OK, "my_balance request failed {}", rc.1);
-    json::from_str(&rc.1).unwrap()
-}
-
-pub fn utxo_burn_address() -> Address {
-    AddressBuilder::new(
-        UtxoAddressFormat::Standard,
-        ChecksumType::DSHA256,
-        NetworkAddressPrefixes {
-            p2pkh: [60].into(),
-            p2sh: AddressPrefix::default(),
-        },
-        None,
-    )
-    .as_pkh(AddressHashEnum::default_address_hash())
-    .build()
-    .expect("valid address props")
-}
-
-pub fn withdraw_max_and_send_v1(mm: &MarketMakerIt, coin: &str, to: &str) -> TransactionDetails {
-    let rc = block_on(mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "method": "withdraw",
-        "coin": coin,
-        "max": true,
-        "to": to,
-    })))
-    .unwrap();
-    assert_eq!(rc.0, StatusCode::OK, "withdraw request failed {}", rc.1);
-    let tx_details: TransactionDetails = json::from_str(&rc.1).unwrap();
-
-    let rc = block_on(mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "method": "send_raw_transaction",
-        "tx_hex": tx_details.tx_hex,
-        "coin": coin,
-    })))
-    .unwrap();
-    assert_eq!(rc.0, StatusCode::OK, "send_raw_transaction request failed {}", rc.1);
-
-    tx_details
 }
 
 async fn get_current_gas_limit(web3: &Web3<Http>) {
