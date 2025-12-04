@@ -186,12 +186,6 @@ services:
     network_mode: host
     volumes:
       - ${KDF_CONTAINER_RUNTIME_DIR:-./container-runtime}/nucleus-testnet-data:/root/.nucleus
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:26657/status || exit 1"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-      start_period: 15s
 
   atom:
     image: docker.io/komodoofficial/gaiad:kdf-ci
@@ -200,12 +194,6 @@ services:
     network_mode: host
     volumes:
       - ${KDF_CONTAINER_RUNTIME_DIR:-./container-runtime}/atom-testnet-data:/root/.gaia
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:26658/status || exit 1"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-      start_period: 15s
 
   ibc-relayer:
     image: docker.io/komodoofficial/ibc-relayer:kdf-ci
@@ -216,9 +204,9 @@ services:
       - ${KDF_CONTAINER_RUNTIME_DIR:-./container-runtime}/ibc-relayer-data:/root/.relayer
     depends_on:
       nucleus:
-        condition: service_healthy
+        condition: service_started
       atom:
-        condition: service_healthy
+        condition: service_started
 
   # ============================================================================
   # Sia Test Node
