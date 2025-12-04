@@ -361,6 +361,8 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
                         zombie_ops.wait_ready(4);
                         containers.push(zombie_node);
                     } else if mode == DockerTestMode::ComposeInit {
+                        // Copy config from container before initializing
+                        setup_utxo_conf_for_compose("ZOMBIE", "kdf-zombie");
                         let zombie_ops = ZCoinAssetDockerOps::new();
                         zombie_ops.wait_ready(4);
                     }
