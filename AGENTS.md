@@ -232,6 +232,7 @@ Update relevant AGENTS.md files when changing module structure, key types, patte
 | Wrote suboptimal code when efficient implementation existed in another crate | Search other crates for reusable functions; make private functions public if needed |
 | Large refactor done in one massive commit | Break into small, self-contained commits as you work |
 | Changed public API but didn't update AGENTS.md | Update documentation alongside code changes |
+| Compared against wrong branch (e.g., deprecated `mm2.1`) | Use `git merge-base HEAD origin/dev origin/staging origin/main` to find the common ancestor, or ask the user which branch the feature is based on. Branch hierarchy: `main` ← `staging` ← `dev` ← feature branches |
 
 ## Documentation
 

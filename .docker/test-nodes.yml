@@ -220,6 +220,7 @@ services:
       - "9980:9980"
     environment:
       - WALLETD_CONFIG_FILE=/config/walletd.yml
+    command: ["-network=/config/ci_network.json", "-debug"]
     volumes:
       - ${KDF_CONTAINER_RUNTIME_DIR:-./container-runtime}/sia-config:/config:ro
       - sia-data:/data
