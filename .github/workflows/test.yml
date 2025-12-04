@@ -232,6 +232,12 @@ jobs:
       - name: Test SLP
         env:
           KDF_DOCKER_COMPOSE_ENV: "1"
+          _KDF_NO_UTXO_DOCKER: "1"
+          _KDF_NO_QTUM_DOCKER: "1"
+          _KDF_NO_ETH_DOCKER: "1"
+          _KDF_NO_COSMOS_DOCKER: "1"
+          _KDF_NO_ZOMBIE_DOCKER: "1"
+          _KDF_NO_SIA_DOCKER: "1"
         run: |
           cargo test --test 'docker_tests_main' --features docker-tests-slp --no-fail-fast
 
