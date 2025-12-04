@@ -97,6 +97,12 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
                 let metadata_path = get_metadata_file_path().expect("KDF_DOCKER_ENV_STATE_FILE must be set");
                 let metadata = DockerEnvMetadata::load(&metadata_path)
                     .expect("Failed to load docker environment metadata");
+
+                // Validate that nodes are healthy before proceeding
+                if let Err(e) = validate_nodes_health(&metadata) {
+                    panic!("Node health check failed: {}. Ensure containers are running or remove KDF_DOCKER_ENV_STATE_FILE to start fresh.", e);
+                }
+
                 load_metadata_into_globals(&metadata);
                 log!("Loaded environment state from metadata, skipping container startup and initialization");
             },
@@ -435,6 +441,101 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
         .collect();
     let args: Vec<String> = env::args().collect();
     test_main(&args, owned_tests, None);
+}
+
+/// Validate that nodes are reachable before loading metadata
+fn validate_nodes_health(metadata: &DockerEnvMetadata) -> Result<(), String> {
+    use std::net::TcpStream;
+    use std::time::Duration;
+
+    log!("Validating node health from metadata...");
+
+    // Check UTXO nodes (MYCOIN, MYCOIN1)
+    if metadata.initialized.utxo {
+        if let Some(ref utxo) = metadata.utxo {
+            for (name, port) in [("MYCOIN", utxo.mycoin_port), ("MYCOIN1", utxo.mycoin1_port)] {
+                let addr = format!("127.0.0.1:{}", port);
+                if TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_secs(2)).is_err() {
+                    return Err(format!("{} node not reachable at {}", name, addr));
+                }
+                log!("  {} node OK at port {}", name, port);
+            }
+        }
+    }
+
+    // Check Qtum node
+    if metadata.initialized.qtum {
+        if let Some(ref qtum) = metadata.qtum {
+            let addr = format!("127.0.0.1:{}", qtum.port);
+            if TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_secs(2)).is_err() {
+                return Err(format!("QTUM node not reachable at {}", addr));
+            }
+            log!("  QTUM node OK at port {}", qtum.port);
+        }
+    }
+
+    // Check SLP node
+    if metadata.initialized.slp {
+        if let Some(ref slp) = metadata.slp {
+            let addr = format!("127.0.0.1:{}", slp.port);
+            if TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_secs(2)).is_err() {
+                return Err(format!("FORSLP node not reachable at {}", addr));
+            }
+            log!("  FORSLP node OK at port {}", slp.port);
+        }
+    }
+
+    // Check Geth node via web3 RPC
+    if metadata.initialized.geth {
+        match block_on(GETH_WEB3.eth().block_number().timeout(Duration::from_secs(3))) {
+            Ok(Ok(_)) => log!("  GETH node OK"),
+            _ => return Err("GETH node not reachable at RPC endpoint".to_string()),
+        }
+    }
+
+    // Check Zombie node
+    if metadata.initialized.zombie {
+        if let Some(ref zombie) = metadata.zombie {
+            let addr = format!("127.0.0.1:{}", zombie.port);
+            if TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_secs(2)).is_err() {
+                return Err(format!("ZOMBIE node not reachable at {}", addr));
+            }
+            log!("  ZOMBIE node OK at port {}", zombie.port);
+        }
+    }
+
+    // Check Cosmos nodes
+    if metadata.initialized.cosmos {
+        if let Some(ref cosmos) = metadata.cosmos {
+            // Check Nucleus RPC (port 26657)
+            let addr = "127.0.0.1:26657";
+            if TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_secs(2)).is_err() {
+                return Err(format!("NUCLEUS node not reachable at {}", addr));
+            }
+            log!("  NUCLEUS node OK at {}", cosmos.nucleus_rpc_url);
+
+            // Check Atom RPC (port 26658)
+            let addr = "127.0.0.1:26658";
+            if TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_secs(2)).is_err() {
+                return Err(format!("ATOM node not reachable at {}", addr));
+            }
+            log!("  ATOM node OK at {}", cosmos.atom_rpc_url);
+        }
+    }
+
+    // Check Sia node
+    if metadata.initialized.sia {
+        if let Some(ref sia) = metadata.sia {
+            let addr = format!("{}:{}", sia.rpc_host, sia.rpc_port);
+            if TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_secs(2)).is_err() {
+                return Err(format!("SIA node not reachable at {}", addr));
+            }
+            log!("  SIA node OK at {}:{}", sia.rpc_host, sia.rpc_port);
+        }
+    }
+
+    log!("All nodes healthy!");
+    Ok(())
 }
 
 /// Load metadata into global state variables
