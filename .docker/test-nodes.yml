@@ -42,8 +42,14 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - CHAIN=MYCOIN
       - CLIENTS=2
+      - COIN=Komodo
       - COIN_RPC_PORT=8000
+      - DAEMON_URL=http://test:test@127.0.0.1:7000
+      - TEST_ADDY=R9imXLs1hEcU9KbFDQq2hJEEJ1P5UoekaF
+      - TEST_WIF=UqqW7f766rADem9heD8vSBvvrdfJb3zg5r8du9rJxPtccjWf7RG9
+      - TEST_PUBKEY=021607076d7a2cb148d542fb9644c04ffc22d2cca752f80755a0402a24c567b17a
     volumes:
       - ${ZCASH_PARAMS_PATH:-~/.zcash-params}:/root/.zcash-params:ro
     healthcheck:
@@ -60,8 +66,14 @@ services:
     ports:
       - "8001:8001"
     environment:
+      - CHAIN=MYCOIN1
       - CLIENTS=2
+      - COIN=Komodo
       - COIN_RPC_PORT=8001
+      - DAEMON_URL=http://test:test@127.0.0.1:7000
+      - TEST_ADDY=R9imXLs1hEcU9KbFDQq2hJEEJ1P5UoekaF
+      - TEST_WIF=UqqW7f766rADem9heD8vSBvvrdfJb3zg5r8du9rJxPtccjWf7RG9
+      - TEST_PUBKEY=021607076d7a2cb148d542fb9644c04ffc22d2cca752f80755a0402a24c567b17a
     volumes:
       - ${ZCASH_PARAMS_PATH:-~/.zcash-params}:/root/.zcash-params:ro
     healthcheck:
@@ -82,8 +94,14 @@ services:
     ports:
       - "10000:10000"
     environment:
+      - CHAIN=FORSLP
       - CLIENTS=2
+      - COIN=Komodo
       - COIN_RPC_PORT=10000
+      - DAEMON_URL=http://test:test@127.0.0.1:7000
+      - TEST_ADDY=R9imXLs1hEcU9KbFDQq2hJEEJ1P5UoekaF
+      - TEST_WIF=UqqW7f766rADem9heD8vSBvvrdfJb3zg5r8du9rJxPtccjWf7RG9
+      - TEST_PUBKEY=021607076d7a2cb148d542fb9644c04ffc22d2cca752f80755a0402a24c567b17a
     volumes:
       - ${ZCASH_PARAMS_PATH:-~/.zcash-params}:/root/.zcash-params:ro
     healthcheck:
