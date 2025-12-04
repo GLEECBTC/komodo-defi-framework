@@ -255,7 +255,9 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
                         containers.push(utxo_node);
                         containers.push(utxo_node1);
                     } else if mode == DockerTestMode::ComposeInit {
-                        // Compose mode: wait for nodes to be ready
+                        // Copy configs from containers before initializing
+                        setup_utxo_conf_for_compose("MYCOIN", "kdf-mycoin");
+                        setup_utxo_conf_for_compose("MYCOIN1", "kdf-mycoin1");
                         let utxo_ops = UtxoAssetDockerOps::from_ticker("MYCOIN");
                         let utxo_ops1 = UtxoAssetDockerOps::from_ticker("MYCOIN1");
                         utxo_ops.wait_ready(4);
@@ -307,6 +309,8 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
                         for_slp_ops.initialize_slp();
                         containers.push(for_slp_node);
                     } else if mode == DockerTestMode::ComposeInit {
+                        // Copy config from container before initializing
+                        setup_utxo_conf_for_compose("FORSLP", "kdf-forslp");
                         let for_slp_ops = BchDockerOps::from_ticker("FORSLP");
                         for_slp_ops.wait_ready(4);
                         for_slp_ops.initialize_slp();
@@ -597,6 +601,29 @@ fn setup_qtum_conf_for_compose() {
     }
 
     unsafe { QTUM_CONF_PATH = Some(conf_path) };
+}
+
+/// Set up UTXO coin config for compose mode by copying config from the container
+fn setup_utxo_conf_for_compose(ticker: &str, container_name: &str) {
+    let mut conf_path = coins::utxo::coin_daemon_data_dir(ticker, true);
+    std::fs::create_dir_all(&conf_path).unwrap();
+    conf_path.push(format!("{ticker}.conf"));
+
+    // Copy config from the running compose container
+    Command::new("docker")
+        .arg("cp")
+        .arg(format!("{container_name}:/data/node_0/{ticker}.conf"))
+        .arg(&conf_path)
+        .status()
+        .expect("Failed to copy UTXO config from compose container");
+
+    let timeout = wait_until_ms(3000);
+    loop {
+        if conf_path.exists() {
+            break;
+        }
+        assert!(now_ms() < timeout, "Timed out waiting for {} config", ticker);
+    }
 }
 
 /// Get the runtime directory path
