@@ -128,16 +128,6 @@ async fn enable_bch_with_tokens_without_balance(
 }
 
 #[test]
-fn trade_test_with_maker_slp() {
-    trade_base_rel(("ADEXSLP", "FORSLP"));
-}
-
-#[test]
-fn trade_test_with_taker_slp() {
-    trade_base_rel(("FORSLP", "ADEXSLP"));
-}
-
-#[test]
 fn test_bch_and_slp_balance() {
     // MM2 should mark the SLP-related and other UTXOs as unspendable BCH balance
     let mm = slp_supplied_node();

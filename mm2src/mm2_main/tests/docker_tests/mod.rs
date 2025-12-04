@@ -9,7 +9,11 @@ pub mod qrc20_tests;
 mod sia_docker_tests;
 #[cfg(feature = "docker-tests-slp")]
 mod slp_tests;
+// Cross-chain swap tests - run only in main docker-tests job
+// Excluded from chain-specific jobs to avoid running with insufficient nodes
 mod swap_proto_v2_tests;
+#[cfg(all(feature = "run-docker-tests", not(feature = "docker-tests-slp")))]
+mod swap_tests;
 mod swap_watcher_tests;
 mod swaps_confs_settings_sync_tests;
 mod swaps_file_lock_tests;
