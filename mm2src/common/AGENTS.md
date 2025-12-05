@@ -1,5 +1,7 @@
 # common — Shared Utilities
 
+> **Note:** Always follow the root `/CLAUDE.md` for global conventions (fmt, clippy, error handling, etc.).
+
 Foundation crate providing utilities used across all KDF crates. Platform-aware (native/WASM).
 
 ## Responsibilities

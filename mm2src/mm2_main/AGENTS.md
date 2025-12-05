@@ -1,5 +1,7 @@
 # mm2_main — RPC, Swaps, and Application Logic
 
+> **Note:** Always follow the root `/CLAUDE.md` for global conventions (fmt, clippy, error handling, etc.).
+
 Core application crate: RPC dispatcher, atomic swap engines, order matching, streaming.
 
 ## Responsibilities

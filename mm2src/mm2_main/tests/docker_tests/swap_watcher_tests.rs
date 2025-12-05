@@ -1,5 +1,5 @@
 use crate::docker_tests::docker_tests_common::GETH_RPC_URL;
-use crate::docker_tests::eth_docker_tests::{
+use crate::docker_tests::helpers::eth::{
     erc20_coin_with_random_privkey, erc20_contract_checksum, eth_coin_with_random_privkey, watchers_swap_contract,
 };
 use crate::integration_tests_common::*;

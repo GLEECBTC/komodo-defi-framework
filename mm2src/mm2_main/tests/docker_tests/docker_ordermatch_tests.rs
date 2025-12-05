@@ -1,5 +1,5 @@
 use crate::docker_tests::docker_tests_common::{generate_utxo_coin_with_privkey, GETH_RPC_URL};
-use crate::docker_tests::eth_docker_tests::{fill_eth_erc20_with_private_key, swap_contract};
+use crate::docker_tests::helpers::eth::{fill_eth_erc20_with_private_key, swap_contract};
 
 use crate::integration_tests_common::enable_native;
 use crate::{generate_utxo_coin_with_random_privkey, random_secp256k1_secret};

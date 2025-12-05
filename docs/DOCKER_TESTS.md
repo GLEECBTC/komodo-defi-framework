@@ -227,17 +227,22 @@ wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/v0.8.1/zcutil/
 
 ### Split Test Jobs
 
-The CI runs docker tests in two separate jobs to improve parallelism and reduce resource usage:
+The CI runs docker tests in separate jobs to improve parallelism and reduce resource usage:
 
-1. **`docker-tests-slp`** - Isolated SLP/BCH token tests (~45 min timeout)
-   - Starts only the `slp` profile (FORSLP node)
-   - Uses `--features docker-tests-slp` plus test filtering `-- slp_tests::`
-   - Skip env vars disable all other node groups
+| Job | Feature Flag | Compose Profile | Timeout | Tests |
+|-----|--------------|-----------------|---------|-------|
+| `docker-tests-slp` | `docker-tests-slp` | `slp` | 45 min | SLP/BCH token tests |
+| `docker-tests-sia` | `docker-tests-sia` | `sia` | 30 min | Sia blockchain tests |
+| `docker-tests-eth` | `docker-tests-eth` | `evm` | 60 min | ETH/ERC20/NFT tests |
+| `docker-tests` | `run-docker-tests` | `all` | 90 min | All remaining tests |
 
-2. **`docker-tests`** - All remaining tests (~90 min timeout)
-   - Starts all nodes (`--profile all`)
-   - Uses `--features run-docker-tests`
-   - Runs all docker tests
+Each chain-specific job:
+- Starts only the required node(s) via compose profile
+- Sets `_KDF_NO_*` env vars to disable other node groups
+- Uses the corresponding feature flag for compilation
+- Filters tests with `-- <module>::` pattern
+
+Cross-chain swap tests (`swap_tests`) only run in the main `docker-tests` job since they require multiple node types.
 
 ### Main docker-tests Job
 

@@ -1,9 +1,11 @@
 #![allow(static_mut_refs)]
 pub mod docker_env_metadata;
 pub mod docker_tests_common;
+pub mod helpers;
 
 mod docker_ordermatch_tests;
 mod docker_tests_inner;
+#[cfg(feature = "docker-tests-eth")]
 mod eth_docker_tests;
 pub mod qrc20_tests;
 #[cfg(feature = "docker-tests-sia")]
@@ -16,7 +18,8 @@ mod swap_proto_v2_tests;
 #[cfg(all(
     feature = "run-docker-tests",
     not(feature = "docker-tests-slp"),
-    not(feature = "docker-tests-sia")
+    not(feature = "docker-tests-sia"),
+    not(feature = "docker-tests-eth")
 ))]
 mod swap_tests;
 mod swap_watcher_tests;

@@ -1,12 +1,16 @@
 use super::docker_tests_common::{
-    random_secp256k1_secret, ERC1155_TEST_ABI, ERC721_TEST_ABI, GETH_ACCOUNT, GETH_ERC1155_CONTRACT,
-    GETH_ERC20_CONTRACT, GETH_ERC721_CONTRACT, GETH_MAKER_SWAP_V2, GETH_NFT_MAKER_SWAP_V2, GETH_NONCE_LOCK,
-    GETH_RPC_URL, GETH_SWAP_CONTRACT, GETH_TAKER_SWAP_V2, GETH_WATCHERS_SWAP_CONTRACT, GETH_WEB3, MM_CTX, MM_CTX1,
+    random_secp256k1_secret, ERC1155_TEST_ABI, ERC721_TEST_ABI, GETH_NFT_MAKER_SWAP_V2, GETH_NONCE_LOCK, GETH_RPC_URL,
+    GETH_WEB3, MM_CTX, MM_CTX1,
 };
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use super::docker_tests_common::{
     SEPOLIA_ERC20_CONTRACT, SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2, SEPOLIA_MAKER_SWAP_V2, SEPOLIA_NONCE_LOCK,
     SEPOLIA_RPC_URL, SEPOLIA_TAKER_SWAP_V2, SEPOLIA_TESTS_LOCK, SEPOLIA_WEB3,
+};
+use super::helpers::eth::{
+    erc20_coin_with_random_privkey, erc20_contract, erc20_contract_checksum, eth_coin_with_random_privkey, fill_erc20,
+    fill_eth, geth_account, geth_erc1155_contract, geth_erc721_contract, geth_nft_maker_swap_v2, maker_swap_v2,
+    swap_contract, taker_swap_v2, watchers_swap_contract, GETH_DEV_CHAIN_ID,
 };
 use crate::common::Future01CompatExt;
 use bitcrypto::{dhash160, sha256};
@@ -67,35 +71,11 @@ const SEPOLIA_MAKER_PRIV: &str = "6e2f3a6223b928a05a3a3622b0c3f3573d03663b704a61
 const SEPOLIA_TAKER_PRIV: &str = "e0be82dca60ff7e4c6d6db339ac9e1ae249af081dba2110bddd281e711608f16";
 const NFT_ETH: &str = "NFT_ETH";
 const ETH: &str = "ETH";
-const GETH_DEV_CHAIN_ID: u64 = 1337;
 
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 const ERC20: &str = "ERC20DEV";
 
-/// # Safety
-///
-/// GETH_ACCOUNT is set once during initialization before tests start
-pub fn geth_account() -> Address {
-    unsafe { GETH_ACCOUNT }
-}
-/// # Safety
-///
-/// GETH_SWAP_CONTRACT is set once during initialization before tests start
-pub fn swap_contract() -> Address {
-    unsafe { GETH_SWAP_CONTRACT }
-}
-/// # Safety
-///
-/// GETH_MAKER_SWAP_V2 is set once during initialization before tests start
-pub fn maker_swap_v2() -> Address {
-    unsafe { GETH_MAKER_SWAP_V2 }
-}
-/// # Safety
-///
-/// GETH_TAKER_SWAP_V2 is set once during initialization before tests start
-pub fn taker_swap_v2() -> Address {
-    unsafe { GETH_TAKER_SWAP_V2 }
-}
+// Sepolia-specific helpers (not shared)
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 pub fn sepolia_taker_swap_v2() -> Address {
     unsafe { SEPOLIA_TAKER_SWAP_V2 }
@@ -104,47 +84,13 @@ pub fn sepolia_taker_swap_v2() -> Address {
 pub fn sepolia_maker_swap_v2() -> Address {
     unsafe { SEPOLIA_MAKER_SWAP_V2 }
 }
-/// # Safety
-///
-/// GETH_NFT_MAKER_SWAP_V2 is set once during initialization before tests start
-pub fn geth_nft_maker_swap_v2() -> Address {
-    unsafe { GETH_NFT_MAKER_SWAP_V2 }
-}
-/// # Safety
-///
-/// GETH_WATCHERS_SWAP_CONTRACT is set once during initialization before tests start
-pub fn watchers_swap_contract() -> Address {
-    unsafe { GETH_WATCHERS_SWAP_CONTRACT }
-}
-/// # Safety
-///
-/// GETH_ERC20_CONTRACT is set once during initialization before tests start
-pub fn erc20_contract() -> Address {
-    unsafe { GETH_ERC20_CONTRACT }
-}
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 pub fn sepolia_erc20_contract() -> Address {
     unsafe { SEPOLIA_ERC20_CONTRACT }
 }
-/// Return ERC20 dev token contract address in checksum format
-pub fn erc20_contract_checksum() -> String {
-    checksum_address(&format!("{:02x}", erc20_contract()))
-}
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 pub fn sepolia_erc20_contract_checksum() -> String {
     checksum_address(&format!("{:02x}", sepolia_erc20_contract()))
-}
-/// # Safety
-///
-/// GETH_ERC721_CONTRACT is set once during initialization before tests start
-pub fn geth_erc721_contract() -> Address {
-    unsafe { GETH_ERC721_CONTRACT }
-}
-/// # Safety
-///
-/// GETH_ERC1155_CONTRACT is set once during initialization before tests start
-pub fn geth_erc1155_contract() -> Address {
-    unsafe { GETH_ERC1155_CONTRACT }
 }
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 /// # Safety
@@ -167,40 +113,6 @@ fn wait_for_confirmation(tx_hash: H256) {
             },
         }
     }
-}
-
-pub fn fill_eth(to_addr: Address, amount: U256) {
-    let _guard = GETH_NONCE_LOCK.lock().unwrap();
-    let tx_request = TransactionRequest {
-        from: geth_account(),
-        to: Some(to_addr),
-        gas: None,
-        gas_price: None,
-        value: Some(amount),
-        data: None,
-        nonce: None,
-        condition: None,
-        transaction_type: None,
-        access_list: None,
-        max_fee_per_gas: None,
-        max_priority_fee_per_gas: None,
-    };
-    let tx_hash = block_on(GETH_WEB3.eth().send_transaction(tx_request)).unwrap();
-    wait_for_confirmation(tx_hash);
-}
-
-fn fill_erc20(to_addr: Address, amount: U256) {
-    let _guard = GETH_NONCE_LOCK.lock().unwrap();
-    let erc20_contract = Contract::from_json(GETH_WEB3.eth(), erc20_contract(), ERC20_ABI.as_bytes()).unwrap();
-
-    let tx_hash = block_on(erc20_contract.call(
-        "transfer",
-        (Token::Address(to_addr), Token::Uint(amount)),
-        geth_account(),
-        Options::default(),
-    ))
-    .unwrap();
-    wait_for_confirmation(tx_hash);
 }
 
 fn mint_erc721(to_addr: Address, token_id: U256) {
@@ -320,81 +232,6 @@ pub(crate) async fn fill_erc721_info(eth_coin: &EthCoin, token_address: Address,
     let erc721_address_str = token_address.addr_to_string();
     let erc721_key = format!("{erc721_address_str},{token_id}");
     nft_infos.insert(erc721_key, erc721_nft_info);
-}
-
-/// Creates ETH protocol coin supplied with 100 ETH
-pub fn eth_coin_with_random_privkey_using_urls(swap_contract_address: Address, urls: &[&str]) -> EthCoin {
-    let eth_conf = eth_dev_conf();
-    let req = json!({
-        "method": "enable",
-        "coin": "ETH",
-        "swap_contract_address": swap_contract_address,
-        "urls": urls,
-    });
-
-    let secret = random_secp256k1_secret();
-    let eth_coin = block_on(eth_coin_from_conf_and_request(
-        &MM_CTX,
-        "ETH",
-        &eth_conf,
-        &req,
-        CoinProtocol::ETH {
-            chain_id: GETH_DEV_CHAIN_ID,
-        },
-        PrivKeyBuildPolicy::IguanaPrivKey(secret),
-    ))
-    .unwrap();
-
-    let my_address = match eth_coin.derivation_method() {
-        DerivationMethod::SingleAddress(addr) => *addr,
-        _ => panic!("Expected single address"),
-    };
-
-    // 100 ETH
-    fill_eth(my_address, U256::from(10).pow(U256::from(20)));
-
-    eth_coin
-}
-
-/// Creates ETH protocol coin supplied with 100 ETH, using the default GETH_RPC_URL
-pub fn eth_coin_with_random_privkey(swap_contract_address: Address) -> EthCoin {
-    eth_coin_with_random_privkey_using_urls(swap_contract_address, &[GETH_RPC_URL])
-}
-
-/// Creates ERC20 protocol coin supplied with 1 ETH and 100 token
-pub fn erc20_coin_with_random_privkey(swap_contract_address: Address) -> EthCoin {
-    let erc20_conf = erc20_dev_conf(&erc20_contract_checksum());
-    let req = json!({
-        "method": "enable",
-        "coin": "ERC20DEV",
-        "swap_contract_address": swap_contract_address,
-        "urls": [GETH_RPC_URL],
-    });
-
-    let erc20_coin = block_on(eth_coin_from_conf_and_request(
-        &MM_CTX,
-        "ERC20DEV",
-        &erc20_conf,
-        &req,
-        CoinProtocol::ERC20 {
-            platform: "ETH".to_string(),
-            contract_address: checksum_address(&format!("{:02x}", erc20_contract())),
-        },
-        PrivKeyBuildPolicy::IguanaPrivKey(random_secp256k1_secret()),
-    ))
-    .unwrap();
-
-    let my_address = match erc20_coin.derivation_method() {
-        DerivationMethod::SingleAddress(addr) => *addr,
-        _ => panic!("Expected single address"),
-    };
-
-    // 1 ETH
-    fill_eth(my_address, U256::from(10).pow(U256::from(18)));
-    // 100 tokens (it has 8 decimals)
-    fill_erc20(my_address, U256::from(10000000000u64));
-
-    erc20_coin
 }
 
 #[derive(Clone, Copy, Debug)]

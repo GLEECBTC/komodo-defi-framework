@@ -295,6 +295,55 @@ jobs:
         if: always()
         run: docker compose -f .docker/test-nodes.yml down -v
 
+  # ETH/EVM tests - isolated Ethereum and ERC20 tests (GETH node only)
+  # Uses docker-tests-eth feature flag to compile only ETH tests
+  docker-tests-eth:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    env:
+      BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_LINUX }}
+      BOB_USERPASS: ${{ secrets.BOB_USERPASS_LINUX }}
+      ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_LINUX }}
+      ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
+      TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install toolchain
+        run: |
+          rustup toolchain install stable --no-self-update --profile=minimal
+          rustup default stable
+
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
+
+      - name: Build cache
+        uses: ./.github/actions/build-cache
+
+      - name: Start ETH node
+        run: |
+          docker compose -f .docker/test-nodes.yml --profile evm up -d
+          echo "Waiting for GETH container..."
+          sleep 15
+          docker compose -f .docker/test-nodes.yml ps
+
+      - name: Test ETH
+        env:
+          KDF_DOCKER_COMPOSE_ENV: "1"
+          _KDF_NO_UTXO_DOCKER: "1"
+          _KDF_NO_SLP_DOCKER: "1"
+          _KDF_NO_QTUM_DOCKER: "1"
+          _KDF_NO_COSMOS_DOCKER: "1"
+          _KDF_NO_ZOMBIE_DOCKER: "1"
+          _KDF_NO_SIA_DOCKER: "1"
+        run: |
+          cargo test --test 'docker_tests_main' --features docker-tests-eth --no-fail-fast -- eth_docker_tests::
+
+      - name: Stop docker nodes
+        if: always()
+        run: docker compose -f .docker/test-nodes.yml down -v
+
   # Remaining docker tests (all other nodes, excludes feature-flagged tests)
   docker-tests:
     timeout-minutes: 90

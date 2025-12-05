@@ -1,4 +1,4 @@
-use super::eth_docker_tests::{erc20_contract_checksum, fill_eth, fill_eth_erc20_with_private_key, swap_contract};
+use super::helpers::eth::{erc20_contract_checksum, fill_eth, fill_eth_erc20_with_private_key, swap_contract};
 use super::z_coin_docker_tests::z_coin_from_spending_key;
 use bitcrypto::dhash160;
 use chain::TransactionOutput;

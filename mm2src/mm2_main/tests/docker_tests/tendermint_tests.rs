@@ -816,8 +816,8 @@ fn test_tendermint_remove_delegation() {
 mod swap {
     use super::*;
 
-    use crate::docker_tests::eth_docker_tests::fill_eth;
-    use crate::docker_tests::eth_docker_tests::swap_contract;
+    use crate::docker_tests::helpers::eth::fill_eth;
+    use crate::docker_tests::helpers::eth::swap_contract;
     use crate::integration_tests_common::enable_electrum;
     use common::executor::Timer;
     use common::log;

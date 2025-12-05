@@ -1,5 +1,7 @@
 # mm2_bin_lib — Platform Entry Points
 
+> **Note:** Always follow the root `/CLAUDE.md` for global conventions (fmt, clippy, error handling, etc.).
+
 Thin wrapper providing platform-specific entry points for KDF. Bridges native, WASM, and mobile platforms to `mm2_main`.
 
 ## Responsibilities
