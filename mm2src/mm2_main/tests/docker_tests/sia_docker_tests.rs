@@ -73,6 +73,11 @@ fn test_sia_client_address_balance() {
         Address::from_str("591fcf237f8854b5653d1ac84ae4c107b37f148c3c7b413f292d48db0c25a8840be0653e411f").unwrap();
     block_on(api_client.mine_blocks(10, &address)).unwrap();
 
+    // Wait briefly for the address indexer to process the new blocks.
+    // This is needed because the indexer may have lag, especially when
+    // tests run in parallel and the indexer is busy with other operations.
+    std::thread::sleep(std::time::Duration::from_millis(100));
+
     let request = AddressBalanceRequest { address };
     let response = block_on(api_client.dispatcher(request)).unwrap();
 
