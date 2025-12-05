@@ -1,6 +1,6 @@
 use super::docker_tests_common::{
-    random_secp256k1_secret, ERC1155_TEST_ABI, ERC721_TEST_ABI, GETH_NFT_MAKER_SWAP_V2, GETH_NONCE_LOCK, GETH_RPC_URL,
-    GETH_WEB3, MM_CTX, MM_CTX1,
+    random_secp256k1_secret, ERC1155_TEST_ABI, ERC721_TEST_ABI, GETH_NONCE_LOCK, GETH_RPC_URL, GETH_WEB3, MM_CTX,
+    MM_CTX1,
 };
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use super::docker_tests_common::{
@@ -8,17 +8,17 @@ use super::docker_tests_common::{
     SEPOLIA_RPC_URL, SEPOLIA_TAKER_SWAP_V2, SEPOLIA_TESTS_LOCK, SEPOLIA_WEB3,
 };
 use super::helpers::eth::{
-    erc20_coin_with_random_privkey, erc20_contract, erc20_contract_checksum, eth_coin_with_random_privkey, fill_erc20,
-    fill_eth, geth_account, geth_erc1155_contract, geth_erc721_contract, geth_nft_maker_swap_v2, maker_swap_v2,
-    swap_contract, taker_swap_v2, watchers_swap_contract, GETH_DEV_CHAIN_ID,
+    erc20_coin_with_random_privkey, erc20_contract, erc20_contract_checksum, eth_coin_with_random_privkey,
+    eth_coin_with_random_privkey_using_urls, fill_erc20, fill_eth, geth_account, geth_erc1155_contract,
+    geth_erc721_contract, geth_nft_maker_swap_v2, maker_swap_v2, swap_contract, taker_swap_v2, GETH_DEV_CHAIN_ID,
 };
 use crate::common::Future01CompatExt;
 use bitcrypto::{dhash160, sha256};
 use coins::eth::gas_limit::ETH_MAX_TRADE_GAS;
 use coins::eth::v2_activation::{eth_coin_from_conf_and_request_v2, EthActivationV2Request, EthNode};
 use coins::eth::{
-    checksum_address, eth_coin_from_conf_and_request, ChainSpec, EthCoin, EthCoinType, EthPrivKeyBuildPolicy,
-    SignedEthTx, SwapV2Contracts, ERC20_ABI,
+    eth_coin_from_conf_and_request, ChainSpec, EthCoin, EthCoinType, EthPrivKeyBuildPolicy, SignedEthTx,
+    SwapV2Contracts,
 };
 use coins::hd_wallet::AddrToString;
 use coins::nft::nft_structs::{Chain, ContractType, NftInfo};
@@ -30,8 +30,8 @@ use coins::{
     SpendMakerPaymentArgs, TakerCoinSwapOpsV2, TxPreimageWithSig, ValidateMakerPaymentArgs, ValidateTakerFundingArgs,
 };
 use coins::{
-    lp_register_coin, CoinProtocol, CoinWithDerivationMethod, CommonSwapOpsV2, ConfirmPaymentInput, DerivationMethod,
-    Eip1559Ops, FoundSwapTxSpend, MakerNftSwapOpsV2, MarketCoinOps, MmCoinEnum, NftSwapInfo, ParseCoinAssocTypes,
+    lp_register_coin, CoinProtocol, CoinWithDerivationMethod, CommonSwapOpsV2, ConfirmPaymentInput, Eip1559Ops,
+    FoundSwapTxSpend, MakerNftSwapOpsV2, MarketCoinOps, MmCoinEnum, NftSwapInfo, ParseCoinAssocTypes,
     ParseNftAssocTypes, PrivKeyBuildPolicy, RefundNftMakerPaymentArgs, RefundPaymentArgs, RegisterCoinParams,
     SearchForSwapTxSpendInput, SendNftMakerPaymentArgs, SendPaymentArgs, SpendNftMakerPaymentArgs, SpendPaymentArgs,
     SwapGasFeePolicy, SwapOps, SwapTxTypeWithSecretHash, ToBytes, Transaction, ValidateNftMakerPaymentArgs,
@@ -63,7 +63,7 @@ use web3::contract::{Contract, Options};
 use web3::ethabi::Token;
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use web3::types::BlockNumber;
-use web3::types::{Address, TransactionRequest, H256};
+use web3::types::{Address, H256};
 
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 const SEPOLIA_MAKER_PRIV: &str = "6e2f3a6223b928a05a3a3622b0c3f3573d03663b704a61a6eb73326de0487928";
@@ -385,56 +385,6 @@ fn get_or_create_sepolia_coin(ctx: &MmArc, priv_key: &'static str, ticker: &str,
             _ => panic!("Unexpected coin type found. Expected MmCoinEnum::EthCoin"),
         },
     }
-}
-
-/// Fills the private key's public address with ETH and ERC20 tokens
-pub fn fill_eth_erc20_with_private_key(priv_key: Secp256k1Secret) {
-    let eth_conf = eth_dev_conf();
-    let req = json!({
-        "coin": "ETH",
-        "urls": [GETH_RPC_URL],
-        "swap_contract_address": swap_contract(),
-    });
-
-    let eth_coin = block_on(eth_coin_from_conf_and_request(
-        &MM_CTX,
-        "ETH",
-        &eth_conf,
-        &req,
-        CoinProtocol::ETH {
-            chain_id: GETH_DEV_CHAIN_ID,
-        },
-        PrivKeyBuildPolicy::IguanaPrivKey(priv_key),
-    ))
-    .unwrap();
-    let my_address = block_on(eth_coin.derivation_method().single_addr_or_err()).unwrap();
-
-    // 100 ETH
-    fill_eth(my_address, U256::from(10).pow(U256::from(20)));
-
-    let erc20_conf = erc20_dev_conf(&erc20_contract_checksum());
-    let req = json!({
-        "method": "enable",
-        "coin": "ERC20DEV",
-        "urls": [GETH_RPC_URL],
-        "swap_contract_address": swap_contract(),
-    });
-
-    let _erc20_coin = block_on(eth_coin_from_conf_and_request(
-        &MM_CTX,
-        "ERC20DEV",
-        &erc20_conf,
-        &req,
-        CoinProtocol::ERC20 {
-            platform: "ETH".to_string(),
-            contract_address: erc20_contract_checksum(),
-        },
-        PrivKeyBuildPolicy::IguanaPrivKey(priv_key),
-    ))
-    .unwrap();
-
-    // 100 tokens (it has 8 decimals)
-    fill_erc20(my_address, U256::from(10000000000u64));
 }
 
 fn send_and_refund_eth_maker_payment_impl(swap_txfee_policy: SwapGasFeePolicy) {
