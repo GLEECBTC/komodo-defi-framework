@@ -223,7 +223,8 @@ services:
     command: ["-network=/config/ci_network.json", "-debug"]
     volumes:
       - ${KDF_CONTAINER_RUNTIME_DIR:-./container-runtime}/sia-config:/config:ro
-      - sia-data:/data
+      # No persistent volume for /data - use ephemeral storage like testcontainers
+      # to ensure fresh state each run and avoid address indexer lag issues
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- --header='Authorization: Basic cGFzc3dvcmQ=' http://localhost:9980/api/state || exit 1"]
       interval: 5s
@@ -234,4 +235,3 @@ services:
 volumes:
   qtum-data:
   zombie-data:
-  sia-data:

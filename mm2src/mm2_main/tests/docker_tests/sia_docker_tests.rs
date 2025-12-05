@@ -60,7 +60,6 @@ fn test_sia_client_consensus_tip() {
 }
 
 // Test that mining to an address results in visible balance.
-// Mine enough blocks to ensure coins are visible (maturityDelay=10 in test network).
 #[test]
 fn test_sia_client_address_balance() {
     let conf = SiaHttpConf {
@@ -72,8 +71,7 @@ fn test_sia_client_address_balance() {
 
     let address =
         Address::from_str("591fcf237f8854b5653d1ac84ae4c107b37f148c3c7b413f292d48db0c25a8840be0653e411f").unwrap();
-    // Mine 15 blocks - with maturityDelay=10, the first 5 blocks' rewards will be mature
-    block_on(api_client.mine_blocks(15, &address)).unwrap();
+    block_on(api_client.mine_blocks(10, &address)).unwrap();
 
     let request = AddressBalanceRequest { address };
     let response = block_on(api_client.dispatcher(request)).unwrap();
