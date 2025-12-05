@@ -1,6 +1,6 @@
 use super::docker_tests_common::{
-    random_secp256k1_secret, ERC1155_TEST_ABI, ERC721_TEST_ABI, GETH_NONCE_LOCK, GETH_RPC_URL, GETH_WEB3, MM_CTX,
-    MM_CTX1,
+    random_secp256k1_secret, GETH_ERC1155_CONTRACT, GETH_ERC721_CONTRACT, GETH_MAKER_SWAP_V2, GETH_NFT_MAKER_SWAP_V2,
+    GETH_NONCE_LOCK, GETH_RPC_URL, GETH_TAKER_SWAP_V2, GETH_WEB3, MM_CTX, MM_CTX1,
 };
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use super::docker_tests_common::{
@@ -9,11 +9,12 @@ use super::docker_tests_common::{
 };
 use super::helpers::eth::{
     erc20_coin_with_random_privkey, erc20_contract, erc20_contract_checksum, eth_coin_with_random_privkey,
-    eth_coin_with_random_privkey_using_urls, fill_erc20, fill_eth, geth_account, geth_erc1155_contract,
-    geth_erc721_contract, geth_nft_maker_swap_v2, maker_swap_v2, swap_contract, taker_swap_v2, GETH_DEV_CHAIN_ID,
+    eth_coin_with_random_privkey_using_urls, fill_erc20, fill_eth, geth_account, swap_contract, GETH_DEV_CHAIN_ID,
 };
 use crate::common::Future01CompatExt;
 use bitcrypto::{dhash160, sha256};
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
+use coins::eth::checksum_address;
 use coins::eth::gas_limit::ETH_MAX_TRADE_GAS;
 use coins::eth::v2_activation::{eth_coin_from_conf_and_request_v2, EthActivationV2Request, EthNode};
 use coins::eth::{
@@ -72,8 +73,36 @@ const SEPOLIA_TAKER_PRIV: &str = "e0be82dca60ff7e4c6d6db339ac9e1ae249af081dba211
 const NFT_ETH: &str = "NFT_ETH";
 const ETH: &str = "ETH";
 
+/// ERC721_TEST_TOKEN has additional mint function
+/// https://github.com/KomodoPlatform/etomic-swap/blob/public-mint-nft-functions/contracts/Erc721Token.sol (see public-mint-nft-functions branch)
+const ERC721_TEST_ABI: &str = include_str!("../../../mm2_test_helpers/dummy_files/erc721_test_abi.json");
+/// ERC1155_TEST_TOKEN has additional mint function
+/// https://github.com/KomodoPlatform/etomic-swap/blob/public-mint-nft-functions/contracts/Erc1155Token.sol (see public-mint-nft-functions branch)
+const ERC1155_TEST_ABI: &str = include_str!("../../../mm2_test_helpers/dummy_files/erc1155_test_abi.json");
+
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 const ERC20: &str = "ERC20DEV";
+
+// GETH-specific address getters (only used by eth_docker_tests)
+fn maker_swap_v2() -> Address {
+    unsafe { GETH_MAKER_SWAP_V2 }
+}
+
+fn taker_swap_v2() -> Address {
+    unsafe { GETH_TAKER_SWAP_V2 }
+}
+
+fn geth_nft_maker_swap_v2() -> Address {
+    unsafe { GETH_NFT_MAKER_SWAP_V2 }
+}
+
+fn geth_erc721_contract() -> Address {
+    unsafe { GETH_ERC721_CONTRACT }
+}
+
+fn geth_erc1155_contract() -> Address {
+    unsafe { GETH_ERC1155_CONTRACT }
+}
 
 // Sepolia-specific helpers (not shared)
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]

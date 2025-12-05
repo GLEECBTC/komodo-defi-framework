@@ -143,13 +143,6 @@ pub const IBC_RELAYER_IMAGE_WITH_TAG: &str = "docker.io/komodoofficial/ibc-relay
 
 pub const QTUM_ADDRESS_LABEL: &str = "MM2_ADDRESS_LABEL";
 
-/// ERC721_TEST_TOKEN has additional mint function
-/// https://github.com/KomodoPlatform/etomic-swap/blob/public-mint-nft-functions/contracts/Erc721Token.sol (see public-mint-nft-functions branch)
-pub const ERC721_TEST_ABI: &str = include_str!("../../../mm2_test_helpers/dummy_files/erc721_test_abi.json");
-/// ERC1155_TEST_TOKEN has additional mint function
-/// https://github.com/KomodoPlatform/etomic-swap/blob/public-mint-nft-functions/contracts/Erc1155Token.sol (see public-mint-nft-functions branch)
-pub const ERC1155_TEST_ABI: &str = include_str!("../../../mm2_test_helpers/dummy_files/erc1155_test_abi.json");
-
 /// Ticker of MYCOIN dockerized blockchain.
 pub const MYCOIN: &str = "MYCOIN";
 /// Ticker of MYCOIN1 dockerized blockchain.

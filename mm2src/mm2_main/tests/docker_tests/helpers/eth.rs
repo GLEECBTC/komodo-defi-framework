@@ -5,8 +5,7 @@
 //! and provide safe, convenient access to test infrastructure.
 
 use super::super::docker_tests_common::{
-    random_secp256k1_secret, GETH_ACCOUNT, GETH_ERC1155_CONTRACT, GETH_ERC20_CONTRACT, GETH_ERC721_CONTRACT,
-    GETH_MAKER_SWAP_V2, GETH_NFT_MAKER_SWAP_V2, GETH_NONCE_LOCK, GETH_RPC_URL, GETH_SWAP_CONTRACT, GETH_TAKER_SWAP_V2,
+    random_secp256k1_secret, GETH_ACCOUNT, GETH_ERC20_CONTRACT, GETH_NONCE_LOCK, GETH_RPC_URL, GETH_SWAP_CONTRACT,
     GETH_WATCHERS_SWAP_CONTRACT, GETH_WEB3, MM_CTX,
 };
 use coins::eth::{checksum_address, eth_coin_from_conf_and_request, EthCoin, ERC20_ABI};
@@ -44,27 +43,6 @@ pub fn swap_contract() -> Address {
 
 /// # Safety
 ///
-/// GETH_MAKER_SWAP_V2 is set once during initialization before tests start
-pub fn maker_swap_v2() -> Address {
-    unsafe { GETH_MAKER_SWAP_V2 }
-}
-
-/// # Safety
-///
-/// GETH_TAKER_SWAP_V2 is set once during initialization before tests start
-pub fn taker_swap_v2() -> Address {
-    unsafe { GETH_TAKER_SWAP_V2 }
-}
-
-/// # Safety
-///
-/// GETH_NFT_MAKER_SWAP_V2 is set once during initialization before tests start
-pub fn geth_nft_maker_swap_v2() -> Address {
-    unsafe { GETH_NFT_MAKER_SWAP_V2 }
-}
-
-/// # Safety
-///
 /// GETH_WATCHERS_SWAP_CONTRACT is set once during initialization before tests start
 pub fn watchers_swap_contract() -> Address {
     unsafe { GETH_WATCHERS_SWAP_CONTRACT }
@@ -75,20 +53,6 @@ pub fn watchers_swap_contract() -> Address {
 /// GETH_ERC20_CONTRACT is set once during initialization before tests start
 pub fn erc20_contract() -> Address {
     unsafe { GETH_ERC20_CONTRACT }
-}
-
-/// # Safety
-///
-/// GETH_ERC721_CONTRACT is set once during initialization before tests start
-pub fn geth_erc721_contract() -> Address {
-    unsafe { GETH_ERC721_CONTRACT }
-}
-
-/// # Safety
-///
-/// GETH_ERC1155_CONTRACT is set once during initialization before tests start
-pub fn geth_erc1155_contract() -> Address {
-    unsafe { GETH_ERC1155_CONTRACT }
 }
 
 /// Return ERC20 dev token contract address in checksum format
