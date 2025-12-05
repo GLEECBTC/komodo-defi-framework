@@ -233,6 +233,8 @@ Update relevant AGENTS.md files when changing module structure, key types, patte
 | Large refactor done in one massive commit | Break into small, self-contained commits as you work |
 | Changed public API but didn't update AGENTS.md | Update documentation alongside code changes |
 | Compared against wrong branch (e.g., deprecated `mm2.1`) | Use `git merge-base HEAD origin/dev origin/staging origin/main` to find the common ancestor, or ask the user which branch the feature is based on. Branch hierarchy: `main` ← `staging` ← `dev` ← feature branches |
+| Forgot to run `cargo fmt` before committing | Always run `cargo fmt` before committing. CI will fail on unformatted code |
+| Forgot to run clippy before committing | Run clippy on changed crates before committing. For speed, target only modified crate(s): `cargo clippy -p <crate>`. If code uses feature flags, include relevant features. If WASM-only code changed, also run: `cargo clippy -p <crate> --target wasm32-unknown-unknown` |
 
 ## Documentation
 
