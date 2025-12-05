@@ -315,7 +315,11 @@ pub async fn wait_for_dsia_node_ready() {
 
     let client = init_sia_client().await.unwrap();
     // Mine 155 blocks to begin because coinbase maturity is 150
+    log!("Mining 155 blocks to Charlie's address...");
     client.mine_blocks(155, &CHARLIE_SIA_ADDRESS).await.unwrap();
+    // Verify blocks were mined
+    let height = client.current_height().await.unwrap();
+    log!("Mining complete. Current height: {}", height);
 
     // Spawn a loop that will keep mining blocks every 10 seconds to advance the chain
     // and get the swap tests running.
