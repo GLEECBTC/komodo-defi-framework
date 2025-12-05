@@ -59,8 +59,8 @@ fn test_sia_client_consensus_tip() {
     let _response = block_on(api_client.dispatcher(ConsensusTipRequest)).unwrap();
 }
 
-// This test likely needs to be removed because mine_blocks has possibility of interfering with other async tests
-// related to block height
+// Test that mining to an address results in visible balance.
+// Mine enough blocks to ensure coins are visible (maturityDelay=10 in test network).
 #[test]
 fn test_sia_client_address_balance() {
     let conf = SiaHttpConf {
@@ -72,14 +72,13 @@ fn test_sia_client_address_balance() {
 
     let address =
         Address::from_str("591fcf237f8854b5653d1ac84ae4c107b37f148c3c7b413f292d48db0c25a8840be0653e411f").unwrap();
-    block_on(api_client.mine_blocks(10, &address)).unwrap();
+    // Mine 15 blocks - with maturityDelay=10, the first 5 blocks' rewards will be mature
+    block_on(api_client.mine_blocks(15, &address)).unwrap();
 
     let request = AddressBalanceRequest { address };
     let response = block_on(api_client.dispatcher(request)).unwrap();
 
-    // It's hard to predict how much was mined to this address while other tests are also mining in the same network.
-    // Looks like the halving happens so quickly and the sum of mined coins change between different test runs.
-    // Just make sure we at least mined something.
+    // Check that we have some coins (either mature or immature)
     assert!(response.immature_siacoins + response.siacoins > Currency(0));
 }
 
