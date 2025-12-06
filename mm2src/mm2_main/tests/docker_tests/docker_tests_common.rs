@@ -148,6 +148,23 @@ pub const MYCOIN: &str = "MYCOIN";
 /// Ticker of MYCOIN1 dockerized blockchain.
 pub const MYCOIN1: &str = "MYCOIN1";
 
+// Docker-compose service names (see `.docker/test-nodes.yml`).
+// Use service names rather than container names to enable label-based lookup,
+// making the code resilient to compose project name changes.
+
+/// docker-compose service name for Qtum/QRC20 node
+pub const KDF_QTUM_SERVICE: &str = "qtum";
+/// docker-compose service name for primary UTXO node MYCOIN
+pub const KDF_MYCOIN_SERVICE: &str = "mycoin";
+/// docker-compose service name for secondary UTXO node MYCOIN1
+pub const KDF_MYCOIN1_SERVICE: &str = "mycoin1";
+/// docker-compose service name for BCH/SLP node FORSLP
+pub const KDF_FORSLP_SERVICE: &str = "forslp";
+/// docker-compose service name for Zcash-based Zombie node
+pub const KDF_ZOMBIE_SERVICE: &str = "zombie";
+/// docker-compose service name for IBC relayer node
+pub const KDF_IBC_RELAYER_SERVICE: &str = "ibc-relayer";
+
 pub const ERC20_TOKEN_BYTES: &str = include_str!("../../../mm2_test_helpers/contract_bytes/erc20_token_bytes");
 pub const SWAP_CONTRACT_BYTES: &str = include_str!("../../../mm2_test_helpers/contract_bytes/swap_contract_bytes");
 pub const WATCHERS_SWAP_CONTRACT_BYTES: &str =

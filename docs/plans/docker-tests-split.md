@@ -191,10 +191,12 @@ Add semantic checks beyond simple port checks:
 
 **File:** `docker_tests_common.rs` (or new `helpers/env.rs`)
 
-- [ ] Lift compose container names into constants:
-   - `KDF_QTUM_NAME`, `KDF_MYCOIN_NAME`, `KDF_MYCOIN1_NAME`, `KDF_FORSLP_NAME`, `KDF_ZOMBIE_NAME`, `KDF_IBC_RELAYER_NAME`
-- [ ] Use them in `setup_qtum_conf_for_compose()`, `setup_utxo_conf_for_compose()`, `prepare_ibc_channels_compose()`, `wait_until_relayer_container_is_ready_compose()`.
-- [ ] Ensure setup functions do not break if the compose project name changes.
+- [x] Lift compose container names into constants:
+   - `KDF_QTUM_SERVICE`, `KDF_MYCOIN_SERVICE`, `KDF_MYCOIN1_SERVICE`, `KDF_FORSLP_SERVICE`, `KDF_ZOMBIE_SERVICE`, `KDF_IBC_RELAYER_SERVICE`
+   - Note: Used `_SERVICE` suffix instead of `_NAME` for clarity (these are service names, not container names)
+- [x] Use them in `setup_qtum_conf_for_compose()`, `setup_utxo_conf_for_compose()`, `prepare_ibc_channels_compose()`, `wait_until_relayer_container_is_ready_compose()`.
+- [x] Ensure setup functions do not break if the compose project name changes.
+   - Added `resolve_compose_container_id()` helper that uses label-based lookup (`com.docker.compose.service`) with fallback to `kdf-{service}` name lookup for compatibility.
 
 #### 4.1.7 ETH helpers adoption & cleanup
 

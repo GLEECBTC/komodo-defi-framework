@@ -258,8 +258,8 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
                         containers.push(utxo_node1);
                     } else if mode == DockerTestMode::ComposeInit {
                         // Copy configs from containers before initializing
-                        setup_utxo_conf_for_compose("MYCOIN", "kdf-mycoin");
-                        setup_utxo_conf_for_compose("MYCOIN1", "kdf-mycoin1");
+                        setup_utxo_conf_for_compose("MYCOIN", KDF_MYCOIN_SERVICE);
+                        setup_utxo_conf_for_compose("MYCOIN1", KDF_MYCOIN1_SERVICE);
                         let utxo_ops = UtxoAssetDockerOps::from_ticker("MYCOIN");
                         let utxo_ops1 = UtxoAssetDockerOps::from_ticker("MYCOIN1");
                         utxo_ops.wait_ready(4);
@@ -312,7 +312,7 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
                         containers.push(for_slp_node);
                     } else if mode == DockerTestMode::ComposeInit {
                         // Copy config from container before initializing
-                        setup_utxo_conf_for_compose("FORSLP", "kdf-forslp");
+                        setup_utxo_conf_for_compose("FORSLP", KDF_FORSLP_SERVICE);
                         let for_slp_ops = BchDockerOps::from_ticker("FORSLP");
                         for_slp_ops.wait_ready(4);
                         for_slp_ops.initialize_slp();
@@ -364,7 +364,7 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
                         containers.push(zombie_node);
                     } else if mode == DockerTestMode::ComposeInit {
                         // Copy config from container before initializing
-                        setup_utxo_conf_for_compose("ZOMBIE", "kdf-zombie");
+                        setup_utxo_conf_for_compose("ZOMBIE", KDF_ZOMBIE_SERVICE);
                         let zombie_ops = ZCoinAssetDockerOps::new();
                         zombie_ops.wait_ready(4);
                     }
@@ -639,10 +639,12 @@ fn setup_qtum_conf_for_compose() {
     std::fs::create_dir_all(&conf_path).unwrap();
     conf_path.push("qtum.conf");
 
+    let container_id = resolve_compose_container_id(KDF_QTUM_SERVICE);
+
     // Copy config from the running compose container
     Command::new("docker")
         .arg("cp")
-        .arg("kdf-qtum:/data/node_0/qtum.conf")
+        .arg(format!("{}:/data/node_0/qtum.conf", container_id))
         .arg(&conf_path)
         .status()
         .expect("Failed to copy Qtum config from compose container");
@@ -658,16 +660,20 @@ fn setup_qtum_conf_for_compose() {
     unsafe { QTUM_CONF_PATH = Some(conf_path) };
 }
 
-/// Set up UTXO coin config for compose mode by copying config from the container
-fn setup_utxo_conf_for_compose(ticker: &str, container_name: &str) {
+/// Set up UTXO coin config for compose mode by copying config from the container.
+///
+/// `service_name` is the docker-compose service name (e.g., "mycoin"), not the container name.
+fn setup_utxo_conf_for_compose(ticker: &str, service_name: &str) {
     let mut conf_path = coins::utxo::coin_daemon_data_dir(ticker, true);
     std::fs::create_dir_all(&conf_path).unwrap();
     conf_path.push(format!("{ticker}.conf"));
 
+    let container_id = resolve_compose_container_id(service_name);
+
     // Copy config from the running compose container
     Command::new("docker")
         .arg("cp")
-        .arg(format!("{container_name}:/data/node_0/{ticker}.conf"))
+        .arg(format!("{container_id}:/data/node_0/{ticker}.conf"))
         .arg(&conf_path)
         .status()
         .expect("Failed to copy UTXO config from compose container");
@@ -692,29 +698,78 @@ fn get_runtime_dir() -> PathBuf {
     project_root.join(".docker/container-runtime")
 }
 
+/// Find the container ID for a docker-compose service, independent of project name.
+///
+/// Uses label-based lookup (`com.docker.compose.service=<service>`) which works
+/// regardless of project name or container_name settings.
+fn resolve_compose_container_id(service_name: &str) -> String {
+    // Primary: label-based lookup (project-name-agnostic)
+    let output = Command::new("docker")
+        .args([
+            "ps",
+            "-q",
+            "--filter",
+            &format!("label=com.docker.compose.service={}", service_name),
+            "--filter",
+            "status=running",
+        ])
+        .output()
+        .expect("failed to execute `docker ps`");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if let Some(container_id) = stdout.lines().next().map(str::trim).filter(|s| !s.is_empty()) {
+        return container_id.to_string();
+    }
+
+    // Fallback: name-based lookup using kdf- prefix (for compatibility)
+    let fallback_name = format!("kdf-{}", service_name);
+    let output = Command::new("docker")
+        .args(["ps", "-q", "--filter", &format!("name={}", fallback_name)])
+        .output()
+        .expect("failed to execute `docker ps` (name filter)");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if let Some(container_id) = stdout.lines().next().map(str::trim).filter(|s| !s.is_empty()) {
+        return container_id.to_string();
+    }
+
+    panic!(
+        "No running container found for docker-compose service '{}'. \
+         Make sure `.docker/test-nodes.yml` is up and containers are started.",
+        service_name
+    );
+}
+
 /// Prepare IBC channels for compose mode
 fn prepare_ibc_channels_compose() {
-    let exec = |args: &[&str]| {
+    let container_id = resolve_compose_container_id(KDF_IBC_RELAYER_SERVICE);
+
+    let exec = |container: &str, args: &[&str]| {
         Command::new("docker")
-            .args(["exec", "kdf-ibc-relayer"])
+            .args(["exec", container])
             .args(args)
             .output()
             .unwrap();
     };
 
-    exec(&["rly", "transact", "clients", "nucleus-atom", "--override"]);
+    exec(
+        &container_id,
+        &["rly", "transact", "clients", "nucleus-atom", "--override"],
+    );
     thread::sleep(Duration::from_secs(5));
-    exec(&["rly", "transact", "link", "nucleus-atom"]);
+    exec(&container_id, &["rly", "transact", "link", "nucleus-atom"]);
 }
 
 /// Wait for IBC relayer to be ready in compose mode
 fn wait_until_relayer_container_is_ready_compose() {
     const Q_RESULT: &str = "0: nucleus-atom         -> chns(✔) clnts(✔) conn(✔) (nucleus-testnet<>cosmoshub-testnet)";
 
+    let container_id = resolve_compose_container_id(KDF_IBC_RELAYER_SERVICE);
+
     let mut attempts = 0;
     loop {
         let mut docker = Command::new("docker");
-        docker.arg("exec").arg("kdf-ibc-relayer").args(["rly", "paths", "list"]);
+        docker.arg("exec").arg(&container_id).args(["rly", "paths", "list"]);
 
         log!("Running <<{docker:?}>>.");
 
