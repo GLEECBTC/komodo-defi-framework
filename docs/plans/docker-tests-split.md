@@ -148,11 +148,11 @@ Each phase should be implemented in one or more small PRs.
 
 **Note:** UTXO already uses stable paths via `coin_daemon_data_dir()`. Only Qtum uses `temp_dir()`.
 
-- [ ] Replace `temp_dir()` in `setup_qtum_conf_for_compose` with a stable, repo-relative path. Two safe choices:
+- [x] Replace `temp_dir()` in `setup_qtum_conf_for_compose` with a stable, repo-relative path. Two safe choices:
    - `coin_daemon_data_dir("QTUM", true)/qtum.conf` (consistent with UTXO), or
    - `project_root/.docker/container-runtime/qtum/qtum.conf`
-- [ ] Store the chosen `qtum.conf` path into `DockerEnvMetadata.qtum.conf_path` when initializing.
-- [ ] In Reuse mode, assert the conf path exists:
+- [x] Store the chosen `qtum.conf` path into `DockerEnvMetadata.qtum.conf_path` when initializing.
+- [x] In Reuse mode, assert the conf path exists:
    - If missing → "Qtum config missing at X; metadata is stale. Re-run docker env init."
 
 #### 4.1.3 Single source of truth for metadata file path (non-breaking)

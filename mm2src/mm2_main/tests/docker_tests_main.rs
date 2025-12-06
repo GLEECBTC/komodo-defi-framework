@@ -476,6 +476,12 @@ fn validate_nodes_health(metadata: &DockerEnvMetadata) -> Result<(), String> {
             if TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_secs(2)).is_err() {
                 return Err(format!("QTUM node not reachable at {}", addr));
             }
+            if !qtum.conf_path.exists() {
+                return Err(format!(
+                    "Qtum config missing at {}; metadata is stale. Re-run docker env init.",
+                    qtum.conf_path.display()
+                ));
+            }
             log!("  QTUM node OK at port {}", qtum.port);
         }
     }
@@ -591,17 +597,14 @@ fn load_metadata_into_globals(metadata: &DockerEnvMetadata) {
 
 /// Set up QTUM_CONF_PATH for compose mode by copying config from the container
 fn setup_qtum_conf_for_compose() {
-    use common::temp_dir;
-
-    let name = "qtum";
-    let mut conf_path = temp_dir().join("qtum-regtest");
+    let mut conf_path = coins::utxo::coin_daemon_data_dir("qtum", false);
     std::fs::create_dir_all(&conf_path).unwrap();
-    conf_path.push(format!("{name}.conf"));
+    conf_path.push("qtum.conf");
 
     // Copy config from the running compose container
     Command::new("docker")
         .arg("cp")
-        .arg(format!("kdf-qtum:/data/node_0/{}.conf", name))
+        .arg("kdf-qtum:/data/node_0/qtum.conf")
         .arg(&conf_path)
         .status()
         .expect("Failed to copy Qtum config from compose container");
