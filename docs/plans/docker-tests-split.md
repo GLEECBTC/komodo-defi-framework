@@ -159,10 +159,10 @@ Each phase should be implemented in one or more small PRs.
 
 **File:** `mm2src/mm2_main/tests/docker_tests/docker_env_metadata.rs`
 
-- [ ] Keep `get_metadata_file_path()` returning `Option<PathBuf>` from `KDF_DOCKER_ENV_STATE_FILE`.
-- [ ] Add `fn get_or_default_metadata_path() -> PathBuf` that returns the env path if set, else `default_path()`.
-- [ ] Use `get_or_default_metadata_path()` when saving the metadata (ComposeInit).
-- [ ] Keep `ReuseMetadata` gated by `KDF_DOCKER_ENV_STATE_FILE` for now (no behavior change, but the writer side is centralized).
+- [x] Keep `get_metadata_file_path()` returning `Option<PathBuf>` from `KDF_DOCKER_ENV_STATE_FILE`.
+- [x] Add `fn get_or_default_metadata_path() -> PathBuf` that returns the env path if set, else `default_path()`.
+- [x] Use `get_or_default_metadata_path()` when saving the metadata (ComposeInit).
+- [x] Keep `ReuseMetadata` gated by `KDF_DOCKER_ENV_STATE_FILE` for now (no behavior change, but the writer side is centralized).
 
 #### 4.1.4 Semantic health checks (minimal slice)
 

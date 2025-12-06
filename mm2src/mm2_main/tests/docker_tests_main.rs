@@ -33,8 +33,9 @@ use web3::{transports::Http, Web3};
 mod docker_tests;
 mod sia_tests;
 use docker_tests::docker_env_metadata::{
-    get_metadata_file_path, is_docker_compose_mode, should_load_metadata, CosmosNodeState, DockerEnvMetadata,
-    GethNodeState, QtumNodeState, SiaNodeState, SlpNodeState, UtxoNodeState, ZombieNodeState,
+    get_metadata_file_path, get_or_default_metadata_path, is_docker_compose_mode, should_load_metadata,
+    CosmosNodeState, DockerEnvMetadata, GethNodeState, QtumNodeState, SiaNodeState, SlpNodeState, UtxoNodeState,
+    ZombieNodeState,
 };
 use docker_tests::docker_tests_common::*;
 use docker_tests::qrc20_tests::{qtum_docker_node, QtumDockerOps, QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG};
@@ -416,7 +417,7 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
 
                 // Save metadata in compose mode for future reuse
                 if mode == DockerTestMode::ComposeInit {
-                    let metadata_path = DockerEnvMetadata::default_path();
+                    let metadata_path = get_or_default_metadata_path();
                     if let Some(parent) = metadata_path.parent() {
                         std::fs::create_dir_all(parent).ok();
                     }

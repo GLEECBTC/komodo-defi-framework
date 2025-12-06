@@ -324,6 +324,15 @@ pub fn get_metadata_file_path() -> Option<PathBuf> {
     std::env::var(ENV_DOCKER_STATE_FILE).ok().map(PathBuf::from)
 }
 
+/// Get the metadata file path, using env var if set, otherwise the default path.
+///
+/// This is the single source of truth for where metadata should be saved.
+/// - If `KDF_DOCKER_ENV_STATE_FILE` is set, returns that path
+/// - Otherwise, returns the default path (`.docker/container-runtime/docker_env_state.json`)
+pub fn get_or_default_metadata_path() -> PathBuf {
+    get_metadata_file_path().unwrap_or_else(DockerEnvMetadata::default_path)
+}
+
 /// Check if we should load metadata and skip initialization
 pub fn should_load_metadata() -> bool {
     get_metadata_file_path().is_some()
