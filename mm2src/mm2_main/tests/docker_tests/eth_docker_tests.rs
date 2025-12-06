@@ -9,7 +9,8 @@ use super::docker_tests_common::{
 };
 use super::helpers::eth::{
     erc20_coin_with_random_privkey, erc20_contract, erc20_contract_checksum, eth_coin_with_random_privkey,
-    eth_coin_with_random_privkey_using_urls, fill_erc20, fill_eth, geth_account, swap_contract, GETH_DEV_CHAIN_ID,
+    eth_coin_with_random_privkey_using_urls, fill_erc20, fill_eth, geth_account, swap_contract, swap_contract_checksum,
+    GETH_DEV_CHAIN_ID,
 };
 use crate::common::Future01CompatExt;
 use bitcrypto::{dhash160, sha256};
@@ -2413,7 +2414,7 @@ fn test_eth_erc20_hd() {
     const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
 
     let coins = json!([eth_dev_conf(), erc20_dev_conf(&erc20_contract_checksum())]);
-    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let swap_contract = swap_contract_checksum();
 
     // Withdraw from HD account 0, change address 0, index 0
     let path_to_address = HDAccountAddressId::default();
@@ -2549,7 +2550,7 @@ fn test_enable_custom_erc20() {
     const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
 
     let coins = json!([eth_dev_conf()]);
-    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let swap_contract = swap_contract_checksum();
 
     let path_to_address = HDAccountAddressId::default();
     let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
@@ -2633,7 +2634,7 @@ fn test_enable_custom_erc20_with_duplicate_contract_in_config() {
 
     let erc20_dev_conf = erc20_dev_conf(&erc20_contract_checksum());
     let coins = json!([eth_dev_conf(), erc20_dev_conf]);
-    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let swap_contract = swap_contract_checksum();
 
     let path_to_address = HDAccountAddressId::default();
     let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);

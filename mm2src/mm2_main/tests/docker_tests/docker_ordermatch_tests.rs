@@ -1,5 +1,5 @@
 use crate::docker_tests::docker_tests_common::{generate_utxo_coin_with_privkey, GETH_RPC_URL};
-use crate::docker_tests::helpers::eth::{fill_eth_erc20_with_private_key, swap_contract};
+use crate::docker_tests::helpers::eth::{fill_eth_erc20_with_private_key, swap_contract_checksum};
 
 use crate::integration_tests_common::enable_native;
 use crate::{generate_utxo_coin_with_random_privkey, random_secp256k1_secret};
@@ -767,7 +767,7 @@ fn get_bob_alice() -> (MarketMakerIt, MarketMakerIt) {
     log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[], None)));
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[], None)));
 
-    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let swap_contract = swap_contract_checksum();
     dbg!(block_on(enable_eth_coin(
         &mm_bob,
         "ETH",
@@ -1098,7 +1098,7 @@ fn test_best_orders_filter_response() {
 
     log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[], None)));
     log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[], None)));
-    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let swap_contract = swap_contract_checksum();
     dbg!(block_on(enable_eth_coin(
         &mm_bob,
         "ETH",

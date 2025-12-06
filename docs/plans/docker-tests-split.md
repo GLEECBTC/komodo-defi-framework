@@ -200,13 +200,19 @@ Add semantic checks beyond simple port checks:
 
 #### 4.1.7 ETH helpers adoption & cleanup
 
-- [ ] Grep tests for:
+- [x] Grep tests for:
    - Raw hex contract addresses
    - Inlined Geth chain IDs or ABIs
-- [ ] Replace with calls into `helpers::eth`:
+- [x] Replace with calls into `helpers::eth`:
    - `swap_contract()`, `watchers_swap_contract()`, `erc20_contract()`, `erc20_contract_checksum()`, etc.
-- [ ] Verify watchers tests consistently use `watchers_swap_contract()` (or equivalent dedicated helper).
-- [ ] Delete any duplicated ETH helper logic from other modules.
+   - Added `swap_contract_checksum()` and `watchers_swap_contract_checksum()` helpers for common checksum formatting pattern
+   - Replaced 23 occurrences of `format!("0x{}", hex::encode(swap_contract()))` pattern with `swap_contract_checksum()`
+   - Added test address constants in `docker_tests_inner.rs`: `TEST_ARBITRARY_SWAP_ADDR_1`, `TEST_ARBITRARY_SWAP_ADDR_2`, `TEST_WITHDRAW_DEST_ADDR`, `TEST_WITHDRAW_DEST_ADDR_INVALID_CHECKSUM`
+- [x] Verify watchers tests consistently use `watchers_swap_contract()` (or equivalent dedicated helper).
+   - Updated `swap_watcher_tests.rs` to use `watchers_swap_contract_checksum()` helper
+   - Removed unused `checksum_address` import
+- [x] Delete any duplicated ETH helper logic from other modules.
+   - No duplicated logic found; all ETH helper usage is now centralized
 
 ---
 

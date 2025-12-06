@@ -60,6 +60,16 @@ pub fn erc20_contract_checksum() -> String {
     checksum_address(&format!("{:02x}", erc20_contract()))
 }
 
+/// Return swap contract address in checksum format (with 0x prefix)
+pub fn swap_contract_checksum() -> String {
+    checksum_address(&format!("{:02x}", swap_contract()))
+}
+
+/// Return watchers swap contract address in checksum format (with 0x prefix)
+pub fn watchers_swap_contract_checksum() -> String {
+    checksum_address(&format!("{:02x}", watchers_swap_contract()))
+}
+
 // =============================================================================
 // Funding utilities - fill test wallets with ETH and tokens
 // =============================================================================

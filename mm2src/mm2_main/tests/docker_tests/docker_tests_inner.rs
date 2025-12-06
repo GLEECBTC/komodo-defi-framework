@@ -2,7 +2,7 @@ use crate::docker_tests::docker_tests_common::{
     generate_utxo_coin_with_privkey, trade_base_rel, GETH_RPC_URL, MM_CTX, SET_BURN_PUBKEY_TO_ALICE,
 };
 use crate::docker_tests::helpers::eth::{
-    erc20_coin_with_random_privkey, erc20_contract_checksum, fill_eth_erc20_with_private_key, swap_contract,
+    erc20_coin_with_random_privkey, erc20_contract_checksum, fill_eth_erc20_with_private_key, swap_contract_checksum,
 };
 use crate::integration_tests_common::*;
 use crate::{
@@ -39,6 +39,19 @@ use std::iter::FromIterator;
 use std::str::FromStr;
 use std::thread;
 use std::time::Duration;
+
+// =============================================================================
+// Test address constants
+// =============================================================================
+
+/// Arbitrary address used for swap contract negotiation tests (maker side)
+const TEST_ARBITRARY_SWAP_ADDR_1: &str = "0x6c2858f6afac835c43ffda248aea167e1a58436c";
+/// Arbitrary address used for swap contract negotiation tests (taker side)
+const TEST_ARBITRARY_SWAP_ADDR_2: &str = "0x24abe4c71fc658c01313b6552cd40cd808b3ea80";
+/// Valid checksummed ETH address used as withdraw destination in tests
+const TEST_WITHDRAW_DEST_ADDR: &str = "0x4b2d0d6c2c785217457B69B922A2A9cEA98f71E9";
+/// Invalid checksum variant of the withdraw destination (for checksum validation tests)
+const TEST_WITHDRAW_DEST_ADDR_INVALID_CHECKSUM: &str = "0x4b2d0d6c2c785217457b69b922a2A9cEA98f71E9";
 
 #[test]
 fn test_search_for_swap_tx_spend_native_was_refunded_taker() {
@@ -3792,7 +3805,7 @@ fn test_enable_eth_coin_with_token_then_disable() {
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!("log path: {}", mm.log_path.display());
 
-    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let swap_contract = swap_contract_checksum();
     block_on(enable_eth_with_tokens(
         &mm,
         "ETH",
@@ -3853,7 +3866,7 @@ fn test_platform_coin_mismatch() {
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!("log path: {}", mm.log_path.display());
 
-    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let swap_contract = swap_contract_checksum();
     let erc20_tokens_requests = vec![json!({ "ticker": "ERC20DEV" })];
     let nodes = vec![json!({ "url": GETH_RPC_URL })];
 
@@ -3897,7 +3910,7 @@ fn test_enable_eth_coin_with_token_without_balance() {
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!("log path: {}", mm.log_path.display());
 
-    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let swap_contract = swap_contract_checksum();
     let enable_eth_with_tokens = block_on(enable_eth_with_tokens(
         &mm,
         "ETH",
@@ -3955,14 +3968,14 @@ fn test_eth_swap_contract_addr_negotiation_same_fallback() {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
 
-    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let swap_contract = swap_contract_checksum();
 
     dbg!(block_on(enable_eth_coin(
         &mm_bob,
         "ETH",
         &[GETH_RPC_URL],
         // using arbitrary address
-        "0x6c2858f6afac835c43ffda248aea167e1a58436c",
+        TEST_ARBITRARY_SWAP_ADDR_1,
         Some(&swap_contract),
         false
     )));
@@ -3972,7 +3985,7 @@ fn test_eth_swap_contract_addr_negotiation_same_fallback() {
         "ERC20DEV",
         &[GETH_RPC_URL],
         // using arbitrary address
-        "0x6c2858f6afac835c43ffda248aea167e1a58436c",
+        TEST_ARBITRARY_SWAP_ADDR_1,
         Some(&swap_contract),
         false
     )));
@@ -3982,7 +3995,7 @@ fn test_eth_swap_contract_addr_negotiation_same_fallback() {
         "ETH",
         &[GETH_RPC_URL],
         // using arbitrary address
-        "0x24abe4c71fc658c01313b6552cd40cd808b3ea80",
+        TEST_ARBITRARY_SWAP_ADDR_2,
         Some(&swap_contract),
         false
     )));
@@ -3992,7 +4005,7 @@ fn test_eth_swap_contract_addr_negotiation_same_fallback() {
         "ERC20DEV",
         &[GETH_RPC_URL],
         // using arbitrary address
-        "0x24abe4c71fc658c01313b6552cd40cd808b3ea80",
+        TEST_ARBITRARY_SWAP_ADDR_2,
         Some(&swap_contract),
         false
     )));
@@ -4048,14 +4061,14 @@ fn test_eth_swap_negotiation_fails_maker_no_fallback() {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
 
-    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let swap_contract = swap_contract_checksum();
 
     dbg!(block_on(enable_eth_coin(
         &mm_bob,
         "ETH",
         &[GETH_RPC_URL],
         // using arbitrary address
-        "0x6c2858f6afac835c43ffda248aea167e1a58436c",
+        TEST_ARBITRARY_SWAP_ADDR_1,
         None,
         false
     )));
@@ -4065,7 +4078,7 @@ fn test_eth_swap_negotiation_fails_maker_no_fallback() {
         "ERC20DEV",
         &[GETH_RPC_URL],
         // using arbitrary address
-        "0x6c2858f6afac835c43ffda248aea167e1a58436c",
+        TEST_ARBITRARY_SWAP_ADDR_1,
         None,
         false
     )));
@@ -4075,7 +4088,7 @@ fn test_eth_swap_negotiation_fails_maker_no_fallback() {
         "ETH",
         &[GETH_RPC_URL],
         // using arbitrary address
-        "0x24abe4c71fc658c01313b6552cd40cd808b3ea80",
+        TEST_ARBITRARY_SWAP_ADDR_2,
         Some(&swap_contract),
         false
     )));
@@ -4085,7 +4098,7 @@ fn test_eth_swap_negotiation_fails_maker_no_fallback() {
         "ERC20DEV",
         &[GETH_RPC_URL],
         // using arbitrary address
-        "0x24abe4c71fc658c01313b6552cd40cd808b3ea80",
+        TEST_ARBITRARY_SWAP_ADDR_2,
         Some(&swap_contract),
         false
     )));
@@ -4206,7 +4219,7 @@ fn test_withdraw_and_send_eth_erc20() {
     let (_mm_dump_log, _mm_dump_dashboard) = mm.mm_dump();
     log!("Alice log path: {}", mm.log_path.display());
 
-    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let swap_contract = swap_contract_checksum();
     let eth_enable = block_on(enable_eth_coin(
         &mm,
         "ETH",
@@ -4228,7 +4241,7 @@ fn test_withdraw_and_send_eth_erc20() {
         &mm,
         "ETH",
         None,
-        "0x4b2d0d6c2c785217457B69B922A2A9cEA98f71E9",
+        TEST_WITHDRAW_DEST_ADDR,
         eth_enable["address"].as_str().unwrap(),
         "-0.001",
         0.001,
@@ -4238,7 +4251,7 @@ fn test_withdraw_and_send_eth_erc20() {
         &mm,
         "ERC20DEV",
         None,
-        "0x4b2d0d6c2c785217457B69B922A2A9cEA98f71E9",
+        TEST_WITHDRAW_DEST_ADDR,
         erc20_enable["address"].as_str().unwrap(),
         "-0.001",
         0.001,
@@ -4251,7 +4264,7 @@ fn test_withdraw_and_send_eth_erc20() {
         "method": "withdraw",
         "params": {
             "coin": "ETH",
-            "to": "0x4b2d0d6c2c785217457b69b922a2A9cEA98f71E9",
+            "to": TEST_WITHDRAW_DEST_ADDR_INVALID_CHECKSUM,
             "amount": "0.001",
         },
         "id": 0,
@@ -4276,7 +4289,7 @@ fn test_withdraw_and_send_hd_eth_erc20() {
         panic!("Expected 'KeyPairPolicy::GlobalHDAccount'");
     };
 
-    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let swap_contract = swap_contract_checksum();
 
     // Withdraw from HD account 0, change address 0, index 1
     let mut path_to_address = HDAccountAddressId {
@@ -4333,7 +4346,7 @@ fn test_withdraw_and_send_hd_eth_erc20() {
         &mm_hd,
         "ETH",
         Some(path_to_address.clone()),
-        "0x4b2d0d6c2c785217457B69B922A2A9cEA98f71E9",
+        TEST_WITHDRAW_DEST_ADDR,
         &account.addresses[1].address,
         "-0.001",
         0.001,
@@ -4343,7 +4356,7 @@ fn test_withdraw_and_send_hd_eth_erc20() {
         &mm_hd,
         "ERC20DEV",
         Some(path_to_address.clone()),
-        "0x4b2d0d6c2c785217457B69B922A2A9cEA98f71E9",
+        TEST_WITHDRAW_DEST_ADDR,
         &account.addresses[1].address,
         "-0.001",
         0.001,
@@ -4359,7 +4372,7 @@ fn test_withdraw_and_send_hd_eth_erc20() {
         "params": {
             "coin": "ETH",
             "from": path_to_address,
-            "to": "0x4b2d0d6c2c785217457B69B922A2A9cEA98f71E9",
+            "to": TEST_WITHDRAW_DEST_ADDR,
             "amount": 0.001,
         },
         "id": 0,
@@ -4381,7 +4394,7 @@ fn test_withdraw_and_send_hd_eth_erc20() {
         "params": {
             "coin": "ETH",
             "from": path_to_address,
-            "to": "0x4b2d0d6c2c785217457B69B922A2A9cEA98f71E9",
+            "to": TEST_WITHDRAW_DEST_ADDR,
             "amount": 0.001,
         },
         "id": 0,
@@ -4466,7 +4479,7 @@ fn test_setprice_buy_sell_too_low_volume() {
     log!("{:?}", block_on(enable_native(&mm, "MYCOIN", &[], None)));
     log!("{:?}", block_on(enable_native(&mm, "MYCOIN1", &[], None)));
 
-    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let swap_contract = swap_contract_checksum();
     dbg!(block_on(enable_eth_coin(
         &mm,
         "ETH",
@@ -4617,7 +4630,7 @@ fn test_set_price_must_save_order_to_db() {
     log!("MM log path: {}", mm.log_path.display());
 
     // Enable coins
-    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let swap_contract = swap_contract_checksum();
     dbg!(block_on(enable_eth_coin(
         &mm,
         "ETH",
@@ -4779,7 +4792,7 @@ fn test_set_price_conf_settings() {
     log!("MM log path: {}", mm.log_path.display());
 
     // Enable coins
-    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let swap_contract = swap_contract_checksum();
     dbg!(block_on(enable_eth_coin(
         &mm,
         "ETH",
@@ -4852,7 +4865,7 @@ fn test_buy_conf_settings() {
     log!("MM log path: {}", mm.log_path.display());
 
     // Enable coins
-    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let swap_contract = swap_contract_checksum();
     dbg!(block_on(enable_eth_coin(
         &mm,
         "ETH",
@@ -4925,7 +4938,7 @@ fn test_sell_conf_settings() {
     log!("MM log path: {}", mm.log_path.display());
 
     // Enable coins
-    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let swap_contract = swap_contract_checksum();
     dbg!(block_on(enable_eth_coin(
         &mm,
         "ETH",
@@ -5067,7 +5080,7 @@ fn test_my_orders_after_matched() {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
 
-    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let swap_contract = swap_contract_checksum();
     dbg!(block_on(enable_eth_coin(
         &mm_bob,
         "ETH",
@@ -5165,7 +5178,7 @@ fn test_update_maker_order_after_matched() {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
 
-    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let swap_contract = swap_contract_checksum();
     dbg!(block_on(enable_eth_coin(
         &mm_bob,
         "ETH",
@@ -5534,7 +5547,7 @@ fn request_and_check_orderbook_depth(mm_alice: &MarketMakerIt) {
 fn test_orderbook_depth() {
     let bob_priv_key = random_secp256k1_secret();
     let alice_priv_key = random_secp256k1_secret();
-    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let swap_contract = swap_contract_checksum();
 
     // Fill bob's addresses with coins.
     generate_utxo_coin_with_privkey("MYCOIN", 1000.into(), bob_priv_key);
@@ -5654,7 +5667,7 @@ fn test_approve_erc20() {
     let (_mm_dump_log, _mm_dump_dashboard) = mm.mm_dump();
     log!("Node log path: {}", mm.log_path.display());
 
-    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let swap_contract = swap_contract_checksum();
     let _eth_enable = block_on(enable_eth_coin(
         &mm,
         "ETH",

@@ -1,11 +1,12 @@
 use crate::docker_tests::docker_tests_common::GETH_RPC_URL;
 use crate::docker_tests::helpers::eth::{
-    erc20_coin_with_random_privkey, erc20_contract_checksum, eth_coin_with_random_privkey, watchers_swap_contract,
+    erc20_coin_with_random_privkey, erc20_contract_checksum, eth_coin_with_random_privkey,
+    watchers_swap_contract_checksum,
 };
 use crate::integration_tests_common::*;
 use crate::{generate_utxo_coin_with_privkey, generate_utxo_coin_with_random_privkey, random_secp256k1_secret};
 use coins::coin_errors::ValidatePaymentError;
-use coins::eth::{checksum_address, EthCoin};
+use coins::eth::EthCoin;
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::utxo::{dhash160, UtxoCommonOps};
 use coins::{
@@ -73,8 +74,8 @@ fn enable_eth(mm_node: &MarketMakerIt, coin: &str) {
         mm_node,
         coin,
         &[GETH_RPC_URL],
-        &checksum_address(&format!("{:02x}", watchers_swap_contract())),
-        Some(&checksum_address(&format!("{:02x}", watchers_swap_contract()))),
+        &watchers_swap_contract_checksum(),
+        Some(&watchers_swap_contract_checksum()),
         true
     )));
 }

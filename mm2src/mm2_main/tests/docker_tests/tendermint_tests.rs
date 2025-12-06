@@ -817,7 +817,7 @@ mod swap {
     use super::*;
 
     use crate::docker_tests::helpers::eth::fill_eth;
-    use crate::docker_tests::helpers::eth::swap_contract;
+    use crate::docker_tests::helpers::eth::swap_contract_checksum;
     use crate::integration_tests_common::enable_electrum;
     use common::executor::Timer;
     use common::log;
@@ -992,7 +992,7 @@ mod swap {
             false
         )));
 
-        let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+        let swap_contract = swap_contract_checksum();
 
         dbg!(block_on(enable_eth_coin(
             &mm_bob,
