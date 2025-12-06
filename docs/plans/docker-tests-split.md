@@ -170,9 +170,9 @@ Each phase should be implemented in one or more small PRs.
 
 Add semantic checks beyond simple port checks:
 
-- [ ] Geth: call `eth_getCode` for each address in metadata.geth (`erc20_contract`, `swap_contract`, `watchers_swap_contract`, `erc721_contract`, `erc1155_contract`, `nft_maker_swap_v2`) and assert non-empty code. Start with at least `erc20_contract` and `swap_contract`.
-- [ ] Leave Qtum/SLP/Cosmos checks for a follow-up PR.
-- [ ] If any fail, treat metadata as invalid:
+- [x] Geth: call `eth_getCode` for each address in metadata.geth (`erc20_contract`, `swap_contract`, `watchers_swap_contract`, `erc721_contract`, `erc1155_contract`, `nft_maker_swap_v2`) and assert non-empty code. Start with at least `erc20_contract` and `swap_contract`.
+- [x] Leave Qtum/SLP/Cosmos checks for a follow-up PR.
+- [x] If any fail, treat metadata as invalid:
    - Clear, actionable error about reinitializing the environment.
 
 #### 4.1.5 Fix watcher test correctness (tautology)
@@ -675,7 +675,7 @@ This keeps test execution simple:
 
 ## Success criteria checklist
 
-- [ ] `ReuseMetadata` mode connects to the correct Geth RPC from metadata and fails fast if contract bytecode is missing.
-- [ ] Qtum compose runs are stable across test invocations (no `temp_dir()` dependency).
+- [x] `ReuseMetadata` mode connects to the correct Geth RPC from metadata and fails fast if contract bytecode is missing.
+- [x] Qtum compose runs are stable across test invocations (no `temp_dir()` dependency).
 - [ ] New feature flags build only the intended suites; CI runs watchers/ordermatch/swaps/qrc20/tendermint/zcoin as separate green jobs using Compose mode.
-- [ ] The ignored watchers test has meaningful assertions when un-ignored locally.
+- [x] The ignored watchers test has meaningful assertions when un-ignored locally.

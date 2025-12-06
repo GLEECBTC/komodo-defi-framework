@@ -450,6 +450,31 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
     test_main(&args, owned_tests, None);
 }
 
+/// Check that a Geth contract has deployed code at the given address.
+///
+/// This semantic check validates that the metadata's contract addresses actually
+/// have bytecode deployed, catching stale metadata where containers were recreated
+/// but contracts weren't re-deployed.
+fn check_geth_contract_code(web3: &Web3<Http>, name: &str, address: ethereum_types::H160) -> Result<(), String> {
+    match block_on(web3.eth().code(address, None).timeout(Duration::from_secs(3))) {
+        Ok(Ok(code)) => {
+            if code.0.is_empty() {
+                return Err(format!(
+                    "GETH {} contract has no deployed code at {:?}; metadata is stale. Re-run docker env init.",
+                    name, address
+                ));
+            }
+            log!("{} contract OK at {:?}", name, address);
+            Ok(())
+        },
+        Ok(Err(e)) => Err(format!(
+            "GETH {} contract code fetch failed at {:?}: {}",
+            name, address, e
+        )),
+        Err(_) => Err(format!("GETH {} contract code fetch timed out at {:?}", name, address)),
+    }
+}
+
 /// Validate that nodes are reachable before loading metadata
 fn validate_nodes_health(metadata: &DockerEnvMetadata) -> Result<(), String> {
     use std::net::TcpStream;
@@ -515,6 +540,18 @@ fn validate_nodes_health(metadata: &DockerEnvMetadata) -> Result<(), String> {
             Ok(Ok(_)) => log!("  GETH node OK at {}", geth.rpc_url),
             _ => return Err(format!("GETH node not reachable at {}", geth.rpc_url)),
         }
+
+        // Semantic checks: verify all contracts have deployed bytecode
+        // This catches stale metadata where Geth was recreated but contracts weren't re-deployed
+        log!("  Verifying GETH contract deployments...");
+        check_geth_contract_code(&web3, "erc20_contract", geth.erc20_contract)?;
+        check_geth_contract_code(&web3, "swap_contract", geth.swap_contract)?;
+        check_geth_contract_code(&web3, "maker_swap_v2", geth.maker_swap_v2)?;
+        check_geth_contract_code(&web3, "taker_swap_v2", geth.taker_swap_v2)?;
+        check_geth_contract_code(&web3, "watchers_swap_contract", geth.watchers_swap_contract)?;
+        check_geth_contract_code(&web3, "erc721_contract", geth.erc721_contract)?;
+        check_geth_contract_code(&web3, "erc1155_contract", geth.erc1155_contract)?;
+        check_geth_contract_code(&web3, "nft_maker_swap_v2", geth.nft_maker_swap_v2)?;
     }
 
     // Check Zombie node
