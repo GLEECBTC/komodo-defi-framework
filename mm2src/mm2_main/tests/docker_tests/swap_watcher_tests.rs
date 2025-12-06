@@ -1220,12 +1220,9 @@ fn test_two_watchers_spend_maker_payment_eth_erc20() {
     assert_eq!(bob_jst_balance_before + volume.clone(), bob_jst_balance_after);
     assert_eq!(alice_eth_balance_before + volume.clone(), alice_eth_balance_after);
     assert_eq!(bob_eth_balance_before - volume, bob_eth_balance_after);
-    if watcher1_eth_balance_after > watcher1_eth_balance_before {
-        assert_eq!(watcher2_eth_balance_after, watcher2_eth_balance_after);
-    }
-    if watcher2_eth_balance_after > watcher2_eth_balance_before {
-        assert_eq!(watcher1_eth_balance_after, watcher1_eth_balance_after);
-    }
+    let w1_gain = watcher1_eth_balance_after > watcher1_eth_balance_before;
+    let w2_gain = watcher2_eth_balance_after > watcher2_eth_balance_before;
+    assert_ne!(w1_gain, w2_gain, "exactly one watcher must receive the reward");
 }
 
 #[test]

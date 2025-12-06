@@ -179,13 +179,13 @@ Add semantic checks beyond simple port checks:
 
 **File:** `swap_watcher_tests.rs` (`test_two_watchers_spend_maker_payment_eth_erc20`)
 
-- [ ] Replace the no-op asserts (lines 1223-1228) with:
+- [x] Replace the no-op asserts (lines 1223-1228) with:
    ```rust
    let w1_gain = watcher1_eth_balance_after > watcher1_eth_balance_before;
    let w2_gain = watcher2_eth_balance_after > watcher2_eth_balance_before;
    assert_ne!(w1_gain, w2_gain, "exactly one watcher must receive the reward");
    ```
-- [ ] Keep `#[ignore]` if the test is heavy; assertions should still be correct when it runs.
+- [x] Keep `#[ignore]` if the test is heavy; assertions should still be correct when it runs.
 
 #### 4.1.6 Container name constants
 
