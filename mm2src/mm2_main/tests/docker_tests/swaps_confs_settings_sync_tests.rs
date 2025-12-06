@@ -1,4 +1,4 @@
-use crate::generate_utxo_coin_with_random_privkey;
+use crate::docker_tests::helpers::utxo::generate_utxo_coin_with_random_privkey;
 use crate::integration_tests_common::enable_native;
 use common::block_on;
 use mm2_main::lp_swap::get_payment_locktime;

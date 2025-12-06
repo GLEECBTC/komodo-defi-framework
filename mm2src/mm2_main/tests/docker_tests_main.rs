@@ -26,18 +26,45 @@ use std::env;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::Command;
+use std::thread;
 use std::time::Duration;
 use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
 use web3::{transports::Http, Web3};
 
 mod docker_tests;
 mod sia_tests;
+use common::{block_on, now_ms, wait_until_ms};
 use docker_tests::docker_env_metadata::{
     get_metadata_file_path, get_or_default_metadata_path, is_docker_compose_mode, should_load_metadata,
     CosmosNodeState, DockerEnvMetadata, GethNodeState, QtumNodeState, SiaNodeState, SlpNodeState, UtxoNodeState,
     ZombieNodeState,
 };
-use docker_tests::docker_tests_common::*;
+use docker_tests::helpers::docker_ops::CoinDockerOps;
+use docker_tests::helpers::env::{
+    KDF_FORSLP_SERVICE, KDF_IBC_RELAYER_SERVICE, KDF_MYCOIN1_SERVICE, KDF_MYCOIN_SERVICE, KDF_QTUM_SERVICE,
+    KDF_ZOMBIE_SERVICE,
+};
+use docker_tests::helpers::eth::{
+    erc20_contract, geth_account, geth_docker_node, geth_erc1155_contract, geth_erc721_contract, geth_maker_swap_v2,
+    geth_nft_maker_swap_v2, geth_taker_swap_v2, init_geth_node, set_erc20_contract, set_geth_account,
+    set_geth_erc1155_contract, set_geth_erc721_contract, set_geth_maker_swap_v2, set_geth_nft_maker_swap_v2,
+    set_geth_taker_swap_v2, set_swap_contract, set_watchers_swap_contract, swap_contract, watchers_swap_contract,
+    GETH_DOCKER_IMAGE_WITH_TAG, GETH_RPC_URL, GETH_WEB3,
+};
+use docker_tests::helpers::qrc20::{
+    qick_token_address, qorty_token_address, qrc20_swap_contract_address, qtum_conf_path, set_qick_token_address,
+    set_qorty_token_address, set_qrc20_swap_contract_address, set_qtum_conf_path,
+};
+use docker_tests::helpers::sia::{sia_docker_node, SIA_DOCKER_IMAGE_WITH_TAG, SIA_RPC_PARAMS};
+use docker_tests::helpers::tendermint::{
+    atom_node, ibc_relayer_node, nucleus_node, prepare_ibc_channels, wait_until_relayer_container_is_ready,
+    ATOM_IMAGE_WITH_TAG, IBC_RELAYER_IMAGE_WITH_TAG, NUCLEUS_IMAGE,
+};
+use docker_tests::helpers::utxo::{
+    utxo_asset_docker_node, BchDockerOps, UtxoAssetDockerOps, SLP_TOKEN_ID, SLP_TOKEN_OWNERS,
+    UTXO_ASSET_DOCKER_IMAGE_WITH_TAG,
+};
+use docker_tests::helpers::zcoin::{zombie_asset_docker_node, ZCoinAssetDockerOps, ZOMBIE_ASSET_DOCKER_IMAGE_WITH_TAG};
 use docker_tests::qrc20_tests::{qtum_docker_node, QtumDockerOps, QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG};
 use sia_tests::utils::wait_for_dsia_node_ready;
 
@@ -283,23 +310,14 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
                         qtum_ops.initialize_contracts();
                     }
                     // Record Qtum state in metadata
-                    #[allow(static_mut_refs)]
-                    unsafe {
-                        if let (Some(conf_path), Some(qick), Some(qorty), Some(swap)) = (
-                            QTUM_CONF_PATH.as_ref(),
-                            QICK_TOKEN_ADDRESS,
-                            QORTY_TOKEN_ADDRESS,
-                            QRC20_SWAP_CONTRACT_ADDRESS,
-                        ) {
-                            metadata.qtum = Some(QtumNodeState {
-                                port: 9000,
-                                conf_path: conf_path.clone(),
-                                qick_token_address: qick,
-                                qorty_token_address: qorty,
-                                swap_contract_address: swap,
-                            });
-                        }
-                    }
+                    // The OnceCell accessors will panic if not initialized, so this should be safe after initialization
+                    metadata.qtum = Some(QtumNodeState {
+                        port: 9000,
+                        conf_path: qtum_conf_path().clone(),
+                        qick_token_address: qick_token_address(),
+                        qorty_token_address: qorty_token_address(),
+                        swap_contract_address: qrc20_swap_contract_address(),
+                    });
                     metadata.initialized.qtum = true;
                 }
 
@@ -339,20 +357,18 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
                         init_geth_node();
                     }
                     // Record Geth state in metadata
-                    unsafe {
-                        metadata.geth = Some(GethNodeState {
-                            rpc_url: GETH_RPC_URL.to_string(),
-                            account: GETH_ACCOUNT,
-                            erc20_contract: GETH_ERC20_CONTRACT,
-                            swap_contract: GETH_SWAP_CONTRACT,
-                            maker_swap_v2: GETH_MAKER_SWAP_V2,
-                            taker_swap_v2: GETH_TAKER_SWAP_V2,
-                            watchers_swap_contract: GETH_WATCHERS_SWAP_CONTRACT,
-                            erc721_contract: GETH_ERC721_CONTRACT,
-                            erc1155_contract: GETH_ERC1155_CONTRACT,
-                            nft_maker_swap_v2: GETH_NFT_MAKER_SWAP_V2,
-                        });
-                    }
+                    metadata.geth = Some(GethNodeState {
+                        rpc_url: GETH_RPC_URL.to_string(),
+                        account: geth_account(),
+                        erc20_contract: erc20_contract(),
+                        swap_contract: swap_contract(),
+                        maker_swap_v2: geth_maker_swap_v2(),
+                        taker_swap_v2: geth_taker_swap_v2(),
+                        watchers_swap_contract: watchers_swap_contract(),
+                        erc721_contract: geth_erc721_contract(),
+                        erc1155_contract: geth_erc1155_contract(),
+                        nft_maker_swap_v2: geth_nft_maker_swap_v2(),
+                    });
                     metadata.initialized.geth = true;
                 }
 
@@ -601,33 +617,31 @@ fn validate_nodes_health(metadata: &DockerEnvMetadata) -> Result<(), String> {
 
 /// Load metadata into global state variables
 fn load_metadata_into_globals(metadata: &DockerEnvMetadata) {
-    unsafe {
-        // Load Qtum state
-        if let Some(ref qtum) = metadata.qtum {
-            QTUM_CONF_PATH = Some(qtum.conf_path.clone());
-            QICK_TOKEN_ADDRESS = Some(qtum.qick_token_address);
-            QORTY_TOKEN_ADDRESS = Some(qtum.qorty_token_address);
-            QRC20_SWAP_CONTRACT_ADDRESS = Some(qtum.swap_contract_address);
-        }
+    // Load Qtum state
+    if let Some(ref qtum) = metadata.qtum {
+        set_qtum_conf_path(qtum.conf_path.clone());
+        set_qick_token_address(qtum.qick_token_address);
+        set_qorty_token_address(qtum.qorty_token_address);
+        set_qrc20_swap_contract_address(qtum.swap_contract_address);
+    }
 
-        // Load SLP state
-        if let Some(ref slp) = metadata.slp {
-            *SLP_TOKEN_ID.lock().unwrap() = slp.token_id;
-            *SLP_TOKEN_OWNERS.lock().unwrap() = slp.token_owners.clone();
-        }
+    // Load SLP state
+    if let Some(ref slp) = metadata.slp {
+        *SLP_TOKEN_ID.lock().unwrap() = slp.token_id;
+        *SLP_TOKEN_OWNERS.lock().unwrap() = slp.token_owners.clone();
+    }
 
-        // Load Geth state
-        if let Some(ref geth) = metadata.geth {
-            GETH_ACCOUNT = geth.account;
-            GETH_ERC20_CONTRACT = geth.erc20_contract;
-            GETH_SWAP_CONTRACT = geth.swap_contract;
-            GETH_MAKER_SWAP_V2 = geth.maker_swap_v2;
-            GETH_TAKER_SWAP_V2 = geth.taker_swap_v2;
-            GETH_WATCHERS_SWAP_CONTRACT = geth.watchers_swap_contract;
-            GETH_ERC721_CONTRACT = geth.erc721_contract;
-            GETH_ERC1155_CONTRACT = geth.erc1155_contract;
-            GETH_NFT_MAKER_SWAP_V2 = geth.nft_maker_swap_v2;
-        }
+    // Load Geth state
+    if let Some(ref geth) = metadata.geth {
+        set_geth_account(geth.account);
+        set_erc20_contract(geth.erc20_contract);
+        set_swap_contract(geth.swap_contract);
+        set_geth_maker_swap_v2(geth.maker_swap_v2);
+        set_geth_taker_swap_v2(geth.taker_swap_v2);
+        set_watchers_swap_contract(geth.watchers_swap_contract);
+        set_geth_erc721_contract(geth.erc721_contract);
+        set_geth_erc1155_contract(geth.erc1155_contract);
+        set_geth_nft_maker_swap_v2(geth.nft_maker_swap_v2);
     }
 
     log!("Loaded global state from metadata");
@@ -657,7 +671,7 @@ fn setup_qtum_conf_for_compose() {
         assert!(now_ms() < timeout, "Timed out waiting for Qtum config");
     }
 
-    unsafe { QTUM_CONF_PATH = Some(conf_path) };
+    set_qtum_conf_path(conf_path);
 }
 
 /// Set up UTXO coin config for compose mode by copying config from the container.

@@ -1,16 +1,14 @@
-use super::docker_tests_common::{
-    random_secp256k1_secret, GETH_ERC1155_CONTRACT, GETH_ERC721_CONTRACT, GETH_MAKER_SWAP_V2, GETH_NFT_MAKER_SWAP_V2,
-    GETH_NONCE_LOCK, GETH_RPC_URL, GETH_TAKER_SWAP_V2, GETH_WEB3, MM_CTX, MM_CTX1,
-};
-#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
-use super::docker_tests_common::{
-    SEPOLIA_ERC20_CONTRACT, SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2, SEPOLIA_MAKER_SWAP_V2, SEPOLIA_NONCE_LOCK,
-    SEPOLIA_RPC_URL, SEPOLIA_TAKER_SWAP_V2, SEPOLIA_TESTS_LOCK, SEPOLIA_WEB3,
-};
+use super::helpers::env::{random_secp256k1_secret, MM_CTX, MM_CTX1};
 use super::helpers::eth::{
     erc20_coin_with_random_privkey, erc20_contract, erc20_contract_checksum, eth_coin_with_random_privkey,
-    eth_coin_with_random_privkey_using_urls, fill_erc20, fill_eth, geth_account, swap_contract, swap_contract_checksum,
-    GETH_DEV_CHAIN_ID,
+    eth_coin_with_random_privkey_using_urls, fill_erc20, fill_eth, geth_account, geth_erc1155_contract,
+    geth_erc721_contract, geth_maker_swap_v2, geth_nft_maker_swap_v2, geth_taker_swap_v2, swap_contract,
+    swap_contract_checksum, GETH_DEV_CHAIN_ID, GETH_NONCE_LOCK, GETH_RPC_URL, GETH_WEB3,
+};
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
+use super::helpers::eth::{
+    SEPOLIA_ERC20_CONTRACT, SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2, SEPOLIA_MAKER_SWAP_V2, SEPOLIA_NONCE_LOCK,
+    SEPOLIA_RPC_URL, SEPOLIA_TAKER_SWAP_V2, SEPOLIA_TESTS_LOCK, SEPOLIA_WEB3,
 };
 use crate::common::Future01CompatExt;
 use bitcrypto::{dhash160, sha256};
@@ -83,27 +81,6 @@ const ERC1155_TEST_ABI: &str = include_str!("../../../mm2_test_helpers/dummy_fil
 
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 const ERC20: &str = "ERC20DEV";
-
-// GETH-specific address getters (only used by eth_docker_tests)
-fn maker_swap_v2() -> Address {
-    unsafe { GETH_MAKER_SWAP_V2 }
-}
-
-fn taker_swap_v2() -> Address {
-    unsafe { GETH_TAKER_SWAP_V2 }
-}
-
-fn geth_nft_maker_swap_v2() -> Address {
-    unsafe { GETH_NFT_MAKER_SWAP_V2 }
-}
-
-fn geth_erc721_contract() -> Address {
-    unsafe { GETH_ERC721_CONTRACT }
-}
-
-fn geth_erc1155_contract() -> Address {
-    unsafe { GETH_ERC1155_CONTRACT }
-}
 
 // Sepolia-specific helpers (not shared)
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
@@ -1185,8 +1162,8 @@ impl NftActivationV2Args {
             swap_contract_address: swap_contract(),
             fallback_swap_contract_address: swap_contract(),
             swap_v2_contracts: SwapV2Contracts {
-                maker_swap_v2_contract: maker_swap_v2(),
-                taker_swap_v2_contract: taker_swap_v2(),
+                maker_swap_v2_contract: geth_maker_swap_v2(),
+                taker_swap_v2_contract: geth_taker_swap_v2(),
                 nft_maker_swap_v2_contract: geth_nft_maker_swap_v2(),
             },
             nft_ticker: NFT_ETH.to_string(),
@@ -1360,8 +1337,8 @@ impl SwapAddresses {
             swap_contract_address: swap_contract(),
             fallback_swap_contract_address: swap_contract(),
             swap_v2_contracts: SwapV2Contracts {
-                maker_swap_v2_contract: maker_swap_v2(),
-                taker_swap_v2_contract: taker_swap_v2(),
+                maker_swap_v2_contract: geth_maker_swap_v2(),
+                taker_swap_v2_contract: geth_taker_swap_v2(),
                 nft_maker_swap_v2_contract: geth_nft_maker_swap_v2(),
             },
         }

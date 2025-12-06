@@ -4,7 +4,7 @@ pub use coins::siacoin::sia_rust::utils::V2TransactionBuilder;
 use coins::siacoin::{ApiClientHelpers, SiaApiClient, SiaClient, SiaClientConf};
 use keys::hash::H256;
 
-use crate::docker_tests::docker_tests_common::SIA_RPC_PARAMS;
+use crate::docker_tests::helpers::sia::SIA_RPC_PARAMS;
 use common::custom_futures::timeout::FutureTimerExt;
 use common::executor::Timer;
 use mm2_rpc::data::legacy::CoinInitResponse;

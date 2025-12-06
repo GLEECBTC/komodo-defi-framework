@@ -1,17 +1,20 @@
-use crate::docker_tests::docker_tests_common::*;
+use crate::docker_tests::helpers::utxo::{get_prefilled_slp_privkey, get_slp_token_id};
 use crate::integration_tests_common::enable_native;
 use bitcrypto::ChecksumType;
 use coins::utxo::UtxoAddressFormat;
+use common::block_on;
 use http::StatusCode;
 use keys::{Address, AddressBuilder, AddressHashEnum, AddressPrefix, NetworkAddressPrefixes};
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::{BalanceResponse, CoinInitResponse};
 use mm2_test_helpers::for_tests::{
-    assert_coin_not_found_on_balance, disable_coin, enable_bch_with_tokens, enable_slp, my_balance, UtxoRpcMode,
+    assert_coin_not_found_on_balance, disable_coin, enable_bch_with_tokens, enable_native_bch, enable_slp, my_balance,
+    MarketMakerIt, UtxoRpcMode,
 };
 use mm2_test_helpers::structs::{EnableBchWithTokensResponse, EnableSlpResponse, RpcV2Response, TransactionDetails};
 use serde_json::{self as json, json, Value as Json};
 use std::collections::HashSet;
+use std::thread;
 use std::time::Duration;
 
 // ============================================================================

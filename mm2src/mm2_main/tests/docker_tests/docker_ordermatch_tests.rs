@@ -1,8 +1,8 @@
-use crate::docker_tests::docker_tests_common::{generate_utxo_coin_with_privkey, GETH_RPC_URL};
-use crate::docker_tests::helpers::eth::{fill_eth_erc20_with_private_key, swap_contract_checksum};
+use crate::docker_tests::helpers::env::random_secp256k1_secret;
+use crate::docker_tests::helpers::eth::{fill_eth_erc20_with_private_key, swap_contract_checksum, GETH_RPC_URL};
+use crate::docker_tests::helpers::utxo::{generate_utxo_coin_with_privkey, generate_utxo_coin_with_random_privkey};
 
 use crate::integration_tests_common::enable_native;
-use crate::{generate_utxo_coin_with_random_privkey, random_secp256k1_secret};
 use common::block_on;
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::OrderbookResponse;

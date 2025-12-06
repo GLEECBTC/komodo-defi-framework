@@ -1,4 +1,5 @@
-use crate::{generate_utxo_coin_with_random_privkey, MYCOIN, MYCOIN1, SET_BURN_PUBKEY_TO_ALICE};
+use crate::docker_tests::helpers::env::SET_BURN_PUBKEY_TO_ALICE;
+use crate::docker_tests::helpers::utxo::{generate_utxo_coin_with_random_privkey, MYCOIN, MYCOIN1};
 use bitcrypto::dhash160;
 use coins::utxo::UtxoCommonOps;
 use coins::{

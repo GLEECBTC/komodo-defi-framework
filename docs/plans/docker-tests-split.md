@@ -234,8 +234,58 @@ Under `mm2src/mm2_main/tests/docker_tests/`:
 
 Actions:
 
-- [ ] Move shared logic out of `docker_tests_common.rs` into the appropriate helpers while keeping a minimal “root” `docker_tests_common` that just wires things together.
+- [x] Move shared logic out of `docker_tests_common.rs` into the appropriate helpers while keeping a minimal "root" `docker_tests_common` that just wires things together.
+   - Created all helper modules with proper organization
+   - `docker_tests_common.rs` now re-exports from helpers
+   - Test modules updated to import from helpers directly where needed
 - [ ] Ensure no test module depends on raw docker call patterns; always go through helpers.
+
+#### 4.2.1.1 Module structure cleanup (completed)
+
+**Status:** ✅ Completed
+
+**Phase 1 - Option B (completed earlier):**
+- Removed all `pub use` re-exports from `docker_tests_common.rs` (~90 lines)
+- Kept `trade_base_rel` function in `docker_tests_common.rs` as cross-cutting integration test helper
+- Updated all test files to use explicit imports from helper modules
+
+**Phase 2 - Full reorganization (completed):**
+- Deleted `docker_tests_common.rs` entirely
+- Created new helper modules for better separation of concerns:
+  - `helpers/swap.rs` - Cross-chain swap orchestration (`trade_base_rel`)
+  - `helpers/sia.rs` - Sia-specific helpers (moved from `env.rs`)
+  - `helpers/docker_ops.rs` - `CoinDockerOps` trait (extracted from `utxo.rs`)
+- Updated `helpers/env.rs` to contain only generic environment setup (contexts, service constants, `DockerNode` type)
+- Updated `helpers/utxo.rs` to import `CoinDockerOps` from `docker_ops`
+- Updated `helpers/zcoin.rs` to import `CoinDockerOps` from `docker_ops`
+- Updated all imports:
+  - `docker_tests_main.rs` - imports from `helpers::sia`, `helpers::docker_ops`
+  - `sia_tests/utils.rs` - imports from `helpers::sia`
+  - `qrc20_tests.rs`, `swap_tests.rs`, `docker_tests_inner.rs` - imports from `helpers::swap`
+
+**Final module structure:**
+```
+helpers/
+├── docker_ops.rs  # CoinDockerOps trait (shared by utxo, zcoin)
+├── env.rs         # MM_CTX, service constants, DockerNode, random_secp256k1_secret
+├── eth.rs         # Geth/ERC20 helpers
+├── mod.rs         # Module index
+├── qrc20.rs       # Qtum/QRC20 helpers
+├── sia.rs         # Sia helpers (SIA_RPC_PARAMS, sia_docker_node)
+├── swap.rs        # Cross-chain swap orchestration (trade_base_rel)
+├── tendermint.rs  # Tendermint/Cosmos helpers
+├── utxo.rs        # UTXO coin helpers (MYCOIN, BCH/SLP)
+└── zcoin.rs       # ZCoin/Zombie helpers
+```
+
+**Completed Tasks:**
+- [x] Decide on module organization approach → **Full reorganization implemented**
+- [x] Update test files to import from specific helpers
+- [x] Move `trade_base_rel` to `helpers/swap.rs`
+- [x] Extract `CoinDockerOps` to `helpers/docker_ops.rs`
+- [x] Move Sia helpers to `helpers/sia.rs`
+- [x] Delete `docker_tests_common.rs`
+- [x] Run clippy with `-D warnings` to ensure no warnings
 
 #### 4.2.2 Behavioral labeling of tests (no big moves yet)
 
@@ -668,6 +718,100 @@ This keeps test execution simple:
       - Sapling cache
       - Sia chain height / initial funding
    - Tests do not re-mine or re-cache more than necessary.
+
+---
+
+### Phase 6 – Remove Sepolia testnet dependency
+
+**Goal:** Eliminate dependency on external Sepolia testnet and migrate all swap v2 tests to use local Geth dev node.
+
+**Context:**
+
+Currently, swap v2 tests are split across two networks:
+- **Sepolia testnet** (external, requires internet, slower, less reliable):
+  - ~14 test functions gated by `sepolia-maker-swap-v2-tests` / `sepolia-taker-swap-v2-tests` features
+  - Uses real testnet with deployed contracts: `SEPOLIA_MAKER_SWAP_V2`, `SEPOLIA_TAKER_SWAP_V2`, `SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2`, `SEPOLIA_ERC20_CONTRACT`
+  - Requires Sepolia RPC endpoint (`https://ethereum-sepolia-rpc.publicnode.com`)
+  - Has separate nonce lock (`SEPOLIA_NONCE_LOCK`) and test lock (`SEPOLIA_TESTS_LOCK`)
+- **Local Geth dev node** (docker, fast, deterministic):
+  - Already supports swap v2 contracts: `GETH_MAKER_SWAP_V2`, `GETH_TAKER_SWAP_V2`, `GETH_NFT_MAKER_SWAP_V2`
+  - Initialized in `docker_tests_main.rs`
+  - Used by most other ETH/ERC20 tests
+
+**Benefits of migration:**
+
+1. **Reliability**: No dependency on external RPC endpoints or testnet availability
+2. **Speed**: Local dev node is faster and has instant block mining
+3. **Determinism**: Controlled environment without testnet state variability
+4. **Cost**: No need to manage testnet ETH faucets or deal with rate limits
+5. **Simplicity**: Single ETH test environment instead of two parallel setups
+6. **CI stability**: Eliminates network-related flakiness
+
+#### 6.1 Preparation
+
+**Files affected:**
+- `mm2src/mm2_main/tests/docker_tests/helpers/eth.rs`
+- `mm2src/mm2_main/tests/docker_tests/eth_docker_tests.rs`
+- `mm2src/mm2_main/Cargo.toml`
+
+Actions:
+
+- [ ] Audit all 14 Sepolia test functions to identify any Sepolia-specific requirements:
+  - Are there testnet-specific contract behaviors?
+  - Do any tests rely on testnet block times or gas costs?
+  - Are there hardcoded Sepolia addresses that need replacement?
+- [ ] Verify Geth dev node has all required contracts deployed during initialization:
+  - `GETH_MAKER_SWAP_V2` ✓ (already exists)
+  - `GETH_TAKER_SWAP_V2` ✓ (already exists)
+  - `GETH_NFT_MAKER_SWAP_V2` ✓ (already exists)
+  - `GETH_ERC20_CONTRACT` ✓ (already exists)
+- [ ] Document any Sepolia-specific test behaviors that need adaptation
+
+#### 6.2 Migration
+
+Actions:
+
+- [ ] **Phase 6.2.1**: Migrate Sepolia helper infrastructure to Geth equivalents
+  - In `helpers/eth.rs`:
+    - Remove `SEPOLIA_WEB3`, `SEPOLIA_RPC_URL`, `SEPOLIA_NONCE_LOCK`, `SEPOLIA_TESTS_LOCK`
+    - Remove Sepolia contract address statics: `SEPOLIA_TAKER_SWAP_V2`, `SEPOLIA_MAKER_SWAP_V2`, `SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2`, `SEPOLIA_ERC20_CONTRACT`
+    - Update any Sepolia-specific funding helpers to use Geth equivalents
+
+- [ ] **Phase 6.2.2**: Migrate test functions one-by-one or in small batches
+  - For each Sepolia test in `eth_docker_tests.rs`:
+    - Remove `#[cfg(feature = "sepolia-*-swap-v2-tests")]` gate
+    - Replace Sepolia contract address calls with Geth equivalents:
+      - `sepolia_maker_swap_v2()` → `maker_swap_v2()`
+      - `sepolia_taker_swap_v2()` → `taker_swap_v2()`
+      - `sepolia_etomic_maker_nft_swap_v2()` → `nft_maker_swap_v2()`
+    - Replace `SEPOLIA_NONCE_LOCK` → `GETH_NONCE_LOCK`
+    - Replace `SEPOLIA_TESTS_LOCK` usage (if any) with appropriate test coordination
+    - Update RPC client initialization to use `GETH_WEB3` / `GETH_RPC_URL`
+  - Run each migrated test to ensure it passes with Geth
+  - Commit after each successful migration or small batch
+
+- [ ] **Phase 6.2.3**: Clean up feature flags
+  - Remove from `mm2src/mm2_main/Cargo.toml`:
+    - `sepolia-maker-swap-v2-tests` feature
+    - `sepolia-taker-swap-v2-tests` feature
+  - Search codebase for any remaining references to these features
+  - Update CI workflows if they reference Sepolia test jobs
+
+- [ ] **Phase 6.2.4**: Remove Sepolia infrastructure
+  - Delete all Sepolia-related code from `helpers/eth.rs`:
+    - Static variables
+    - Helper functions
+    - Comments/documentation
+  - Update module documentation to reflect single Geth-based environment
+  - Run full docker test suite to verify no regressions
+
+#### 6.3 Validation
+
+- [ ] All previously Sepolia-gated tests pass using Geth
+- [ ] `cargo test --test docker_tests_main --features docker-tests-eth` runs without Sepolia dependencies
+- [ ] No references to Sepolia remain in docker test code (除非在注释中作为历史记录)
+- [ ] Geth initialization in `docker_tests_main.rs` is sufficient for all swap v2 scenarios
+- [ ] Test runtime improves (measure before/after for representative test)
 
 ---
 

@@ -1,14 +1,14 @@
-use crate::docker_tests::docker_tests_common::{
-    generate_utxo_coin_with_privkey, trade_base_rel, GETH_RPC_URL, MM_CTX, SET_BURN_PUBKEY_TO_ALICE,
-};
+use crate::docker_tests::helpers::env::{random_secp256k1_secret, MM_CTX, SET_BURN_PUBKEY_TO_ALICE};
 use crate::docker_tests::helpers::eth::{
-    erc20_coin_with_random_privkey, erc20_contract_checksum, fill_eth_erc20_with_private_key, swap_contract_checksum,
+    erc20_coin_with_random_privkey, erc20_contract_checksum, fill_eth_erc20_with_private_key, swap_contract,
+    swap_contract_checksum, GETH_RPC_URL,
 };
-use crate::integration_tests_common::*;
-use crate::{
-    fill_address, generate_utxo_coin_with_random_privkey, random_secp256k1_secret, rmd160_from_priv,
+use crate::docker_tests::helpers::swap::trade_base_rel;
+use crate::docker_tests::helpers::utxo::{
+    fill_address, generate_utxo_coin_with_privkey, generate_utxo_coin_with_random_privkey, rmd160_from_priv,
     utxo_coin_from_privkey,
 };
+use crate::integration_tests_common::*;
 use bitcrypto::dhash160;
 use chain::OutPoint;
 use coins::utxo::rpc_clients::UnspentInfo;

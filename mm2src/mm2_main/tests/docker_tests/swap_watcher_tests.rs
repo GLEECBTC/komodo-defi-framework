@@ -1,10 +1,10 @@
-use crate::docker_tests::docker_tests_common::GETH_RPC_URL;
+use crate::docker_tests::helpers::env::random_secp256k1_secret;
 use crate::docker_tests::helpers::eth::{
-    erc20_coin_with_random_privkey, erc20_contract_checksum, eth_coin_with_random_privkey,
-    watchers_swap_contract_checksum,
+    erc20_coin_with_random_privkey, erc20_contract_checksum, eth_coin_with_random_privkey, watchers_swap_contract,
+    watchers_swap_contract_checksum, GETH_RPC_URL,
 };
+use crate::docker_tests::helpers::utxo::{generate_utxo_coin_with_privkey, generate_utxo_coin_with_random_privkey};
 use crate::integration_tests_common::*;
-use crate::{generate_utxo_coin_with_privkey, generate_utxo_coin_with_random_privkey, random_secp256k1_secret};
 use coins::coin_errors::ValidatePaymentError;
 use coins::eth::EthCoin;
 use coins::utxo::utxo_standard::UtxoStandardCoin;

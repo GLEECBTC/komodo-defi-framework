@@ -6,7 +6,7 @@
 //! Tests in this module are excluded from chain-specific CI jobs (e.g., docker-tests-slp)
 //! because they need multiple chain types to be available.
 
-use crate::docker_tests::docker_tests_common::*;
+use crate::docker_tests::helpers::swap::trade_base_rel;
 
 /// Test atomic swap with SLP token as maker coin.
 /// Requires: FORSLP node + counterparty chain node (QTUM for QRC20)
