@@ -1,5 +1,11 @@
 # AGENTS.md — Komodo DeFi Framework
 
+> **CURRENT STATUS & ROADMAP**: We use specific plan files to track large features, refactors, or complex fixes.
+>
+> 👉 **See [`docs/plans/`](docs/plans/) for active objectives.**
+>
+> *Always update the corresponding plan file when completing tasks. Delete the plan file when all tasks in the plan are complete.*
+
 Guide for AI-assisted development. Keep changes small, follow patterns.
 
 ## Project Overview
