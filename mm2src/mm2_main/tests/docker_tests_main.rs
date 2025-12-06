@@ -28,6 +28,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
+use web3::{transports::Http, Web3};
 
 mod docker_tests;
 mod sia_tests;
@@ -492,9 +493,20 @@ fn validate_nodes_health(metadata: &DockerEnvMetadata) -> Result<(), String> {
 
     // Check Geth node via web3 RPC
     if metadata.initialized.geth {
-        match block_on(GETH_WEB3.eth().block_number().timeout(Duration::from_secs(3))) {
-            Ok(Ok(_)) => log!("  GETH node OK"),
-            _ => return Err("GETH node not reachable at RPC endpoint".to_string()),
+        let geth = metadata
+            .geth
+            .as_ref()
+            .ok_or_else(|| "Geth RPC URL missing in metadata; re-run docker env init.".to_string())?;
+        let transport = Http::new(&geth.rpc_url).map_err(|e| {
+            format!(
+                "Failed to create HTTP transport for Geth RPC URL '{}': {}",
+                geth.rpc_url, e
+            )
+        })?;
+        let web3 = Web3::new(transport);
+        match block_on(web3.eth().block_number().timeout(Duration::from_secs(3))) {
+            Ok(Ok(_)) => log!("  GETH node OK at {}", geth.rpc_url),
+            _ => return Err(format!("GETH node not reachable at {}", geth.rpc_url)),
         }
     }
 

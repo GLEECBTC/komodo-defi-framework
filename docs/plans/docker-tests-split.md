@@ -137,9 +137,9 @@ Each phase should be implemented in one or more small PRs.
 
 **File:** `mm2src/mm2_main/tests/docker_tests_main.rs`
 
-- [ ] In `validate_nodes_health()`, replace use of `GETH_WEB3` for the health probe with a new local `Web3` constructed from `metadata.geth.rpc_url`. Leave `GETH_WEB3` alone for now.
+- [x] In `validate_nodes_health()`, replace use of `GETH_WEB3` for the health probe with a new local `Web3` constructed from `metadata.geth.rpc_url`. Leave `GETH_WEB3` alone for now.
 - [ ] Optional (separate PR): Add a helper `get_web3_from_metadata()` and use it only in health checks. Reinitializing the global `GETH_WEB3` can wait.
-- [ ] If metadata has no Geth entry, surface a clear error:
+- [x] If metadata has no Geth entry, surface a clear error:
    - e.g. "Geth RPC URL missing in metadata; re-run docker env init."
 
 #### 4.1.2 Qtum conf path stability in Compose
