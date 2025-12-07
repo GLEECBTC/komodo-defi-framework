@@ -238,7 +238,11 @@ Actions:
    - Created all helper modules with proper organization
    - `docker_tests_common.rs` now re-exports from helpers
    - Test modules updated to import from helpers directly where needed
-- [ ] Ensure no test module depends on raw docker call patterns; always go through helpers.
+- [x] Ensure no test module depends on raw docker call patterns; always go through helpers.
+  - **Completed:** Moved `qtum_docker_node()` function and `QTUM_REGTEST_DOCKER_IMAGE` constants from `qrc20_tests.rs` to `helpers/qrc20.rs`
+  - All raw Docker patterns (`Command::new("docker")`) now encapsulated in helper modules
+  - Pattern matches existing helpers (`utxo.rs`, `zcoin.rs`, `eth.rs`)
+  - Verified: No test modules contain raw Docker calls
 
 #### 4.2.1.1 Module structure cleanup (completed)
 

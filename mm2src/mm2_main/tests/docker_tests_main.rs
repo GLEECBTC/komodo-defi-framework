@@ -55,6 +55,7 @@ use docker_tests::helpers::qrc20::{
     qick_token_address, qorty_token_address, qrc20_swap_contract_address, qtum_conf_path, set_qick_token_address,
     set_qorty_token_address, set_qrc20_swap_contract_address, set_qtum_conf_path,
 };
+use docker_tests::helpers::qrc20::{qtum_docker_node, QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG};
 use docker_tests::helpers::sia::{sia_docker_node, SIA_DOCKER_IMAGE_WITH_TAG, SIA_RPC_PARAMS};
 use docker_tests::helpers::tendermint::{
     atom_node, ibc_relayer_node, nucleus_node, prepare_ibc_channels, wait_until_relayer_container_is_ready,
@@ -65,7 +66,7 @@ use docker_tests::helpers::utxo::{
     UTXO_ASSET_DOCKER_IMAGE_WITH_TAG,
 };
 use docker_tests::helpers::zcoin::{zombie_asset_docker_node, ZCoinAssetDockerOps, ZOMBIE_ASSET_DOCKER_IMAGE_WITH_TAG};
-use docker_tests::qrc20_tests::{qtum_docker_node, QtumDockerOps, QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG};
+use docker_tests::qrc20_tests::QtumDockerOps;
 use sia_tests::utils::wait_for_dsia_node_ready;
 
 #[allow(dead_code)]

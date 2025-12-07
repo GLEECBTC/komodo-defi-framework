@@ -5,7 +5,7 @@
 //! - Qtum docker node helpers
 //! - QRC20 contract initialization
 
-use crate::docker_tests::helpers::env::{random_secp256k1_secret, Secp256k1Secret};
+use crate::docker_tests::helpers::env::{random_secp256k1_secret, DockerNode, Secp256k1Secret};
 use crate::docker_tests::helpers::locks::QTUM_LOCK;
 use crate::docker_tests::helpers::utxo::fill_address;
 use coins::qrc20::rpc_clients::for_tests::Qrc20NativeWalletOps;
@@ -15,7 +15,7 @@ use coins::utxo::qtum::{qtum_coin_with_priv_key, QtumCoin};
 use coins::utxo::rpc_clients::{UtxoRpcClientEnum, UtxoRpcClientOps};
 use coins::utxo::{sat_from_big_decimal, UtxoActivationParams, UtxoCoinFields};
 use coins::{ConfirmPaymentInput, MarketCoinOps};
-use common::{block_on, block_on_f01, now_sec, wait_until_sec};
+use common::{block_on, block_on_f01, now_ms, now_sec, temp_dir, wait_until_ms, wait_until_sec};
 use ethereum_types::H160 as H160Eth;
 use http::StatusCode;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
@@ -23,9 +23,22 @@ use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::MarketMakerIt;
 use serde_json::{self as json, Value as Json};
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
+use testcontainers::core::WaitFor;
+use testcontainers::runners::SyncRunner;
+use testcontainers::{GenericImage, RunnableImage};
+
+// =============================================================================
+// Docker image constants
+// =============================================================================
+
+/// Qtum regtest docker image
+pub const QTUM_REGTEST_DOCKER_IMAGE: &str = "docker.io/sergeyboyko/qtumregtest";
+/// Qtum regtest docker image with tag
+pub const QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/sergeyboyko/qtumregtest:latest";
 
 // =============================================================================
 // Global state (OnceLock for contract addresses)
@@ -380,4 +393,45 @@ pub async fn enable_qrc20_native(mm: &MarketMakerIt, coin: &str) -> Json {
         .unwrap();
     assert_eq!(native.0, StatusCode::OK, "'enable' failed: {}", native.1);
     json::from_str(&native.1).unwrap()
+}
+
+// =============================================================================
+// Docker node setup
+// =============================================================================
+
+/// Start a Qtum regtest docker node and initialize configuration.
+pub fn qtum_docker_node(port: u16) -> DockerNode {
+    let image = GenericImage::new(QTUM_REGTEST_DOCKER_IMAGE, "latest")
+        .with_env_var("CLIENTS", "2")
+        .with_env_var("COIN_RPC_PORT", port.to_string())
+        .with_env_var("ADDRESS_LABEL", QTUM_ADDRESS_LABEL)
+        .with_env_var("FILL_MEMPOOL", "true")
+        .with_wait_for(WaitFor::message_on_stdout("config is ready"));
+    let image = RunnableImage::from(image).with_mapped_port((port, port));
+    let container = image.start().expect("Failed to start Qtum regtest docker container");
+
+    let name = "qtum";
+    let mut conf_path = temp_dir().join("qtum-regtest");
+    std::fs::create_dir_all(&conf_path).unwrap();
+    conf_path.push(format!("{name}.conf"));
+    Command::new("docker")
+        .arg("cp")
+        .arg(format!("{}:/data/node_0/{}.conf", container.id(), name))
+        .arg(&conf_path)
+        .status()
+        .expect("Failed to execute docker command");
+    let timeout = wait_until_ms(3000);
+    loop {
+        if conf_path.exists() {
+            break;
+        };
+        assert!(now_ms() < timeout, "Test timed out");
+    }
+
+    set_qtum_conf_path(conf_path);
+    DockerNode {
+        container,
+        ticker: name.to_owned(),
+        port,
+    }
 }
