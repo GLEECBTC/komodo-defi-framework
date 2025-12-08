@@ -353,49 +353,86 @@ This categorization is just a preparation step and will guide what goes into whi
 
 #### 4.2.3 `mod.rs` gating
 
+**Status:** ✅ Completed
+
 **File:** `mm2src/mm2_main/tests/docker_tests/mod.rs`
 
-Gate modules as follows:
+**New feature flags added to `Cargo.toml`:**
+- `docker-tests-qrc20 = ["run-docker-tests"]` - QRC20 coin tests
+- `docker-tests-tendermint = ["run-docker-tests"]` - Tendermint/IBC coin tests
+- `docker-tests-zcoin = ["run-docker-tests"]` - ZCoin/Zombie coin tests
+- `docker-tests-swaps-utxo = ["run-docker-tests"]` - UTXO swap protocol tests
+- `docker-tests-watchers = ["run-docker-tests"]` - Watcher node tests
+- `docker-tests-ordermatch = ["run-docker-tests"]` - Orderbook and matching tests
+
+**Module gating implemented:**
 
 ```rust
-#[cfg(feature = "docker-tests-eth")]
-mod eth_docker_tests;
-
-#[cfg(feature = "docker-tests-slp")]
-mod slp_tests;
-
-#[cfg(feature = "docker-tests-sia")]
-mod sia_docker_tests;
-
-#[cfg(feature = "docker-tests-watchers")]
-mod swap_watcher_tests;
-
-#[cfg(feature = "docker-tests-qrc20")]
-pub mod qrc20_tests;
-
-#[cfg(feature = "docker-tests-tendermint")]
-mod tendermint_tests;
-
-#[cfg(feature = "docker-tests-zcoin")]
-mod z_coin_docker_tests;
-
-#[cfg(feature = "docker-tests-ordermatch")]
+// ORDERMATCHING TESTS
+#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-ordermatch"))]
 mod docker_ordermatch_tests;
 
-#[cfg(feature = "docker-tests-swaps")]
-mod swap_proto_v2_tests;
-#[cfg(feature = "docker-tests-swaps")]
-mod swaps_file_lock_tests;
-#[cfg(feature = "docker-tests-swaps")]
-mod swaps_confs_settings_sync_tests;
+// SWAP TESTS
+#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-eth"))]
+mod docker_tests_inner;
 
-// Keep swap_tests compiled only under the main "all" job
-// (e.g., when run-docker-tests is set and none of the split features are set)
+#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-swaps-utxo"))]
+mod swap_proto_v2_tests;
+#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-swaps-utxo"))]
+mod swaps_confs_settings_sync_tests;
+#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-swaps-utxo"))]
+mod swaps_file_lock_tests;
+
+// BCH-SLP swap tests - main docker job only (exclusion logic)
+#[cfg(all(feature = "run-docker-tests", not(feature = "docker-tests-slp"), ...))]
+mod swap_tests;
+
+// WATCHER TESTS
+#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-watchers"))]
+mod swap_watcher_tests;
+
+// COIN-SPECIFIC TESTS
+#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-eth"))]
+mod eth_docker_tests;
+#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-qrc20"))]
+pub mod qrc20_tests;
+#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-sia"))]
+mod sia_docker_tests;
+#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-slp"))]
+mod slp_tests;
+#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-tendermint"))]
+mod tendermint_tests;
+#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-zcoin"))]
+mod z_coin_docker_tests;
 ```
 
-We won't flip all features on immediately, but this prepares the tree for selective jobs.
+**Additional cleanup:**
+- Moved `QtumDockerOps` from `qrc20_tests.rs` to `helpers/qrc20.rs`
+- Helper modules gated on `run-docker-tests` (with `env` and `eth` also available for sepolia tests)
 
-#### 4.2.4 Runner: start only what's needed (keep env flags)
+**All feature combinations verified to compile successfully.**
+
+#### 4.2.4 Test placement audit & file splitting (TODO)
+
+**Goal:** Ensure tests are in the correct files and split large files that test multiple concerns.
+
+**Upcoming tasks:**
+- [ ] Audit each test module to verify tests are correctly placed:
+  - Check if tests match their feature gate (e.g., ETH tests in `docker-tests-eth` gated module)
+  - Identify tests that should be moved to different feature categories
+- [ ] Split large test files that cover multiple concerns:
+  - `docker_tests_inner.rs` - Large mixed module with swap, orderbook, and coin tests
+    - Consider splitting into: `core_swap_tests.rs`, `core_ordermatch_tests.rs`, `core_withdraw_tests.rs`
+  - `eth_docker_tests.rs` - May benefit from splitting coin-specific vs swap tests
+  - `tendermint_tests.rs` - Contains activation, staking, IBC, and swap tests
+    - Consider splitting: `tendermint_activation_tests.rs`, `tendermint_ibc_tests.rs`, `tendermint_swap_tests.rs`
+- [ ] Move misplaced tests to appropriate feature-gated modules:
+  - Ordermatching tests → `docker-tests-ordermatch` module
+  - Watcher tests → `docker-tests-watchers` module
+  - UTXO swap protocol tests → `docker-tests-swaps-utxo` module
+- [ ] Update feature gates after test movements to ensure correct CI job assignment
+
+#### 4.2.5 Runner: start only what's needed (keep env flags)
 
 **File:** `docker_tests_main.rs`
 

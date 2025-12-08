@@ -51,6 +51,7 @@ use docker_tests::helpers::eth::{
     set_geth_taker_swap_v2, set_swap_contract, set_watchers_swap_contract, swap_contract, watchers_swap_contract,
     GETH_DOCKER_IMAGE_WITH_TAG, GETH_RPC_URL, GETH_WEB3,
 };
+use docker_tests::helpers::qrc20::QtumDockerOps;
 use docker_tests::helpers::qrc20::{
     qick_token_address, qorty_token_address, qrc20_swap_contract_address, qtum_conf_path, set_qick_token_address,
     set_qorty_token_address, set_qrc20_swap_contract_address, set_qtum_conf_path,
@@ -66,7 +67,6 @@ use docker_tests::helpers::utxo::{
     UTXO_ASSET_DOCKER_IMAGE_WITH_TAG,
 };
 use docker_tests::helpers::zcoin::{zombie_asset_docker_node, ZCoinAssetDockerOps, ZOMBIE_ASSET_DOCKER_IMAGE_WITH_TAG};
-use docker_tests::qrc20_tests::QtumDockerOps;
 use sia_tests::utils::wait_for_dsia_node_ready;
 
 #[allow(dead_code)]

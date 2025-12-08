@@ -18,10 +18,20 @@ native = [] # Deprecated
 track-ctx-pointer = ["common/track-ctx-pointer"]
 zhtlc-native-tests = ["coins/zhtlc-native-tests"]
 run-docker-tests = ["coins/run-docker-tests"]
-# Split docker test features - each enables a specific test group
-docker-tests-slp = ["run-docker-tests"]
-docker-tests-sia = ["run-docker-tests"]
-docker-tests-eth = ["run-docker-tests"]
+# Split docker test features - organized by test category and chain
+# Chain-specific coin tests (future destination: coins::*/tests, far future: separate crate per chain)
+docker-tests-slp = ["run-docker-tests"]         # BCH-SLP coin tests
+docker-tests-sia = ["run-docker-tests"]         # Sia coin tests
+docker-tests-eth = ["run-docker-tests"]         # ETH/ERC20 coin tests
+docker-tests-qrc20 = ["run-docker-tests"]       # QRC20 coin tests
+docker-tests-tendermint = ["run-docker-tests"]  # Tendermint/IBC coin tests
+docker-tests-zcoin = ["run-docker-tests"]       # ZCoin/Zombie coin tests
+# Swap protocol tests (future destination: mm2_main::lp_swap/tests, far future: lp_swap crate)
+docker-tests-swaps-utxo = ["run-docker-tests"]  # UTXO swap protocol tests (v1, v2, confs, file-locks)
+# Watcher tests (future destination: mm2_main::lp_swap::watchers/tests, far future: watchers crate)
+docker-tests-watchers = ["run-docker-tests"]    # Watcher node tests (ETH + UTXO)
+# Ordermatching tests (future destination: mm2_main::lp_ordermatch/tests, far future: ordermatch crate)
+docker-tests-ordermatch = ["run-docker-tests"]  # Orderbook and matching tests
 default = []
 trezor-udp = ["crypto/trezor-udp"] # use for tests to connect to trezor emulator over udp
 run-device-tests = []
