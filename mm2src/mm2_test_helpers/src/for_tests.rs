@@ -1462,14 +1462,15 @@ impl MarketMakerIt {
             let executable = try_s!(env::args().next().ok_or("No program name"));
             let executable = try_s!(Path::new(&executable).canonicalize());
             let log = try_s!(fs::File::create(&log_path));
+            let envs_fixed = fix_rust_log_if_present(envs);
             let child = try_s!(Command::new(executable)
                 .arg("test_mm_start")
                 .arg("--nocapture")
                 .current_dir(&folder)
                 .env("_MM2_TEST_CONF", try_s!(json::to_string(&conf)))
                 .env("MM2_UNBUFFERED_OUTPUT", "1")
-                .env("RUST_LOG", "debug")
-                .envs(envs.to_vec())
+                .env("RUST_LOG", read_rust_log().as_str())
+                .envs(envs_fixed.into_iter())
                 .stdout(try_s!(log.try_clone()))
                 .stderr(log)
                 .spawn());
@@ -1790,14 +1791,37 @@ impl MarketMakerIt {
         .map_err(|e| ERRL!("{:?}", e))
     }
 
-    /// Currently, we cannot wait for the `Completed IAmrelay handling for peer` log entry on WASM node,
-    /// because the P2P module logs to a global logger and doesn't log to the dashboard.
+    /// Check if the node is connected to at least one seednode,
+    /// the rpc is used instead of checking the log for DEBUG messages (to opt out p2p debug logging)
     #[cfg(not(target_arch = "wasm32"))]
-    pub async fn check_seednodes(&mut self) -> Result<(), String> {
-        // wait for at least 1 node to be added to relay mesh
-        self.wait_for_log(22., |log| log.contains("Completed IAmrelay handling for peer"))
-            .await
-            .map_err(|e| ERRL!("{}", e))
+    pub async fn check_if_any_peer_connected(&mut self) -> Result<(), String> {
+        let timeout_sec = 22.;
+        let start = now_float();
+        loop {
+            if let Ok(res) = self.rpc(&json!({
+                    "userpass": self.userpass,
+                    "method": "get_directly_connected_peers",
+                }))
+                .await {
+                if res.0.is_success() {       
+                    let res_value = serde_json::from_str::<Json>(&res.1).unwrap();
+                    if let Some(peers) = res_value["result"].as_object() {
+                        if peers.len() > 0 {
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+            if now_float() - start > timeout_sec {
+                return ERR!("Timeout expired waiting for connected peers");
+            }
+            if let Some(ref mut pc) = self.pc {
+                if !pc.running() {
+                    return ERR!("MM process terminated prematurely at: {:?}.", self.folder);
+                }
+            }
+            Timer::sleep(1.).await
+        }
     }
 
     /// Wait for the node to start listening to new P2P connections.
@@ -1834,9 +1858,9 @@ impl MarketMakerIt {
                 try_s!(self.wait_for_p2p_listen().await);
             }
 
-            let skip_seednodes_check = conf["skip_seednodes_check"].as_bool().unwrap_or_default();
-            if conf["seednodes"].as_array().is_some() && !skip_seednodes_check {
-                try_s!(self.check_seednodes().await);
+            let skip_peers_check = conf["skip_peers_check"].as_bool().unwrap_or_default();
+            if conf["seednodes"].as_array().is_some() && !skip_peers_check {
+                try_s!(self.check_if_any_peer_connected().await);
             }
         }
 
@@ -4310,4 +4334,45 @@ pub async fn active_swaps(mm: &MarketMakerIt) -> ActiveSwapsResponse {
     let response = mm.rpc(&request).await.unwrap();
     assert_eq!(response.0, StatusCode::OK, "'active_swaps' failed: {}", response.1);
     json::from_str(&response.1).unwrap()
+}
+
+/// Helper to read RUST_LOG env variable and ensure it contains module=info for certain modules needed for tests (wait_for_log to work correctly)
+#[cfg(not(target_arch = "wasm32"))]
+fn read_rust_log() -> String {
+    let rust_log = env::var("RUST_LOG").unwrap_or_else(|_| "debug".to_string()); // assume RUST_LOG=debug by default
+    ensure_needed_modules_logged(&rust_log)
+}
+
+/// Helper to ensure that RUST_LOG (if present in env_vars) contains module=info for certain modules needed for tests (wait_for_log to work correctly)
+#[cfg(not(target_arch = "wasm32"))]
+fn fix_rust_log_if_present(env_vars: &[(&str, &str)]) -> Vec<(String, String)> {
+    env_vars.iter().map(|(key, value)| {
+        if *key == "RUST_LOG" {
+            (key.to_string(), ensure_needed_modules_logged(value))
+        } else {
+            (key.to_string(), value.to_string())
+        }
+    })
+    .collect()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn ensure_needed_modules_logged(rust_log: &str) -> String {   
+    // Add module=info or replace module=off with module=info
+    let ensure_contains_info = |source: &str, module: &str| {
+        let mut updated = source.split(',')
+            .filter(|s| s != &&(module.to_owned() + "=off"))
+            .collect::<Vec<_>>()
+            .join(",");
+        if !updated.contains(&(module.to_owned() + "=")) { // don't override existing module tag (but ignore submodules) 
+            if updated.len() > 0 {
+                updated.push(',');
+            }
+            updated.push_str(&(module.to_owned() + "=info"));
+        }
+        updated
+    };    
+    let updated = ensure_contains_info(rust_log, "mm2_p2p");
+    let updated = ensure_contains_info(updated.as_str(), "mm2_main::lp_swap");
+    updated
 }

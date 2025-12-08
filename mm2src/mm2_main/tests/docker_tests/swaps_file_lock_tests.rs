@@ -164,7 +164,7 @@ fn test_swaps_should_kick_start_if_process_was_killed() {
     // dropping instead of graceful stop to retain swap file locks
     drop(mm_alice);
 
-    alice_conf["skip_seednodes_check"] = true.into();
+    alice_conf["skip_peers_check"] = true.into();
     let mut mm_alice_dup = MarketMakerIt::start(alice_conf, "pass".to_string(), None).unwrap();
     let (_alice_dup_dump_log, _alice_dup_dump_dashboard) = mm_dump(&mm_alice_dup.log_path);
     log!("{:?}", block_on(enable_native(&mm_alice_dup, "MYCOIN", &[], None)));

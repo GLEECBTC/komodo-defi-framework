@@ -1,5 +1,4 @@
 use common::executor::Timer;
-use common::log::LogLevel;
 use common::{block_on, log, now_ms, wait_until_ms};
 use crypto::privkey::key_pair_from_seed;
 use mm2_main::{lp_main, lp_run, LpMainParams};
@@ -14,26 +13,17 @@ use mm2_test_helpers::structs::{
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 use std::env::var;
-use std::str::FromStr;
 
 /// This is not a separate test but a helper used by `MarketMakerIt` to run the MarketMaker from the test binary.
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_mm_start() {
-    test_mm_start_impl();
-}
-
-pub fn test_mm_start_impl() {
     if let Ok(conf) = var("_MM2_TEST_CONF") {
-        if let Ok(log_var) = var("RUST_LOG") {
-            if let Ok(filter) = LogLevel::from_str(&log_var) {
-                log!("test_mm_start] Starting the MarketMaker...");
-                let conf: Json = json::from_str(&conf).unwrap();
-                let params = LpMainParams::with_conf(conf).log_filter(Some(filter));
-                let ctx = block_on(lp_main(params, &|_ctx| (), "TEST".into(), "TEST".into())).unwrap();
-                block_on(lp_run(ctx))
-            }
-        }
+        log!("test_mm_start] Starting the MarketMaker...");
+        let conf: Json = json::from_str(&conf).unwrap();
+        let params = LpMainParams::with_conf(conf);
+        let ctx = block_on(lp_main(params, &|_ctx| (), "TEST".into(), "TEST".into())).unwrap();
+        block_on(lp_run(ctx))
     }
 }
 
