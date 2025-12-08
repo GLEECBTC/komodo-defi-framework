@@ -41,6 +41,12 @@ mod docker_tests_inner;
 #[cfg(all(feature = "run-docker-tests", feature = "docker-tests-swaps-utxo"))]
 mod swap_proto_v2_tests;
 
+// UTXO Swaps V1 tests - UTXO-only swap mechanics (extracted from docker_tests_inner)
+// Tests: swap spend/refund, trade preimage, max taker/maker vol, locked amounts, UTXO merge
+// Chains: UTXO-MYCOIN, UTXO-MYCOIN1
+#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-swaps-utxo"))]
+mod utxo_swaps_v1_tests;
+
 // Swap confirmation settings sync tests - UTXO-only
 // Tests: confirmation requirements, settings synchronization between maker/taker
 // Chains: UTXO-MYCOIN, UTXO-MYCOIN1

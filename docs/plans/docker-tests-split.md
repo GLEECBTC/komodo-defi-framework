@@ -412,25 +412,56 @@ mod z_coin_docker_tests;
 
 **All feature combinations verified to compile successfully.**
 
-#### 4.2.4 Test placement audit & file splitting (TODO)
+#### 4.2.4 Test placement audit & file splitting (IN PROGRESS)
 
 **Goal:** Ensure tests are in the correct files and split large files that test multiple concerns.
 
-**Upcoming tasks:**
+**Baseline test count (monolithic docker-tests job):**
+```
+test result: ok. 235 passed; 0 failed; 8 ignored; 0 measured; 0 filtered out; finished in 1864.36s
+```
+After plan completion, the sum of all split jobs must equal this baseline.
+
+**Status:** Partial implementation - UTXO swap tests extracted to new module.
+
+**Completed tasks:**
+- [x] Created `utxo_swaps_v1_tests.rs` - Extracted UTXO-only swap tests from `docker_tests_inner.rs`:
+  - Swap spend/refund mechanics tests (`test_search_for_swap_tx_spend_*`)
+  - Non-existent tx hex test (`test_for_non_existent_tx_hex_utxo`)
+  - Payment throughput test (`test_one_hundred_maker_payments_in_a_row_native`)
+  - Max taker/maker volume tests (`test_get_max_taker_vol*`, `test_get_max_maker_vol*`)
+  - UTXO merge tests (`test_utxo_merge*`, `test_consolidate_utxos_rpc`, `test_fetch_utxos_rpc`)
+  - Withdraw balance tests (`test_withdraw_not_sufficient_balance`)
+  - Locked amount tests (`test_locked_amount`)
+  - Swap lifecycle tests (`swaps_should_stop_on_stop_rpc`, `test_fill_or_kill_*`, `test_gtc_*`)
+  - Buy/sell with locked coins tests (`test_buy_when_coins_locked_*`, `test_sell_when_coins_locked_*`)
+  - UTXO-only trade tests (`test_trade_base_rel_mycoin_mycoin1_*`, `test_buy_max`)
+- [x] Added module entry in `mod.rs` gated by `docker-tests-swaps-utxo`
+- [x] Verified compilation with `cargo check -p mm2_main --features run-docker-tests,docker-tests-swaps-utxo`
+- [x] Verified no clippy warnings with `-D warnings`
+
+**Remaining tasks:**
+- [ ] Extract remaining UTXO-only tests from `docker_tests_inner.rs` to `utxo_swaps_v1_tests.rs`:
+  - `test_match_and_trade_setprice_max`
+  - `test_max_taker_vol_swap`
+  - `test_trade_preimage_*` (6 tests: `test_taker_trade_preimage`, `test_maker_trade_preimage`, `test_trade_preimage_not_sufficient_balance`, `test_trade_preimage_additional_validation`, `test_trade_preimage_legacy`, and related)
 - [ ] Audit each test module to verify tests are correctly placed:
   - Check if tests match their feature gate (e.g., ETH tests in `docker-tests-eth` gated module)
   - Identify tests that should be moved to different feature categories
-- [ ] Split large test files that cover multiple concerns:
-  - `docker_tests_inner.rs` - Large mixed module with swap, orderbook, and coin tests
-    - Consider splitting into: `core_swap_tests.rs`, `core_ordermatch_tests.rs`, `core_withdraw_tests.rs`
+- [ ] Complete splitting of `docker_tests_inner.rs`:
+  - Extract ordermatching tests to `ordermatch_inner_tests.rs` (gated by `docker-tests-ordermatch`)
+  - Extract ETH-specific tests to `eth_inner_tests.rs` (keep in `docker-tests-eth`)
+  - Remove extracted tests from `docker_tests_inner.rs` to avoid duplication
+- [ ] Consider splitting other large files:
   - `eth_docker_tests.rs` - May benefit from splitting coin-specific vs swap tests
   - `tendermint_tests.rs` - Contains activation, staking, IBC, and swap tests
-    - Consider splitting: `tendermint_activation_tests.rs`, `tendermint_ibc_tests.rs`, `tendermint_swap_tests.rs`
-- [ ] Move misplaced tests to appropriate feature-gated modules:
-  - Ordermatching tests → `docker-tests-ordermatch` module
-  - Watcher tests → `docker-tests-watchers` module
-  - UTXO swap protocol tests → `docker-tests-swaps-utxo` module
 - [ ] Update feature gates after test movements to ensure correct CI job assignment
+
+**Future cleanup (post-plan):**
+- [ ] Review `utxo_swaps_v1_tests.rs` for tests that don't belong in swaps category:
+  - UTXO merge tests may belong in a separate UTXO maintenance module
+  - Some tests may better fit in ordermatching category
+  - Reorganize based on actual test purpose vs. chain dependency
 
 #### 4.2.5 Runner: start only what's needed (keep env flags)
 
@@ -455,12 +486,12 @@ Add new feature flags in `mm2_main/Cargo.toml`:
 - `docker-tests-eth` (existing)
 - `docker-tests-slp` (existing)
 - `docker-tests-sia` (existing)
-- `docker-tests-ordermatch` (to be added)
-- `docker-tests-swaps` (to be added)
-- `docker-tests-watchers` (to be added)
-- `docker-tests-qrc20` (to be added)
-- `docker-tests-tendermint` (to be added)
-- `docker-tests-zcoin` (to be added)
+- `docker-tests-ordermatch` (added in Phase 2)
+- `docker-tests-swaps-utxo` (added in Phase 2) - UTXO-only swap tests
+- `docker-tests-watchers` (added in Phase 2)
+- `docker-tests-qrc20` (added in Phase 2)
+- `docker-tests-tendermint` (added in Phase 2)
+- `docker-tests-zcoin` (added in Phase 2)
 - `docker-tests-integration` (to be added, cross-chain heavy flows)
 
 CI jobs mapping:
@@ -471,7 +502,7 @@ CI jobs mapping:
 | `docker-tests-slp`        | `docker-tests-slp`        | SLP-only tests                                           |
 | `docker-tests-sia`        | `docker-tests-sia`        | Sia client & DSIA/Mycoin swaps                           |
 | `docker-tests-ordermatch` | `docker-tests-ordermatch` | Ordermatching & wallet/order lifecycle                   |
-| `docker-tests-swaps`      | `docker-tests-swaps`      | Swap protocol v1/v2, file locking, conf sync             |
+| `docker-tests-swaps-utxo` | `docker-tests-swaps-utxo` | UTXO swap protocol v1/v2, file locking, conf sync        |
 | `docker-tests-watchers`   | `docker-tests-watchers`   | Watcher flows and rewards                                |
 | `docker-tests-qrc20`      | `docker-tests-qrc20`      | Qtum/QRC20-specific tests                                |
 | `docker-tests-tendermint` | `docker-tests-tendermint` | Cosmos/Tendermint/IBC tests                              |
@@ -496,12 +527,13 @@ CI jobs mapping:
    - `test_set_price_response_format`
    - `test_set_price_conf_settings`, `test_buy_conf_settings`, `test_sell_conf_settings`
 
-**Swaps (`docker-tests-swaps`)**
+**Swaps (`docker-tests-swaps-utxo`)**
 
+- `utxo_swaps_v1_tests::*` (extracted from `docker_tests_inner.rs`)
 - `swap_proto_v2_tests::*`
 - `swaps_file_lock_tests::*`
 - `swaps_confs_settings_sync_tests::*`
-- From `docker_tests_inner.rs` (UTXO-only swap tests):
+- Tests include (UTXO-only swap tests):
    - `test_search_for_swap_tx_spend_*`
    - `test_for_non_existent_tx_hex_utxo`
    - `test_one_hundred_maker_payments_in_a_row_native`
@@ -639,7 +671,7 @@ docker-tests-<suite>:
 |-----|--------------|----------------|--------------|-------|
 | `docker-tests-watchers` | `docker-tests-watchers` | `utxo,evm` | No UTXO/Cosmos/SIA/SLP/Qtum/Zombie | Needs UTXO + Geth |
 | `docker-tests-ordermatch` | `docker-tests-ordermatch` | `utxo` | No ETH/SLP/Qtum/Cosmos/Zombie/SIA | UTXO only |
-| `docker-tests-swaps` | `docker-tests-swaps` | `utxo` | No ETH/SLP/Qtum/Cosmos/Zombie/SIA | Needs zcash params |
+| `docker-tests-swaps-utxo` | `docker-tests-swaps-utxo` | `utxo` | No ETH/SLP/Qtum/Cosmos/Zombie/SIA | Needs zcash params |
 | `docker-tests-qrc20` | `docker-tests-qrc20` | `qtum` | No UTXO/ETH/SLP/Cosmos/Zombie/SIA | Qtum only |
 | `docker-tests-tendermint` | `docker-tests-tendermint` | `cosmos` | No UTXO/ETH/SLP/Qtum/Zombie/SIA | Needs IBC setup |
 | `docker-tests-zcoin` | `docker-tests-zcoin` | `zombie` | No UTXO/ETH/SLP/Qtum/Cosmos/SIA | Needs zcash params |
@@ -866,9 +898,50 @@ Actions:
 
 ---
 
+### Phase 7 – Final validation
+
+**Goal:** Verify that the split CI jobs collectively run the same number of tests as the original monolithic job.
+
+#### 7.1 Test count validation
+
+**Baseline (monolithic docker-tests job):**
+```
+test result: ok. 235 passed; 0 failed; 8 ignored; 0 measured; 0 filtered out; finished in 1864.36s
+```
+
+**Validation steps:**
+
+- [ ] After all split jobs are implemented and running in CI, collect test results from each job:
+  - `docker-tests-eth`: X passed, Y ignored
+  - `docker-tests-slp`: X passed, Y ignored
+  - `docker-tests-sia`: X passed, Y ignored
+  - `docker-tests-ordermatch`: X passed, Y ignored
+  - `docker-tests-swaps-utxo`: X passed, Y ignored
+  - `docker-tests-watchers`: X passed, Y ignored
+  - `docker-tests-qrc20`: X passed, Y ignored
+  - `docker-tests-tendermint`: X passed, Y ignored
+  - `docker-tests-zcoin`: X passed, Y ignored
+  - `docker-tests-integration` (if created): X passed, Y ignored
+
+- [ ] Sum all results and verify:
+  - **Total passed** = 235 (must match baseline)
+  - **Total ignored** = 8 (must match baseline)
+
+- [ ] If counts don't match:
+  - Investigate for missing tests (tests not gated by any feature)
+  - Check for duplicate tests (tests running in multiple jobs)
+  - Verify feature gate configurations in `mod.rs`
+
+- [ ] Document final test distribution across jobs in this file
+
+**Note:** Minor variations may occur if tests are added/removed during the plan implementation. In such cases, document the new baseline and ensure the sum of split jobs equals the updated total.
+
+---
+
 ## Success criteria checklist
 
 - [x] `ReuseMetadata` mode connects to the correct Geth RPC from metadata and fails fast if contract bytecode is missing.
 - [x] Qtum compose runs are stable across test invocations (no `temp_dir()` dependency).
 - [ ] New feature flags build only the intended suites; CI runs watchers/ordermatch/swaps/qrc20/tendermint/zcoin as separate green jobs using Compose mode.
 - [x] The ignored watchers test has meaningful assertions when un-ignored locally.
+- [ ] **Test count validation:** Sum of all split CI jobs equals baseline (235 passed, 8 ignored).
