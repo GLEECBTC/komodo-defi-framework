@@ -554,6 +554,14 @@ Later, you can add `#[cfg(feature = "...")]` blocks around image pulling to slig
 
 **Goal:** Break the monolithic docker tests job into parallel jobs grouped by behavior. Keep each new job small and independent. All jobs use Compose mode (`KDF_DOCKER_COMPOSE_ENV=1`) to enable sharing containers with other tests (e.g., WASM tests).
 
+**Post-implementation fix (Sia gating):**
+The initial Phase 3 implementation had a bug where `sia_tests` module and Sia container initialization
+ran in all docker test jobs regardless of the `docker-tests-sia` feature flag. This was fixed by:
+- Gating `mod sia_tests;` and all Sia-specific imports in `docker_tests_main.rs` with `#[cfg(feature = "docker-tests-sia")]`
+- Gating Sia helpers in `helpers/mod.rs` with `#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-sia"))]`
+- Gating Sia container initialization, image pulling, and health checks in `docker_tests_main.rs`
+- Adding inner feature gate `#![cfg(feature = "docker-tests-sia")]` in `sia_tests/mod.rs` as safety measure
+
 **Implementation summary:**
 All CI jobs now use only feature flags for test selection (no test module filters). The feature-gated modules in `mod.rs` control which tests are compiled and run for each job:
 
@@ -772,6 +780,39 @@ The following tasks are deferred for future implementation:
     - `swap_nucleus_with_doc` (NUCLEUS <-> DOC)
     - `swap_nucleus_with_eth` (NUCLEUS <-> ETH)
     - `swap_doc_with_iris_ibc_nucleus` (DOC <-> IRIS-IBC-NUCLEUS)
+
+- [ ] **Replace `_KDF_NO_*_DOCKER` env vars with feature-flag-based container control**
+  - Currently, two mechanisms control which containers are started:
+    - Feature flags (`docker-tests-eth`, etc.) control which test modules are **compiled**
+    - Env vars (`_KDF_NO_ETH_DOCKER`, etc.) control which containers are **initialized at runtime**
+  - This creates duplication: CI jobs must set both the feature flag AND the corresponding env vars
+  - Proposed refactor: Derive `disable_*` flags from feature flags at compile time:
+    ```rust
+    // Instead of: let disable_eth = env::var("_KDF_NO_ETH_DOCKER").is_ok();
+    // Use:
+    let disable_eth = !cfg!(any(
+        feature = "docker-tests-eth",
+        feature = "docker-tests-watchers",
+        feature = "docker-tests-ordermatch",
+    ));
+    ```
+  - Create a mapping from features to required node groups:
+    - `docker-tests-eth` → Geth only
+    - `docker-tests-slp` → FORSLP only
+    - `docker-tests-sia` → Sia only
+    - `docker-tests-qrc20` → Qtum only
+    - `docker-tests-tendermint` → Cosmos nodes
+    - `docker-tests-zcoin` → Zombie only
+    - `docker-tests-swaps-utxo` → UTXO (MYCOIN, MYCOIN1)
+    - `docker-tests-watchers` → UTXO + Geth
+    - `docker-tests-ordermatch` → UTXO + Geth
+  - Benefits:
+    - Single source of truth for container requirements
+    - Simpler CI configuration (just set features, no env vars needed)
+    - Compile-time verification of container dependencies
+  - Trade-offs:
+    - Must rebuild to change node set (but CI already rebuilds per job)
+    - Loses runtime flexibility for local dev (can keep env vars as optional overrides if needed)
 
 **Note:** Until these jobs are implemented, the affected tests continue to run in the monolithic `docker-tests` job which uses `--features run-docker-tests` with `--profile all`.
 

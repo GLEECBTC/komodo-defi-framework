@@ -45,7 +45,8 @@ pub mod locks;
 pub mod qrc20;
 
 // Sia helpers (Sia docker nodes).
-#[cfg(feature = "run-docker-tests")]
+// Gated on docker-tests-sia to prevent compilation in other docker test jobs.
+#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-sia"))]
 pub mod sia;
 
 // Cross-chain swap orchestration helpers.

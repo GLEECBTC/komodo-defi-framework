@@ -32,12 +32,16 @@ use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
 use web3::{transports::Http, Web3};
 
 mod docker_tests;
+
+// Sia tests are gated on docker-tests-sia feature to prevent them from running in other docker test jobs
+#[cfg(feature = "docker-tests-sia")]
 mod sia_tests;
 use common::{block_on, now_ms, wait_until_ms};
+#[cfg(feature = "docker-tests-sia")]
+use docker_tests::docker_env_metadata::SiaNodeState;
 use docker_tests::docker_env_metadata::{
     get_metadata_file_path, get_or_default_metadata_path, is_docker_compose_mode, should_load_metadata,
-    CosmosNodeState, DockerEnvMetadata, GethNodeState, QtumNodeState, SiaNodeState, SlpNodeState, UtxoNodeState,
-    ZombieNodeState,
+    CosmosNodeState, DockerEnvMetadata, GethNodeState, QtumNodeState, SlpNodeState, UtxoNodeState, ZombieNodeState,
 };
 use docker_tests::helpers::docker_ops::CoinDockerOps;
 use docker_tests::helpers::env::{
@@ -57,6 +61,8 @@ use docker_tests::helpers::qrc20::{
     set_qorty_token_address, set_qrc20_swap_contract_address, set_qtum_conf_path,
 };
 use docker_tests::helpers::qrc20::{qtum_docker_node, QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG};
+// Sia helpers are gated on docker-tests-sia feature
+#[cfg(feature = "docker-tests-sia")]
 use docker_tests::helpers::sia::{sia_docker_node, SIA_DOCKER_IMAGE_WITH_TAG, SIA_RPC_PARAMS};
 use docker_tests::helpers::tendermint::{
     atom_node, ibc_relayer_node, nucleus_node, prepare_ibc_channels, wait_until_relayer_container_is_ready,
@@ -67,6 +73,7 @@ use docker_tests::helpers::utxo::{
     UTXO_ASSET_DOCKER_IMAGE_WITH_TAG,
 };
 use docker_tests::helpers::zcoin::{zombie_asset_docker_node, ZCoinAssetDockerOps, ZOMBIE_ASSET_DOCKER_IMAGE_WITH_TAG};
+#[cfg(feature = "docker-tests-sia")]
 use sia_tests::utils::wait_for_dsia_node_ready;
 
 #[allow(dead_code)]
@@ -78,6 +85,7 @@ const ENV_VAR_NO_SLP_DOCKER: &str = "_KDF_NO_SLP_DOCKER";
 const ENV_VAR_NO_ETH_DOCKER: &str = "_KDF_NO_ETH_DOCKER";
 const ENV_VAR_NO_COSMOS_DOCKER: &str = "_KDF_NO_COSMOS_DOCKER";
 const ENV_VAR_NO_ZOMBIE_DOCKER: &str = "_KDF_NO_ZOMBIE_DOCKER";
+#[cfg(feature = "docker-tests-sia")]
 const ENV_VAR_NO_SIA_DOCKER: &str = "_KDF_NO_SIA_DOCKER";
 
 /// Execution mode for docker tests
@@ -145,6 +153,8 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
                 let disable_eth: bool = env::var(ENV_VAR_NO_ETH_DOCKER).is_ok();
                 let disable_cosmos: bool = env::var(ENV_VAR_NO_COSMOS_DOCKER).is_ok();
                 let disable_zombie: bool = env::var(ENV_VAR_NO_ZOMBIE_DOCKER).is_ok();
+                // Sia is disabled unless docker-tests-sia feature is enabled
+                #[cfg(feature = "docker-tests-sia")]
                 let disable_sia: bool = env::var(ENV_VAR_NO_SIA_DOCKER).is_ok();
 
                 // Only pull images and start containers in Testcontainers mode
@@ -168,6 +178,7 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
                     if !disable_zombie {
                         images.push(ZOMBIE_ASSET_DOCKER_IMAGE_WITH_TAG);
                     }
+                    #[cfg(feature = "docker-tests-sia")]
                     if !disable_sia {
                         images.push(SIA_DOCKER_IMAGE_WITH_TAG);
                     }
@@ -265,6 +276,7 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
                     None
                 };
 
+                #[cfg(feature = "docker-tests-sia")]
                 let sia_node = if !disable_sia {
                     if mode == DockerTestMode::Testcontainers {
                         Some(sia_docker_node("SIA", 9980))
@@ -415,7 +427,8 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
                     metadata.initialized.cosmos = true;
                 }
 
-                // Initialize Sia
+                // Initialize Sia (only when docker-tests-sia feature is enabled)
+                #[cfg(feature = "docker-tests-sia")]
                 if !disable_sia {
                     if let Some(sia_node) = sia_node {
                         block_on(wait_for_dsia_node_ready());
@@ -601,7 +614,8 @@ fn validate_nodes_health(metadata: &DockerEnvMetadata) -> Result<(), String> {
         }
     }
 
-    // Check Sia node
+    // Check Sia node (only when docker-tests-sia feature is enabled)
+    #[cfg(feature = "docker-tests-sia")]
     if metadata.initialized.sia {
         if let Some(ref sia) = metadata.sia {
             let addr = format!("{}:{}", sia.rpc_host, sia.rpc_port);
