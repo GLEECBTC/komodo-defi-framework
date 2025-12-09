@@ -422,7 +422,7 @@ test result: ok. 235 passed; 0 failed; 8 ignored; 0 measured; 0 filtered out; fi
 ```
 After plan completion, the sum of all split jobs must equal this baseline.
 
-**Status:** Partial implementation - UTXO swap tests extracted to new module.
+**Status:** Partial implementation - UTXO swap tests and UTXO ordermatching tests extracted to new modules.
 
 **Completed tasks:**
 - [x] Created `utxo_swaps_v1_tests.rs` - Extracted UTXO-only swap tests from `docker_tests_inner.rs`:
@@ -443,14 +443,28 @@ After plan completion, the sum of all split jobs must equal this baseline.
 - [x] Verified compilation with `cargo check -p mm2_main --features run-docker-tests,docker-tests-swaps-utxo`
 - [x] Verified no clippy warnings with `-D warnings`
 
+- [x] Created `utxo_ordermatch_v1_tests.rs` - Extracted 17 UTXO-only ordermatching tests from `docker_tests_inner.rs`:
+  - Order lifecycle tests (`order_should_be_cancelled_when_entire_balance_is_withdrawn`, `order_should_be_updated_when_balance_is_decreased_*`)
+  - Partial fill test (`test_order_should_be_updated_when_matched_partially`)
+  - Order volume tests (`test_set_price_max`)
+  - Restart/persistence tests (`test_maker_order_should_kick_start_and_appear_in_orderbook_on_restart`, `test_maker_order_should_not_kick_start_and_appear_in_orderbook_if_balance_is_withdrawn`, `test_maker_order_kick_start_should_trigger_subscription_and_match`)
+  - Same private key edge cases (`test_orders_should_match_on_both_nodes_with_same_priv`, `test_maker_and_taker_order_created_with_same_priv_should_not_match`)
+  - Order conversion test (`test_taker_order_converted_to_maker_should_cancel_properly_when_matched`)
+  - Best price matching tests (`test_taker_should_match_with_best_price_buy`, `test_taker_should_match_with_best_price_sell`)
+  - RPC response format tests (`test_set_price_response_format`, `test_buy_response_format`, `test_sell_response_format`, `test_my_orders_response_format`)
+- [x] Added module entry in `mod.rs` gated by `docker-tests-ordermatch`
+- [x] Removed duplicate tests from `docker_tests_inner.rs` (file reduced from ~3300 to ~1957 lines)
+- [x] Verified compilation with `cargo check -p mm2_main --features run-docker-tests,docker-tests-ordermatch`
+- [x] Verified no clippy warnings with `-D warnings` for both `docker-tests-eth` and `docker-tests-ordermatch`
+
 **Remaining tasks:**
 - [ ] Audit each test module to verify tests are correctly placed:
   - Check if tests match their feature gate (e.g., ETH tests in `docker-tests-eth` gated module)
   - Identify tests that should be moved to different feature categories
 - [ ] Complete splitting of `docker_tests_inner.rs`:
-  - Extract ordermatching tests to `ordermatch_inner_tests.rs` (gated by `docker-tests-ordermatch`)
+  - ~~Extract ordermatching tests to `ordermatch_inner_tests.rs` (gated by `docker-tests-ordermatch`)~~ ✅ Done as `utxo_ordermatch_v1_tests.rs`
   - Extract ETH-specific tests to `eth_inner_tests.rs` (keep in `docker-tests-eth`)
-  - Remove extracted tests from `docker_tests_inner.rs` to avoid duplication
+  - ~~Remove extracted tests from `docker_tests_inner.rs` to avoid duplication~~ ✅ Done
 - [ ] Consider splitting other large files:
   - `eth_docker_tests.rs` - May benefit from splitting coin-specific vs swap tests
   - `tendermint_tests.rs` - Contains activation, staking, IBC, and swap tests

@@ -22,6 +22,12 @@ pub mod helpers;
 #[cfg(all(feature = "run-docker-tests", feature = "docker-tests-ordermatch"))]
 mod docker_ordermatch_tests;
 
+// UTXO Ordermatching V1 tests - UTXO-only orderbook mechanics (extracted from docker_tests_inner)
+// Tests: order lifecycle, balance-driven cancellations/updates, restart kickstart, best-price matching, RPC response formats
+// Chains: UTXO-MYCOIN, UTXO-MYCOIN1
+#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-ordermatch"))]
+mod utxo_ordermatch_v1_tests;
+
 // ============================================================================
 // SWAP TESTS
 // Tests for atomic swap execution (lp_swap)
