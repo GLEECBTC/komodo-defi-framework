@@ -758,11 +758,23 @@ docker-tests-<suite>:
 
 The following tasks are deferred for future implementation:
 
-- [ ] **Fix unused warnings for feature-gated helper functions**
+- [ ] **Fix unused warnings for feature-gated helper functions** *(HIGH PRIORITY - affects all CI jobs)*
   - Helper modules (`utxo.rs`, `eth.rs`, `qrc20.rs`, etc.) have functions only used by certain test combinations
-  - When compiling with a single feature flag, unused helper functions generate warnings
-  - Solution: Add feature gates to helper functions so they only compile when their consumers compile
-  - This may reveal opportunities to reorganize helpers into more cohesive feature-specific modules
+  - When compiling with a single feature flag, unused helper functions generate warnings (27+ warnings per job)
+  - Current warnings include:
+    - `GETH_DEV_CHAIN_ID`, `erc20_contract_checksum`, `swap_contract_checksum`, etc. in `eth.rs`
+    - `qrc20_coin_from_privkey`, `fill_qrc20_address`, etc. in `qrc20.rs`
+    - `MYCOIN`, `MYCOIN1`, `rmd160_from_priv`, `fund_privkey_utxo`, etc. in `utxo.rs`
+    - `trade_base_rel` in `swap.rs`
+  - Approach options:
+    1. **Feature-gate individual functions** - Add `#[cfg(feature = "docker-tests-X")]` to each function based on which tests use it
+    2. **Reorganize helpers into feature-specific modules** - Split helpers so each feature's tests only compile their needed helpers
+    3. **Allow dead_code for helpers** - Add `#[allow(dead_code)]` to helper module (least preferred, hides real issues)
+  - Recommended approach: Option 2 - reorganize helpers into feature-aligned modules:
+    - `helpers/eth_helpers.rs` - gated on `docker-tests-eth` or tests that need ETH
+    - `helpers/utxo_helpers.rs` - gated on tests that need UTXO
+    - `helpers/swap_helpers.rs` - gated on swap tests
+    - Keep shared utilities in `helpers/common.rs` (always compiled)
   - Goal: `cargo check -p mm2_main --tests --features docker-tests-<any>` should produce zero warnings
 
 - [ ] **Add `docker-tests-integration` feature flag and CI job**

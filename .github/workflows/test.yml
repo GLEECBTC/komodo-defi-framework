@@ -245,7 +245,8 @@ jobs:
         if: always()
         run: docker compose -f .docker/test-nodes.yml down -v
 
-  # Sia-only docker tests
+  # Sia docker tests (Sia + UTXO for cross-chain swaps)
+  # sia_tests module contains Sia<->MYCOIN swap tests that require both chains
   docker-tests-sia:
     timeout-minutes: 30
     runs-on: ubuntu-latest
@@ -269,20 +270,19 @@ jobs:
       - name: Build cache
         uses: ./.github/actions/build-cache
 
-      - name: Prepare Sia node
+      - name: Prepare nodes
         run: ./scripts/ci/docker-test-nodes-setup.sh --skip-cosmos
 
-      - name: Start Sia node
+      - name: Start Sia and UTXO nodes
         run: |
-          docker compose -f .docker/test-nodes.yml --profile sia up -d
-          echo "Waiting for Sia container..."
+          docker compose -f .docker/test-nodes.yml --profile sia --profile utxo up -d
+          echo "Waiting for containers..."
           sleep 15
           docker compose -f .docker/test-nodes.yml ps
 
       - name: Test Sia
         env:
           KDF_DOCKER_COMPOSE_ENV: "1"
-          _KDF_NO_UTXO_DOCKER: "1"
           _KDF_NO_SLP_DOCKER: "1"
           _KDF_NO_QTUM_DOCKER: "1"
           _KDF_NO_ETH_DOCKER: "1"
