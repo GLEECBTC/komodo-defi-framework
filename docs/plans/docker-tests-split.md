@@ -70,7 +70,8 @@ Already split CI jobs:
 - `docker-tests-slp` → `slp_tests`
 - `docker-tests-sia` → `sia_docker_tests`
 
-Main `docker-tests` job still runs:
+**Historical (pre-feature-gating) state of the monolithic `docker-tests` job:**
+It used to compile and run:
 
 - `docker_tests_inner`
 - `docker_ordermatch_tests`
@@ -85,7 +86,19 @@ Main `docker-tests` job still runs:
 - Sia short-locktime tests (via `sia_tests`)
 - `integration_tests_common::test_mm_start`
 
-This currently runs ~200+ tests in ~1800 seconds.
+This run produced approximately 235 passing tests in ~1800 seconds.
+
+**Current (post-gating) behavior:**
+
+- Many suites are now gated on additional `docker-tests-*` features:
+  - Ordermatching: `docker-tests-ordermatch`
+  - UTXO swaps: `docker-tests-swaps-utxo`
+  - Watchers: `docker-tests-watchers`
+  - QRC20: `docker-tests-qrc20`
+  - Tendermint: `docker-tests-tendermint`
+  - ZCoin: `docker-tests-zcoin`
+- The CI `docker-tests` job currently uses only `--features run-docker-tests`, so these feature-gated modules are **not** compiled there.
+- The 235-test figure should be treated as a **historical baseline**; the goal for Phase 3 is that the sum of all split jobs (each with its feature flag) matches or exceeds this baseline.
 
 ### 2.3 Desired grouping (functional)
 
@@ -120,6 +133,10 @@ We want to group tests by behavior and feature area:
 - Use **minimal movement**:
    - We prefer `#[cfg(feature = "...")]` and helper modules over moving test functions around arbitrarily.
 - When tests logically belong to multiple categories (e.g. watchers tests touch UTXO + ETH), we group them under their primary behavior (watchers).
+- **Documentation hygiene**: Before each commit, update any documentation that is no longer accurate due to the changes being committed. This includes:
+   - `docs/DOCKER_TESTS.md` — file structure, execution modes, CI job descriptions
+   - `docs/plans/docker-tests-split.md` — phase status, completed/pending checkboxes, baseline figures
+   - Do not add new documentation sections; only modify existing content to reflect the current state.
 
 ---
 
@@ -189,7 +206,7 @@ Add semantic checks beyond simple port checks:
 
 #### 4.1.6 Container name constants
 
-**File:** `docker_tests_common.rs` (or new `helpers/env.rs`)
+**File:** `mm2src/mm2_main/tests/docker_tests/helpers/env.rs`
 
 - [x] Lift compose container names into constants:
    - `KDF_QTUM_SERVICE`, `KDF_MYCOIN_SERVICE`, `KDF_MYCOIN1_SERVICE`, `KDF_FORSLP_SERVICE`, `KDF_ZOMBIE_SERVICE`, `KDF_IBC_RELAYER_SERVICE`
@@ -412,11 +429,18 @@ mod z_coin_docker_tests;
 
 **All feature combinations verified to compile successfully.**
 
+**Note:** Because modules are now gated on `docker-tests-*` features, a suite will not compile or run unless its feature flag is enabled. As of the current CI:
+
+- Only `docker-tests-eth`, `docker-tests-slp`, and `docker-tests-sia` have dedicated jobs.
+- Suites behind `docker-tests-ordermatch`, `docker-tests-swaps-utxo`, `docker-tests-watchers`,
+  `docker-tests-qrc20`, `docker-tests-tendermint`, and `docker-tests-zcoin` currently only run
+  when invoked manually with the appropriate feature flags.
+
 #### 4.2.4 Test placement audit & file splitting (IN PROGRESS)
 
 **Goal:** Ensure tests are in the correct files and split large files that test multiple concerns.
 
-**Baseline test count (monolithic docker-tests job):**
+**Historic baseline (pre-split monolithic docker-tests job):**
 ```
 test result: ok. 235 passed; 0 failed; 8 ignored; 0 measured; 0 filtered out; finished in 1864.36s
 ```
@@ -492,20 +516,11 @@ Later, you can add `#[cfg(feature = "...")]` blocks around image pulling to slig
 
 #### 4.3.1 CI job matrix & features
 
-**Current state:** Only `docker-tests-eth`, `docker-tests-slp`, and `docker-tests-sia` feature flags exist today. The other flags listed below must be introduced and wired in this phase.
-
-Add new feature flags in `mm2_main/Cargo.toml`:
-
-- `docker-tests-eth` (existing)
-- `docker-tests-slp` (existing)
-- `docker-tests-sia` (existing)
-- `docker-tests-ordermatch` (added in Phase 2)
-- `docker-tests-swaps-utxo` (added in Phase 2) - UTXO-only swap tests
-- `docker-tests-watchers` (added in Phase 2)
-- `docker-tests-qrc20` (added in Phase 2)
-- `docker-tests-tendermint` (added in Phase 2)
-- `docker-tests-zcoin` (added in Phase 2)
-- `docker-tests-integration` (to be added, cross-chain heavy flows)
+- **Feature flags status (in `mm2_main/Cargo.toml`):**
+  - Already present: `docker-tests-eth`, `docker-tests-slp`, `docker-tests-sia`,
+    `docker-tests-ordermatch`, `docker-tests-swaps-utxo`, `docker-tests-watchers`,
+    `docker-tests-qrc20`, `docker-tests-tendermint`, `docker-tests-zcoin`
+  - Optional / not yet added: `docker-tests-integration` (for curated cross-chain flows)
 
 CI jobs mapping:
 
@@ -908,6 +923,7 @@ Actions:
 | Geth metadata URL in health | `docker_tests_main.rs` | `validate_nodes_health()` → replace `block_on(GETH_WEB3.eth().block_number()...)` with a `Web3` constructed from `metadata.geth.rpc_url` |
 | Qtum conf path | `docker_tests_main.rs` | `setup_qtum_conf_for_compose()` → write to `coin_daemon_data_dir("QTUM", true)/qtum.conf` (or `.docker/container-runtime/qtum/qtum.conf`), store in metadata, assert exists in Reuse |
 | Watchers assert fix | `swap_watcher_tests.rs` | `test_two_watchers_spend_maker_payment_eth_erc20()` lines 1223-1228 → implement `w1_gain`/`w2_gain` boolean logic and `assert_ne!(w1_gain, w2_gain)` |
+| Container name constants | `mm2src/mm2_main/tests/docker_tests/helpers/env.rs` | `KDF_QTUM_SERVICE`, `KDF_MYCOIN_SERVICE`, `KDF_MYCOIN1_SERVICE`, `KDF_FORSLP_SERVICE`, `KDF_ZOMBIE_SERVICE`, `KDF_IBC_RELAYER_SERVICE` |
 
 ---
 
@@ -917,10 +933,12 @@ Actions:
 
 #### 7.1 Test count validation
 
-**Baseline (monolithic docker-tests job):**
+**Historic baseline (pre-split monolithic docker-tests job):**
 ```
 test result: ok. 235 passed; 0 failed; 8 ignored; 0 measured; 0 filtered out; finished in 1864.36s
 ```
+
+Note: Until all feature-gated suites have dedicated CI jobs (Phase 3), individual jobs may run fewer tests than this baseline; the success criterion applies once the full job matrix is in place.
 
 **Validation steps:**
 

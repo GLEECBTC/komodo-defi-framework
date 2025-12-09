@@ -169,15 +169,39 @@ scripts/ci/
 └── docker-test-nodes-setup.sh  # Prepares runtime environment
 
 mm2src/mm2_main/tests/
-├── docker_tests_main.rs        # Test entry point
+├── docker_tests_main.rs        # Test entry point / custom test runner
 ├── docker_tests/
-│   ├── docker_tests_common.rs  # Node helpers and initialization
-│   ├── qrc20_tests.rs          # Qtum-specific tests
-│   ├── eth_docker_tests.rs     # Ethereum tests
-│   ├── slp_tests.rs            # SLP token tests
-│   └── ...
+│   ├── mod.rs                  # Feature-gated test module index
+│   ├── docker_env_metadata.rs  # DockerEnvMetadata & metadata path helpers
+│   ├── helpers/
+│   │   ├── mod.rs              # Helper module index
+│   │   ├── env.rs              # MmCtx creation, docker-compose service constants, DockerNode
+│   │   ├── eth.rs              # Geth/ETH helpers (contracts, funding, RPC URLs)
+│   │   ├── qrc20.rs            # Qtum/QRC20 helpers
+│   │   ├── sia.rs              # Sia helpers
+│   │   ├── swap.rs             # Cross-chain swap orchestration helpers
+│   │   ├── tendermint.rs       # Nucleus/ATOM/IBC helpers
+│   │   ├── utxo.rs             # UTXO/FORSLP helpers
+│   │   ├── zcoin.rs            # Zombie/ZCoin helpers
+│   │   ├── docker_ops.rs       # CoinDockerOps trait for dockerized nodes
+│   │   └── locks.rs            # Simple lock helpers
+│   ├── docker_tests_inner.rs           # Mixed ETH/UTXO integration tests
+│   ├── docker_ordermatch_tests.rs      # Cross-chain ordermatching tests
+│   ├── utxo_ordermatch_v1_tests.rs     # UTXO-only ordermatching tests
+│   ├── utxo_swaps_v1_tests.rs          # UTXO-only swap protocol v1 tests
+│   ├── swap_proto_v2_tests.rs          # UTXO-only swap protocol v2 tests
+│   ├── swaps_confs_settings_sync_tests.rs  # Swap confirmations settings sync tests
+│   ├── swaps_file_lock_tests.rs        # Swap file-locking tests
+│   ├── swap_watcher_tests.rs           # Watcher node tests
+│   ├── eth_docker_tests.rs             # ETH/ERC20/NFT coin & swap tests
+│   ├── qrc20_tests.rs                  # Qtum/QRC20 tests
+│   ├── slp_tests.rs                    # SLP/BCH tests
+│   ├── sia_docker_tests.rs             # Sia-only docker tests
+│   ├── tendermint_tests.rs             # Tendermint/Cosmos/IBC tests
+│   ├── z_coin_docker_tests.rs          # ZCoin/Zombie tests
+│   └── swap_tests.rs                   # Cross-chain SLP/UTXO swaps (multi-node)
 └── sia_tests/
-    └── utils.rs                # Sia test utilities
+    └── utils.rs                        # Sia test utilities
 ```
 
 ## Troubleshooting
@@ -289,61 +313,7 @@ else:
 
 When loading metadata in ReuseMetadata mode, the harness validates that all initialized nodes are reachable before proceeding. If any health check fails, tests abort with an error message indicating which node is unreachable.
 
-## Future Refactoring
+## Future Work
 
-### Modularizing docker_tests_common.rs
-
-The current `docker_tests_common.rs` file contains helpers for all blockchain types mixed together. This makes it difficult to use feature flags to compile only the tests needed for a specific chain.
-
-**Current state:**
-- ETH, UTXO, SLP, Cosmos, Sia, and other helpers are in one file
-- Functions reference types from multiple chain implementations
-- Feature-flag based test isolation requires scattered `#[cfg(...)]` annotations
-
-**Planned refactoring:**
-1. Split `docker_tests_common.rs` into chain-specific modules:
-   ```
-   docker_tests/
-   ├── helpers/
-   │   ├── mod.rs          # Truly shared utilities (mm2 setup, test framework)
-   │   ├── utxo.rs         # UTXO-specific helpers
-   │   ├── eth.rs          # ETH/ERC20 helpers
-   │   ├── slp.rs          # SLP token helpers
-   │   ├── cosmos.rs       # Tendermint/IBC helpers
-   │   ├── sia.rs          # Sia helpers
-   │   └── zcoin.rs        # Z-coin helpers
-   ```
-
-2. Add feature flags for each chain type:
-   ```toml
-   # Cargo.toml
-   docker-tests-slp = ["run-docker-tests"]
-   docker-tests-eth = ["run-docker-tests"]
-   docker-tests-utxo = ["run-docker-tests"]
-   docker-tests-cosmos = ["run-docker-tests"]
-   docker-tests-sia = ["run-docker-tests"]
-   docker-tests-zcoin = ["run-docker-tests"]
-   ```
-
-3. Apply feature flags at module level:
-   ```rust
-   // helpers/mod.rs
-   #[cfg(feature = "docker-tests-eth")]
-   pub mod eth;
-
-   #[cfg(feature = "docker-tests-slp")]
-   pub mod slp;
-
-   #[cfg(feature = "docker-tests-utxo")]
-   pub mod utxo;
-   // etc.
-   ```
-
-4. Each chain module would only depend on relevant imports
-
-**Benefits:**
-- Clean feature-flag isolation without scattered cfg annotations
-- Faster compilation for targeted test runs
-- Easier maintenance and testing of individual chains
-- Better separation of concerns
-- CI jobs can run in parallel with minimal resource usage per job
+For the current refactoring plan, CI split, and feature-gating strategy,
+see [`docs/plans/docker-tests-split.md`](plans/docker-tests-split.md).
