@@ -436,15 +436,14 @@ After plan completion, the sum of all split jobs must equal this baseline.
   - Swap lifecycle tests (`swaps_should_stop_on_stop_rpc`, `test_fill_or_kill_*`, `test_gtc_*`)
   - Buy/sell with locked coins tests (`test_buy_when_coins_locked_*`, `test_sell_when_coins_locked_*`)
   - UTXO-only trade tests (`test_trade_base_rel_mycoin_mycoin1_*`, `test_buy_max`)
+  - Setprice max trade test (`test_match_and_trade_setprice_max`)
+  - Max taker vol swap test (`test_max_taker_vol_swap`)
+  - Trade preimage tests (`test_maker_trade_preimage`, `test_taker_trade_preimage`, `test_trade_preimage_not_sufficient_balance`, `test_trade_preimage_additional_validation`, `test_trade_preimage_legacy`)
 - [x] Added module entry in `mod.rs` gated by `docker-tests-swaps-utxo`
 - [x] Verified compilation with `cargo check -p mm2_main --features run-docker-tests,docker-tests-swaps-utxo`
 - [x] Verified no clippy warnings with `-D warnings`
 
 **Remaining tasks:**
-- [ ] Extract remaining UTXO-only tests from `docker_tests_inner.rs` to `utxo_swaps_v1_tests.rs`:
-  - `test_match_and_trade_setprice_max`
-  - `test_max_taker_vol_swap`
-  - `test_trade_preimage_*` (6 tests: `test_taker_trade_preimage`, `test_maker_trade_preimage`, `test_trade_preimage_not_sufficient_balance`, `test_trade_preimage_additional_validation`, `test_trade_preimage_legacy`, and related)
 - [ ] Audit each test module to verify tests are correctly placed:
   - Check if tests match their feature gate (e.g., ETH tests in `docker-tests-eth` gated module)
   - Identify tests that should be moved to different feature categories
