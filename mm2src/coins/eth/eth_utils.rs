@@ -18,6 +18,8 @@ pub(super) const GAS_PRICE_ADJUST: &str = "gas_price_adjust";
 pub(super) const ESTIMATE_GAS_MULT: &str = "estimate_gas_mult";
 /// Coin config parameter name for the default eth swap gas fee policy
 pub(super) const SWAP_GAS_FEE_POLICY: &str = "swap_gas_fee_policy";
+/// Bundler service url
+pub(super) const EIP4337_URL: &str = "eip4337_url";
 
 pub(crate) mod nonce_sequencer {
     use super::*;
