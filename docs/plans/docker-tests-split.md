@@ -520,7 +520,11 @@ After plan completion, the sum of all split jobs must equal this baseline.
 - [x] Consider splitting other large files:
   - `eth_docker_tests.rs` - Reviewed; no split needed (all EVM-scope tests)
   - `tendermint_tests.rs` - Split completed: cross-chain swaps moved to `tendermint_swap_tests.rs`
-- [ ] Update feature gates after test movements to ensure correct CI job assignment
+- [x] Update feature gates after test movements to ensure correct CI job assignment
+  - Verified all module gates in `mod.rs` match intended suite assignments
+  - `docker_tests_inner` correctly gated by `docker-tests-ordermatch` (cross-chain UTXO+ETH ordermatching)
+  - `tendermint_swap_tests` correctly gated by `docker-tests-tendermint + docker-tests-eth`
+  - All other modules have correct single-feature gates matching their CI job
 
 **Future cleanup (post-plan):**
 - [ ] Review `utxo_swaps_v1_tests.rs` for tests that don't belong in swaps category:
@@ -575,44 +579,18 @@ CI jobs mapping:
 
 **Ordermatching (`docker-tests-ordermatch`)**
 
-- `docker_ordermatch_tests::*` (except the Zombie-specific test below).
-- From `docker_tests_inner.rs` (order-related subset):
-   - `order_should_be_cancelled_when_entire_balance_is_withdrawn`
-   - `order_should_be_updated_when_balance_is_decreased_*`
-   - `test_order_should_be_updated_when_matched_partially`
-   - `test_buy_min_volume`, `test_sell_min_volume`
-   - `test_setprice_min_volume_dust`, `test_sell_min_volume_dust`
-   - `test_set_price_max`
-   - `test_orderbook_depth`
-   - `test_my_orders_response_format`, `test_my_orders_after_matched`
-   - `test_set_price_must_save_order_to_db`
-   - `test_set_price_response_format`
-   - `test_set_price_conf_settings`, `test_buy_conf_settings`, `test_sell_conf_settings`
+- `docker_ordermatch_tests::*` (except the Zombie-specific test below)
+- `utxo_ordermatch_v1_tests::*` (UTXO-only ordermatching tests extracted from `docker_tests_inner.rs`)
+- `docker_tests_inner::*` (cross-chain UTXO+ETH ordermatching tests)
+
+**Note:** The `docker_tests_inner` module contains 4 cross-chain tests that require **both UTXO and ETH containers**. Therefore, the `docker-tests-ordermatch` CI job must start Geth/ETH containers in addition to UTXO containers.
 
 **Swaps (`docker-tests-swaps-utxo`)**
 
-- `utxo_swaps_v1_tests::*` (extracted from `docker_tests_inner.rs`)
-- `swap_proto_v2_tests::*`
-- `swaps_file_lock_tests::*`
-- `swaps_confs_settings_sync_tests::*`
-- Tests include (UTXO-only swap tests):
-   - `test_search_for_swap_tx_spend_*`
-   - `test_for_non_existent_tx_hex_utxo`
-   - `test_one_hundred_maker_payments_in_a_row_native`
-   - `test_match_and_trade_setprice_max`
-   - `test_get_max_taker_vol*`, `test_get_max_maker_vol*`
-   - `test_trade_preimage_*`, `test_taker_trade_preimage`, `test_maker_trade_preimage`
-   - `test_max_taker_vol_swap`
-   - `test_buy_when_coins_locked_by_other_swap`, `test_sell_when_coins_locked_by_other_swap`
-   - `test_fill_or_kill_taker_order_should_not_transform_to_maker`
-   - `test_gtc_taker_order_should_transform_to_maker`
-   - `test_trade_preimage_not_sufficient_balance`, `test_trade_preimage_additional_validation`, `test_trade_preimage_legacy`
-   - `test_trade_base_rel_mycoin_mycoin1_coins`, `test_trade_base_rel_mycoin_mycoin1_coins_burnkey_as_alice`
-   - `test_utxo_merge`, `test_utxo_merge_max_merge_at_once`
-   - `test_consolidate_utxos_rpc`, `test_fetch_utxos_rpc`
-   - `test_withdraw_not_sufficient_balance`
-   - `test_locked_amount`
-   - `swaps_should_stop_on_stop_rpc`
+- `utxo_swaps_v1_tests::*` (UTXO swap v1 mechanics, max volume, withdraw/locked amount, merge tests)
+- `swap_proto_v2_tests::*` (swap protocol v2 tests)
+- `swaps_file_lock_tests::*` (swap file locking tests)
+- `swaps_confs_settings_sync_tests::*` (confirmation settings synchronization tests)
 
 **Watchers (`docker-tests-watchers`)**
 
@@ -639,24 +617,31 @@ CI jobs mapping:
 - `z_coin_docker_tests::*`
 - `docker_ordermatch_tests::test_zombie_order_after_balance_reduce_and_mm_restart`
 
-**Integration (`docker-tests-integration`)**
+**Integration (`docker-tests-integration`)** — *NOT YET IMPLEMENTED*
 
 - `swap_tests::trade_test_with_maker_slp`
 - `swap_tests::trade_test_with_taker_slp`
-- Optionally: a very small curated subset of cross-chain tests from `docker_tests_inner` if coverage is missing elsewhere.
+- Optionally: a very small curated subset of cross-chain tests if coverage is missing elsewhere.
+
+**Current behavior:** `swap_tests` is compiled only when `run-docker-tests` is enabled and **no** other `docker-tests-*` features are enabled (legacy negative-gate pattern). The `docker-tests-integration` feature does not yet exist in `Cargo.toml`. This is a future task to introduce a dedicated feature flag.
 
 #### 4.3.3 Runner profiles per job
 
 In `docker_tests_main.rs`, adjust container startup based on enabled features:
 
-- **Ordermatching/Swaps only:**
-   - Start UTXO containers (`MYCOIN`, `MYCOIN1`) and minimum deps.
+- **Ordermatching (`docker-tests-ordermatch`):**
+   - Start UTXO containers (`MYCOIN`, `MYCOIN1`).
+   - **Also start Geth/ETH containers** because `docker_tests_inner` contains cross-chain UTXO+ETH ordermatching tests.
+- **Swaps (`docker-tests-swaps-utxo`):**
+   - Start UTXO containers (`MYCOIN`, `MYCOIN1`) only.
 - **Watchers:**
    - Start UTXO + Geth (no Cosmos/Sia/etc).
 - **QRC20:**
    - Start Qtum/QRC20 only (and UTXO if needed for some tests).
 - **Tendermint:**
    - Start Cosmos nodes (Nucleus, Atom) and relayer; prepare IBC channels.
+- **Tendermint Cross-Chain (`docker-tests-tendermint + docker-tests-eth`):**
+   - Start Cosmos nodes AND Geth/ETH containers for cross-chain swap tests.
 - **ZCoin:**
    - Start Zombie node and ensure zcash params are present.
 - **Integration:**
