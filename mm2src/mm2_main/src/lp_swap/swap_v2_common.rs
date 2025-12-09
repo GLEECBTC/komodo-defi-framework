@@ -98,7 +98,7 @@ use crate::lp_network::{subscribe_to_topic, unsubscribe_from_topic};
 use crate::lp_swap::maker_swap_v2::{MakerSwapDbRepr, MakerSwapEvent, MakerSwapStateMachine, MakerSwapStorage};
 use crate::lp_swap::swap_lock::{SwapLock, SwapLockError, SwapLockOps};
 use crate::lp_swap::taker_swap_v2::{TakerSwapDbRepr, TakerSwapEvent, TakerSwapStateMachine, TakerSwapStorage};
-use crate::lp_swap::{p2p_private_and_peer_id_to_broadcast, swap_v2_topic, SwapsContext};
+use crate::lp_swap::{broadcast_my_v2swap_status, p2p_private_and_peer_id_to_broadcast, swap_v2_topic, SwapsContext};
 use coins::lp_price::fetch_swap_coins_price;
 use coins::{lp_coinfind, MakerCoinSwapOpsV2, MmCoin, MmCoinEnum, TakerCoinSwapOpsV2};
 use common::executor::abortable_queue::AbortableQueue;
@@ -835,4 +835,36 @@ pub enum SwapStatusGenerationError {
     StorageError,
     SwapNotFinished,
     InvalidSwapVersion,
+}
+
+pub async fn try_broadcast_v2_maker_swap_status(
+    state_machine: &MakerSwapStateMachine<impl MmCoin + MakerCoinSwapOpsV2, impl MmCoin + TakerCoinSwapOpsV2>,
+) {
+    let swap_status = TPUSwapStatusForStats::try_from_maker_state_machine(state_machine)
+        .await
+        .map_err(|e| {
+            error!("Error converting finished state machine to swap status for stats: {e:?}");
+        });
+
+    if let Ok(swap_status) = swap_status {
+        if let Err(e) = broadcast_my_v2swap_status(&state_machine.ctx, swap_status).await {
+            error!("Error broadcasting swap status: {e}");
+        }
+    }
+}
+
+pub async fn try_broadcast_v2_taker_swap_status(
+    state_machine: &TakerSwapStateMachine<impl MmCoin + MakerCoinSwapOpsV2, impl MmCoin + TakerCoinSwapOpsV2>,
+) {
+    let swap_status = TPUSwapStatusForStats::try_from_taker_state_machine(state_machine)
+        .await
+        .map_err(|e| {
+            error!("Error converting finished state machine to swap status for stats: {e:?}");
+        });
+
+    if let Ok(swap_status) = swap_status {
+        if let Err(e) = broadcast_my_v2swap_status(&state_machine.ctx, swap_status).await {
+            error!("Error broadcasting swap status: {e}");
+        }
+    }
 }

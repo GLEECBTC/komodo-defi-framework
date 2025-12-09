@@ -5,7 +5,7 @@ use super::{
     NEGOTIATION_TIMEOUT_SEC,
 };
 use crate::lp_swap::swap_lock::SwapLock;
-use crate::lp_swap::{broadcast_my_v2swap_status, swap_v2_pb::*};
+use crate::lp_swap::swap_v2_pb::*;
 use crate::lp_swap::{
     broadcast_swap_v2_msg_every, check_balance_for_taker_swap, recv_swap_v2_msg, swap_v2_topic,
     SwapConfirmationsSettings, TransactionIdentifier, MAX_STARTED_AT_DIFF, TAKER_SWAP_V2_TYPE,
@@ -2588,8 +2588,8 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         self: Box<Self>,
         state_machine: &mut Self::StateMachine,
     ) -> <Self::StateMachine as StateMachineTrait>::Result {
-        // FIXME: Do we want to broadcast the swap status here?
         warn!("Swap {} was aborted with reason {}", state_machine.uuid, self.reason);
+        try_broadcast_v2_taker_swap_status(state_machine).await;
     }
 }
 
@@ -2659,18 +2659,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         state_machine: &mut Self::StateMachine,
     ) -> <Self::StateMachine as StateMachineTrait>::Result {
         info!("Swap {} has been completed", state_machine.uuid);
-
-        let swap_status = TPUSwapStatusForStats::try_from_taker_state_machine(state_machine)
-            .await
-            .map_err(|e| {
-                error!("Error converting finished state machine to swap status for stats: {e:?}");
-            });
-
-        if let Ok(swap_status) = swap_status {
-            if let Err(e) = broadcast_my_v2swap_status(&state_machine.ctx, swap_status).await {
-                error!("Error broadcasting swap status: {e}");
-            }
-        }
+        try_broadcast_v2_taker_swap_status(state_machine).await;
     }
 }
 
@@ -2720,18 +2709,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             "Swap {} has been completed with taker funding refund",
             state_machine.uuid
         );
-
-        let swap_status = TPUSwapStatusForStats::try_from_taker_state_machine(state_machine)
-            .await
-            .map_err(|e| {
-                error!("Error converting finished state machine to swap status for stats: {e:?}");
-            });
-
-        if let Ok(swap_status) = swap_status {
-            if let Err(e) = broadcast_my_v2swap_status(&state_machine.ctx, swap_status).await {
-                error!("Error broadcasting swap status: {e}");
-            }
-        }
+        try_broadcast_v2_taker_swap_status(state_machine).await;
     }
 }
 
@@ -2778,18 +2756,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             "Swap {} has been completed with taker payment refund",
             state_machine.uuid
         );
-
-        let swap_status = TPUSwapStatusForStats::try_from_taker_state_machine(state_machine)
-            .await
-            .map_err(|e| {
-                error!("Error converting finished state machine to swap status for stats: {e:?}");
-            });
-
-        if let Ok(swap_status) = swap_status {
-            if let Err(e) = broadcast_my_v2swap_status(&state_machine.ctx, swap_status).await {
-                error!("Error broadcasting swap status: {e}");
-            }
-        }
+        try_broadcast_v2_taker_swap_status(state_machine).await;
     }
 }
 
