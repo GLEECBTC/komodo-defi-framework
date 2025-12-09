@@ -550,7 +550,22 @@ Later, you can add `#[cfg(feature = "...")]` blocks around image pulling to slig
 
 ### Phase 3 – CI: add functional jobs (Compose mode)
 
+**Status:** ✅ Completed
+
 **Goal:** Break the monolithic docker tests job into parallel jobs grouped by behavior. Keep each new job small and independent. All jobs use Compose mode (`KDF_DOCKER_COMPOSE_ENV=1`) to enable sharing containers with other tests (e.g., WASM tests).
+
+**Implementation summary:**
+All CI jobs now use only feature flags for test selection (no test module filters). The feature-gated modules in `mod.rs` control which tests are compiled and run for each job:
+
+- `docker-tests-eth`: ETH/ERC20 tests (Geth node only)
+- `docker-tests-slp`: BCH/SLP token tests (FORSLP node only)
+- `docker-tests-sia`: Sia tests (Sia node only)
+- `docker-tests-ordermatch`: Ordermatching tests (UTXO + ETH nodes)
+- `docker-tests-swaps-utxo`: UTXO swap protocol tests (UTXO nodes only)
+- `docker-tests-watchers`: Watcher tests (UTXO + ETH nodes)
+- `docker-tests-qrc20`: Qtum/QRC20 tests (Qtum node only)
+- `docker-tests-tendermint`: Cosmos/IBC tests (Cosmos nodes only)
+- `docker-tests-zcoin`: ZCoin/Zombie tests (Zombie node only)
 
 #### 4.3.1 CI job matrix & features
 
@@ -730,6 +745,35 @@ docker-tests-<suite>:
 
 - Run jobs in parallel.
 - After first iteration, record duration per job and adjust if needed.
+
+#### 4.3.5 Future tasks (post Phase 3)
+
+The following tasks are deferred for future implementation:
+
+- [ ] **Fix unused warnings for feature-gated helper functions**
+  - Helper modules (`utxo.rs`, `eth.rs`, `qrc20.rs`, etc.) have functions only used by certain test combinations
+  - When compiling with a single feature flag, unused helper functions generate warnings
+  - Solution: Add feature gates to helper functions so they only compile when their consumers compile
+  - This may reveal opportunities to reorganize helpers into more cohesive feature-specific modules
+  - Goal: `cargo check -p mm2_main --tests --features docker-tests-<any>` should produce zero warnings
+
+- [ ] **Add `docker-tests-integration` feature flag and CI job**
+  - Add `docker-tests-integration = ["run-docker-tests"]` to `mm2_main/Cargo.toml`
+  - Create `docker-tests-integration` CI job that starts all required containers (UTXO, SLP, QRC20, ETH, Cosmos, etc.)
+  - Migrate `swap_tests` module from legacy negative-gate pattern to explicit `docker-tests-integration` feature
+  - Tests to include:
+    - `swap_tests::trade_test_with_maker_slp`
+    - `swap_tests::trade_test_with_taker_slp`
+    - Other curated cross-chain swap scenarios
+
+- [ ] **Add combined Tendermint+ETH CI job for cross-chain swaps**
+  - `tendermint_swap_tests` is gated by `docker-tests-tendermint + docker-tests-eth` but no CI job currently enables both features
+  - Create a job that starts both Cosmos and Geth containers to run:
+    - `swap_nucleus_with_doc` (NUCLEUS <-> DOC)
+    - `swap_nucleus_with_eth` (NUCLEUS <-> ETH)
+    - `swap_doc_with_iris_ibc_nucleus` (DOC <-> IRIS-IBC-NUCLEUS)
+
+**Note:** Until these jobs are implemented, the affected tests continue to run in the monolithic `docker-tests` job which uses `--features run-docker-tests` with `--profile all`.
 
 ---
 
