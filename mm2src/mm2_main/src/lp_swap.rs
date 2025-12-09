@@ -108,12 +108,12 @@ mod my_swaps_storage;
 mod pubkey_banning;
 mod recreate_swap_data;
 mod saved_swap;
-mod swap_lock;
+pub(crate) mod swap_lock;
 #[path = "lp_swap/komodefi.swap_v2.pb.rs"]
 #[rustfmt::skip]
 mod swap_v2_pb;
 pub(crate) mod swap_events;
-mod swap_v2_common;
+pub(crate) mod swap_v2_common;
 pub(crate) mod swap_v2_rpcs;
 pub(crate) mod swap_watcher;
 pub(crate) mod taker_restart;
@@ -122,9 +122,12 @@ pub mod taker_swap_v2;
 mod trade_preimage;
 
 #[cfg(target_arch = "wasm32")]
-mod swap_wasm_db;
+pub(crate) mod swap_wasm_db;
 
-pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError, CheckBalanceResult};
+pub use check_balance::check_my_coin_balance_for_swap;
+pub use check_balance::{
+    check_other_coin_balance_for_swap, CheckBalanceError, CheckBalanceResult, TakerFeeAdditionalInfo,
+};
 use crypto::secret_hash_algo::SecretHashAlgo;
 use crypto::CryptoCtx;
 use keys::{KeyPair, SECP_SIGN, SECP_VERIFY};
@@ -144,7 +147,9 @@ use swap_v2_common::{
     get_unfinished_swaps_uuids, swap_kickstart_handler_for_maker, swap_kickstart_handler_for_taker, ActiveSwapV2Info,
 };
 use swap_v2_pb::*;
-use swap_v2_rpcs::{get_maker_swap_data_for_rpc, get_swap_type, get_taker_swap_data_for_rpc};
+use swap_v2_rpcs::{
+    get_agg_taker_swap_data_for_rpc, get_maker_swap_data_for_rpc, get_swap_type, get_taker_swap_data_for_rpc,
+};
 pub use swap_watcher::{
     process_watcher_msg, watcher_topic, TakerSwapWatcherData, MAKER_PAYMENT_SPEND_FOUND_LOG,
     MAKER_PAYMENT_SPEND_SENT_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, TAKER_SWAP_ENTRY_TIMEOUT_SEC, WATCHER_PREFIX,
@@ -166,6 +171,7 @@ pub const TX_HELPER_PREFIX: TopicPrefix = "txhlp";
 pub(crate) const LEGACY_SWAP_TYPE: u8 = 0;
 pub(crate) const MAKER_SWAP_V2_TYPE: u8 = 1;
 pub(crate) const TAKER_SWAP_V2_TYPE: u8 = 2;
+pub(crate) const AGG_TAKER_SWAP_TYPE: u8 = 3;
 
 pub(crate) const TAKER_FEE_VALIDATION_ATTEMPTS: usize = 6;
 pub(crate) const TAKER_FEE_VALIDATION_RETRY_DELAY_SECS: f64 = 10.;
@@ -547,7 +553,7 @@ struct LockedAmountInfo {
     locked_amount: LockedAmount,
 }
 
-struct SwapsContext {
+pub(crate) struct SwapsContext {
     running_swaps: Mutex<HashMap<Uuid, Arc<dyn AtomicSwap>>>,
     active_swaps_v2_infos: Mutex<HashMap<Uuid, ActiveSwapV2Info>>,
     banned_pubkeys: Mutex<TimedMap<H256Json, BanReason>>,
@@ -561,7 +567,7 @@ struct SwapsContext {
 
 impl SwapsContext {
     /// Obtains a reference to this crate context, creating it if necessary.
-    fn from_ctx(ctx: &MmArc) -> Result<Arc<SwapsContext>, String> {
+    pub(crate) fn from_ctx(ctx: &MmArc) -> Result<Arc<SwapsContext>, String> {
         Ok(try_s!(from_ctx(&ctx.swaps_ctx, move || {
             Ok(SwapsContext {
                 running_swaps: Mutex::new(HashMap::new()),
@@ -1136,6 +1142,12 @@ pub async fn my_swap_status(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, 
             let res = try_s!(json::to_vec(&res_js));
             Ok(try_s!(Response::builder().body(res)))
         },
+        Some(AGG_TAKER_SWAP_TYPE) => {
+            let swap_data = try_s!(get_agg_taker_swap_data_for_rpc(&ctx, &uuid).await);
+            let res_js = json!({ "result": swap_data });
+            let res = try_s!(json::to_vec(&res_js));
+            Ok(try_s!(Response::builder().body(res)))
+        },
         Some(unsupported_type) => ERR!("Got unsupported swap type from DB: {}", unsupported_type),
         None => ERR!("No swap with uuid {}", uuid),
     }
@@ -1328,6 +1340,13 @@ pub async fn my_recent_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u
                 Err(e) => error!("Error loading a swap with the uuid '{}': {}", uuid, e),
             },
             TAKER_SWAP_V2_TYPE => match get_taker_swap_data_for_rpc(&ctx, uuid).await {
+                Ok(data) => {
+                    let swap_json = try_s!(json::to_value(data));
+                    swaps.push(swap_json);
+                },
+                Err(e) => error!("Error loading a swap with the uuid '{}': {}", uuid, e),
+            },
+            AGG_TAKER_SWAP_TYPE => match get_agg_taker_swap_data_for_rpc(&ctx, uuid).await {
                 Ok(data) => {
                     let swap_json = try_s!(json::to_value(data));
                     swaps.push(swap_json);

@@ -5314,7 +5314,7 @@ where
     T: UtxoCommonOps + GetUtxoListOps + SwapOps,
 {
     let taker_htlc_key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
-    let total_amount = &args.dex_fee.total_spend_amount().to_decimal() + &args.premium_amount + &args.trading_amount;
+    let total_amount = &args.dex_fee.total_amount().to_decimal() + &args.premium_amount + &args.trading_amount;
 
     let SwapPaymentOutputsResult {
         payment_address,
@@ -5406,8 +5406,7 @@ where
     T: UtxoCommonOps + SwapOps,
 {
     let maker_htlc_key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
-    let total_expected_amount =
-        &args.dex_fee.total_spend_amount().to_decimal() + &args.premium_amount + &args.trading_amount;
+    let total_expected_amount = &args.dex_fee.total_amount().to_decimal() + &args.premium_amount + &args.trading_amount;
 
     let expected_amount_sat = sat_from_big_decimal(&total_expected_amount, coin.as_ref().decimals).map_mm_err()?;
 

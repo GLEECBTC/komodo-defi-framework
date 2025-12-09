@@ -2,11 +2,12 @@ use super::maker_swap::MakerSavedSwap;
 use super::maker_swap_v2::MakerSwapEvent;
 use super::my_swaps_storage::{MySwapsError, MySwapsOps, MySwapsStorage};
 use super::taker_swap::TakerSavedSwap;
-use super::taker_swap_v2::TakerSwapEvent;
+use super::taker_swap_v2::{AbortReason, TakerSwapEvent};
 use super::{
-    active_swaps, MySwapsFilter, SavedSwap, SavedSwapError, SavedSwapIo, LEGACY_SWAP_TYPE, MAKER_SWAP_V2_TYPE,
-    TAKER_SWAP_V2_TYPE,
+    active_swaps, MySwapsFilter, SavedSwap, SavedSwapError, SavedSwapIo, AGG_TAKER_SWAP_TYPE, LEGACY_SWAP_TYPE,
+    MAKER_SWAP_V2_TYPE, TAKER_SWAP_V2_TYPE,
 };
+use crate::lr_swap::lr_swap_state_machine::{AggTakerSwapDbRepr, AggTakerSwapEvent, AggTakerSwapStateMachine};
 use common::log::{error, warn};
 use common::{calc_total_pages, HttpStatusCode, PagingOptions};
 use derive_more::Display;
@@ -47,7 +48,8 @@ pub(super) async fn get_swap_type(ctx: &MmArc, uuid: &Uuid) -> MmResult<Option<u
             SELECT_SWAP_TYPE_BY_UUID,
             &[(":uuid", uuid.as_str())],
             |row| row.get(0),
-        )?;
+        );
+        let maybe_swap_type = maybe_swap_type?;
         Ok(maybe_swap_type)
     })
     .await
@@ -105,8 +107,8 @@ pub(crate) struct MySwapForRpc<T> {
     other_coin: String,
     uuid: Uuid,
     started_at: i64,
-    is_finished: bool,
-    events: Vec<T>,
+    pub(crate) is_finished: bool,
+    pub(crate) events: Vec<T>,
     maker_volume: MmNumberMultiRepr,
     taker_volume: MmNumberMultiRepr,
     premium: MmNumberMultiRepr,
@@ -151,6 +153,28 @@ impl<T: DeserializeOwned> MySwapForRpc<T> {
             taker_coin_confs: row.get(13)?,
             taker_coin_nota: row.get(14)?,
             swap_version: row.get(15)?,
+        })
+    }
+}
+
+impl MySwapForRpc<TakerSwapEvent> {
+    pub(crate) fn is_aborted(&self) -> Option<AbortReason> {
+        self.events.iter().find_map(|ev| match ev {
+            TakerSwapEvent::Aborted { ref reason } => Some(reason.clone()),
+            _ => None,
+        })
+    }
+
+    pub(crate) fn is_completed(&self) -> bool {
+        self.events.iter().any(|ev| matches!(*ev, TakerSwapEvent::Completed))
+    }
+
+    pub(crate) fn is_refunded(&self) -> bool {
+        self.events.iter().any(|ev| {
+            matches!(
+                *ev,
+                TakerSwapEvent::TakerFundingRefunded { .. } | TakerSwapEvent::TakerPaymentRefunded { .. }
+            )
         })
     }
 }
@@ -281,16 +305,17 @@ pub(super) async fn get_taker_swap_data_for_rpc(
     }))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 #[serde(tag = "swap_type", content = "swap_data")]
 pub(crate) enum SwapRpcData {
     MakerV1(MakerSavedSwap),
     TakerV1(TakerSavedSwap),
     MakerV2(MySwapForRpc<MakerSwapEvent>),
     TakerV2(MySwapForRpc<TakerSwapEvent>),
+    AggTaker(MyAggSwapForRpc<AggTakerSwapEvent>),
 }
 
-#[derive(Display)]
+#[derive(Display, Debug)]
 enum GetSwapDataErr {
     UnsupportedSwapType(u8),
     DbError(String),
@@ -337,16 +362,20 @@ async fn get_swap_data_by_uuid_and_type(
             let data = get_taker_swap_data_for_rpc(ctx, &uuid).await.map_mm_err()?;
             Ok(data.map(SwapRpcData::TakerV2))
         },
+        AGG_TAKER_SWAP_TYPE => {
+            let data = get_agg_taker_swap_data_for_rpc(ctx, &uuid).await.map_mm_err()?;
+            Ok(data.map(SwapRpcData::AggTaker))
+        },
         unsupported => MmError::err(GetSwapDataErr::UnsupportedSwapType(unsupported)),
     }
 }
 
 #[derive(Deserialize)]
 pub(crate) struct MySwapStatusRequest {
-    uuid: Uuid,
+    pub(crate) uuid: Uuid,
 }
 
-#[derive(Display, Serialize, SerializeErrorType)]
+#[derive(Display, Debug, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub(crate) enum MySwapStatusError {
     NoSwapWithUuid(Uuid),
@@ -533,4 +562,89 @@ pub(crate) async fn active_swaps_rpc(
             .collect(),
         statuses,
     })
+}
+
+/// Represents data of the aggregated taker swap used for RPC, omits fields that should be kept in secret
+#[derive(Debug, Serialize)]
+pub(crate) struct MyAggSwapForRpc<T> {
+    /// Source coin or token ticker for the aggregated swap
+    my_coin: String,
+    /// Other party coin or token ticker for the aggregated swap
+    other_coin: String,
+    /// Destination coin or token ticker for liquidity routing before atomic swap. None, if no liquidity routing before atomic swap
+    routing_coin_0: Option<String>,
+    /// Destination coin or token ticker for liquidity routing after atomic swap. None, if no liquidity routing after atomic swap
+    routing_coin_1: Option<String>,
+    /// Initial volume to start an aggregated taker swap with LR
+    source_volume: MmNumberMultiRepr,
+    /// Received volume as result of an aggregated taker swap with LR
+    destination_volume: MmNumberMultiRepr,
+    uuid: Uuid,
+    atomic_swap_uuid: Option<Uuid>,
+    started_at: i64,
+    is_finished: bool,
+    events: Vec<T>,
+    swap_version: u8,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) async fn get_agg_taker_swap_data_for_rpc(
+    ctx: &MmArc,
+    uuid: &Uuid,
+) -> MmResult<Option<MyAggSwapForRpc<AggTakerSwapEvent>>, SqlError> {
+    let db_repr = AggTakerSwapDbRepr::get_repr_impl(ctx, uuid).await?;
+    Ok(Some(MyAggSwapForRpc {
+        my_coin: db_repr.source_coin(),
+        other_coin: db_repr.destination_coin(),
+        routing_coin_0: db_repr.routing_coin_0(),
+        routing_coin_1: db_repr.routing_coin_1(),
+        source_volume: db_repr.source_volume.into(),
+        destination_volume: db_repr.destination_volume.into(),
+        uuid: db_repr.uuid,
+        atomic_swap_uuid: AggTakerSwapStateMachine::find_atomic_swap_uuid_in_events(&db_repr.events),
+        started_at: db_repr.started_at as i64,
+        is_finished: db_repr.is_finished,
+        events: db_repr.events,
+        swap_version: db_repr.swap_version,
+    }))
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn get_agg_taker_swap_data_for_rpc(
+    ctx: &MmArc,
+    uuid: &Uuid,
+) -> MmResult<Option<MyAggSwapForRpc<AggTakerSwapEvent>>, SwapV2DbError> {
+    let swaps_ctx = SwapsContext::from_ctx(ctx).unwrap();
+    let db = swaps_ctx.swap_db().await.map_mm_err()?;
+    let transaction = db.transaction().await.map_mm_err()?;
+    let table = transaction.table::<SavedSwapTable>().await.map_mm_err()?;
+    let item = match table.get_item_by_unique_index("uuid", uuid).await.map_mm_err()? {
+        Some((_item_id, item)) => item,
+        None => return Ok(None),
+    };
+
+    let filters_table = transaction.table::<MySwapsFiltersTable>().await.map_mm_err()?;
+    let filter_item = match filters_table
+        .get_item_by_unique_index("uuid", uuid)
+        .await
+        .map_mm_err()?
+    {
+        Some((_item_id, item)) => item,
+        None => return Ok(None),
+    };
+    let json_repr: AggTakerSwapDbRepr = serde_json::from_value(item.saved_swap)?;
+    Ok(Some(MyAggSwapForRpc {
+        my_coin: json_repr.source_coin(),
+        other_coin: json_repr.destination_coin(),
+        routing_coin_0: json_repr.routing_coin_0(),
+        routing_coin_1: json_repr.routing_coin_1(),
+        uuid: json_repr.uuid,
+        atomic_swap_uuid: AggTakerSwapStateMachine::find_atomic_swap_uuid_in_events(&json_repr.events),
+        started_at: json_repr.started_at as i64,
+        is_finished: filter_item.is_finished.as_bool(),
+        swap_version: json_repr.swap_version,
+        source_volume: json_repr.source_volume.into(),
+        destination_volume: json_repr.destination_volume.into(),
+        events: json_repr.events,
+    }))
 }

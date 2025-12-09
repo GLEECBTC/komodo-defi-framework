@@ -2915,7 +2915,7 @@ fn test_v2_eth_eth_kickstart_impl(base: &str, rel: &str, maker_price: f64, taker
                 &swap_contract_address,
                 swap_v2_contracts.clone(),
                 None,
-                std::slice::from_ref(&node)
+                std::slice::from_ref(&node),
             ))
         );
     };

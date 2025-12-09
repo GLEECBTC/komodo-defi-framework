@@ -1,6 +1,7 @@
+//! This module contains code to work with my_swaps table in MM2 SQLite DB
+
 #![allow(deprecated)] // TODO: remove this once rusqlite is >= 0.29
 
-/// This module contains code to work with my_swaps table in MM2 SQLite DB
 use crate::lp_swap::{MyRecentSwapsUuids, MySwapsFilter, SavedSwap, SavedSwapIo};
 use common::log::debug;
 use common::PagingOptions;

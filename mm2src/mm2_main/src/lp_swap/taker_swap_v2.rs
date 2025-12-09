@@ -902,7 +902,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                     swap_uuid: self.uuid,
                     locked_amount: LockedAmount {
                         coin: taker_coin_ticker.clone(),
-                        amount: &(&self.taker_volume + &self.dex_fee().total_spend_amount()) + &self.taker_premium,
+                        amount: &(&self.taker_volume + &self.dex_fee().total_amount()) + &self.taker_premium,
                         trade_fee: Some(taker_payment_fee.clone().into()),
                     },
                 };
@@ -957,7 +957,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                     swap_uuid: self.uuid,
                     locked_amount: LockedAmount {
                         coin: taker_coin_ticker.clone(),
-                        amount: &(&self.taker_volume + &self.dex_fee().total_spend_amount()) + &self.taker_premium,
+                        amount: &(&self.taker_volume + &self.dex_fee().total_amount()) + &self.taker_premium,
                         trade_fee: Some(taker_payment_fee.into()),
                     },
                 };
@@ -1031,7 +1031,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         };
 
         let payment_value_with_premium = &state_machine.taker_volume + &state_machine.taker_premium;
-        let total_value_with_premium = &payment_value_with_premium + &state_machine.dex_fee().total_spend_amount();
+        let total_value_with_premium = &payment_value_with_premium + &state_machine.dex_fee().total_amount();
         let preimage_value = TradePreimageValue::Exact(total_value_with_premium.to_decimal());
         let stage = FeeApproxStage::StartSwap;
 
@@ -1056,7 +1056,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         };
 
         let prepared_params = TakerSwapPreparedParams {
-            dex_fee: state_machine.dex_fee().total_spend_amount(),
+            dex_fee: state_machine.dex_fee().total_amount(),
             // fee_to_send_dex_fee is not used in TPU but the coin must be set correctly
             fee_to_send_dex_fee: TradeFee {
                 coin: state_machine.taker_coin.platform_ticker().into(),

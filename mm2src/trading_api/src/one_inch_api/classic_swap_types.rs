@@ -11,7 +11,7 @@ use url::Url;
 
 const ONE_INCH_MAX_SLIPPAGE: f32 = 50.0;
 const ONE_INCH_MAX_FEE_SHARE: f32 = 3.0;
-const ONE_INCH_MAX_GAS: u128 = 11500000;
+const ONE_INCH_MAX_GAS: u64 = 11500000;
 const ONE_INCH_MAX_PARTS: u32 = 100;
 const ONE_INCH_MAX_MAIN_ROUTE_PARTS: u32 = 50;
 const ONE_INCH_MAX_COMPLEXITY_LEVEL: u32 = 3;
@@ -26,6 +26,7 @@ pub struct ClassicSwapQuoteParams {
     src: String,
     /// Destination token address
     dst: String,
+    /// Source amount, decimal in coin units
     amount: String,
     // Optional fields
     fee: Option<f32>,
@@ -34,7 +35,7 @@ pub struct ClassicSwapQuoteParams {
     complexity_level: Option<u32>,
     parts: Option<u32>,
     main_route_parts: Option<u32>,
-    gas_limit: Option<u128>,
+    gas_limit: Option<u64>, // originally in 1inch was u128 but we made it u64 as serde does not support u128
     include_tokens_info: Option<bool>,
     include_protocols: Option<bool>,
     include_gas: Option<bool>,
@@ -57,7 +58,7 @@ impl ClassicSwapQuoteParams {
     def_with_opt_param!(complexity_level, u32);
     def_with_opt_param!(parts, u32);
     def_with_opt_param!(main_route_parts, u32);
-    def_with_opt_param!(gas_limit, u128);
+    def_with_opt_param!(gas_limit, u64);
     def_with_opt_param!(include_tokens_info, bool);
     def_with_opt_param!(include_protocols, bool);
     def_with_opt_param!(include_gas, bool);
@@ -100,21 +101,21 @@ impl ClassicSwapQuoteParams {
 }
 
 /// API params builder to create a tx for swap
-#[derive(Default)]
-pub struct ClassicSwapCreateParams {
-    src: String,
-    dst: String,
-    amount: String,
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct ClassicSwapCreateCallBuilder {
+    pub src: String,
+    pub dst: String,
+    /// Amount in token smallest units
+    pub amount: String,
     from: String,
     slippage: f32,
-    // Optional fields
     fee: Option<f32>,
     protocols: Option<String>,
     gas_price: Option<String>,
     complexity_level: Option<u32>,
     parts: Option<u32>,
     main_route_parts: Option<u32>,
-    gas_limit: Option<u128>,
+    gas_limit: Option<u64>, // originally in 1inch was u128 but we made it u64 as serde does not support u128
     include_tokens_info: Option<bool>,
     include_protocols: Option<bool>,
     include_gas: Option<bool>,
@@ -129,7 +130,7 @@ pub struct ClassicSwapCreateParams {
     use_permit2: Option<bool>,
 }
 
-impl ClassicSwapCreateParams {
+impl ClassicSwapCreateCallBuilder {
     pub fn new(src: String, dst: String, amount: String, from: String, slippage: f32) -> Self {
         Self {
             src,
@@ -147,7 +148,7 @@ impl ClassicSwapCreateParams {
     def_with_opt_param!(complexity_level, u32);
     def_with_opt_param!(parts, u32);
     def_with_opt_param!(main_route_parts, u32);
-    def_with_opt_param!(gas_limit, u128);
+    def_with_opt_param!(gas_limit, u64);
     def_with_opt_param!(include_tokens_info, bool);
     def_with_opt_param!(include_protocols, bool);
     def_with_opt_param!(include_gas, bool);
@@ -218,9 +219,18 @@ pub struct TokenInfo {
     pub eip2612: bool,
     #[serde(rename = "isFoT", default)]
     pub is_fot: bool,
-    #[serde(rename = "logoURI", with = "serde_one_inch_link")]
-    pub logo_uri: String,
+    #[serde(
+        rename = "logoURI",
+        default,
+        deserialize_with = "serde_one_inch_link::deserialize_opt_string"
+    )] // Note: needed to use 'default' with 'deserialize_with' to allow optional 'logoURI'
+    pub logo_uri: Option<String>,
     pub tags: Vec<String>,
+    /// Token name as it is defined in the coins file.
+    /// This is used to show route tokens in the GUI, like they are in the coin file.
+    /// However, route tokens can be missed in the coins file and therefore cannot be filled.
+    /// In this case GUI may use LrTokenInfo::Address or LrTokenInfo::Symbol
+    pub symbol_kdf: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -247,7 +257,7 @@ pub struct ClassicSwapData {
     /// Returned from create swap call
     pub tx: Option<TxFields>,
     /// Returned from quote call
-    pub gas: Option<u128>,
+    pub gas: Option<u64>,
 }
 
 #[derive(Clone, Deserialize, Debug)]
@@ -261,17 +271,17 @@ pub struct TxFields {
     #[serde(rename = "gasPrice")]
     pub gas_price: String,
     /// gas limit, in api is a decimal number
-    pub gas: u128,
+    pub gas: u64,
 }
 
 #[derive(Deserialize, Serialize)]
 pub struct ProtocolImage {
     pub id: String,
     pub title: String,
-    #[serde(with = "serde_one_inch_link")]
-    pub img: String,
-    #[serde(with = "serde_one_inch_link")]
-    pub img_color: String,
+    #[serde(deserialize_with = "serde_one_inch_link::deserialize_opt_string")]
+    pub img: Option<String>,
+    #[serde(deserialize_with = "serde_one_inch_link::deserialize_opt_string")]
+    pub img_color: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -286,23 +296,15 @@ pub struct TokensResponse {
 
 mod serde_one_inch_link {
     use super::validate_one_inch_link;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use serde::{Deserialize, Deserializer};
 
-    /// Just forward to the normal serializer
-    pub(super) fn serialize<S>(s: &String, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        s.serialize(serializer)
-    }
-
-    /// Deserialise String with checking links
-    pub(super) fn deserialize<'a, D>(deserializer: D) -> Result<String, D::Error>
+    /// Deserialise Option<String> with checking links
+    pub(super) fn deserialize_opt_string<'a, D>(deserializer: D) -> Result<Option<String>, D::Error>
     where
         D: Deserializer<'a>,
     {
-        <String as Deserialize>::deserialize(deserializer)
-            .map(|value| validate_one_inch_link(&value).unwrap_or_default())
+        <Option<String> as Deserialize>::deserialize(deserializer)
+            .map(|opt_value| opt_value.map(|value| validate_one_inch_link(&value).unwrap_or_default()))
     }
 }
 
@@ -337,7 +339,7 @@ fn validate_fee(fee: &Option<f32>) -> MmResult<(), ApiClientError> {
 }
 
 #[allow(clippy::result_large_err)]
-fn validate_gas_limit(gas_limit: &Option<u128>) -> MmResult<(), ApiClientError> {
+fn validate_gas_limit(gas_limit: &Option<u64>) -> MmResult<(), ApiClientError> {
     if let Some(gas_limit) = gas_limit {
         if gas_limit > &ONE_INCH_MAX_GAS {
             return Err(ApiClientError::OutOfBounds {

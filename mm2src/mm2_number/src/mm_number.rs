@@ -1,7 +1,7 @@
 use crate::fraction::Fraction;
 use crate::{from_dec_to_ratio, from_ratio_to_dec};
 use bigdecimal::BigDecimal;
-use core::ops::{Add, AddAssign, Div, Mul, Sub};
+use core::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 use num_bigint::BigInt;
 use num_rational::{BigRational, ParseRatioError};
 use num_traits::CheckedDiv;
@@ -212,6 +212,18 @@ impl Sub for &MmNumber {
 
     fn sub(self, rhs: Self) -> Self::Output {
         (&self.0 - &rhs.0).into()
+    }
+}
+
+impl SubAssign for MmNumber {
+    fn sub_assign(&mut self, rhs: Self) {
+        self.0 -= rhs.0;
+    }
+}
+
+impl SubAssign<&MmNumber> for MmNumber {
+    fn sub_assign(&mut self, rhs: &Self) {
+        self.0 -= &rhs.0;
     }
 }
 

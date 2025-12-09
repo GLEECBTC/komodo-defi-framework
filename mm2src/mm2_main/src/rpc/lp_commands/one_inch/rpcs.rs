@@ -4,16 +4,16 @@ use super::types::{
     ClassicSwapLiquiditySourcesResponse, ClassicSwapQuoteRequest, ClassicSwapResponse, ClassicSwapTokensRequest,
     ClassicSwapTokensResponse,
 };
+use crate::lr_swap::lr_helpers::make_classic_swap_create_params;
 use coins::eth::{u256_from_big_decimal, EthCoin, EthCoinType};
 use coins::hd_wallet::DisplayAddress;
 use coins::{lp_coinfind_or_err, CoinWithDerivationMethod, MmCoin, MmCoinEnum, Ticker};
 use ethereum_types::Address;
 use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::map_mm_error::MapMmError;
 use mm2_err_handle::prelude::*;
 use std::str::FromStr;
-use trading_api::one_inch_api::classic_swap_types::{
-    ClassicSwapCreateParams, ClassicSwapQuoteParams, ProtocolsResponse, TokensResponse,
-};
+use trading_api::one_inch_api::classic_swap_types::{ClassicSwapQuoteParams, ProtocolsResponse, TokensResponse};
 use trading_api::one_inch_api::client::{ApiClient, SwapApiMethods, SwapUrlBuilder};
 
 /// "1inch_v6_0_classic_swap_contract" rpc impl
@@ -82,32 +82,14 @@ pub async fn one_inch_v6_0_classic_swap_create_rpc(
         .mm_err(|err| ApiIntegrationRpcError::InvalidParam(err.to_string()))?;
     let single_address = base.derivation_method().single_addr_or_err().await.map_mm_err()?;
 
-    let query_params = ClassicSwapCreateParams::new(
-        base_contract.display_address(),
-        rel_contract.display_address(),
-        sell_amount.to_string(),
-        single_address.display_address(),
+    let query_params = make_classic_swap_create_params(
+        base_contract,
+        rel_contract,
+        sell_amount,
+        single_address,
         req.slippage,
+        req.opt_params,
     )
-    .with_fee(req.fee)
-    .with_protocols(req.protocols)
-    .with_gas_price(req.gas_price)
-    .with_complexity_level(req.complexity_level)
-    .with_parts(req.parts)
-    .with_main_route_parts(req.main_route_parts)
-    .with_gas_limit(req.gas_limit)
-    .with_include_tokens_info(Some(req.include_tokens_info))
-    .with_include_protocols(Some(req.include_protocols))
-    .with_include_gas(Some(req.include_gas))
-    .with_connector_tokens(req.connector_tokens)
-    .with_excluded_protocols(req.excluded_protocols)
-    .with_permit(req.permit)
-    .with_compatibility(req.compatibility)
-    .with_receiver(req.receiver)
-    .with_referrer(req.referrer)
-    .with_disable_estimate(req.disable_estimate)
-    .with_allow_partial_fill(req.allow_partial_fill)
-    .with_use_permit2(req.use_permit2)
     .build_query_params()
     .map_mm_err()?;
     let url = SwapUrlBuilder::create_api_url_builder(&ctx, base_chain_id, SwapApiMethods::ClassicSwapCreate)
@@ -183,10 +165,8 @@ fn api_supports_pair(base_chain_id: u64, rel_chain_id: u64) -> MmResult<(), ApiI
 
 #[cfg(test)]
 mod tests {
-    use crate::rpc::lp_commands::one_inch::{
-        rpcs::{one_inch_v6_0_classic_swap_create_rpc, one_inch_v6_0_classic_swap_quote_rpc},
-        types::{ClassicSwapCreateRequest, ClassicSwapQuoteRequest},
-    };
+    use super::*;
+    use crate::rpc::lp_commands::one_inch::types::ClassicSwapCreateOptParams;
     use coins::eth::EthCoin;
     use coins_activation::platform_for_tests::init_platform_coin_with_tokens_loop;
     use common::block_on;
@@ -401,26 +381,28 @@ mod tests {
             base: ticker_coin.clone(),
             rel: ticker_token.clone(),
             amount: MmNumber::from("1.0"),
-            fee: None,
-            protocols: None,
-            gas_price: None,
-            complexity_level: None,
-            parts: None,
-            main_route_parts: None,
-            gas_limit: None,
-            include_tokens_info: true,
-            include_protocols: true,
-            include_gas: true,
-            connector_tokens: None,
             slippage: 0.0,
-            excluded_protocols: None,
-            permit: None,
-            compatibility: None,
-            receiver: None,
-            referrer: None,
-            disable_estimate: None,
-            allow_partial_fill: None,
-            use_permit2: None,
+            opt_params: ClassicSwapCreateOptParams {
+                fee: None,
+                protocols: None,
+                gas_price: None,
+                complexity_level: None,
+                parts: None,
+                main_route_parts: None,
+                gas_limit: None,
+                include_tokens_info: true,
+                include_protocols: true,
+                include_gas: true,
+                connector_tokens: None,
+                excluded_protocols: None,
+                permit: None,
+                compatibility: None,
+                receiver: None,
+                referrer: None,
+                disable_estimate: None,
+                allow_partial_fill: None,
+                use_permit2: None,
+            },
         };
 
         ApiClient::call_api::<ClassicSwapData>.mock_safe(move |_| {
@@ -439,7 +421,7 @@ mod tests {
         assert_eq!(quote_response.src_token.as_ref().unwrap().decimals, 18);
         assert_eq!(quote_response.dst_token.as_ref().unwrap().symbol, ticker_token);
         assert_eq!(quote_response.dst_token.as_ref().unwrap().decimals, 6);
-        assert_eq!(quote_response.gas.unwrap(), 452704_u128);
+        assert_eq!(quote_response.gas.unwrap(), 452704_u64);
 
         ApiClient::call_api::<ClassicSwapData>.mock_safe(move |_| {
             let response_create_raw = response_create_raw.clone();

@@ -496,13 +496,13 @@ pub enum GasPriceRpcParam {
 #[derive(Clone, Debug, Deserialize)]
 pub struct SignEthTransactionParams {
     /// Eth transfer value
-    value: Option<BigDecimal>,
+    pub value: Option<BigDecimal>,
     /// Eth to address
-    to: Option<String>,
+    pub to: Option<String>,
     /// Eth contract data
-    data: Option<String>,
+    pub data: Option<String>,
     /// Eth gas use limit
-    gas_limit: U256,
+    pub gas_limit: U256,
     /// Optional gas price or fee per gas params
     pub pay_for_gas: Option<GasPriceRpcParam>,
 }
@@ -517,9 +517,9 @@ pub enum SignRawTransactionEnum {
 /// sign_raw_transaction RPC request
 #[derive(Clone, Debug, Deserialize)]
 pub struct SignRawTransactionRequest {
-    coin: String,
+    pub coin: String,
     #[serde(flatten)]
-    tx: SignRawTransactionEnum,
+    pub tx: SignRawTransactionEnum,
 }
 
 #[derive(Debug, Deserialize)]
@@ -4276,7 +4276,7 @@ impl DexFee {
     }
 
     /// Calculates the total spend amount, considering both the fee and burn amounts.
-    pub fn total_spend_amount(&self) -> MmNumber {
+    pub fn total_amount(&self) -> MmNumber {
         match self {
             DexFee::NoFee => 0.into(),
             DexFee::Standard(t) => t.clone(),

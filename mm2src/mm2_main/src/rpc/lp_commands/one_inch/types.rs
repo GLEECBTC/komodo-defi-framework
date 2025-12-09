@@ -1,3 +1,5 @@
+//! Types for 1inch integration RPCs
+//!
 use super::errors::FromApiValueError;
 use coins::eth::erc20::{get_erc20_ticker_by_contract_address, get_platform_ticker};
 use coins::eth::{u256_to_big_decimal, wei_to_eth_decimal, wei_to_gwei_decimal};
@@ -54,7 +56,7 @@ pub struct ClassicSwapQuoteRequest {
     pub main_route_parts: Option<u32>,
     /// Maximum amount of gas for a swap.
     /// Should be the same for a quote and swap. Default: 11500000; max: 11500000
-    pub gas_limit: Option<u128>,
+    pub gas_limit: Option<u64>,
     /// Return fromToken and toToken info in response (default is true)
     #[serde(default = "true_f")]
     pub include_tokens_info: bool,
@@ -70,7 +72,7 @@ pub struct ClassicSwapQuoteRequest {
 
 /// Request to create transaction for 1inch classic swap.
 /// See 1inch docs for more details: https://portal.1inch.dev/documentation/apis/swap/classic-swap/Parameter%20Descriptions/swap_params
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ClassicSwapCreateRequest {
     /// Base coin ticker
@@ -81,6 +83,15 @@ pub struct ClassicSwapCreateRequest {
     pub amount: MmNumber,
     /// Allowed slippage, min: 0; max: 50
     pub slippage: f32,
+    #[serde(flatten)]
+    pub opt_params: ClassicSwapCreateOptParams,
+}
+
+/// Request to create transaction for 1inch classic swap.
+/// See 1inch docs for more details: https://portal.1inch.dev/documentation/apis/swap/classic-swap/Parameter%20Descriptions/swap_params
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClassicSwapCreateOptParams {
     /// Partner fee, percentage of src token amount will be sent to referrer address, min: 0; max: 3.
     /// Should be the same for quote and swap rpc. Default is 0
     pub fee: Option<f32>,
@@ -89,19 +100,19 @@ pub struct ClassicSwapCreateRequest {
     /// (by default - all used)
     pub protocols: Option<String>,
     /// Network price per gas, in Gwei for this rpc.
-    /// 1inch takes in account gas expenses to determine exchange route. Should be the same for a quote and swap.
-    /// If not set the 'fast' network gas price will be used
+    /// 1inch takes in account gas expenses to determine exchange route. Should be set to the same value both for quote and swap calls.
+    /// If not set, the 'fast' network gas price will be used by the provider
     pub gas_price: Option<String>,
     /// Maximum number of token-connectors to be used in a transaction, min: 0; max: 3; default: 2
     pub complexity_level: Option<u32>,
     /// Limit maximum number of parts each main route parts can be split into.
     /// Should be the same for a quote and swap. Default: 20; max: 100
     pub parts: Option<u32>,
-    /// Limit maximum number of main route parts. Should be the same for a quote and swap. Default: 20; max: 50;
+    /// Limit maximum number of main route parts. Should be set to the same value both for quote and swap calls. Default: 20; max: 50;
     pub main_route_parts: Option<u32>,
     /// Maximum amount of gas for a swap.
     /// Should be the same for a quote and swap. Default: 11500000; max: 11500000
-    pub gas_limit: Option<u128>,
+    pub gas_limit: Option<u64>,
     /// Return fromToken and toToken info in response (default is true)
     #[serde(default = "true_f")]
     pub include_tokens_info: bool,
@@ -133,9 +144,37 @@ pub struct ClassicSwapCreateRequest {
     pub use_permit2: Option<bool>,
 }
 
+impl Default for ClassicSwapCreateOptParams {
+    fn default() -> Self {
+        Self {
+            fee: None,
+            protocols: None,
+            gas_price: None,
+            complexity_level: None,
+            parts: None,
+            main_route_parts: None,
+            gas_limit: None,
+            include_tokens_info: true, // Need token info
+            include_protocols: true,
+            include_gas: true,
+            connector_tokens: None,
+            excluded_protocols: None,
+            permit: None,
+            compatibility: None,
+            receiver: None,
+            referrer: None,
+            disable_estimate: None,
+            allow_partial_fill: None,
+            use_permit2: None,
+        }
+    }
+}
+
 /// Details to create classic swap calls
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ClassicSwapDetails {
+    /// Original source token amount, in eth units. We add it for use ClassicSwapDetails in other rpcs
+    pub src_amount: MmNumber, // TODO: DetailedAmount?
     /// Destination token amount, in coins (with fraction)
     pub dst_amount: DetailedAmount,
     /// Source (base) token info
@@ -158,7 +197,7 @@ pub struct ClassicSwapDetails {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tx: Option<TxFields>,
     /// Estimated (returned only for quote rpc)
-    pub gas: Option<u128>,
+    pub gas: Option<u64>,
 }
 
 /// Response for both classic swap quote or create swap calls
@@ -194,6 +233,7 @@ impl ClassicSwapDetails {
             .try_into()
             .map_to_mm(|_| FromApiValueError::new("invalid decimals in destination TokenInfo".to_owned()))?;
         Ok(Self {
+            src_amount: MmNumber::default(), // TODO: fix when the find best quote PR merged
             dst_amount: MmNumber::from(
                 u256_to_big_decimal(U256::from_dec_str(&data.dst_amount)?, dst_decimals).map_mm_err()?,
             )
@@ -209,7 +249,7 @@ impl ClassicSwapDetails {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TxFields {
     pub from: Address,
     pub to: Address,
@@ -217,7 +257,7 @@ pub struct TxFields {
     pub value: BigDecimal,
     /// Estimated gas price in gwei
     pub gas_price: BigDecimal,
-    pub gas: u128, // TODO: in eth EthTxFeeDetails rpc we use u64. Better have identical u128 everywhere
+    pub gas: u64, // TODO: 1inch has it u128 we use u64 as u128 is not supported in serde
 }
 
 impl TxFields {

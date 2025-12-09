@@ -1,19 +1,23 @@
-#![allow(dead_code, unused_variables)]
+#![allow(dead_code, unused_variables, unused_imports)]
 
 //! The helper structs used in testing of RPC responses, these should be separated from actual MM2 code to ensure
 //! backwards compatibility
 //! Use `#[serde(deny_unknown_fields)]` for all structs for tests to fail in case of adding new fields to the response
 
 use http::{HeaderMap, StatusCode};
-use mm2_number::{BigDecimal, BigRational, Fraction, MmNumber};
+use mm2_number::{BigDecimal, BigRational, Fraction, MmNumber, construct_detailed};
 use mm2_rpc::data::legacy::{MatchBy, OrderConfirmationsSettings, OrderType, RpcOrderbookEntry, TakerAction};
-use rpc::v1::types::H256 as H256Json;
+use rpc::v1::types::{H256 as H256Json, Bytes as BytesJson};
 use serde::de::DeserializeOwned;
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::num::NonZeroUsize;
 use uuid::Uuid;
+use ethereum_types::{Address, H160, H256, U256};
+
+pub type Ticker = String;
+construct_detailed!(DetailedAmount, amount);
 
 // TODO Alright: many of the type names within this file contain a misnomer
 // `*Result` is used for many types that are not a "Result<>"
@@ -849,7 +853,7 @@ pub struct GetWalletNamesResult {
     pub activated_wallet: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RpcV2Response<T> {
     pub mmrpc: String,
@@ -1011,14 +1015,14 @@ pub struct UtxoFeeDetails {
     pub amount: BigDecimal,
 }
 
-#[derive(Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields, tag = "address_type", content = "address_data")]
 pub enum OrderbookAddress {
     Transparent(String),
     Shielded,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct RpcOrderbookEntryV2 {
     pub coin: String,
@@ -1034,7 +1038,7 @@ pub struct RpcOrderbookEntryV2 {
     pub conf_settings: Option<OrderConfirmationsSettings>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AggregatedOrderbookEntryV2 {
     #[serde(flatten)]
@@ -1043,7 +1047,7 @@ pub struct AggregatedOrderbookEntryV2 {
     pub rel_max_volume_aggr: MmNumberMultiRepr,
 }
 
-#[derive(Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct MmNumberMultiRepr {
     pub decimal: BigDecimal,
@@ -1065,7 +1069,7 @@ where
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OrderbookV2Response {
     pub asks: Vec<AggregatedOrderbookEntryV2>,
@@ -1082,7 +1086,7 @@ pub struct OrderbookV2Response {
     pub total_bids_rel_vol: MmNumberMultiRepr,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BestOrdersV2Response {
     pub orders: HashMap<String, Vec<RpcOrderbookEntryV2>>,
@@ -1259,4 +1263,123 @@ pub struct AddressUtxos {
 pub struct FetchUtxosResponse {
     pub total_count: usize,
     pub addresses: Vec<AddressUtxos>,
+}
+
+pub mod lr_test_structs {
+    use super::*;
+
+    #[derive(Clone, Deserialize, Debug, Serialize)]
+    pub struct TxFieldsRpc {
+        pub from: Address,
+        pub to: Address,
+        pub data: BytesJson,
+        pub value: BigDecimal,
+        /// Estimated gas price in gwei
+        pub gas_price: BigDecimal,
+        pub gas: u64,
+    }
+
+    #[derive(Clone, Deserialize, Debug, Serialize)]
+    pub struct LrTokenInfo {
+        pub address: Address,
+        pub symbol: String,
+        pub name: String,
+        pub decimals: u32,
+        pub eip2612: bool,
+        #[serde(rename = "isFoT", default)]
+        pub is_fot: bool,
+        #[serde(rename = "logoURI")]
+        pub logo_uri: Option<String>,
+        pub tags: Vec<String>,
+        pub symbol_kdf: Option<Ticker>,
+    }
+
+    #[derive(Clone, Debug, Deserialize, Serialize)]
+    pub struct LrProtocolInfo {
+        pub name: String,
+        pub part: f64,
+        #[serde(rename = "fromTokenAddress")]
+        pub from_token_address: Address,
+        #[serde(rename = "toTokenAddress")]
+        pub to_token_address: Address,
+    }
+
+    /// Details to create classic swap calls
+    #[derive(Clone, Serialize, Deserialize, Debug)]
+    pub struct ClassicSwapDetails {
+        pub src_amount: MmNumber,
+        pub dst_amount: DetailedAmount,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub src_token: Option<LrTokenInfo>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub dst_token: Option<LrTokenInfo>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub protocols: Option<Vec<Vec<Vec<LrProtocolInfo>>>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub tx: Option<TxFieldsRpc>,
+        pub gas: Option<u64>,
+    }
+
+    pub type ClassicSwapResponse = ClassicSwapDetails;
+
+    #[derive(Clone, Debug, Deserialize, Serialize)]
+    pub struct AtomicSwapRpcParams {
+        pub volume: Option<MmNumber>,
+        pub base: Ticker,
+        pub rel: Ticker,
+        pub price: MmNumber,
+        pub method: String,
+        pub order_uuid: Uuid,
+        #[serde(default)]
+        pub match_by: Option<MatchBy>,
+        #[serde(default)]
+        pub order_type: Option<OrderType>,
+        // TODO: add opt params
+    }
+
+    #[derive(Debug, Deserialize, Serialize)]
+    pub struct AsksForCoin {
+        pub base: Ticker,
+        pub orders: Vec<RpcOrderbookEntryV2>,
+    }
+
+    #[derive(Debug, Deserialize, Serialize)]
+    pub struct BidsForCoin {
+        pub rel: Ticker,
+        pub orders: Vec<RpcOrderbookEntryV2>,
+    }
+
+    #[derive(Clone, Debug, Deserialize, Serialize)]
+    #[serde(tag = "type")]
+    pub enum AskOrBidOrder {
+        Ask { base: Ticker, order: RpcOrderbookEntryV2 },
+        Bid { rel: Ticker, order: RpcOrderbookEntryV2 },
+    }
+
+    impl AskOrBidOrder {
+        pub fn order(&self) -> &RpcOrderbookEntryV2 {
+            match self {
+                AskOrBidOrder::Ask { base: _, order } => order,
+                AskOrBidOrder::Bid { rel: _, order } => order,
+            }
+        }
+    }
+
+    /// Response for find best swap path with LR
+    #[derive(Debug, Deserialize, Serialize)]
+    pub struct LrFindBestQuoteResponse {
+        pub lr_data_0: Option<ClassicSwapDetails>,
+        pub lr_data_1: Option<ClassicSwapDetails>,
+        pub atomic_swap: AtomicSwapRpcParams,
+        pub total_price: MmNumber,
+        // /// Fees to pay, including LR swap fee
+        // pub trade_fee: TradePreimageResponse, // TODO: implement when trade_preimage implemented for TPU
+    }
+
+    /// Response to sell or buy order with LR for tests
+    #[derive(Debug, Deserialize, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct LrExecuteRoutedTradeResponse {
+        pub uuid: Uuid,
+    }
 }

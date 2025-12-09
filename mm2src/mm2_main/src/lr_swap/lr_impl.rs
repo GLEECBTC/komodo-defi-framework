@@ -2,7 +2,7 @@
 //! Swaps with LR run additional interim swaps in EVM chains to convert one token into another token suitable to do a normal atomic swap.
 
 use crate::lp_ordermatch::RpcOrderbookEntryV2;
-use crate::rpc::lp_commands::lr_swap::types::{AskOrBidOrder, AsksForCoin, BidsForCoin};
+use crate::rpc::lp_commands::lr_swap_api::lr_api_types::{AskOrBidOrder, AsksForCoin, BidsForCoin};
 use crate::rpc::lp_commands::one_inch::errors::ApiIntegrationRpcError;
 use crate::rpc::lp_commands::one_inch::rpcs::get_coin_for_one_inch;
 use coins::eth::{mm_number_from_u256, mm_number_to_u256, wei_from_coins_mm_number};
@@ -354,7 +354,9 @@ impl LrSwapCandidates {
                     .map(|total_price| (lr_swap_data, order, total_price))
             })
             .min_by(|(_, _, price_0), (_, _, price_1)| price_0.cmp(price_1))
-            .ok_or(MmError::new(ApiIntegrationRpcError::BestLrSwapNotFound))
+            .ok_or(MmError::new(ApiIntegrationRpcError::BestLrSwapNotFound {
+                candidates: 0,
+            })) // TODO: fix the value when find_best_quote PR is merged
     }
 }
 

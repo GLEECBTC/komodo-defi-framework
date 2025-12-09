@@ -263,6 +263,31 @@ pub const ETH_SEPOLIA_TOKEN_CONTRACT: &str = "0x09d0d71FBC00D7CCF9CFf132f5E6825C
 
 pub const BCHD_TESTNET_URLS: &[&str] = &["https://bchd-testnet.greyh.at:18335"];
 
+pub const POLYGON_MAINNET_NODES: &[&str] = &[
+    "https://polygon-mainnet.g.alchemy.com/v2/9YYl6iMLmXXLoflMPHnMTC4Dcm2L2tFH",
+    "https://polygon-mainnet.infura.io/v3/41c2e47faa94449da71f1a410de8dea7",
+    "https://polygon.drpc.org",
+    "https://polygon.gateway.tenderly.co",
+    "https://electrum3.cipig.net:18755",
+    "https://polygon-bor-rpc.publicnode.com",
+];
+pub const ARBITRUM_MAINNET_NODES: &[&str] = &[
+    "https://arbitrum-mainnet.infura.io/v3/41c2e47faa94449da71f1a410de8dea7",
+    "https://arb1.arbitrum.io/rpc",
+    "https://arbitrum-one-rpc.publicnode.com",
+    "https://arbitrum.meowrpc.com",
+];
+
+pub const POLYGON_MAINNET_SWAP_CONTRACT: &str = "0x9130b257d37a52e52f21054c4da3450c72f595ce";
+pub const POLYGON_MAINNET_SWAP_V2_MAKER_CONTRACT: &str = "0xC56DEB4bEd9Fa7C226Abc730A9a49f07aa5d8025";
+pub const POLYGON_MAINNET_SWAP_V2_TAKER_CONTRACT: &str = "0xe6032046b59CD451ad0E04a5AC9ebdc6Ba43653f";
+pub const POLYGON_MAINNET_SWAP_V2_NFT_CONTRACT: &str = "0x0123456789012345678901234567890123456789"; // TODO: fix when deployed
+
+pub const ARBITRUM_MAINNET_SWAP_CONTRACT: &str = "0x9130b257D37A52E52F21054c4DA3450c72f595CE";
+pub const ARBITRUM_MAINNET_SWAP_V2_MAKER_CONTRACT: &str = "0x0123456789012345678901234567890123456789"; // TODO: fix when deployed
+pub const ARBITRUM_MAINNET_SWAP_V2_TAKER_CONTRACT: &str = "0x0123456789012345678901234567890123456789";
+pub const ARBITRUM_MAINNET_SWAP_V2_NFT_CONTRACT: &str = "0x0123456789012345678901234567890123456789";
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum TypedRpcResponse<T> {
@@ -1199,6 +1224,28 @@ pub fn tqrc20_conf() -> Json {
     })
 }
 
+pub fn polygon_conf() -> Json {
+    json!({
+        "coin": "MATIC",
+        "name": "matic",
+        "fname": "Polygon",
+        "rpcport": 80,
+        "mm2": 1,
+        "avg_blocktime": 0.03,
+        "required_confirmations": 3,
+        "max_eth_tx_type": 2,
+        "gas_price_mult": 2.0,
+        "gas_fee_base_adjust": [1.0, 2.0, 3.0],
+        "gas_fee_priority_adjust": [1.0, 2.0, 3.0],
+        "protocol": {
+            "type": "ETH",
+            "protocol_data": {
+                "chain_id": 137
+            }
+        }
+    })
+}
+
 pub fn mm_ctx_with_iguana(passphrase: Option<&str>) -> MmArc {
     const DEFAULT_IGUANA_PASSPHRASE: &str = "123";
 
@@ -1792,12 +1839,37 @@ impl MarketMakerIt {
 
     /// Currently, we cannot wait for the `Completed IAmrelay handling for peer` log entry on WASM node,
     /// because the P2P module logs to a global logger and doesn't log to the dashboard.
+    /// Check if the node is connected to at least one seednode,
+    /// the rpc is used instead of checking the log for DEBUG messages (to opt out p2p debug logging)
     #[cfg(not(target_arch = "wasm32"))]
     pub async fn check_seednodes(&mut self) -> Result<(), String> {
-        // wait for at least 1 node to be added to relay mesh
-        self.wait_for_log(22., |log| log.contains("Completed IAmrelay handling for peer"))
+        let timeout_sec = 22.;
+        let start = now_float();
+        loop {
+            let res = self.rpc(&json!({
+                "userpass": self.userpass,
+                "method": "get_directly_connected_peers",
+            }))
             .await
-            .map_err(|e| ERRL!("{}", e))
+            .unwrap();
+            if res.0.is_success() {
+                let res_value = serde_json::from_str::<Json>(&res.1).unwrap();
+                if let Some(peers) = res_value["result"].as_object() {
+                    if peers.len() > 0 {
+                        return Ok(());
+                    }
+                }
+            }
+            if now_float() - start > timeout_sec {
+                return ERR!("Timeout expired waiting for connected peers");
+            }
+            if let Some(ref mut pc) = self.pc {
+                if !pc.running() {
+                    return ERR!("MM process terminated prematurely at: {:?}.", self.folder);
+                }
+            }
+            Timer::sleep(1.).await
+        }
     }
 
     /// Wait for the node to start listening to new P2P connections.

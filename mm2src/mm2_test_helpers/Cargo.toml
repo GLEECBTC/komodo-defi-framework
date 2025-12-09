@@ -28,6 +28,7 @@ serde = "1"
 serde_derive = "1"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
+ethereum-types = { version = "0.13", default-features = false, features = ["std", "serialize"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 chrono = { version = "0.4.41", default-features = false, features = ["wasmbind"] }

@@ -84,6 +84,7 @@ pub mod lp_ordermatch;
 pub mod lp_stats;
 pub mod lp_swap;
 pub mod lp_wallet;
+pub mod lr_swap;
 pub mod rpc;
 #[cfg(not(any(target_arch = "wasm32", target_os = "windows")))]
 pub mod shutdown_signal_event;

@@ -66,6 +66,13 @@ pub(crate) mod nonce_sequencer {
     }
 }
 
+#[macro_export]
+macro_rules! is_eth_platform_coin {
+    ($coin: expr) => {
+        matches!($coin.coin_type, EthCoinType::Eth)
+    };
+}
+
 pub(crate) fn get_function_input_data(decoded: &[Token], func: &Function, index: usize) -> Result<Token, String> {
     decoded.get(index).cloned().ok_or(format!(
         "Missing input in function {}: No input found at index {}",

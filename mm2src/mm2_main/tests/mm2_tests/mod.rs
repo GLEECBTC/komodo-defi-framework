@@ -3,6 +3,8 @@ mod best_orders_tests;
 mod eth_tests;
 mod lightning_tests;
 mod lp_bot_tests;
+#[cfg(feature = "test-ext-api")]
+mod lr_swap_tests;
 mod mm2_tests_inner;
 mod orderbook_sync_tests;
 mod z_coin_tests;
