@@ -23,7 +23,8 @@ pub mod helpers;
 mod docker_ordermatch_tests;
 
 // UTXO Ordermatching V1 tests - UTXO-only orderbook mechanics (extracted from docker_tests_inner)
-// Tests: order lifecycle, balance-driven cancellations/updates, restart kickstart, best-price matching, RPC response formats
+// Tests: order lifecycle, balance-driven cancellations/updates, restart kickstart, best-price matching,
+//        RPC response formats, min_volume/dust validation, P2P time sync validation
 // Chains: UTXO-MYCOIN, UTXO-MYCOIN1
 #[cfg(all(feature = "run-docker-tests", feature = "docker-tests-ordermatch"))]
 mod utxo_ordermatch_v1_tests;
@@ -34,12 +35,19 @@ mod utxo_ordermatch_v1_tests;
 // Future destination: mm2_main::lp_swap/tests or coins::*/tests
 // ============================================================================
 
-// Core swap tests - UTXO + ETH cross-chain atomic swaps
-// Tests: maker/taker swap flows, swap negotiation, payment validation
+// Cross-chain tests - UTXO + ETH cross-chain order matching and validation
+// Tests: cross-chain order matching, volume validation, orderbook depth
 // Chains: UTXO-MYCOIN, UTXO-MYCOIN1, ETH, ERC20
-// Note: This module is large and mixes swap, orderbook, and coin tests - split recommended
+// Note: Contains only 4 tests that require BOTH ETH and UTXO chains simultaneously
 #[cfg(all(feature = "run-docker-tests", feature = "docker-tests-eth"))]
 mod docker_tests_inner;
+
+// ETH Inner tests - ETH-only tests (extracted from docker_tests_inner)
+// Tests: ETH/ERC20 activation, disable, withdraw, swap contract negotiation, order management, ERC20 approval
+// Chains: ETH, ERC20
+// Future: Consider separate feature flag (docker-tests-eth-only) for tests that don't need UTXO
+#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-eth"))]
+mod eth_inner_tests;
 
 // Swap protocol v2 tests - UTXO-only TPU protocol
 // Tests: MakerSwapStateMachine, TakerSwapStateMachine, trading protocol upgrade

@@ -13,6 +13,7 @@ use crate::docker_tests::helpers::utxo::{
 use crate::integration_tests_common::*;
 use coins::{ConfirmPaymentInput, MarketCoinOps, MmCoin, WithdrawRequest};
 use common::{block_on, block_on_f01, executor::Timer, wait_until_sec};
+use mm2_libp2p::behaviours::atomicdex::MAX_TIME_GAP_FOR_CONNECTED_PEER;
 use mm2_number::{BigDecimal, BigRational};
 use mm2_test_helpers::for_tests::{
     check_my_swap_status_amounts, mm_dump, mycoin1_conf, mycoin_conf, MarketMakerIt, Mm2TestConf,
@@ -20,6 +21,7 @@ use mm2_test_helpers::for_tests::{
 use mm2_test_helpers::structs::*;
 use serde_json::Value as Json;
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::env;
 use std::thread;
 use std::time::Duration;
@@ -1214,7 +1216,7 @@ fn test_taker_should_match_with_best_price_buy() {
         None,
     )
     .unwrap();
-    let (_eve_dump_log, _eve_dump_dashboard) = mm_dump(&mm_alice.log_path);
+    let (_eve_dump_log, _eve_dump_dashboard) = mm_dump(&mm_eve.log_path);
 
     log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[], None)));
     log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[], None)));
@@ -1348,7 +1350,7 @@ fn test_taker_should_match_with_best_price_sell() {
         None,
     )
     .unwrap();
-    let (_eve_dump_log, _eve_dump_dashboard) = mm_dump(&mm_alice.log_path);
+    let (_eve_dump_log, _eve_dump_dashboard) = mm_dump(&mm_eve.log_path);
 
     log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[], None)));
     log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[], None)));
@@ -1401,8 +1403,8 @@ fn test_taker_should_match_with_best_price_sell() {
         "volume": "1000",
     })))
     .unwrap();
-    assert!(rc.0.is_success(), "!buy: {}", rc.1);
-    let alice_buy: BuyOrSellRpcResult = serde_json::from_str(&rc.1).unwrap();
+    assert!(rc.0.is_success(), "!sell: {}", rc.1);
+    let alice_sell: BuyOrSellRpcResult = serde_json::from_str(&rc.1).unwrap();
 
     block_on(mm_eve.wait_for_log(22., |log| log.contains("Entering the maker_swap_loop MYCOIN/MYCOIN1"))).unwrap();
     block_on(mm_alice.wait_for_log(22., |log| log.contains("Entering the taker_swap_loop MYCOIN/MYCOIN1"))).unwrap();
@@ -1411,13 +1413,13 @@ fn test_taker_should_match_with_best_price_sell() {
 
     block_on(check_my_swap_status_amounts(
         &mm_alice,
-        alice_buy.result.uuid,
+        alice_sell.result.uuid,
         1000.into(),
         1000.into(),
     ));
     block_on(check_my_swap_status_amounts(
         &mm_eve,
-        alice_buy.result.uuid,
+        alice_sell.result.uuid,
         1000.into(),
         1000.into(),
     ));
@@ -1599,4 +1601,316 @@ fn test_my_orders_response_format() {
     assert!(rc.0.is_success(), "!my_orders: {}", rc.1);
 
     let _: MyOrdersRpcResult = serde_json::from_str(&rc.1).unwrap();
+}
+
+// =============================================================================
+// Min Volume and Dust Tests
+// Tests for order min_volume constraints and dust thresholds
+// =============================================================================
+
+#[test]
+fn test_buy_min_volume() {
+    let privkey = random_secp256k1_secret();
+    generate_utxo_coin_with_privkey("MYCOIN1", 1000.into(), privkey);
+
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000),]);
+
+    let conf = Mm2TestConf::seednode(&format!("0x{}", hex::encode(privkey)), &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+
+    let (_mm_dump_log, _mm_dump_dashboard) = mm.mm_dump();
+    log!("MM log path: {}", mm.log_path.display());
+
+    // Enable coins
+    log!("{:?}", block_on(enable_native(&mm, "MYCOIN", &[], None)));
+    log!("{:?}", block_on(enable_native(&mm, "MYCOIN1", &[], None)));
+
+    let min_volume: BigDecimal = "0.1".parse().unwrap();
+    log!("Issue bob MYCOIN/MYCOIN1 buy request");
+    let rc = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "buy",
+        "base": "MYCOIN",
+        "rel": "MYCOIN1",
+        "price": "2",
+        "volume": "1",
+        "min_volume": min_volume,
+        "order_type": {
+            "type": "GoodTillCancelled"
+        },
+        "timeout": 2,
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!sell: {}", rc.1);
+    let response: BuyOrSellRpcResult = serde_json::from_str(&rc.1).unwrap();
+    assert_eq!(min_volume, response.result.min_volume);
+
+    log!("Wait for 4 seconds for Bob order to be converted to maker");
+    block_on(Timer::sleep(4.));
+
+    let rc = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "my_orders",
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!my_orders: {}", rc.1);
+    let my_orders: MyOrdersRpcResult = serde_json::from_str(&rc.1).unwrap();
+    assert_eq!(
+        1,
+        my_orders.result.maker_orders.len(),
+        "maker_orders must have exactly 1 order"
+    );
+    assert!(my_orders.result.taker_orders.is_empty(), "taker_orders must be empty");
+    let maker_order = my_orders.result.maker_orders.get(&response.result.uuid).unwrap();
+
+    let expected_min_volume: BigDecimal = "0.2".parse().unwrap();
+    assert_eq!(expected_min_volume, maker_order.min_base_vol);
+}
+
+#[test]
+fn test_sell_min_volume() {
+    let privkey = random_secp256k1_secret();
+    generate_utxo_coin_with_privkey("MYCOIN", 1000.into(), privkey);
+
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000),]);
+
+    let conf = Mm2TestConf::seednode(&format!("0x{}", hex::encode(privkey)), &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+
+    let (_mm_dump_log, _mm_dump_dashboard) = mm.mm_dump();
+    log!("MM log path: {}", mm.log_path.display());
+
+    // Enable coins
+    log!("{:?}", block_on(enable_native(&mm, "MYCOIN", &[], None)));
+    log!("{:?}", block_on(enable_native(&mm, "MYCOIN1", &[], None)));
+
+    let min_volume: BigDecimal = "0.1".parse().unwrap();
+    log!("Issue bob MYCOIN/MYCOIN1 sell request");
+    let rc = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "sell",
+        "base": "MYCOIN",
+        "rel": "MYCOIN1",
+        "price": "1",
+        "volume": "1",
+        "min_volume": min_volume,
+        "order_type": {
+            "type": "GoodTillCancelled"
+        },
+        "timeout": 2,
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!sell: {}", rc.1);
+    let rc_json: Json = serde_json::from_str(&rc.1).unwrap();
+    let uuid: String = serde_json::from_value(rc_json["result"]["uuid"].clone()).unwrap();
+    let min_volume_response: BigDecimal = serde_json::from_value(rc_json["result"]["min_volume"].clone()).unwrap();
+    assert_eq!(min_volume, min_volume_response);
+
+    log!("Wait for 4 seconds for Bob order to be converted to maker");
+    block_on(Timer::sleep(4.));
+
+    let rc = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "my_orders",
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!my_orders: {}", rc.1);
+    let my_orders: Json = serde_json::from_str(&rc.1).unwrap();
+    let my_maker_orders: HashMap<String, Json> =
+        serde_json::from_value(my_orders["result"]["maker_orders"].clone()).unwrap();
+    let my_taker_orders: HashMap<String, Json> =
+        serde_json::from_value(my_orders["result"]["taker_orders"].clone()).unwrap();
+    assert_eq!(1, my_maker_orders.len(), "maker_orders must have exactly 1 order");
+    assert!(my_taker_orders.is_empty(), "taker_orders must be empty");
+    let maker_order = my_maker_orders.get(&uuid).unwrap();
+    let min_volume_maker: BigDecimal = serde_json::from_value(maker_order["min_base_vol"].clone()).unwrap();
+    assert_eq!(min_volume, min_volume_maker);
+}
+
+#[test]
+fn test_setprice_min_volume_dust() {
+    let privkey = random_secp256k1_secret();
+    generate_utxo_coin_with_privkey("MYCOIN", 1000.into(), privkey);
+
+    let coins = json! ([
+        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"dust":10000000,"protocol":{"type":"UTXO"}},
+        mycoin1_conf(1000),
+    ]);
+
+    let conf = Mm2TestConf::seednode(&format!("0x{}", hex::encode(privkey)), &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+
+    let (_mm_dump_log, _mm_dump_dashboard) = mm.mm_dump();
+    log!("MM log path: {}", mm.log_path.display());
+
+    // Enable coins
+    log!("{:?}", block_on(enable_native(&mm, "MYCOIN", &[], None)));
+    log!("{:?}", block_on(enable_native(&mm, "MYCOIN1", &[], None)));
+
+    log!("Issue bob MYCOIN/MYCOIN1 sell request");
+    let rc = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "setprice",
+        "base": "MYCOIN",
+        "rel": "MYCOIN1",
+        "price": "1",
+        "volume": "1",
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+    let response: SetPriceResponse = serde_json::from_str(&rc.1).unwrap();
+    let expected_min = BigDecimal::from(1);
+    assert_eq!(expected_min, response.result.min_base_vol);
+
+    log!("Issue bob MYCOIN/MYCOIN1 sell request less than dust");
+    let rc = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "setprice",
+        "base": "MYCOIN",
+        "rel": "MYCOIN1",
+        "price": "1",
+        // Less than dust, should fial
+        "volume": 0.01,
+    })))
+    .unwrap();
+    assert!(!rc.0.is_success(), "!setprice: {}", rc.1);
+}
+
+#[test]
+fn test_sell_min_volume_dust() {
+    let privkey = random_secp256k1_secret();
+    generate_utxo_coin_with_privkey("MYCOIN", 1000.into(), privkey);
+
+    let coins = json! ([
+        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"dust":10000000,"protocol":{"type":"UTXO"}},
+        mycoin1_conf(1000),
+    ]);
+
+    let conf = Mm2TestConf::seednode(&format!("0x{}", hex::encode(privkey)), &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+
+    let (_mm_dump_log, _mm_dump_dashboard) = mm.mm_dump();
+    log!("MM log path: {}", mm.log_path.display());
+
+    // Enable coins
+    log!("{:?}", block_on(enable_native(&mm, "MYCOIN", &[], None)));
+    log!("{:?}", block_on(enable_native(&mm, "MYCOIN1", &[], None)));
+
+    log!("Issue bob MYCOIN/MYCOIN1 sell request");
+    let rc = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "sell",
+        "base": "MYCOIN",
+        "rel": "MYCOIN1",
+        "price": "1",
+        "volume": "1",
+        "order_type": {
+            "type": "FillOrKill"
+        }
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!sell: {}", rc.1);
+    let response: BuyOrSellRpcResult = serde_json::from_str(&rc.1).unwrap();
+    let expected_min = BigDecimal::from(1);
+    assert_eq!(response.result.min_volume, expected_min);
+
+    log!("Issue bob MYCOIN/MYCOIN1 sell request");
+    let rc = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "sell",
+        "base": "MYCOIN",
+        "rel": "MYCOIN1",
+        "price": "1",
+        // Less than dust
+        "volume": 0.01,
+        "order_type": {
+            "type": "FillOrKill"
+        }
+    })))
+    .unwrap();
+    assert!(!rc.0.is_success(), "!sell: {}", rc.1);
+}
+
+// =============================================================================
+// P2P Infrastructure Tests
+// These tests verify P2P networking behavior (UTXO-based, coin-agnostic)
+// =============================================================================
+
+#[test]
+fn test_peer_time_sync_validation() {
+    let timeoffset_tolerable = TryInto::<i64>::try_into(MAX_TIME_GAP_FOR_CONNECTED_PEER).unwrap() - 1;
+    let timeoffset_too_big = TryInto::<i64>::try_into(MAX_TIME_GAP_FOR_CONNECTED_PEER).unwrap() + 1;
+
+    let start_peers_with_time_offset = |offset: i64| -> (Json, Json) {
+        let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 10.into());
+        let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 10.into());
+        let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
+        let bob_conf = Mm2TestConf::seednode(&hex::encode(bob_priv_key), &coins);
+        let mut mm_bob = block_on(MarketMakerIt::start_with_envs(
+            bob_conf.conf,
+            bob_conf.rpc_password,
+            None,
+            &[],
+        ))
+        .unwrap();
+        let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
+        block_on(mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
+        let alice_conf =
+            Mm2TestConf::light_node(&hex::encode(alice_priv_key), &coins, &[mm_bob.ip.to_string().as_str()]);
+        let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
+            alice_conf.conf,
+            alice_conf.rpc_password,
+            None,
+            &[("TEST_TIMESTAMP_OFFSET", offset.to_string().as_str())],
+        ))
+        .unwrap();
+        let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
+        block_on(mm_alice.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
+
+        let res_bob = block_on(mm_bob.rpc(&json!({
+            "userpass": mm_bob.userpass,
+            "method": "get_directly_connected_peers",
+        })))
+        .unwrap();
+        assert!(res_bob.0.is_success(), "!get_directly_connected_peers: {}", res_bob.1);
+        let bob_peers = serde_json::from_str::<Json>(&res_bob.1).unwrap();
+
+        let res_alice = block_on(mm_alice.rpc(&json!({
+            "userpass": mm_alice.userpass,
+            "method": "get_directly_connected_peers",
+        })))
+        .unwrap();
+        assert!(
+            res_alice.0.is_success(),
+            "!get_directly_connected_peers: {}",
+            res_alice.1
+        );
+        let alice_peers = serde_json::from_str::<Json>(&res_alice.1).unwrap();
+
+        block_on(mm_bob.stop()).unwrap();
+        block_on(mm_alice.stop()).unwrap();
+        (bob_peers, alice_peers)
+    };
+
+    // check with small time offset:
+    let (bob_peers, alice_peers) = start_peers_with_time_offset(timeoffset_tolerable);
+    assert!(
+        bob_peers["result"].as_object().unwrap().len() == 1,
+        "bob must have one peer"
+    );
+    assert!(
+        alice_peers["result"].as_object().unwrap().len() == 1,
+        "alice must have one peer"
+    );
+
+    // check with too big time offset:
+    let (bob_peers, alice_peers) = start_peers_with_time_offset(timeoffset_too_big);
+    assert!(
+        bob_peers["result"].as_object().unwrap().is_empty(),
+        "bob must have no peers"
+    );
+    assert!(
+        alice_peers["result"].as_object().unwrap().is_empty(),
+        "alice must have no peers"
+    );
 }

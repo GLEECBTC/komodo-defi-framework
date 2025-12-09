@@ -446,7 +446,7 @@ test result: ok. 235 passed; 0 failed; 8 ignored; 0 measured; 0 filtered out; fi
 ```
 After plan completion, the sum of all split jobs must equal this baseline.
 
-**Status:** Partial implementation - UTXO swap tests and UTXO ordermatching tests extracted to new modules.
+**Status:** Partial implementation - UTXO swap tests, UTXO ordermatching tests, and ETH-only tests extracted to new modules.
 
 **Completed tasks:**
 - [x] Created `utxo_swaps_v1_tests.rs` - Extracted UTXO-only swap tests from `docker_tests_inner.rs`:
@@ -481,13 +481,40 @@ After plan completion, the sum of all split jobs must equal this baseline.
 - [x] Verified compilation with `cargo check -p mm2_main --features run-docker-tests,docker-tests-ordermatch`
 - [x] Verified no clippy warnings with `-D warnings` for both `docker-tests-eth` and `docker-tests-ordermatch`
 
+- [x] Created `eth_inner_tests.rs` - Extracted 15 ETH-only tests from `docker_tests_inner.rs`:
+  - ETH/ERC20 activation tests (`test_enable_eth_coin_with_token_then_disable`, `test_enable_eth_coin_with_token_without_balance`)
+  - Platform coin mismatch test (`test_platform_coin_mismatch`)
+  - Swap contract negotiation tests (`test_eth_swap_contract_addr_negotiation_same_fallback`, `test_eth_swap_negotiation_fails_maker_no_fallback`)
+  - Trade tests (`test_trade_base_rel_eth_erc20_coins`)
+  - Withdrawal tests (`test_withdraw_and_send_eth_erc20`, `test_withdraw_and_send_hd_eth_erc20`)
+  - Order/DB persistence tests (`test_set_price_must_save_order_to_db`)
+  - Conf settings tests (`test_set_price_conf_settings`, `test_buy_conf_settings`, `test_sell_conf_settings`)
+  - Order management tests (`test_my_orders_after_matched`, `test_update_maker_order_after_matched`)
+  - ERC20 approval test (`test_approve_erc20`)
+- [x] Moved 4 UTXO min_volume/dust tests to `utxo_ordermatch_v1_tests.rs`:
+  - `test_buy_min_volume`, `test_sell_min_volume`, `test_setprice_min_volume_dust`, `test_sell_min_volume_dust`
+- [x] Added module entry in `mod.rs` gated by `docker-tests-eth`
+- [x] Removed extracted tests from `docker_tests_inner.rs` (file reduced from ~1957 to ~523 lines)
+- [x] `docker_tests_inner.rs` now contains only 4 cross-chain tests requiring BOTH ETH and UTXO:
+  - `test_match_utxo_with_eth_taker_sell`
+  - `test_match_utxo_with_eth_taker_buy`
+  - `test_setprice_buy_sell_too_low_volume`
+  - `test_orderbook_depth`
+- [x] Moved `test_peer_time_sync_validation` to `utxo_ordermatch_v1_tests.rs` (P2P test that only uses UTXO coins)
+- [x] Fixed copy-paste bugs in `utxo_ordermatch_v1_tests.rs`:
+  - Corrected `mm_dump(&mm_alice.log_path)` → `mm_dump(&mm_eve.log_path)` in two locations
+  - Renamed `alice_buy` → `alice_sell` in `test_taker_should_match_with_best_price_sell`
+  - Fixed assertion message `"!buy:"` → `"!sell:"` in sell test
+- [x] Verified compilation with `cargo clippy -p mm2_main --tests --features run-docker-tests,docker-tests-eth`
+- [x] Verified compilation with `cargo clippy -p mm2_main --tests --features run-docker-tests,docker-tests-ordermatch`
+
 **Remaining tasks:**
 - [ ] Audit each test module to verify tests are correctly placed:
   - Check if tests match their feature gate (e.g., ETH tests in `docker-tests-eth` gated module)
   - Identify tests that should be moved to different feature categories
-- [ ] Complete splitting of `docker_tests_inner.rs`:
+- [x] Complete splitting of `docker_tests_inner.rs`:
   - ~~Extract ordermatching tests to `ordermatch_inner_tests.rs` (gated by `docker-tests-ordermatch`)~~ ✅ Done as `utxo_ordermatch_v1_tests.rs`
-  - Extract ETH-specific tests to `eth_inner_tests.rs` (keep in `docker-tests-eth`)
+  - ~~Extract ETH-specific tests to `eth_inner_tests.rs` (keep in `docker-tests-eth`)~~ ✅ Done
   - ~~Remove extracted tests from `docker_tests_inner.rs` to avoid duplication~~ ✅ Done
 - [ ] Consider splitting other large files:
   - `eth_docker_tests.rs` - May benefit from splitting coin-specific vs swap tests
@@ -499,6 +526,12 @@ After plan completion, the sum of all split jobs must equal this baseline.
   - UTXO merge tests may belong in a separate UTXO maintenance module
   - Some tests may better fit in ordermatching category
   - Reorganize based on actual test purpose vs. chain dependency
+- [ ] Consider introducing a separate `docker-tests-eth-only` feature flag:
+  - Currently `eth_inner_tests.rs` and `docker_tests_inner.rs` both use `docker-tests-eth` feature
+  - `eth_inner_tests.rs` contains 15 tests that only need ETH/Geth containers
+  - `docker_tests_inner.rs` contains 5 cross-chain tests requiring BOTH ETH and UTXO containers
+  - A dedicated `docker-tests-eth-only` feature would allow running ETH-only tests without spinning up UTXO containers
+  - This could reduce CI resource usage and test runtime for ETH-specific validation
 
 #### 4.2.5 Runner: start only what's needed (keep env flags)
 
