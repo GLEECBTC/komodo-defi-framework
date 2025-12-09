@@ -554,13 +554,44 @@ Later, you can add `#[cfg(feature = "...")]` blocks around image pulling to slig
 
 **Goal:** Break the monolithic docker tests job into parallel jobs grouped by behavior. Keep each new job small and independent. All jobs use Compose mode (`KDF_DOCKER_COMPOSE_ENV=1`) to enable sharing containers with other tests (e.g., WASM tests).
 
-**Post-implementation fix (Sia gating):**
+**Post-implementation fixes:**
+
+**Sia feature gating fix:**
 The initial Phase 3 implementation had a bug where `sia_tests` module and Sia container initialization
 ran in all docker test jobs regardless of the `docker-tests-sia` feature flag. This was fixed by:
 - Gating `mod sia_tests;` and all Sia-specific imports in `docker_tests_main.rs` with `#[cfg(feature = "docker-tests-sia")]`
 - Gating Sia helpers in `helpers/mod.rs` with `#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-sia"))]`
 - Gating Sia container initialization, image pulling, and health checks in `docker_tests_main.rs`
-- Adding inner feature gate `#![cfg(feature = "docker-tests-sia")]` in `sia_tests/mod.rs` as safety measure
+
+**Cross-dependency analysis (blocking issue for isolated jobs):**
+Analysis of CI failures revealed that several test modules have circular/cross dependencies through helper initialization:
+
+1. **QRC20 tests** (`qrc20_tests`):
+   - Contains cross-chain swap tests: `test_trade_qrc20`, `trade_test_with_maker_segwit` → require MYCOIN (UTXO)
+   - If UTXO containers are added, those tests would work
+   - However, UTXO helpers (`qrc20.rs:62`) panic if QRC20 wasn't initialized
+
+2. **Sia tests** (`sia_tests`):
+   - Contains cross-chain swap tests: `test_bob_sells_dsia_for_mycoin` → require MYCOIN (UTXO)
+   - Same issue: adding UTXO doesn't help because UTXO tests may reference QRC20 helpers
+
+3. **ETH tests** (`eth_docker_tests`, `eth_inner_tests`):
+   - `test_trade_base_rel_eth_erc20_coins` panics with "QTUM_CONF_PATH not initialized"
+   - ETH helpers reference QRC20 helpers that expect QRC20 initialization
+
+4. **UTXO swaps tests** (`utxo_swaps_v1_tests`):
+   - `test_trade_base_rel_mycoin_mycoin1_coins` panics with "QICK_TOKEN_ADDRESS not initialized"
+   - UTXO trade tests use `trade_base_rel` helper from `swap.rs` which calls QRC20 helpers
+
+**Root cause:** Helper modules have initialization-time dependencies that assume all container types are available. The `OnceLock` pattern in helpers (e.g., `QICK_TOKEN_ADDRESS`, `QTUM_CONF_PATH`) panics when accessed before the corresponding container is initialized.
+
+**Required fix (HIGH PRIORITY - blocking Phase 3):**
+1. Refactor helper modules to be self-contained per container type
+2. Remove cross-helper dependencies or make them feature-gated
+3. Ensure tests only reference helpers for containers they actually need
+4. Move cross-chain tests to `docker-tests-integration` job
+
+Until this is fixed, the affected CI jobs will fail with initialization panics. The split jobs cannot run in isolation.
 
 **Implementation summary:**
 All CI jobs now use only feature flags for test selection (no test module filters). The feature-gated modules in `mod.rs` control which tests are compiled and run for each job:
@@ -758,33 +789,42 @@ docker-tests-<suite>:
 
 The following tasks are deferred for future implementation:
 
-- [ ] **Fix unused warnings for feature-gated helper functions** *(HIGH PRIORITY - affects all CI jobs)*
-  - Helper modules (`utxo.rs`, `eth.rs`, `qrc20.rs`, etc.) have functions only used by certain test combinations
-  - When compiling with a single feature flag, unused helper functions generate warnings (27+ warnings per job)
-  - Current warnings include:
-    - `GETH_DEV_CHAIN_ID`, `erc20_contract_checksum`, `swap_contract_checksum`, etc. in `eth.rs`
-    - `qrc20_coin_from_privkey`, `fill_qrc20_address`, etc. in `qrc20.rs`
-    - `MYCOIN`, `MYCOIN1`, `rmd160_from_priv`, `fund_privkey_utxo`, etc. in `utxo.rs`
-    - `trade_base_rel` in `swap.rs`
-  - Approach options:
-    1. **Feature-gate individual functions** - Add `#[cfg(feature = "docker-tests-X")]` to each function based on which tests use it
-    2. **Reorganize helpers into feature-specific modules** - Split helpers so each feature's tests only compile their needed helpers
-    3. **Allow dead_code for helpers** - Add `#[allow(dead_code)]` to helper module (least preferred, hides real issues)
-  - Recommended approach: Option 2 - reorganize helpers into feature-aligned modules:
-    - `helpers/eth_helpers.rs` - gated on `docker-tests-eth` or tests that need ETH
-    - `helpers/utxo_helpers.rs` - gated on tests that need UTXO
-    - `helpers/swap_helpers.rs` - gated on swap tests
-    - Keep shared utilities in `helpers/common.rs` (always compiled)
-  - Goal: `cargo check -p mm2_main --tests --features docker-tests-<any>` should produce zero warnings
+- [ ] **Fix helper cross-dependencies and unused warnings** *(CRITICAL - blocking Phase 3 split jobs)*
+  - **Problem:** Helper modules have circular dependencies through `OnceLock` initialization that panic when containers aren't available:
+    - `qrc20.rs` helpers panic if QRC20 not initialized (affects ETH, UTXO tests)
+    - `eth.rs` helpers reference QRC20 helpers
+    - `swap.rs::trade_base_rel` calls QRC20 helpers (affects all swap tests)
+  - **Symptoms:**
+    - ETH tests fail: "QTUM_CONF_PATH not initialized"
+    - UTXO tests fail: "QICK_TOKEN_ADDRESS not initialized"
+    - QRC20/Sia tests fail when adding UTXO containers due to reverse dependencies
+  - **Additionally:** Unused warnings (27+ per job) from helpers not used by specific feature flags
+  - **Required refactor:**
+    1. **Break circular dependencies** - Each helper module must be self-contained
+    2. **Feature-gate cross-references** - `swap.rs::trade_base_rel` variants gated by features
+    3. **Reorganize into feature-aligned modules:**
+       - `helpers/eth.rs` - ETH-only helpers, gated on `docker-tests-eth`
+       - `helpers/utxo.rs` - UTXO-only helpers, gated on tests needing UTXO
+       - `helpers/qrc20.rs` - QRC20-only helpers, gated on `docker-tests-qrc20`
+       - `helpers/swap.rs` - Generic swap helpers (no chain-specific dependencies)
+       - `helpers/common.rs` - Shared utilities (always compiled)
+    4. **Move cross-chain tests** - Tests requiring multiple container types go to `docker-tests-integration`
+  - **Goal:** `cargo check -p mm2_main --tests --features docker-tests-<any>` produces zero warnings AND tests run without initialization panics
 
 - [ ] **Add `docker-tests-integration` feature flag and CI job**
   - Add `docker-tests-integration = ["run-docker-tests"]` to `mm2_main/Cargo.toml`
-  - Create `docker-tests-integration` CI job that starts all required containers (UTXO, SLP, QRC20, ETH, Cosmos, etc.)
+  - Create `docker-tests-integration` CI job that starts all required containers (UTXO, SLP, QRC20, ETH, Cosmos, Sia, etc.)
   - Migrate `swap_tests` module from legacy negative-gate pattern to explicit `docker-tests-integration` feature
-  - Tests to include:
-    - `swap_tests::trade_test_with_maker_slp`
-    - `swap_tests::trade_test_with_taker_slp`
-    - Other curated cross-chain swap scenarios
+  - **Tests currently failing in isolated jobs** (require inspection when implementing):
+    - From `eth_inner_tests`: `test_trade_base_rel_eth_erc20_coins`, `test_eth_swap_contract_addr_negotiation_same_fallback`
+    - From `utxo_swaps_v1_tests`: `test_trade_base_rel_mycoin_mycoin1_coins`, `test_trade_base_rel_mycoin_mycoin1_coins_burnkey_as_alice`
+    - From `qrc20_tests`: `test_trade_qrc20`, `trade_test_with_maker_segwit`, and other QTUM<->MYCOIN tests
+    - From `sia_tests`: `test_bob_sells_dsia_for_mycoin` and other Sia<->MYCOIN tests
+    - From `swap_tests`: `trade_test_with_maker_slp`, `trade_test_with_taker_slp`
+  - **Note:** Some failures are due to helper code paths that unnecessarily reference other chain helpers
+    (e.g., ETH/ERC20 trade test should NOT need QRC20). When implementing this task, inspect each
+    failing test to determine if it genuinely requires multiple container types or if the dependency
+    is accidental and can be removed by refactoring the helper code.
 
 - [ ] **Add combined Tendermint+ETH CI job for cross-chain swaps**
   - `tendermint_swap_tests` is gated by `docker-tests-tendermint + docker-tests-eth` but no CI job currently enables both features
