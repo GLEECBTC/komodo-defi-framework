@@ -509,16 +509,17 @@ After plan completion, the sum of all split jobs must equal this baseline.
 - [x] Verified compilation with `cargo clippy -p mm2_main --tests --features run-docker-tests,docker-tests-ordermatch`
 
 **Remaining tasks:**
-- [ ] Audit each test module to verify tests are correctly placed:
-  - Check if tests match their feature gate (e.g., ETH tests in `docker-tests-eth` gated module)
-  - Identify tests that should be moved to different feature categories
+- [x] Audit each test module to verify tests are correctly placed:
+  - Fixed `docker_tests_inner.rs` feature gate from `docker-tests-eth` to `docker-tests-ordermatch` (cross-chain ordermatching tests)
+  - Split `tendermint_tests.rs` to extract cross-chain swap tests to `tendermint_swap_tests.rs`
+  - `tendermint_swap_tests.rs` gated by `docker-tests-tendermint + docker-tests-eth` (requires both environments)
 - [x] Complete splitting of `docker_tests_inner.rs`:
   - ~~Extract ordermatching tests to `ordermatch_inner_tests.rs` (gated by `docker-tests-ordermatch`)~~ ✅ Done as `utxo_ordermatch_v1_tests.rs`
   - ~~Extract ETH-specific tests to `eth_inner_tests.rs` (keep in `docker-tests-eth`)~~ ✅ Done
   - ~~Remove extracted tests from `docker_tests_inner.rs` to avoid duplication~~ ✅ Done
-- [ ] Consider splitting other large files:
-  - `eth_docker_tests.rs` - May benefit from splitting coin-specific vs swap tests
-  - `tendermint_tests.rs` - Contains activation, staking, IBC, and swap tests
+- [x] Consider splitting other large files:
+  - `eth_docker_tests.rs` - Reviewed; no split needed (all EVM-scope tests)
+  - `tendermint_tests.rs` - Split completed: cross-chain swaps moved to `tendermint_swap_tests.rs`
 - [ ] Update feature gates after test movements to ensure correct CI job assignment
 
 **Future cleanup (post-plan):**
@@ -623,10 +624,15 @@ CI jobs mapping:
 
 **Tendermint (`docker-tests-tendermint`)**
 
-- `tendermint_tests::*` including nested `swap` module:
-   - `swap_nucleus_with_doc`
-   - `swap_nucleus_with_eth`
-   - and the Tendermint balance/withdraw/IBC/delegation/validators/tx history tests.
+- `tendermint_tests::*` (Cosmos-only tests):
+   - Tendermint balance/withdraw/IBC/delegation/validators/tx history tests
+
+**Tendermint Cross-Chain Swaps (`docker-tests-tendermint + docker-tests-eth`)**
+
+- `tendermint_swap_tests::*` (requires both Tendermint and ETH environments):
+   - `swap_nucleus_with_doc` (NUCLEUS <-> DOC)
+   - `swap_nucleus_with_eth` (NUCLEUS <-> ETH)
+   - `swap_doc_with_iris_ibc_nucleus` (DOC <-> IRIS-IBC-NUCLEUS)
 
 **ZCoin (`docker-tests-zcoin`)**
 

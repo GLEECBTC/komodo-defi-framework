@@ -1,13 +1,13 @@
-// Docker Tests Inner - Cross-Chain Tests
+// Docker Tests Inner - Cross-Chain Ordermatching Tests
 //
-// This module contains tests that require BOTH ETH and UTXO chains.
+// This module contains tests that require BOTH ETH and UTXO chains for ordermatching.
 // These tests cannot be placed in either eth_inner_tests.rs or utxo_ordermatch_v1_tests.rs
 // because they require cross-chain functionality.
 //
 // ETH-only tests have been extracted to: eth_inner_tests.rs
 // UTXO-only ordermatching tests have been extracted to: utxo_ordermatch_v1_tests.rs
 //
-// Gated by: docker-tests-eth (since ETH+UTXO tests require the ETH environment)
+// Gated by: docker-tests-ordermatch (cross-chain ordermatching tests)
 
 use crate::docker_tests::helpers::env::random_secp256k1_secret;
 use crate::docker_tests::helpers::eth::{

@@ -39,7 +39,7 @@ mod utxo_ordermatch_v1_tests;
 // Tests: cross-chain order matching, volume validation, orderbook depth
 // Chains: UTXO-MYCOIN, UTXO-MYCOIN1, ETH, ERC20
 // Note: Contains only 4 tests that require BOTH ETH and UTXO chains simultaneously
-#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-eth"))]
+#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-ordermatch"))]
 mod docker_tests_inner;
 
 // ETH Inner tests - ETH-only tests (extracted from docker_tests_inner)
@@ -134,11 +134,22 @@ mod sia_docker_tests;
 #[cfg(all(feature = "run-docker-tests", feature = "docker-tests-slp"))]
 mod slp_tests;
 
-// Tendermint coin and IBC tests
-// Tests: ATOM/Nucleus/IRIS activation, staking, IBC transfers, Tendermint<->ETH swaps
-// Chains: Tendermint (ATOM, Nucleus, IRIS), ETH
+// Tendermint coin and IBC tests (Cosmos-only)
+// Tests: ATOM/Nucleus/IRIS activation, staking, IBC transfers, withdraw, delegation
+// Chains: Tendermint (ATOM, Nucleus, IRIS)
 #[cfg(all(feature = "run-docker-tests", feature = "docker-tests-tendermint"))]
 mod tendermint_tests;
+
+// Tendermint cross-chain swap tests
+// Tests: NUCLEUS<->DOC, NUCLEUS<->ETH, DOC<->IRIS-IBC-NUCLEUS swaps
+// Chains: Tendermint (NUCLEUS, IRIS) + ETH/Electrum
+// Note: Requires both Tendermint and ETH docker environments
+#[cfg(all(
+    feature = "run-docker-tests",
+    feature = "docker-tests-tendermint",
+    feature = "docker-tests-eth",
+))]
+mod tendermint_swap_tests;
 
 // ZCoin/Zombie coin tests
 // Tests: ZCoin activation, shielded transactions, DEX fee collection
