@@ -1147,7 +1147,7 @@ fn test_gas_limit_conf() {
     });
     let coin = block_on(lp_coininit(&ctx, ETH, &req)).unwrap();
     let eth_coin = match coin {
-        MmCoinEnum::EthCoin(eth_coin) => eth_coin,
+        MmCoinEnum::EthCoinVariant(eth_coin) => eth_coin,
         _ => panic!("not eth coin"),
     };
     assert!(

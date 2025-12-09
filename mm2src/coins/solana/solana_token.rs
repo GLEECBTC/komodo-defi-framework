@@ -6,21 +6,28 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use bitcrypto::sha256;
 use common::executor::abortable_queue::{AbortableQueue, WeakSpawner};
 use common::executor::{AbortableSystem, AbortedError};
+use common::{now_sec, Future01CompatExt};
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
+use num_traits::ToPrimitive;
+use num_traits::Zero;
 use rpc::v1::types::{Bytes as RpcBytes, H264 as RpcH264};
 use serde::Deserialize;
 
 use crate::coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentResult};
 use crate::hd_wallet::HDAddressSelector;
+use crate::solana::solana_coin::{include_lamports_to_big_decimal, u64_lamports_to_big_decimal};
+use crate::solana::SolanaFeeDetails;
 use crate::{
-    solana::SolanaCoin, BalanceFut, CoinBalance, RawTransactionFut, RawTransactionRequest, WithdrawFut, WithdrawRequest,
+    solana::SolanaCoin, BalanceFut, CoinBalance, RawTransactionFut, RawTransactionRequest, TxFeeDetails, WithdrawFut,
+    WithdrawRequest,
 };
 use crate::{
     CheckIfMyPaymentSentArgs, ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
@@ -28,12 +35,17 @@ use crate::{
     SearchForSwapTxSpendInput, SendPaymentArgs, SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps,
     TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionResult,
     TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr,
-    ValidatePaymentInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
+    ValidatePaymentInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WithdrawError,
 };
 use solana_pubkey::Pubkey as SolanaAddress;
+use solana_transaction::Transaction;
+use spl_associated_token_account_client::address::get_associated_token_address_with_program_id;
+use spl_associated_token_account_client::instruction::create_associated_token_account_idempotent;
+use spl_token::solana_program::program_pack::Pack;
 
 pub struct SolanaTokenFields {
     pub ticker: String,
+    address: SolanaAddress,
     pub platform_coin: SolanaCoin,
     pub protocol_info: SolanaTokenProtocolInfo,
     abortable_system: AbortableQueue,
@@ -56,6 +68,8 @@ pub struct SolanaTokenProtocolInfo {
     pub decimals: u8,
     #[serde(serialize_with = "serialize_pubkey", deserialize_with = "deserialize_pubkey")]
     pub mint_address: SolanaAddress,
+    #[serde(serialize_with = "serialize_pubkey", deserialize_with = "deserialize_pubkey")]
+    program_id: SolanaAddress,
 }
 
 pub fn serialize_pubkey<S>(public_key: &SolanaAddress, serializer: S) -> Result<S::Ok, S::Error>
@@ -87,6 +101,8 @@ pub enum SolanaTokenInitErrorKind {
     Internal {
         reason: String,
     },
+    #[display(fmt = "None of the RPC servers are healthy.")]
+    UnhealthyRPCs,
     #[display(
         fmt = "Expected platform coin is '{expected_platform_coin}' but requested one is '{actual_platform_coin}'."
     )]
@@ -97,7 +113,7 @@ pub enum SolanaTokenInitErrorKind {
 }
 
 impl SolanaToken {
-    pub fn init(
+    pub async fn init(
         ticker: String,
         platform_coin: SolanaCoin,
         protocol_info: SolanaTokenProtocolInfo,
@@ -110,14 +126,55 @@ impl SolanaToken {
                 kind: SolanaTokenInitErrorKind::Internal { reason: e.to_string() },
             })?;
 
+        let address = get_associated_token_address_with_program_id(
+            &platform_coin.address,
+            &protocol_info.mint_address,
+            &protocol_info.program_id,
+        );
+
+        let rpc = platform_coin.rpc_client().await.map_err(|e| SolanaTokenInitError {
+            ticker: ticker.clone(),
+            kind: SolanaTokenInitErrorKind::UnhealthyRPCs,
+        })?;
+
+        match rpc.get_account(&protocol_info.mint_address).await {
+            Ok(mint_account) => {
+                if mint_account.owner != protocol_info.program_id {
+                    return MmError::err(SolanaTokenInitError {
+                        ticker: ticker.clone(),
+                        kind: SolanaTokenInitErrorKind::QueryError {
+                            reason: format!(
+                                "Unsupported SPL program. Expected Program ID: '{}', Got: '{}'.",
+                                protocol_info.program_id, mint_account.owner
+                            ),
+                        },
+                    });
+                }
+            },
+            Err(e) if e.kind.to_string().contains("AccountNotFound") => {
+                // Nothing to do here.
+            },
+            Err(e) => {
+                return MmError::err(SolanaTokenInitError {
+                    ticker: ticker.clone(),
+                    kind: SolanaTokenInitErrorKind::QueryError { reason: e.to_string() },
+                })
+            },
+        };
+
         let token_fields = SolanaTokenFields {
             ticker,
+            address,
             platform_coin,
             protocol_info,
             abortable_system,
         };
 
         Ok(SolanaToken(Arc::new(token_fields)))
+    }
+
+    fn token_id(&self) -> RpcBytes {
+        sha256(&self.protocol_info.mint_address.to_bytes()).to_vec().into()
     }
 }
 
@@ -132,11 +189,185 @@ impl MmCoin for SolanaToken {
     }
 
     fn spawner(&self) -> WeakSpawner {
-        todo!()
+        self.abortable_system.weak_spawner()
     }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
-        todo!()
+        let token = self.clone();
+        let coin = self.platform_coin.clone();
+
+        let fut = async move {
+            let rpc = coin
+                .rpc_client()
+                .await
+                .map_err(|e| WithdrawError::Transport(e.into_inner()))?;
+
+            // `to` can be either a Solana address, or a token address. We create
+            // `to_token_account` regardless to support the both cases.
+            let to = SolanaAddress::from_str(&req.to).map_err(|e| WithdrawError::InvalidAddress(e.to_string()))?;
+            let to_token_account = get_associated_token_address_with_program_id(
+                &to,
+                &token.protocol_info.mint_address,
+                &token.protocol_info.program_id,
+            );
+
+            let balance = token
+                .my_balance()
+                .compat()
+                .await
+                .map_err(|e| WithdrawError::Transport(e.to_string()))?;
+
+            let amount_u64 = if req.max {
+                balance.spendable.to_u64().ok_or_else(|| {
+                    MmError::new(WithdrawError::InternalError(format!(
+                        "Couldn't convert {} to u64.",
+                        balance.spendable
+                    )))
+                })?
+            } else {
+                let big_decimal = include_lamports_to_big_decimal(&req.amount, token.protocol_info.decimals);
+
+                big_decimal.to_u64().ok_or_else(|| {
+                    MmError::new(WithdrawError::InternalError(format!(
+                        "Couldn't convert {big_decimal} to u64."
+                    )))
+                })?
+            };
+
+            if amount_u64 == 0 {
+                return MmError::err(WithdrawError::AmountTooLow {
+                    amount: req.amount,
+                    threshold: token.min_tx_amount(),
+                });
+            }
+
+            let amount_decimal = u64_lamports_to_big_decimal(amount_u64, token.protocol_info.decimals);
+            if balance.spendable < amount_decimal {
+                return MmError::err(WithdrawError::NotSufficientBalance {
+                    coin: token.ticker.to_owned(),
+                    available: balance.spendable,
+                    required: amount_decimal,
+                });
+            }
+
+            // Instructions:
+            //  - Create recipient address if missing.
+            //  - Transfer.
+            let mut instructions = Vec::new();
+            let mut rent_lamports = 0;
+
+            if let Err(e) = rpc.get_account(&to_token_account).await {
+                if !e.kind.to_string().contains("AccountNotFound") {
+                    return MmError::err(WithdrawError::Transport(e.to_string()));
+                }
+
+                rent_lamports = rpc
+                    // TODO: use dynamic account length
+                    .get_minimum_balance_for_rent_exemption(spl_token::state::Account::LEN)
+                    .await
+                    .map_err(|e| WithdrawError::Transport(e.to_string()))?;
+
+                instructions.push(create_associated_token_account_idempotent(
+                    &coin.address,
+                    &to,
+                    &token.protocol_info.mint_address,
+                    &token.protocol_info.program_id,
+                ));
+            };
+
+            let transfer_ix = spl_token::instruction::transfer_checked(
+                &token.protocol_info.program_id,
+                &token.address,
+                &token.protocol_info.mint_address,
+                &to_token_account,
+                &coin.address,
+                &[],
+                amount_u64,
+                token.protocol_info.decimals,
+            )
+            .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+            instructions.push(transfer_ix);
+
+            let recent_blockhash = rpc
+                .get_latest_blockhash()
+                .await
+                .map_err(|e| WithdrawError::Transport(e.to_string()))?;
+
+            let tx = Transaction::new_signed_with_payer(
+                &instructions,
+                Some(&coin.address),
+                &[&coin.keypair],
+                recent_blockhash,
+            );
+
+            // TX hash is the first signature (base58 String).
+            let tx_hash = tx
+                .signatures
+                .first()
+                .map(|s| s.to_string())
+                .ok_or_else(|| WithdrawError::InternalError("Couldn't find the TX signature.".to_owned()))?;
+
+            let tx_bytes =
+                bincode::serialize(&tx).map_err(|e| MmError::new(WithdrawError::InternalError(e.to_string())))?;
+
+            let tx_data = crate::TransactionData::new_signed(rpc::v1::types::Bytes(tx_bytes), tx_hash.clone());
+
+            let amount_dec = u64_lamports_to_big_decimal(amount_u64, token.protocol_info.decimals);
+
+            let fee_lamports = rpc
+                .get_fee_for_message(tx.message())
+                .await
+                .map_err(|e| WithdrawError::Transport(e.to_string()))?;
+            let network_fee_dec = u64_lamports_to_big_decimal(fee_lamports, super::solana_coin::SOLANA_DECIMALS);
+            let rent_dec = u64_lamports_to_big_decimal(rent_lamports, super::solana_coin::SOLANA_DECIMALS);
+            let total_fee_dec = &network_fee_dec + &rent_dec;
+
+            let platform_coin_balance = coin
+                .my_balance()
+                .compat()
+                .await
+                .map_err(|e| WithdrawError::Transport(e.to_string()))?
+                .spendable;
+
+            if total_fee_dec > platform_coin_balance {
+                return MmError::err(WithdrawError::NotSufficientPlatformBalanceForFee {
+                    available: platform_coin_balance,
+                    required: total_fee_dec,
+                    coin: coin.ticker().to_owned(),
+                });
+            }
+
+            let received_by_me = if to == coin.address {
+                amount_dec.clone()
+            } else {
+                BigDecimal::zero()
+            };
+
+            Ok(crate::TransactionDetails {
+                tx: tx_data,
+                from: vec![coin.address.to_string()],
+                to: vec![to.to_string()],
+                total_amount: amount_dec.clone(),
+                spent_by_me: amount_dec.clone(),
+                my_balance_change: &received_by_me - &amount_dec,
+                received_by_me,
+                block_height: 0,
+                timestamp: now_sec(),
+                fee_details: Some(TxFeeDetails::Solana(SolanaFeeDetails {
+                    fee_amount: network_fee_dec,
+                    rent_amount: rent_dec,
+                    total_amount: total_fee_dec,
+                })),
+                coin: req.coin,
+                internal_id: rpc::v1::types::Bytes(tx_hash.into_bytes()),
+                kmd_rewards: None,
+                transaction_type: crate::TransactionType::TokenTransfer(token.token_id()),
+                // TODO: Add memo instruction to the TX.
+                memo: None,
+            })
+        };
+
+        Box::new(fut.boxed().compat())
     }
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut<'_> {
@@ -249,7 +480,7 @@ impl MarketCoinOps for SolanaToken {
     }
 
     fn my_address(&self) -> MmResult<String, MyAddressError> {
-        self.platform_coin.my_address()
+        Ok(self.address.to_string())
     }
 
     fn address_from_pubkey(&self, pubkey: &RpcH264) -> MmResult<String, AddressFromPubkeyError> {
@@ -290,11 +521,11 @@ impl MarketCoinOps for SolanaToken {
     }
 
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
-        todo!()
+        self.platform_coin.send_raw_tx(tx)
     }
 
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
-        todo!()
+        self.platform_coin.send_raw_tx_bytes(tx)
     }
 
     #[inline(always)]
@@ -324,7 +555,7 @@ impl MarketCoinOps for SolanaToken {
 
     #[inline]
     fn min_tx_amount(&self) -> BigDecimal {
-        todo!()
+        self.platform_coin.min_tx_amount()
     }
 
     #[inline]

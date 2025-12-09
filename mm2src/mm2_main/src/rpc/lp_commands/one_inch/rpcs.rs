@@ -158,7 +158,7 @@ pub(crate) async fn get_coin_for_one_inch(
     ticker: &Ticker,
 ) -> MmResult<(EthCoin, Address), ApiIntegrationRpcError> {
     let coin = match lp_coinfind_or_err(ctx, ticker).await.map_mm_err()? {
-        MmCoinEnum::EthCoin(coin) => coin,
+        MmCoinEnum::EthCoinVariant(coin) => coin,
         _ => return Err(MmError::new(ApiIntegrationRpcError::CoinTypeError)),
     };
     let contract = match coin.coin_type {

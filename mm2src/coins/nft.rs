@@ -210,7 +210,7 @@ async fn process_transfers_confirmations(
         let ticker = chain.to_ticker();
         let coin_enum = lp_coinfind_or_err(ctx, ticker).await.map_mm_err()?;
         match coin_enum {
-            MmCoinEnum::EthCoin(eth_coin) => {
+            MmCoinEnum::EthCoinVariant(eth_coin) => {
                 let current_block = current_block_impl(eth_coin).await?;
                 Ok((ticker, current_block))
             },
@@ -267,7 +267,7 @@ pub async fn update_nft(ctx: MmArc, req: UpdateNftReq) -> MmResult<(), UpdateNft
         };
         let coin_enum = lp_coinfind_or_err(&ctx, chain.to_nft_ticker()).await.map_mm_err()?;
         let global_nft = match coin_enum {
-            MmCoinEnum::EthCoin(eth_coin) => eth_coin,
+            MmCoinEnum::EthCoinVariant(eth_coin) => eth_coin,
             _ => {
                 return MmError::err(UpdateNftError::CoinDoesntSupportNft {
                     coin: coin_enum.ticker().to_owned(),
@@ -359,7 +359,7 @@ where
     let ticker = chain.to_nft_ticker();
 
     if let Some(MmCoinStruct {
-        inner: MmCoinEnum::EthCoin(nft_global),
+        inner: MmCoinEnum::EthCoinVariant(nft_global),
         ..
     }) = coins.get_mut(ticker)
     {

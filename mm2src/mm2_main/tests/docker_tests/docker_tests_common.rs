@@ -1,12 +1,3 @@
-use coins::z_coin::ZCoin;
-pub use common::{block_on, block_on_f01, now_ms, now_sec, wait_until_ms, wait_until_sec};
-pub use mm2_number::MmNumber;
-use mm2_rpc::data::legacy::BalanceResponse;
-pub use mm2_test_helpers::for_tests::{
-    check_my_swap_status, check_recent_swaps, enable_eth_coin, enable_native, enable_native_bch, erc20_dev_conf,
-    eth_dev_conf, mm_dump, wait_check_stats_swap_status, MarketMakerIt,
-};
-
 use super::eth_docker_tests::{erc20_contract_checksum, fill_eth, fill_eth_erc20_with_private_key, swap_contract};
 use super::z_coin_docker_tests::z_coin_from_spending_key;
 use bitcrypto::{dhash160, ChecksumType};
@@ -24,7 +15,11 @@ use coins::utxo::{
     coin_daemon_data_dir, sat_from_big_decimal, zcash_params_path, UtxoActivationParams, UtxoAddressFormat,
     UtxoCoinFields, UtxoCommonOps,
 };
+use coins::z_coin::ZCoin;
 use coins::{ConfirmPaymentInput, MarketCoinOps, Transaction};
+use common::executor::Timer;
+use common::Future01CompatExt;
+pub use common::{block_on, block_on_f01, now_ms, now_sec, wait_until_ms, wait_until_sec};
 use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
 use crypto::Secp256k1Secret;
 use ethabi::Token;
@@ -37,6 +32,12 @@ use keys::{
 };
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::BigDecimal;
+pub use mm2_number::MmNumber;
+use mm2_rpc::data::legacy::BalanceResponse;
+pub use mm2_test_helpers::for_tests::{
+    check_my_swap_status, check_recent_swaps, enable_eth_coin, enable_native, enable_native_bch, erc20_dev_conf,
+    eth_dev_conf, mm_dump, wait_check_stats_swap_status, MarketMakerIt,
+};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::TransactionDetails;
 use primitives::hash::{H160, H256};
@@ -51,18 +52,20 @@ use std::process::{Command, Stdio};
 use std::str::FromStr;
 pub use std::{env, thread};
 use std::{path::PathBuf, sync::Mutex, time::Duration};
-use testcontainers::{clients::Cli, core::WaitFor, Container, GenericImage, RunnableImage};
+use testcontainers::core::Mount;
+use testcontainers::runners::SyncRunner;
+use testcontainers::{core::WaitFor, Container, GenericImage, RunnableImage};
+use tokio::sync::Mutex as AsyncMutex;
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use web3::types::Address as EthAddress;
 use web3::types::{BlockId, BlockNumber, TransactionRequest};
 use web3::{transports::Http, Web3};
 
 lazy_static! {
-    static ref MY_COIN_LOCK: Mutex<()> = Mutex::new(());
-    static ref MY_COIN1_LOCK: Mutex<()> = Mutex::new(());
-    static ref QTUM_LOCK: Mutex<()> = Mutex::new(());
-    static ref FOR_SLP_LOCK: Mutex<()> = Mutex::new(());
-    static ref ZOMBIE_LOCK: Mutex<()> = Mutex::new(());
+    static ref MY_COIN_LOCK: AsyncMutex<()> = AsyncMutex::new(());
+    static ref MY_COIN1_LOCK: AsyncMutex<()> = AsyncMutex::new(());
+    static ref QTUM_LOCK: AsyncMutex<()> = AsyncMutex::new(());
+    static ref FOR_SLP_LOCK: AsyncMutex<()> = AsyncMutex::new(());
     pub static ref SLP_TOKEN_ID: Mutex<H256> = Mutex::new(H256::default());
     // Private keys supplied with 1000 SLP tokens on tests initialization.
     // Due to the SLP protocol limitations only 19 outputs (18 + change) can be sent in one transaction, which is sufficient for now though.
@@ -121,6 +124,8 @@ pub static mut SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2: H160Eth = H160Eth::zero();
 pub static GETH_RPC_URL: &str = "http://127.0.0.1:8545";
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 pub static SEPOLIA_RPC_URL: &str = "https://ethereum-sepolia-rpc.publicnode.com";
+/// SIA daemon RPC connection parameters
+pub static SIA_RPC_PARAMS: (&str, u16, &str) = ("127.0.0.1", 9980, "password");
 
 // use thread local to affect only the current running test
 thread_local! {
@@ -135,10 +140,8 @@ pub const GETH_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/ethereum/client-go:stabl
 pub const ZOMBIE_ASSET_DOCKER_IMAGE: &str = "docker.io/borngraced/zombietestrunner";
 pub const ZOMBIE_ASSET_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/borngraced/zombietestrunner:multiarch";
 
-#[allow(dead_code)]
-pub const SIA_DOCKER_IMAGE: &str = "docker.io/alrighttt/walletd-komodo";
-#[allow(dead_code)]
-pub const SIA_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/alrighttt/walletd-komodo:latest";
+pub const SIA_DOCKER_IMAGE: &str = "ghcr.io/siafoundation/walletd";
+pub const SIA_DOCKER_IMAGE_WITH_TAG: &str = "ghcr.io/siafoundation/walletd:latest";
 
 pub const NUCLEUS_IMAGE: &str = "docker.io/komodoofficial/nucleusd";
 pub const ATOM_IMAGE_WITH_TAG: &str = "docker.io/komodoofficial/gaiad:kdf-ci";
@@ -371,9 +374,9 @@ impl CoinDockerOps for BchDockerOps {
     }
 }
 
-pub struct DockerNode<'a> {
+pub struct DockerNode {
     #[allow(dead_code)]
-    pub container: Container<'a, GenericImage>,
+    pub container: Container<GenericImage>,
     #[allow(dead_code)]
     pub ticker: String,
     #[allow(dead_code)]
@@ -385,9 +388,12 @@ pub fn random_secp256k1_secret() -> Secp256k1Secret {
     Secp256k1Secret::from(*priv_key.as_ref())
 }
 
-pub fn utxo_asset_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) -> DockerNode<'a> {
+pub fn utxo_asset_docker_node(ticker: &'static str, port: u16) -> DockerNode {
     let image = GenericImage::new(UTXO_ASSET_DOCKER_IMAGE, "multiarch")
-        .with_volume(zcash_params_path().display().to_string(), "/root/.zcash-params")
+        .with_mount(Mount::bind_mount(
+            zcash_params_path().display().to_string(),
+            "/root/.zcash-params",
+        ))
         .with_env_var("CLIENTS", "2")
         .with_env_var("CHAIN", ticker)
         .with_env_var("TEST_ADDY", "R9imXLs1hEcU9KbFDQq2hJEEJ1P5UoekaF")
@@ -401,7 +407,7 @@ pub fn utxo_asset_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u
         .with_env_var("COIN_RPC_PORT", port.to_string())
         .with_wait_for(WaitFor::message_on_stdout("config is ready"));
     let image = RunnableImage::from(image).with_mapped_port((port, port));
-    let container = docker.run(image);
+    let container = image.start().expect("Failed to start UTXO asset docker node");
     let mut conf_path = coin_daemon_data_dir(ticker, true);
     std::fs::create_dir_all(&conf_path).unwrap();
     conf_path.push(format!("{ticker}.conf"));
@@ -425,11 +431,11 @@ pub fn utxo_asset_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u
     }
 }
 
-pub fn geth_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) -> DockerNode<'a> {
+pub fn geth_docker_node(ticker: &'static str, port: u16) -> DockerNode {
     let image = GenericImage::new(GETH_DOCKER_IMAGE, "stable");
     let args = vec!["--dev".into(), "--http".into(), "--http.addr=0.0.0.0".into()];
     let image = RunnableImage::from((image, args)).with_mapped_port((port, port));
-    let container = docker.run(image);
+    let container = image.start().expect("Failed to start Geth docker node");
     DockerNode {
         container,
         ticker: ticker.into(),
@@ -437,15 +443,38 @@ pub fn geth_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) ->
     }
 }
 
-#[allow(dead_code)]
-pub fn sia_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) -> DockerNode<'a> {
-    let image =
-        GenericImage::new(SIA_DOCKER_IMAGE, "latest").with_env_var("WALLETD_API_PASSWORD", "password".to_string());
-    let args = vec![];
-    let image = RunnableImage::from((image, args))
+pub fn sia_docker_node(ticker: &'static str, port: u16) -> DockerNode {
+    use crate::sia_tests::utils::{WALLETD_CONFIG, WALLETD_NETWORK_CONFIG};
+
+    let config_dir = std::env::temp_dir()
+        .join(format!(
+            "sia-docker-tests-temp-{}",
+            chrono::Local::now().format("%Y-%m-%d_%H-%M-%S-%3f")
+        ))
+        .join("walletd_config");
+    std::fs::create_dir_all(&config_dir).unwrap();
+
+    // Write walletd.yml
+    std::fs::write(config_dir.join("walletd.yml"), WALLETD_CONFIG).expect("failed to write walletd.yml");
+
+    // Write ci_network.json
+    std::fs::write(config_dir.join("ci_network.json"), WALLETD_NETWORK_CONFIG)
+        .expect("failed to write ci_network.json");
+
+    let image = GenericImage::new(SIA_DOCKER_IMAGE, "latest")
+        .with_env_var("WALLETD_CONFIG_FILE", "/config/walletd.yml")
+        .with_wait_for(WaitFor::message_on_stdout("node started"))
+        .with_mount(Mount::bind_mount(
+            config_dir.to_str().expect("config path is invalid"),
+            "/config",
+        ));
+
+    let args = vec!["-network=/config/ci_network.json".to_string(), "-debug".to_string()];
+    let image = RunnableImage::from(image)
         .with_mapped_port((port, port))
-        .with_container_name("sia-docker");
-    let container = docker.run(image);
+        .with_args(args);
+
+    let container = image.start().expect("Failed to start Sia docker node");
     DockerNode {
         container,
         ticker: ticker.into(),
@@ -453,14 +482,16 @@ pub fn sia_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) -> 
     }
 }
 
-pub fn nucleus_node(docker: &'_ Cli, runtime_dir: PathBuf) -> DockerNode<'_> {
+pub fn nucleus_node(runtime_dir: PathBuf) -> DockerNode {
     let nucleus_node_runtime_dir = runtime_dir.join("nucleus-testnet-data");
     assert!(nucleus_node_runtime_dir.exists());
 
-    let image = GenericImage::new(NUCLEUS_IMAGE, "latest")
-        .with_volume(nucleus_node_runtime_dir.to_str().unwrap(), "/root/.nucleus");
+    let image = GenericImage::new(NUCLEUS_IMAGE, "latest").with_mount(Mount::bind_mount(
+        nucleus_node_runtime_dir.to_str().unwrap(),
+        "/root/.nucleus",
+    ));
     let image = RunnableImage::from((image, vec![])).with_network("host");
-    let container = docker.run(image);
+    let container = image.start().expect("Failed to start Nucleus docker node");
 
     DockerNode {
         container,
@@ -469,14 +500,17 @@ pub fn nucleus_node(docker: &'_ Cli, runtime_dir: PathBuf) -> DockerNode<'_> {
     }
 }
 
-pub fn atom_node(docker: &'_ Cli, runtime_dir: PathBuf) -> DockerNode<'_> {
+pub fn atom_node(runtime_dir: PathBuf) -> DockerNode {
     let atom_node_runtime_dir = runtime_dir.join("atom-testnet-data");
     assert!(atom_node_runtime_dir.exists());
 
     let (image, tag) = ATOM_IMAGE_WITH_TAG.rsplit_once(':').unwrap();
-    let image = GenericImage::new(image, tag).with_volume(atom_node_runtime_dir.to_str().unwrap(), "/root/.gaia");
+    let image = GenericImage::new(image, tag).with_mount(Mount::bind_mount(
+        atom_node_runtime_dir.to_str().unwrap(),
+        "/root/.gaia",
+    ));
     let image = RunnableImage::from((image, vec![])).with_network("host");
-    let container = docker.run(image);
+    let container = image.start().expect("Failed to start Atom docker node");
 
     DockerNode {
         container,
@@ -485,14 +519,17 @@ pub fn atom_node(docker: &'_ Cli, runtime_dir: PathBuf) -> DockerNode<'_> {
     }
 }
 
-pub fn ibc_relayer_node(docker: &'_ Cli, runtime_dir: PathBuf) -> DockerNode<'_> {
+pub fn ibc_relayer_node(runtime_dir: PathBuf) -> DockerNode {
     let relayer_node_runtime_dir = runtime_dir.join("ibc-relayer-data");
     assert!(relayer_node_runtime_dir.exists());
 
     let (image, tag) = IBC_RELAYER_IMAGE_WITH_TAG.rsplit_once(':').unwrap();
-    let image = GenericImage::new(image, tag).with_volume(relayer_node_runtime_dir.to_str().unwrap(), "/root/.relayer");
+    let image = GenericImage::new(image, tag).with_mount(Mount::bind_mount(
+        relayer_node_runtime_dir.to_str().unwrap(),
+        "/root/.relayer",
+    ));
     let image = RunnableImage::from((image, vec![])).with_network("host");
-    let container = docker.run(image);
+    let container = image.start().expect("Failed to start IBC Relayer docker node");
 
     DockerNode {
         container,
@@ -501,14 +538,17 @@ pub fn ibc_relayer_node(docker: &'_ Cli, runtime_dir: PathBuf) -> DockerNode<'_>
     }
 }
 
-pub fn zombie_asset_docker_node(docker: &Cli, port: u16) -> DockerNode<'_> {
+pub fn zombie_asset_docker_node(port: u16) -> DockerNode {
     let image = GenericImage::new(ZOMBIE_ASSET_DOCKER_IMAGE, "multiarch")
-        .with_volume(zcash_params_path().display().to_string(), "/root/.zcash-params")
+        .with_mount(Mount::bind_mount(
+            zcash_params_path().display().to_string(),
+            "/root/.zcash-params",
+        ))
         .with_env_var("COIN_RPC_PORT", port.to_string())
         .with_wait_for(WaitFor::message_on_stdout("config is ready"));
 
     let image = RunnableImage::from(image).with_mapped_port((port, port));
-    let container = docker.run(image);
+    let container = image.start().expect("Failed to start Zombie asset docker node");
     let config_ticker = "ZOMBIE";
     let mut conf_path = coin_daemon_data_dir(config_ticker, true);
 
@@ -547,7 +587,7 @@ pub fn get_slp_token_id() -> String {
     hex::encode(SLP_TOKEN_ID.lock().unwrap().as_slice())
 }
 
-pub fn import_address<T>(coin: &T)
+pub async fn import_address<T>(coin: &T)
 where
     T: MarketCoinOps + AsRef<UtxoCoinFields>,
 {
@@ -558,12 +598,16 @@ where
         "FORSLP" => &*FOR_SLP_LOCK,
         ticker => panic!("Unknown ticker {}", ticker),
     };
-    let _lock = mutex.lock().unwrap();
+    let _lock = mutex.lock().await;
 
     match coin.as_ref().rpc_client {
         UtxoRpcClientEnum::Native(ref native) => {
             let my_address = coin.my_address().unwrap();
-            block_on_f01(native.import_address(&my_address, &my_address, false)).unwrap()
+            native
+                .import_address(&my_address, &my_address, false)
+                .compat()
+                .await
+                .unwrap();
         },
         UtxoRpcClientEnum::Electrum(_) => panic!("Expected NativeClient"),
     }
@@ -615,7 +659,7 @@ pub fn qrc20_coin_from_privkey(ticker: &str, priv_key: Secp256k1Secret) -> (MmAr
     ))
     .unwrap();
 
-    import_address(&coin);
+    block_on(import_address(&coin));
     (ctx, coin)
 }
 
@@ -649,7 +693,7 @@ pub fn utxo_coin_from_privkey(ticker: &str, priv_key: Secp256k1Secret) -> (MmArc
     let req = json!({"method":"enable"});
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
     let coin = block_on(utxo_standard_coin_with_priv_key(&ctx, ticker, &conf, &params, priv_key)).unwrap();
-    import_address(&coin);
+    block_on(import_address(&coin));
     (ctx, coin)
 }
 
@@ -659,6 +703,18 @@ pub fn generate_utxo_coin_with_privkey(ticker: &str, balance: BigDecimal, priv_k
     let timeout = 30; // timeout if test takes more than 30 seconds to run
     let my_address = coin.my_address().expect("!my_address");
     fill_address(&coin, &my_address, balance, timeout);
+}
+
+pub async fn fund_privkey_utxo(ticker: &str, balance: BigDecimal, priv_key: &Secp256k1Secret) {
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let conf = json!({"coin":ticker,"asset":ticker,"txversion":4,"overwintered":1,"txfee":1000,"network":"regtest"});
+    let req = json!({"method":"enable"});
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = utxo_standard_coin_with_priv_key(&ctx, ticker, &conf, &params, *priv_key)
+        .await
+        .unwrap();
+    let my_address = coin.my_address().expect("!my_address");
+    fill_address_async(&coin, &my_address, balance, 30).await;
 }
 
 /// Generate random privkey, create a UTXO coin and fill it's address with the specified balance.
@@ -697,7 +753,7 @@ pub fn fill_qrc20_address(coin: &Qrc20Coin, amount: BigDecimal, timeout: u64) {
     // prevent concurrent fill since daemon RPC returns errors if send_to_address
     // is called concurrently (insufficient funds) and it also may return other errors
     // if previous transaction is not confirmed yet
-    let _lock = QTUM_LOCK.lock().unwrap();
+    let _lock = block_on(QTUM_LOCK.lock());
     let timeout = wait_until_sec(timeout);
     let client = match coin.as_ref().rpc_client {
         UtxoRpcClientEnum::Native(ref client) => client,
@@ -821,6 +877,13 @@ pub fn fill_address<T>(coin: &T, address: &str, amount: BigDecimal, timeout: u64
 where
     T: MarketCoinOps + AsRef<UtxoCoinFields>,
 {
+    block_on(fill_address_async(coin, address, amount, timeout));
+}
+
+pub async fn fill_address_async<T>(coin: &T, address: &str, amount: BigDecimal, timeout: u64)
+where
+    T: MarketCoinOps + AsRef<UtxoCoinFields>,
+{
     // prevent concurrent fill since daemon RPC returns errors if send_to_address
     // is called concurrently (insufficient funds) and it also may return other errors
     // if previous transaction is not confirmed yet
@@ -831,13 +894,13 @@ where
         "FORSLP" => &*FOR_SLP_LOCK,
         ticker => panic!("Unknown ticker {}", ticker),
     };
-    let _lock = mutex.lock().unwrap();
+    let _lock = mutex.lock().await;
     let timeout = wait_until_sec(timeout);
 
     if let UtxoRpcClientEnum::Native(client) = &coin.as_ref().rpc_client {
-        block_on_f01(client.import_address(address, address, false)).unwrap();
-        let hash = block_on_f01(client.send_to_address(address, &amount)).unwrap();
-        let tx_bytes = block_on_f01(client.get_transaction_bytes(&hash)).unwrap();
+        client.import_address(address, address, false).compat().await.unwrap();
+        let hash = client.send_to_address(address, &amount).compat().await.unwrap();
+        let tx_bytes = client.get_transaction_bytes(&hash).compat().await.unwrap();
         let confirm_payment_input = ConfirmPaymentInput {
             payment_tx: tx_bytes.clone().0,
             confirmations: 1,
@@ -845,15 +908,22 @@ where
             wait_until: timeout,
             check_every: 1,
         };
-        block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
+        coin.wait_for_confirmations(confirm_payment_input)
+            .compat()
+            .await
+            .unwrap();
         log!("{:02x}", tx_bytes);
         loop {
-            let unspents = block_on_f01(client.list_unspent_impl(0, i32::MAX, vec![address.to_string()])).unwrap();
+            let unspents = client
+                .list_unspent_impl(0, i32::MAX, vec![address.to_string()])
+                .compat()
+                .await
+                .unwrap();
             if !unspents.is_empty() {
                 break;
             }
             assert!(now_sec() < timeout, "Test timed out");
-            thread::sleep(Duration::from_secs(1));
+            Timer::sleep(1.0).await;
         }
     };
 }

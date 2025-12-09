@@ -585,7 +585,7 @@ mod tests {
 
         let ctx = MmCtxBuilder::default().into_mm_arc();
         let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
-        block_on(coins_ctx.add_token(MmCoinEnum::Test(TestCoin::new("RICK")))).unwrap();
+        block_on(coins_ctx.add_token(MmCoinEnum::TestVariant(TestCoin::new("RICK")))).unwrap();
 
         let taker_actual_swap = block_on(recreate_taker_swap(ctx, maker_saved_swap)).expect("!recreate_maker_swap");
         println!("{}", json::to_string(&taker_actual_swap).unwrap());
@@ -606,7 +606,7 @@ mod tests {
 
         let ctx = MmCtxBuilder::default().into_mm_arc();
         let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
-        block_on(coins_ctx.add_token(MmCoinEnum::Test(TestCoin::new("RICK")))).unwrap();
+        block_on(coins_ctx.add_token(MmCoinEnum::TestVariant(TestCoin::new("RICK")))).unwrap();
 
         let taker_actual_swap = block_on(recreate_taker_swap(ctx, maker_saved_swap)).expect("!recreate_maker_swap");
         println!("{}", json::to_string(&taker_actual_swap).unwrap());

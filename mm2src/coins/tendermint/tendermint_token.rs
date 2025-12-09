@@ -604,7 +604,7 @@ impl MmCoin for TendermintToken {
     }
 
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
-        Box::new(futures01::future::err("Not implemented".into()))
+        self.platform_coin.get_trade_fee()
     }
 
     async fn get_sender_trade_fee(

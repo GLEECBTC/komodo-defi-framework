@@ -75,7 +75,7 @@ pub async fn fetch_utxos_rpc(ctx: MmArc, req: FetchUtxosRequest) -> MmResult<Fet
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
     match coin {
-        MmCoinEnum::UtxoCoin(coin) => match &coin.as_ref().derivation_method {
+        MmCoinEnum::UtxoCoinVariant(coin) => match &coin.as_ref().derivation_method {
             DerivationMethod::SingleAddress(my_address) => {
                 let addresses_utxos = get_utxos(&coin, UtxosFrom::Single(my_address.clone())).await?;
                 let total_count = addresses_utxos.iter().map(|addr| addr.count).sum();

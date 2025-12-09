@@ -301,7 +301,7 @@ where
 #[derive(Debug)]
 pub struct HDWallet<HDAccount>
 where
-    HDAccount: HDAccountOps + Clone + Send + Sync,
+    HDAccount: HDAccountOps + Send + Sync,
 {
     /// A unique identifier for the HD wallet derived from the master public key.
     /// Specifically, it's the RIPEMD160 hash of the SHA256 hash of the master pubkey.

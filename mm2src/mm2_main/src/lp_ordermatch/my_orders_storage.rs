@@ -791,6 +791,8 @@ mod tests {
                 conf_settings: None,
                 base_protocol_info: None,
                 rel_protocol_info: None,
+                #[cfg(feature = "ibc-routing-for-swaps")]
+                order_metadata: crate::lp_ordermatch::OrderMetadata::default(),
                 swap_version: SwapVersion::default(),
             },
             matches: HashMap::new(),
@@ -802,8 +804,6 @@ mod tests {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
-            #[cfg(feature = "ibc-routing-for-swaps")]
-            order_metadata: crate::lp_ordermatch::OrderMetadata::default(),
         }
     }
 
