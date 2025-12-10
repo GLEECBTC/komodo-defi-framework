@@ -1013,7 +1013,7 @@ mod tests {
 
                 let address =
                     AddressBuilder::new(AddressFormat::Standard, ChecksumType::DSHA256, address_prefixes, None)
-                        .as_pkh_from_pk(*kp.public())
+                        .using_pk(*kp.public())
                         .build()
                         .unwrap();
 
