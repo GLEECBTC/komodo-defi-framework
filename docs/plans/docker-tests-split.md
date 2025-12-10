@@ -861,20 +861,28 @@ The following runtime fixes have been implemented to prevent `OnceLock` panics w
   - CI workflow already starts both Sia and UTXO containers
   - Tests like `test_bob_sells_dsia_for_mycoin` require MYCOIN for swap counterparty
 
-- [ ] **Fix `docker-tests-eth` initialization bug** (HIGH PRIORITY)
-  - `test_eth_swap_contract_addr_negotiation_same_fallback` fails
-  - Debug why `GETH_SWAP_CONTRACT` OnceLock is not initialized in ETH-only code path
-  - Check `docker_tests_main.rs` for missing ETH contract initialization
+- [x] **Fix `docker-tests-eth` swap contract comparison bug** ✅ DONE
+  - `test_eth_swap_contract_addr_negotiation_same_fallback` was failing
+  - **Root cause:** Case sensitivity bug - swap status returns lowercase address but test expected checksummed format
+  - **Fix:** Changed `expected_contract` to use `.to_lowercase()` for consistent comparison
+  - **File:** `mm2src/mm2_main/tests/docker_tests/eth_inner_tests.rs:331`
 
-- [ ] **Fix `docker-tests-watchers` watcher message bug** (HIGH PRIORITY)
-  - 3 tests fail waiting for `WATCHER_MESSAGE_SENT_LOG` at `swap_watcher_tests.rs:233`
-  - Verify `GETH_WATCHERS_SWAP_CONTRACT` initialization
-  - Check watcher P2P connectivity and coin enablement
+- [ ] **Fix `docker-tests-watchers` watcher reward validation bug** (HIGH PRIORITY - COMPLEX)
+  - 3 tests fail: `test_watcher_refunds_taker_payment_erc20`, `test_watcher_refunds_taker_payment_eth`, `test_watcher_spends_maker_payment_erc20_utxo`
+  - All fail at `swap_watcher_tests.rs:233` waiting for `WATCHER_MESSAGE_SENT_LOG`
+  - **Root cause:** MakerPaymentValidateFailed - watcher reward not within expected interval
+  - Error: `"Provided watcher reward 324136960000 is not within the expected interval 255570840000 - 312364360000"`
+  - **Analysis:** This is a gas price volatility issue where the maker's watcher reward doesn't match taker's expected interval
+  - **Potential fixes:**
+    1. Increase watcher reward tolerance in test environment
+    2. Use fixed gas prices in Geth dev node configuration
+    3. Adjust reward interval calculation to be more lenient in tests
+  - Note: UTXO watcher test (`test_watcher_refunds_taker_payment_utxo`) passes - only ETH/ERC20 variants fail
 
-- [ ] **Fix `docker-tests-zcoin` environment setup** (HIGH PRIORITY)
-  - `zombie_coin_send_dex_fee` fails at `z_coin_docker_tests.rs:190`
-  - Verify CI starts `KDF_ZOMBIE_SERVICE` container
-  - Verify zcash params are downloaded before tests
+- [x] **Fix `docker-tests-zcoin` environment setup** ✅ NOT NEEDED (tests passing)
+  - Verified CI run 20103549149: all 8 ZCoin tests pass
+  - `zombie_coin_send_dex_fee` and other tests completed successfully
+  - Docker container setup working correctly with `--profile zombie`
 
 - [ ] **Add `docker-tests-integration` feature flag and CI job**
   - Add `docker-tests-integration = ["run-docker-tests"]` to `mm2_main/Cargo.toml`
