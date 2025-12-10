@@ -597,7 +597,6 @@ pub struct TakerSwapMut {
     pub secret_hash: BytesJson,
     secret: H256Json,
     pub watcher_reward: bool,
-    reward_amount: Option<BigDecimal>,
     payment_instructions: Option<PaymentInstructions>,
 }
 
@@ -839,6 +838,14 @@ impl TakerSwap {
         self.r().data.taker_payment_lock + 3700
     }
 
+    #[inline]
+    fn watcher_reward_amount(&self) -> Option<BigDecimal> {
+        match &self.r().payment_instructions {
+            Some(PaymentInstructions::WatcherReward(reward)) => Some(reward.clone()),
+            _ => None,
+        }
+    }
+
     pub(crate) fn apply_event(&self, event: TakerSwapEvent) {
         match event {
             TakerSwapEvent::Started(data) => {
@@ -976,7 +983,6 @@ impl TakerSwap {
                 secret_hash: BytesJson::default(),
                 secret: H256Json::default(),
                 watcher_reward: false,
-                reward_amount: None,
                 payment_instructions: None,
             }),
             ctx,
@@ -1551,7 +1557,7 @@ impl TakerSwap {
         }
         info!("After wait confirm");
 
-        let reward_amount = self.r().reward_amount.clone();
+        let reward_amount = self.watcher_reward_amount();
         let wait_maker_payment_until = self.r().data.maker_payment_wait;
         let watcher_reward = if self.r().watcher_reward {
             match self
@@ -1642,7 +1648,7 @@ impl TakerSwap {
             return Ok(None);
         }
 
-        let reward_amount = self.r().reward_amount.clone();
+        let reward_amount = self.watcher_reward_amount();
         self.taker_coin
             .get_taker_watcher_reward(
                 &self.maker_coin,
