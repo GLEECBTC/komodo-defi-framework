@@ -93,16 +93,16 @@ impl AddressFormat {
         matches!(*self, AddressFormat::Segwit { version: 1 })
     }
 
-    pub fn is_not_segwit(&self) -> bool {
-        matches!(*self, AddressFormat::CashAddress { .. } | AddressFormat::Standard)
-    }
-
     pub fn is_cashaddress(&self) -> bool {
         matches!(*self, AddressFormat::CashAddress { .. })
     }
 
     pub fn is_legacy(&self) -> bool {
         matches!(*self, AddressFormat::Standard)
+    }
+
+    pub fn is_legacy_or_cashaddr(&self) -> bool {
+        self.is_legacy() || self.is_cashaddress()
     }
 }
 
@@ -196,7 +196,7 @@ impl Address {
     pub fn is_pubkey_hash(&self) -> bool {
         if self.addr_format.is_segwit_v0() {
             self.script_type == AddressScriptType::P2WPKH
-        } else if self.addr_format.is_not_segwit() {
+        } else if self.addr_format.is_legacy_or_cashaddr() {
             self.script_type == AddressScriptType::P2PKH
         } else {
             false
