@@ -850,15 +850,14 @@ The following runtime fixes have been implemented to prevent `OnceLock` panics w
 
 **Goal (when fully complete):** `cargo check -p mm2_main --tests --features docker-tests-<any>` produces zero warnings AND tests run without initialization panics
 
-- [ ] **Add UTXO nodes to `docker-tests-qrc20` CI job** (HIGH PRIORITY)
-  - Update CI workflow to start both Qtum and UTXO containers
+- [x] **Add UTXO nodes to `docker-tests-qrc20` CI job** ✅ DONE
+  - Updated CI workflow to start both Qtum and UTXO containers (`--profile qrc20 --profile utxo`)
+  - Removed `_KDF_NO_UTXO_DOCKER` env var from job
   - Tests like `test_trade_qrc20`, `trade_test_with_maker_segwit` require MYCOIN for swap counterparty
-  - This is acceptable since UTXO is a base chain family
 
-- [ ] **Add UTXO nodes to `docker-tests-sia` CI job** (HIGH PRIORITY)
-  - Update CI workflow to start both Sia and UTXO containers
+- [x] **Add UTXO nodes to `docker-tests-sia` CI job** ✅ DONE (commit af9ca60882)
+  - CI workflow already starts both Sia and UTXO containers
   - Tests like `test_bob_sells_dsia_for_mycoin` require MYCOIN for swap counterparty
-  - This is acceptable since UTXO is a base chain family
 
 - [ ] **Fix `docker-tests-eth` initialization bug** (HIGH PRIORITY)
   - `test_eth_swap_contract_addr_negotiation_same_fallback` fails

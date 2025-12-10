@@ -499,7 +499,7 @@ jobs:
         run: docker compose -f .docker/test-nodes.yml down -v
 
   # QRC20/Qtum tests - Qtum coin and QRC20 token tests
-  # Requires only Qtum node
+  # Requires Qtum + UTXO nodes for cross-chain swap tests (QTUM/MYCOIN pairs)
   docker-tests-qrc20:
     timeout-minutes: 45
     runs-on: ubuntu-latest
@@ -524,17 +524,16 @@ jobs:
       - name: Build cache
         uses: ./.github/actions/build-cache
 
-      - name: Start Qtum node
+      - name: Start Qtum and UTXO nodes
         run: |
-          docker compose -f .docker/test-nodes.yml --profile qrc20 up -d
-          echo "Waiting for Qtum container..."
+          docker compose -f .docker/test-nodes.yml --profile qrc20 --profile utxo up -d
+          echo "Waiting for containers..."
           sleep 20
           docker compose -f .docker/test-nodes.yml ps
 
       - name: Test QRC20
         env:
           KDF_DOCKER_COMPOSE_ENV: "1"
-          _KDF_NO_UTXO_DOCKER: "1"
           _KDF_NO_SLP_DOCKER: "1"
           _KDF_NO_ETH_DOCKER: "1"
           _KDF_NO_COSMOS_DOCKER: "1"
