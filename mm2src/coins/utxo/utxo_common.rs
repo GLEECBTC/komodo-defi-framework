@@ -64,7 +64,7 @@ use rpc_clients::NativeClientImpl;
 use script::{Builder, Opcode, Script, ScriptAddress, TransactionInputSigner, UnsignedTransactionInput};
 use secp256k1::{PublicKey, Signature as SecpSignature};
 use serde_json::{self as json};
-use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, SERIALIZE_TRANSACTION_WITNESS};
+use serialization::{deserialize, serialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
 use std::cmp::Ordering;
 use std::collections::hash_map::{Entry, HashMap};
 use std::convert::TryFrom;
@@ -427,10 +427,10 @@ pub fn checked_address_from_str<T: UtxoCommonOps>(coin: &T, address: &str) -> Mm
     Ok(addr)
 }
 
-pub async fn get_current_mtp(coin: &UtxoCoinFields, coin_variant: CoinVariant) -> UtxoRpcResult<u32> {
+pub async fn get_current_mtp(coin: &UtxoCoinFields) -> UtxoRpcResult<u32> {
     let current_block = coin.rpc_client.get_block_count().compat().await?;
     coin.rpc_client
-        .get_median_time_past(current_block, coin.conf.mtp_block_count, coin_variant)
+        .get_median_time_past(current_block, coin.conf.mtp_block_count)
         .compat()
         .await
 }
@@ -2933,7 +2933,7 @@ pub async fn get_taker_watcher_reward<T: UtxoCommonOps + SwapOps + MarketCoinOps
     let is_exact_amount = reward_amount.is_some();
 
     let other_coin = match other_coin {
-        MmCoinEnum::EthCoin(coin) => coin,
+        MmCoinEnum::EthCoinVariant(coin) => coin,
         _ => {
             return Err(WatcherRewardError::InvalidCoinType(
                 "At least one coin must be Ethereum to use watcher rewards".to_string(),
@@ -4810,6 +4810,8 @@ where
     let expected_redeem = tx_type_with_secret_hash.redeem_script(time_lock, first_pub0, second_pub0);
     let tx_hash = tx.tx_hash_as_bytes();
 
+    // TODO: This is redundant when used in swaps v2.
+    // It will be removed if we implemented cross-publishing swap payments in swaps v1.
     let tx_from_rpc = retry_on_err!(async {
         coin.as_ref()
             .rpc_client
@@ -5449,21 +5451,6 @@ where
         )));
     }
 
-    let tx_bytes_from_rpc = coin
-        .as_ref()
-        .rpc_client
-        .get_transaction_bytes(&args.funding_tx.hash().reversed().into())
-        .compat()
-        .await
-        .map_mm_err()?;
-    let actual_tx_bytes = serialize(args.funding_tx).take();
-    if tx_bytes_from_rpc.0 != actual_tx_bytes {
-        return MmError::err(ValidateSwapV2TxError::TxBytesMismatch {
-            from_rpc: tx_bytes_from_rpc,
-            actual: actual_tx_bytes.into(),
-        });
-    }
-
     // import funding address in native mode to track funding tx spend
     let funding_address = AddressBuilder::new(
         AddressFormat::Standard,
@@ -5740,11 +5727,14 @@ fn test_check_all_utxo_inputs_signed_by_pub_overwintered() {
     use common::block_on;
 
     // We need a running electrum client for this test to test the functionality of fetching a tx from the network, parsing it, and using its input amount for sig_hash calculations.
-    let client = UtxoRpcClientEnum::Electrum(electrum_client_for_test(&[
-        "electrum3.cipig.net:10001",
-        "electrum1.cipig.net:10001",
-        "electrum2.cipig.net:10001",
-    ]));
+    let client = UtxoRpcClientEnum::Electrum(electrum_client_for_test(
+        &[
+            "electrum3.cipig.net:10001",
+            "electrum1.cipig.net:10001",
+            "electrum2.cipig.net:10001",
+        ],
+        ChainVariant::Standard,
+    ));
     let mut fields = utxo_coin_fields_for_test(client, None, false);
     fields.conf.ticker = "KMD".to_owned();
     let coin = utxo_coin_from_fields(fields);

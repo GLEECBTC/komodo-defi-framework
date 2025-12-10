@@ -11,7 +11,7 @@ use mm2_db::indexed_db::{
 use mm2_err_handle::prelude::*;
 use num_traits::ToPrimitive;
 use primitives::hash::H256;
-use serialization::Reader;
+use serialization::{ChainVariant, Reader};
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use std::collections::HashMap;
 
@@ -48,13 +48,15 @@ impl IDBBlockHeadersInner {
 pub struct IDBBlockHeadersStorage {
     pub db: SharedDb<IDBBlockHeadersInner>,
     pub ticker: String,
+    pub chain_variant: ChainVariant,
 }
 
 impl IDBBlockHeadersStorage {
-    pub fn new(ctx: &MmArc, ticker: String) -> Self {
+    pub fn new(ctx: &MmArc, ticker: String, chain_variant: ChainVariant) -> Self {
         Self {
             db: ConstructibleDb::new(ctx).into_shared(),
             ticker,
+            chain_variant,
         }
     }
 
@@ -126,7 +128,7 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
                 coin: self.ticker.clone(),
                 reason: e.to_string(),
             })?;
-            let mut reader = Reader::new_with_coin_variant(serialized, self.ticker.as_str().into());
+            let mut reader = Reader::new_with_chain_variant(serialized, self.chain_variant);
             let header: BlockHeader =
                 reader
                     .read()
@@ -258,7 +260,7 @@ impl BlockHeaderStorageOps for IDBBlockHeadersStorage {
                 coin: ticker.clone(),
                 reason: e.to_string(),
             })?;
-            let mut reader = Reader::new_with_coin_variant(serialized, ticker.as_str().into());
+            let mut reader = Reader::new_with_chain_variant(serialized, self.chain_variant);
             let header: BlockHeader =
                 reader
                     .read()

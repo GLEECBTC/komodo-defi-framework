@@ -6,6 +6,18 @@ use hw_common::primitives::Bip32Error;
 use num_traits::FromPrimitive;
 use std::convert::TryFrom;
 
+/*
+Alright TODO - These type aliases can be confusing at first glance. They allow us to impose a specific
+structure on a value of Bip32Child type as compile time checks.
+
+This is maybe clever, but this module needs developer documentation(or a refactor!) as it was a
+serious pain point during the Sia implementation. My biggest complaint is that typical IDE workflows
+such as "go to definition" or "find references" do not work well with these type aliases and their
+generic impls.
+
+Consider wrapping the Bip32Child type in a newtype struct leaving the inner private to constrict
+inner value via constructors such as ::new(), from_str() or from_bytes().
+*/
 /// Standard HD Path for [BIP-44](https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki),
 /// [BIP-49](https://github.com/bitcoin/bips/blob/master/bip-0049.mediawiki),
 /// [BIP-84](https://github.com/bitcoin/bips/blob/master/bip-0084.mediawiki)

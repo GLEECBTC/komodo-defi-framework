@@ -36,7 +36,7 @@ use mm2_number::BigDecimal;
 use mocktopus::macros::*;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use serialization::{
-    deserialize, serialize, serialize_with_flags, CoinVariant, CompactInteger, Reader, SERIALIZE_TRANSACTION_WITNESS,
+    deserialize, serialize, serialize_with_flags, ChainVariant, CompactInteger, Reader, SERIALIZE_TRANSACTION_WITNESS,
 };
 use spv_validation::helpers_validation::SPVError;
 use spv_validation::storage::BlockHeaderStorageOps;
@@ -55,7 +55,7 @@ use std::sync::Arc;
 use crate::utxo::utxo_balance_events::UtxoBalanceEventStreamer;
 use async_trait::async_trait;
 use futures::compat::Future01CompatExt;
-use futures::future::{join_all, FutureExt, TryFutureExt};
+use futures::future::{FutureExt, TryFutureExt};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use futures01::Future;
@@ -84,6 +84,7 @@ pub struct ElectrumClientSettings {
 pub struct ElectrumClientImpl {
     client_name: String,
     coin_ticker: String,
+    chain_variant: ChainVariant,
     pub connection_manager: ConnectionManager,
     next_id: AtomicU64,
     negotiate_version: bool,
@@ -112,6 +113,7 @@ impl ElectrumClientImpl {
         streaming_manager: StreamingManager,
         abortable_system: AbortableQueue,
         mut event_handlers: Vec<Box<SharableRpcTransportEventHandler>>,
+        chain_variant: ChainVariant,
     ) -> Result<ElectrumClientImpl, String> {
         let connection_manager = ConnectionManager::try_new(
             client_settings.servers,
@@ -127,6 +129,7 @@ impl ElectrumClientImpl {
         Ok(ElectrumClientImpl {
             client_name: client_settings.client_name,
             coin_ticker: client_settings.coin_ticker,
+            chain_variant,
             connection_manager,
             next_id: 0.into(),
             negotiate_version: client_settings.negotiate_version,
@@ -148,6 +151,7 @@ impl ElectrumClientImpl {
         streaming_manager: StreamingManager,
         abortable_system: AbortableQueue,
         event_handlers: Vec<Box<SharableRpcTransportEventHandler>>,
+        chain_variant: ChainVariant,
     ) -> Result<Arc<ElectrumClientImpl>, String> {
         let client_impl = Arc::new(ElectrumClientImpl::try_new(
             client_settings,
@@ -155,6 +159,7 @@ impl ElectrumClientImpl {
             streaming_manager,
             abortable_system,
             event_handlers,
+            chain_variant,
         )?);
         // Initialize the connection manager.
         client_impl
@@ -227,6 +232,10 @@ impl ElectrumClientImpl {
         &self.block_headers_storage
     }
 
+    pub fn chain_variant(&self) -> ChainVariant {
+        self.chain_variant
+    }
+
     pub fn weak_spawner(&self) -> WeakSpawner {
         self.abortable_system.weak_spawner()
     }
@@ -239,6 +248,7 @@ impl ElectrumClientImpl {
         abortable_system: AbortableQueue,
         event_handlers: Vec<Box<SharableRpcTransportEventHandler>>,
         protocol_version: OrdRange<f32>,
+        chain_variant: ChainVariant,
     ) -> Result<Arc<ElectrumClientImpl>, String> {
         let client_impl = Arc::new(ElectrumClientImpl {
             protocol_version,
@@ -248,6 +258,7 @@ impl ElectrumClientImpl {
                 streaming_manager,
                 abortable_system,
                 event_handlers,
+                chain_variant,
             )?
         });
         // Initialize the connection manager.
@@ -273,6 +284,10 @@ impl Deref for ElectrumClient {
 impl UtxoJsonRpcClientInfo for ElectrumClient {
     fn coin_name(&self) -> &str {
         self.coin_ticker.as_str()
+    }
+
+    fn chain_variant(&self) -> ChainVariant {
+        self.chain_variant
     }
 }
 
@@ -316,6 +331,7 @@ impl ElectrumClient {
         block_headers_storage: BlockHeaderStorage,
         streaming_manager: StreamingManager,
         abortable_system: AbortableQueue,
+        chain_variant: ChainVariant,
     ) -> Result<ElectrumClient, String> {
         let client = ElectrumClient(ElectrumClientImpl::try_new_arc(
             client_settings,
@@ -323,6 +339,7 @@ impl ElectrumClient {
             streaming_manager,
             abortable_system,
             event_handlers,
+            chain_variant,
         )?);
 
         Ok(client)
@@ -752,7 +769,7 @@ impl ElectrumClient {
         from_height: u64,
         to_height: u64,
     ) -> UtxoRpcFut<(HashMap<u64, BlockHeader>, Vec<BlockHeader>)> {
-        let coin_name = self.coin_ticker.clone();
+        let chain_variant = self.chain_variant;
         if from_height == 0 || to_height < from_height {
             return Box::new(futures01::future::err(
                 UtxoRpcError::Internal("Invalid values for from/to parameters".to_string()).into(),
@@ -774,8 +791,7 @@ impl ElectrumClient {
                         let mut serialized = serialize(&len).take();
                         serialized.extend(headers.hex.0);
                         drop_mutability!(serialized);
-                        let mut reader =
-                            Reader::new_with_coin_variant(serialized.as_slice(), coin_name.as_str().into());
+                        let mut reader = Reader::new_with_chain_variant(serialized.as_slice(), chain_variant);
                         let maybe_block_headers = reader.read_list::<BlockHeader>();
                         let block_headers = match maybe_block_headers {
                             Ok(headers) => headers,
@@ -797,41 +813,38 @@ impl ElectrumClient {
     pub(crate) fn get_servers_with_latest_block_count(&self) -> UtxoRpcFut<(Vec<String>, u64)> {
         let selfi = self.clone();
         let fut = async move {
+            let mut successful_responses = vec![];
+            // We are storing the erroneous responses for better error reporting if all servers fail.
+            let mut erroneous_responses = vec![];
             let addresses = selfi.connection_manager.get_all_server_addresses();
-            let futures = addresses
-                .into_iter()
-                .map(|address| {
-                    selfi
-                        .get_block_count_from(&address)
-                        .map(|response| (address, response))
-                        .compat()
-                })
-                .collect::<Vec<_>>();
 
-            let responses = join_all(futures).await;
-
-            // First, we use filter_map to get rid of any errors and collect the
-            // server addresses and block counts into two vectors
-            let (responding_servers, block_counts_from_all_servers): (Vec<_>, Vec<_>) =
-                responses.clone().into_iter().filter_map(|res| res.ok()).unzip();
+            for address in addresses {
+                match selfi.get_block_count_from(&address).compat().await {
+                    Ok(block_count) => successful_responses.push((address, block_count)),
+                    Err(e) => erroneous_responses.push((address, e)),
+                }
+            }
 
             // Next, we use max to find the maximum block count from all servers
-            if let Some(max_block_count) = block_counts_from_all_servers.clone().iter().max() {
+            if let Some(max_block_count) = successful_responses
+                .iter()
+                .map(|(_, block_count)| block_count)
+                .max()
+                .cloned()
+            {
                 // Then, we use filter and collect to get the servers that have the maximum block count
-                let servers_with_max_count: Vec<_> = responding_servers
+                let servers_with_max_count: Vec<_> = successful_responses
                     .into_iter()
-                    .zip(block_counts_from_all_servers)
-                    .filter(|(_, count)| count == max_block_count)
-                    .map(|(addr, _)| addr)
+                    .filter_map(|(addr, block_count)| (block_count == max_block_count).then_some(addr))
                     .collect();
 
                 // Finally, we return a tuple of servers with max count and the max count
-                return Ok((servers_with_max_count, *max_block_count));
+                return Ok((servers_with_max_count, max_block_count));
             }
 
             Err(MmError::new(UtxoRpcError::Internal(format!(
                 "Couldn't get block count from any server for {}, responses: {:?}",
-                &selfi.coin_ticker, responses
+                &selfi.coin_ticker, erroneous_responses
             ))))
         };
 
@@ -1092,12 +1105,7 @@ impl UtxoRpcClientOps for ElectrumClient {
         Box::new(fut.boxed().compat())
     }
 
-    fn get_median_time_past(
-        &self,
-        starting_block: u64,
-        count: NonZeroU64,
-        coin_variant: CoinVariant,
-    ) -> UtxoRpcFut<u32> {
+    fn get_median_time_past(&self, starting_block: u64, count: NonZeroU64) -> UtxoRpcFut<u32> {
         let from = if starting_block <= count.get() {
             0
         } else {
@@ -1105,6 +1113,7 @@ impl UtxoRpcClientOps for ElectrumClient {
         };
 
         let coin_name = self.coin_ticker.clone();
+        let chain_variant = self.chain_variant;
         let requested_count = count.get();
 
         Box::new(
@@ -1118,7 +1127,7 @@ impl UtxoRpcClientOps for ElectrumClient {
                     let len = CompactInteger::from(res_count);
                     let mut serialized = serialize(&len).take();
                     serialized.extend(res.hex.0);
-                    let mut reader = Reader::new_with_coin_variant(serialized.as_slice(), coin_variant);
+                    let mut reader = Reader::new_with_chain_variant(serialized.as_slice(), chain_variant);
 
                     let headers = reader.read_list::<BlockHeader>().map_to_mm(|e| UtxoRpcError::InvalidResponse(format!(
                             "blockchain.block.headers: failed to parse list of {} headers (coin={}, from={}, requested_count={}): {}",

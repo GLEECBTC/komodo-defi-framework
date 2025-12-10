@@ -68,7 +68,7 @@ pub struct ListPaymentsResponse {
 
 pub async fn list_payments_by_filter(ctx: MmArc, req: ListPaymentsReq) -> ListPaymentsResult<ListPaymentsResponse> {
     let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
-        MmCoinEnum::LightningCoin(c) => c,
+        MmCoinEnum::LightningCoinVariant(c) => c,
         e => return MmError::err(ListPaymentsError::UnsupportedCoin(e.ticker().to_string())),
     };
     let get_payments_res = ln_coin

@@ -14,10 +14,10 @@ use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use coins::hd_wallet::AddrToString;
 use coins::{
-    CanRefundHtlc, ConfirmPaymentInput, DexFee, FeeApproxStage, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
-    MakerCoinSwapOpsV2, MmCoin, ParseCoinAssocTypes, RefundFundingSecretArgs, RefundTakerPaymentArgs,
-    SendTakerFundingArgs, SpendMakerPaymentArgs, SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, ToBytes, TradeFee,
-    TradePreimageValue, Transaction, TxPreimageWithSig, ValidateMakerPaymentArgs,
+    ensure_tx_is_broadcasted, CanRefundHtlc, ConfirmPaymentInput, DexFee, FeeApproxStage, GenTakerFundingSpendArgs,
+    GenTakerPaymentSpendArgs, MakerCoinSwapOpsV2, MmCoin, ParseCoinAssocTypes, RefundFundingSecretArgs,
+    RefundTakerPaymentArgs, SendTakerFundingArgs, SpendMakerPaymentArgs, SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2,
+    ToBytes, TradeFee, TradePreimageValue, Transaction, TxPreimageWithSig, ValidateMakerPaymentArgs,
 };
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{AbortableSystem, Timer};
@@ -451,6 +451,7 @@ pub struct TakerSwapStateMachine<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCo
     /// Maker's P2P pubkey
     pub maker_p2p_pubkey: PublicKey,
     /// Whether to require maker payment confirmation before transferring funding tx to payment
+    /// Default: true. Check `Trading Protocol Upgrade (“swap v2”) policy` section at the top of `swap_v2_common.rs`.
     pub require_maker_payment_confirm_before_funding_spend: bool,
     /// Determines if the maker payment spend transaction must be confirmed before marking swap as Completed.
     pub require_maker_payment_spend_confirm: bool,
@@ -1411,6 +1412,16 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             state_machine.p2p_keypair,
         );
 
+        // IMPORTANT(negotiation-window):
+        // The taker waits up to `NEGOTIATION_TIMEOUT_SEC` for the maker’s payment after the taker’s funding is broadcast.
+        // Since the maker proceeds on mempool-visible funding (0-conf), UTXO confirmation delays should not consume this window.
+        //
+        // Negotiation timing alignments to avoid drift:
+        // - Keep `NEGOTIATION_TIMEOUT_SEC` long enough for network propagation and several P2P resend cycles.
+        // - Prefer `NEGOTIATE_SEND_INTERVAL` to evenly divide `NEGOTIATION_TIMEOUT_SEC` so rebroadcasts align cleanly.
+        // - Ensure `SWAP_TX_VISIBILITY_POLL_SECS` is not less frequent than `NEGOTIATE_SEND_INTERVAL`, and avoid overly aggressive polling.
+        // - If maker payment confirmation is required before proceeding, grow `NEGOTIATION_TIMEOUT_SEC` to cover that delay.
+        // - These knobs are interrelated; `NEGOTIATION_TIMEOUT_SEC` can be reduced or tuned later, but adjust the others accordingly.
         let recv_fut = recv_swap_v2_msg(
             state_machine.ctx.clone(),
             |store| store.maker_payment.take(),
@@ -1572,6 +1583,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         let unique_data = state_machine.unique_data();
         let my_secret_hash = state_machine.taker_secret_hash();
 
+        // 1) Offline semantic validation
         let input = ValidateMakerPaymentArgs {
             maker_payment_tx: &self.maker_payment,
             time_lock: self.negotiation_data.maker_payment_locktime,
@@ -1617,6 +1629,32 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             return Self::change_state(next_state, state_machine).await;
         }
 
+        // 2) Require maker payment visibility first. If it's not visible, refund funding.
+        {
+            let visible = ensure_tx_is_broadcasted(
+                &state_machine.maker_coin,
+                &self.maker_payment,
+                SWAP_TX_VISIBILITY_GRACE_SECS,
+                SWAP_TX_VISIBILITY_POLL_SECS,
+            )
+            .await;
+
+            if !visible {
+                let next_state = TakerFundingRefundRequired {
+                    maker_coin_start_block: self.maker_coin_start_block,
+                    taker_coin_start_block: self.taker_coin_start_block,
+                    taker_funding: self.taker_funding,
+                    negotiation_data: self.negotiation_data,
+                    reason: TakerFundingRefundReason::DidNotReceiveMakerPayment(
+                        "Maker payment transaction is not visible on network even after fallback rebroadcast".into(),
+                    ),
+                };
+                return Self::change_state(next_state, state_machine).await;
+            }
+        }
+
+        // 3) Spend funding if maker payment is visible and no confirmation is required
+        // or wait for confirmation and then spend funding in `MakerPaymentConfirmed` state.
         if state_machine.require_maker_payment_confirm_before_funding_spend {
             let input = ConfirmPaymentInput {
                 payment_tx: self.maker_payment.tx_hex(),

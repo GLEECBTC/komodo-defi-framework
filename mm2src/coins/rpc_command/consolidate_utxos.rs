@@ -87,7 +87,7 @@ pub async fn consolidate_utxos_rpc(
 ) -> MmResult<ConsolidateUtxoResponse, ConsolidateUtxoError> {
     let coin = lp_coinfind_or_err(&ctx, &request.coin).await.map_mm_err()?;
     match coin {
-        MmCoinEnum::UtxoCoin(coin) => {
+        MmCoinEnum::UtxoCoinVariant(coin) => {
             let from_address = match &coin.as_ref().derivation_method {
                 DerivationMethod::SingleAddress(my_address) => my_address.clone(),
                 DerivationMethod::HDWallet(wallet) => {

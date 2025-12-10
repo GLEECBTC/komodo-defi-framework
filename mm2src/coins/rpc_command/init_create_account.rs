@@ -261,9 +261,9 @@ impl RpcTask for InitCreateAccountTask {
         if let Some(account_id) = self.task_state.create_account_id() {
             // We created the account already, so need to revert the changes.
             match self.coin {
-                MmCoinEnum::UtxoCoin(utxo) => utxo.revert_creating_account(account_id).await,
-                MmCoinEnum::QtumCoin(qtum) => qtum.revert_creating_account(account_id).await,
-                MmCoinEnum::EthCoin(eth) => eth.revert_creating_account(account_id).await,
+                MmCoinEnum::UtxoCoinVariant(utxo) => utxo.revert_creating_account(account_id).await,
+                MmCoinEnum::QtumCoinVariant(qtum) => qtum.revert_creating_account(account_id).await,
+                MmCoinEnum::EthCoinVariant(eth) => eth.revert_creating_account(account_id).await,
                 _ => (),
             }
         };
@@ -303,7 +303,7 @@ impl RpcTask for InitCreateAccountTask {
         }
 
         match self.coin {
-            MmCoinEnum::UtxoCoin(ref utxo) => Ok(HDAccountBalanceEnum::Map(
+            MmCoinEnum::UtxoCoinVariant(ref utxo) => Ok(HDAccountBalanceEnum::Map(
                 create_new_account_helper(
                     &self.ctx,
                     utxo,
@@ -316,7 +316,7 @@ impl RpcTask for InitCreateAccountTask {
                 )
                 .await?,
             )),
-            MmCoinEnum::QtumCoin(ref qtum) => Ok(HDAccountBalanceEnum::Map(
+            MmCoinEnum::QtumCoinVariant(ref qtum) => Ok(HDAccountBalanceEnum::Map(
                 create_new_account_helper(
                     &self.ctx,
                     qtum,
@@ -328,7 +328,7 @@ impl RpcTask for InitCreateAccountTask {
                 )
                 .await?,
             )),
-            MmCoinEnum::EthCoin(ref eth) => Ok(HDAccountBalanceEnum::Map(
+            MmCoinEnum::EthCoinVariant(ref eth) => Ok(HDAccountBalanceEnum::Map(
                 create_new_account_helper(
                     &self.ctx,
                     eth,

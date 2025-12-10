@@ -97,13 +97,13 @@ impl RpcTask for InitScanAddressesTask {
 
     async fn run(&mut self, _task_handle: ScanAddressesTaskHandleShared) -> Result<Self::Item, MmError<Self::Error>> {
         match self.coin {
-            MmCoinEnum::UtxoCoin(ref utxo) => Ok(ScanAddressesResponseEnum::Map(
+            MmCoinEnum::UtxoCoinVariant(ref utxo) => Ok(ScanAddressesResponseEnum::Map(
                 utxo.init_scan_for_new_addresses_rpc(self.req.params.clone()).await?,
             )),
-            MmCoinEnum::QtumCoin(ref qtum) => Ok(ScanAddressesResponseEnum::Map(
+            MmCoinEnum::QtumCoinVariant(ref qtum) => Ok(ScanAddressesResponseEnum::Map(
                 qtum.init_scan_for_new_addresses_rpc(self.req.params.clone()).await?,
             )),
-            MmCoinEnum::EthCoin(ref eth) => Ok(ScanAddressesResponseEnum::Map(
+            MmCoinEnum::EthCoinVariant(ref eth) => Ok(ScanAddressesResponseEnum::Map(
                 eth.init_scan_for_new_addresses_rpc(self.req.params.clone()).await?,
             )),
             _ => MmError::err(HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet),

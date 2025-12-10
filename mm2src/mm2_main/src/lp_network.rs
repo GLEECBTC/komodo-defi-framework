@@ -1,7 +1,7 @@
 // TODO: a lof of these implementations should be handled in `mm2_net`
 
 /******************************************************************************
- * Copyright © 2023 Pampex LTD and TillyHK LTD                                *
+ * Copyright © 2025 Gleec Holding OÜ                                *
  *                                                                            *
  * See the CONTRIBUTOR-LICENSE-AGREEMENT, COPYING, LICENSE-COPYRIGHT-NOTICE   *
  * and DEVELOPER-CERTIFICATE-OF-ORIGIN files in the LEGAL directory in        *
@@ -41,6 +41,9 @@ use mm2_metrics::{mm_label, mm_timing};
 use serde::de;
 
 use crate::{lp_healthcheck, lp_ordermatch, lp_stats, lp_swap};
+
+const LP_RPCPORT: u16 = 7783;
+pub const MAX_NETID: u16 = (65535 - 40 - LP_RPCPORT) / 4;
 
 pub type P2PRequestResult<T> = Result<T, MmError<P2PRequestError>>;
 pub type P2PProcessResult<T> = Result<T, MmError<P2PProcessError>>;
@@ -455,10 +458,11 @@ pub enum NetIdError {
 }
 
 pub fn lp_ports(netid: u16) -> Result<(u16, u16, u16), MmError<NetIdError>> {
-    const LP_RPCPORT: u16 = 7783;
-    let max_netid = (65535 - 40 - LP_RPCPORT) / 4;
-    if netid > max_netid {
-        return MmError::err(NetIdError::LargerThanMax { netid, max_netid });
+    if netid > MAX_NETID {
+        return MmError::err(NetIdError::LargerThanMax {
+            netid,
+            max_netid: MAX_NETID,
+        });
     }
 
     let other_ports = if netid != 0 {

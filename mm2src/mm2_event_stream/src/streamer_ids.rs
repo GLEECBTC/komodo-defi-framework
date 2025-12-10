@@ -6,6 +6,8 @@ const NETWORK: &str = "NETWORK";
 const HEARTBEAT: &str = "HEARTBEAT";
 const SWAP_STATUS: &str = "SWAP_STATUS";
 const ORDER_STATUS: &str = "ORDER_STATUS";
+#[cfg(not(any(target_arch = "wasm32", target_os = "windows")))]
+const SHUTDOWN_SIGNAL: &str = "SHUTDOWN_SIGNAL";
 
 const TASK_PREFIX: &str = "TASK:";
 const BALANCE_PREFIX: &str = "BALANCE:";
@@ -44,6 +46,8 @@ pub enum StreamerId {
     ForTesting {
         test_streamer: String,
     },
+    #[cfg(not(any(target_arch = "wasm32", target_os = "windows")))]
+    ShutdownSignal,
 }
 
 impl fmt::Display for StreamerId {
@@ -53,6 +57,8 @@ impl fmt::Display for StreamerId {
             StreamerId::Heartbeat => write!(f, "{HEARTBEAT}"),
             StreamerId::SwapStatus => write!(f, "{SWAP_STATUS}"),
             StreamerId::OrderStatus => write!(f, "{ORDER_STATUS}"),
+            #[cfg(not(any(target_arch = "wasm32", target_os = "windows")))]
+            StreamerId::ShutdownSignal => write!(f, "{SHUTDOWN_SIGNAL}"),
             StreamerId::Task { task_id } => write!(f, "{TASK_PREFIX}{task_id}"),
             StreamerId::Balance { coin } => write!(f, "{BALANCE_PREFIX}{coin}"),
             StreamerId::TxHistory { coin } => write!(f, "{TX_HISTORY_PREFIX}{coin}"),
@@ -97,6 +103,8 @@ impl<'de> Deserialize<'de> for StreamerId {
                     HEARTBEAT => Ok(StreamerId::Heartbeat),
                     SWAP_STATUS => Ok(StreamerId::SwapStatus),
                     ORDER_STATUS => Ok(StreamerId::OrderStatus),
+                    #[cfg(not(any(target_arch = "wasm32", target_os = "windows")))]
+                    SHUTDOWN_SIGNAL => Ok(StreamerId::ShutdownSignal),
                     v if v.starts_with(TASK_PREFIX) => Ok(StreamerId::Task {
                         task_id: v[TASK_PREFIX.len()..].parse().map_err(de::Error::custom)?,
                     }),

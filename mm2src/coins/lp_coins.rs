@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright © 2023 Pampex LTD and TillyHK LTD                                *
+ * Copyright © 2025 Gleec Holding OÜ                                *
  *                                                                            *
  * See the CONTRIBUTOR-LICENSE-AGREEMENT, COPYING, LICENSE-COPYRIGHT-NOTICE   *
  * and DEVELOPER-CERTIFICATE-OF-ORIGIN files in the LEGAL directory in        *
@@ -47,9 +47,10 @@ extern crate ser_error_derive;
 
 use async_trait::async_trait;
 use bip32::ExtendedPrivateKey;
+use common::custom_futures::repeatable::Action::{Ready, Retry};
 use common::custom_futures::timeout::TimeoutError;
 use common::executor::{abortable_queue::WeakSpawner, AbortedError, SpawnFuture};
-use common::log::{warn, LogOnError};
+use common::log::{info, warn, LogOnError};
 use common::{calc_total_pages, now_sec, ten, HttpStatusCode, DEX_BURN_ADDR_RAW_PUBKEY, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::{
     derive_secp256k1_secret, Bip32Error, Bip44Chain, CryptoCtx, CryptoCtxError, DerivationPath, GlobalHDAccountArc,
@@ -274,10 +275,8 @@ pub use test_coin::TestCoin;
 
 pub mod tx_history_storage;
 
-#[cfg(feature = "enable-sia")]
 pub mod siacoin;
-#[cfg(feature = "enable-sia")]
-use siacoin::SiaCoin;
+use siacoin::{SiaCoin, SiaCoinActivationRequest, SiaFeeDetails, SiaTransaction, SiaTransactionTypes};
 
 pub mod utxo;
 use utxo::bch::{bch_coin_with_policy, BchActivationRequest, BchCoin};
@@ -301,8 +300,8 @@ use crate::coin_balance::{BalanceObjectOps, HDWalletBalanceObject};
 use crate::hd_wallet::{AddrToString, DisplayAddress};
 use z_coin::{ZCoin, ZcoinProtocolInfo};
 
-#[cfg(feature = "enable-solana")]
 pub mod solana;
+use crate::solana::SolanaFeeDetails;
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
 pub type TransactionResult = Result<TransactionEnum, TransactionErr>;
@@ -613,6 +612,7 @@ pub enum TransactionEnum {
     CosmosTransaction(CosmosTransaction),
     #[cfg(not(target_arch = "wasm32"))]
     LightningPayment(LightningPayment),
+    SiaTransaction(SiaTransaction),
 }
 
 ifrom!(TransactionEnum, UtxoTx);
@@ -620,6 +620,7 @@ ifrom!(TransactionEnum, SignedEthTx);
 ifrom!(TransactionEnum, ZTransaction);
 #[cfg(not(target_arch = "wasm32"))]
 ifrom!(TransactionEnum, LightningPayment);
+ifrom!(TransactionEnum, SiaTransaction);
 
 impl TransactionEnum {
     #[cfg(not(target_arch = "wasm32"))]
@@ -644,6 +645,7 @@ impl Deref for TransactionEnum {
             TransactionEnum::CosmosTransaction(ref t) => t,
             #[cfg(not(target_arch = "wasm32"))]
             TransactionEnum::LightningPayment(ref p) => p,
+            TransactionEnum::SiaTransaction(ref t) => t,
         }
     }
 }
@@ -668,6 +670,18 @@ pub enum TransactionErr {
     Plain(String),
     ProtocolNotSupported(String),
     InternalError(String),
+}
+
+impl From<String> for TransactionErr {
+    fn from(e: String) -> Self {
+        TransactionErr::Plain(e)
+    }
+}
+
+impl From<&str> for TransactionErr {
+    fn from(e: &str) -> Self {
+        TransactionErr::Plain(e.to_string())
+    }
 }
 
 impl TransactionErr {
@@ -1024,8 +1038,11 @@ pub struct CheckIfMyPaymentSentArgs<'a> {
 #[derive(Clone, Debug)]
 pub struct ValidateFeeArgs<'a> {
     pub fee_tx: &'a TransactionEnum,
+    /// Public key of the expected sender
     pub expected_sender: &'a [u8],
     pub dex_fee: &'a DexFee,
+    /// the minimum block number the fee transaction can be included in the blockchain
+    /// this can be the current height if the transaction is in mempool or the confirmed block height
     pub min_block_number: u64,
     pub uuid: &'a [u8],
 }
@@ -1305,6 +1322,9 @@ pub trait SwapOps {
     }
 }
 
+// FIXME Alright - implement defaults for all methods or remove trait bound from MmCoin
+// This is only relevant to UTXO and ETH protocols and should not be forced to implement it otherwise
+// I am told unimplemented!() is safe here, but it's safer to return errors
 #[async_trait]
 pub trait WatcherOps {
     fn send_maker_payment_spend_preimage(&self, _input: SendMakerPaymentSpendPreimageInput) -> TransactionFut {
@@ -1895,6 +1915,12 @@ pub trait MakerCoinSwapOpsV2: ParseCoinAssocTypes + CommonSwapOpsV2 + Send + Syn
     async fn send_maker_payment_v2(&self, args: SendMakerPaymentArgs<'_, Self>) -> Result<Self::Tx, TransactionErr>;
 
     /// Validate maker payment transaction
+    ///
+    /// Important:
+    /// - Offline semantic validation only (destination address/script, value/ABI args/pubs).
+    /// - Must not perform any network I/O: no RPC calls, no mempool lookups, no confirmation checks.
+    /// - Presence and confirmations are enforced by the swap state machine
+    /// (e.g., before the taker waits for maker payment confirmation to allow for fast failure).
     async fn validate_maker_payment_v2(&self, args: ValidateMakerPaymentArgs<'_, Self>) -> ValidatePaymentResult<()>;
 
     /// Refund maker payment transaction using timelock path
@@ -2045,6 +2071,12 @@ pub trait TakerCoinSwapOpsV2: ParseCoinAssocTypes + CommonSwapOpsV2 + Send + Syn
     async fn send_taker_funding(&self, args: SendTakerFundingArgs<'_>) -> Result<Self::Tx, TransactionErr>;
 
     /// Validates taker funding transaction.
+    ///
+    /// Important:
+    /// - Offline semantic validation only (destination address/script, value/ABI args/pubs).
+    /// - Must not perform any network I/O: no RPC calls, no mempool lookups, no confirmation checks.
+    /// - Presence and confirmations are enforced by the swap state machine
+    /// (e.g., before Maker sends their payment if they don't require funding confirmation).
     async fn validate_taker_funding(&self, args: ValidateTakerFundingArgs<'_, Self>) -> ValidateSwapV2TxResult;
 
     /// Refunds taker funding transaction using time-locked path without secret reveal.
@@ -2195,7 +2227,12 @@ pub trait MarketCoinOps {
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send>;
 
     /// Signs raw utxo transaction in hexadecimal format as input and returns signed transaction in hexadecimal format
-    async fn sign_raw_tx(&self, args: &SignRawTransactionRequest) -> RawTransactionResult;
+    /// This method is only used by the sign_raw_transaction RPC method. Optional to implement.
+    async fn sign_raw_tx(&self, _args: &SignRawTransactionRequest) -> RawTransactionResult {
+        MmError::err(RawTransactionError::NotImplemented {
+            coin: self.ticker().to_string(),
+        })
+    }
 
     fn wait_for_confirmations(&self, input: ConfirmPaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send>;
 
@@ -2440,6 +2477,8 @@ pub enum TxFeeDetails {
     Qrc20(Qrc20FeeDetails),
     Slp(SlpFeeDetails),
     Tendermint(TendermintFeeDetails),
+    Sia(SiaFeeDetails),
+    Solana(SolanaFeeDetails),
 }
 
 /// Deserialize the TxFeeDetails as an untagged enum.
@@ -2454,14 +2493,20 @@ impl<'de> Deserialize<'de> for TxFeeDetails {
             Utxo(UtxoFeeDetails),
             Eth(EthTxFeeDetails),
             Qrc20(Qrc20FeeDetails),
+            Slp(SlpFeeDetails),
             Tendermint(TendermintFeeDetails),
+            Sia(SiaFeeDetails),
+            Solana(SolanaFeeDetails),
         }
 
         match Deserialize::deserialize(deserializer)? {
             TxFeeDetailsUnTagged::Utxo(f) => Ok(TxFeeDetails::Utxo(f)),
             TxFeeDetailsUnTagged::Eth(f) => Ok(TxFeeDetails::Eth(f)),
             TxFeeDetailsUnTagged::Qrc20(f) => Ok(TxFeeDetails::Qrc20(f)),
+            TxFeeDetailsUnTagged::Slp(f) => Ok(TxFeeDetails::Slp(f)),
             TxFeeDetailsUnTagged::Tendermint(f) => Ok(TxFeeDetails::Tendermint(f)),
+            TxFeeDetailsUnTagged::Sia(f) => Ok(TxFeeDetails::Sia(f)),
+            TxFeeDetailsUnTagged::Solana(f) => Ok(TxFeeDetails::Solana(f)),
         }
     }
 }
@@ -2481,6 +2526,12 @@ impl From<UtxoFeeDetails> for TxFeeDetails {
 impl From<Qrc20FeeDetails> for TxFeeDetails {
     fn from(qrc20_details: Qrc20FeeDetails) -> Self {
         TxFeeDetails::Qrc20(qrc20_details)
+    }
+}
+
+impl From<SiaFeeDetails> for TxFeeDetails {
+    fn from(sia_details: SiaFeeDetails) -> Self {
+        TxFeeDetails::Sia(sia_details)
     }
 }
 
@@ -2518,6 +2569,9 @@ pub enum TransactionType {
     TendermintIBCTransfer {
         token_id: Option<BytesJson>,
     },
+    SiaV1Transaction,
+    SiaV2Transaction,
+    SiaMinerPayout,
 }
 
 /// Transaction details
@@ -2560,9 +2614,10 @@ pub struct TransactionDetails {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(untagged)]
+#[allow(clippy::large_enum_variant)]
 pub enum TransactionData {
     Signed {
-        /// Raw bytes of signed transaction, this should be sent as is to `send_raw_transaction_bytes` RPC to broadcast the transaction
+        /// Raw bytes of signed transaction, this should be sent as is to `send_raw_transaction` RPC to broadcast the transaction
         tx_hex: BytesJson,
         /// Transaction hash in hexadecimal format
         tx_hash: String,
@@ -2570,6 +2625,14 @@ pub enum TransactionData {
     /// This can contain entirely different data depending on the platform.
     /// TODO: Perhaps using generics would be more suitable here?
     Unsigned(Json),
+    // Todo: After implementing tx hash in sia-rust we can use Signed variant for sia as well but make tx_hex: BytesJson and enum or add another variant for sia/json
+    Sia {
+        /// SIA transactions are broadcasted in JSON format.
+        /// This is provided in case someone wants to broadcast the transaction JSON through other means than `send_raw_transaction`.
+        tx_json: SiaTransactionTypes,
+        /// Transaction hash in hexadecimal format
+        tx_hash: String,
+    },
 }
 
 impl TransactionData {
@@ -2585,6 +2648,7 @@ impl TransactionData {
         match self {
             TransactionData::Signed { tx_hex, .. } => Some(tx_hex),
             TransactionData::Unsigned(_) => None,
+            TransactionData::Sia { .. } => None,
         }
     }
 
@@ -2592,6 +2656,7 @@ impl TransactionData {
         match self {
             TransactionData::Signed { tx_hash, .. } => Some(tx_hash),
             TransactionData::Unsigned(_) => None,
+            TransactionData::Sia { tx_hash, .. } => Some(tx_hash),
         }
     }
 }
@@ -3581,7 +3646,9 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
     // state serialization, to get full rewind and debugging information about the coins participating in a SWAP operation.
     // status/availability check: https://github.com/artemii235/SuperNET/issues/156#issuecomment-446501816
 
-    fn is_asset_chain(&self) -> bool;
+    fn is_asset_chain(&self) -> bool {
+        false
+    }
 
     /// The coin can be initialized, but it cannot participate in the swaps.
     fn wallet_only(&self, ctx: &MmArc) -> bool {
@@ -3602,16 +3669,26 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut;
 
+    // TODO Alright: should be separated into a "OptionalDispatcherOps" trait.
+    // This trait can handle all methods that are only used by dispatcher methods.
+    // only used by "get_raw_transaction" dispatcher method.
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut<'_>;
 
+    // TODO Alright: this method is only applicable to Watcher logic and could be moved to WatcherOps
     fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut<'_>;
 
     /// Maximum number of digits after decimal point used to denominate integer coin units (satoshis, wei, etc.)
     fn decimals(&self) -> u8;
 
     /// Convert input address to the specified address format.
+    // TODO Alright: should be separated into a "OptionalDispatcherOps" trait.
+    // This trait can handle all methods that are only used by dispatcher methods.
     fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String>;
 
+    // TODO Alright: could be separated into a "OptionalDispatcherOps" trait.
+    // only used by "verify_message" and "validate_address" dispatcher methods.
+    // Consider using traits to track which methods are neccesary for which UIs
+    // eg, "KomodoWalletOps" for the Komodo wallet, "ReactWalletOps" for the react wallet, etc.
     fn validate_address(&self, address: &str) -> ValidateAddressResult;
 
     /// Loop collecting coin transaction history and saving it to local DB
@@ -3664,7 +3741,7 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
     /// Transaction history background sync status
     fn history_sync_status(&self) -> HistorySyncState;
 
-    /// Get fee to be paid per 1 swap transaction
+    /// Returns the approximate amount of the miner fee that is paid per swap transaction.
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send>;
 
     /// Get fee to be paid by sender per whole swap (including possible refund) using the sending value and check if the wallet has sufficient balance to pay the fee.
@@ -3750,116 +3827,161 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
     fn on_token_deactivated(&self, ticker: &str);
 }
 
+/// Best-effort tx mempool visibility within the grace window. If the tx is not seen initially,
+/// a one-shot rebroadcast is done, then a poll until the tx is seen or the grace window expires.
+pub async fn ensure_tx_is_broadcasted<C, T>(coin: &C, tx: &T, total_grace_secs: f64, poll_every_secs: f64) -> bool
+where
+    C: MmCoin + ?Sized,
+    T: Transaction + ?Sized,
+{
+    let tx_hash_bytes = tx.tx_hash_as_bytes().0.clone();
+    let raw_bytes = tx.tx_hex();
+
+    let did_rebroadcast = Arc::new(AtomicBool::new(false));
+
+    let result = repeatable!(async {
+        match coin.get_tx_hex_by_hash(tx_hash_bytes.clone()).compat().await {
+            Ok(_) => Ready(()),
+            Err(e) => {
+                // One-shot best-effort rebroadcast on first miss.
+                if did_rebroadcast
+                    .compare_exchange(false, true, AtomicOrdering::Relaxed, AtomicOrdering::Relaxed)
+                    .is_ok()
+                {
+                    match coin.send_raw_tx_bytes(&raw_bytes).compat().await {
+                        Ok(tx_hash) => {
+                            info!(
+                                "ensure_tx_is_broadcasted: [{}] rebroadcast attempt for {} accepted by node as {}",
+                                coin.ticker(),
+                                hex::encode(&tx_hash_bytes),
+                                tx_hash
+                            );
+                        },
+                        Err(err) => {
+                            warn!(
+                                "ensure_tx_is_broadcasted: [{}] rebroadcast attempt for {} failed: {}",
+                                coin.ticker(),
+                                hex::encode(&tx_hash_bytes),
+                                err
+                            );
+                        },
+                    }
+                }
+                Retry(e)
+            },
+        }
+    })
+    .repeat_every_secs(poll_every_secs)
+    .with_timeout_secs(total_grace_secs)
+    .await;
+
+    result.is_ok()
+}
+
 #[derive(Clone)]
 #[allow(clippy::large_enum_variant)]
 pub enum MmCoinEnum {
-    UtxoCoin(UtxoStandardCoin),
-    QtumCoin(QtumCoin),
-    Qrc20Coin(Qrc20Coin),
-    EthCoin(EthCoin),
-    ZCoin(ZCoin),
-    Bch(BchCoin),
-    SlpToken(SlpToken),
-    Tendermint(TendermintCoin),
-    TendermintToken(TendermintToken),
+    UtxoCoinVariant(UtxoStandardCoin),
+    QtumCoinVariant(QtumCoin),
+    Qrc20CoinVariant(Qrc20Coin),
+    EthCoinVariant(EthCoin),
+    ZCoinVariant(ZCoin),
+    BchVariant(BchCoin),
+    SlpTokenVariant(SlpToken),
+    TendermintVariant(TendermintCoin),
+    TendermintTokenVariant(TendermintToken),
     #[cfg(not(target_arch = "wasm32"))]
-    LightningCoin(LightningCoin),
-    #[cfg(feature = "enable-sia")]
-    SiaCoin(SiaCoin),
-    #[cfg(feature = "enable-solana")]
-    Solana(solana::SolanaCoin),
-    #[cfg(feature = "enable-solana")]
-    SolanaToken(solana::SolanaToken),
+    LightningCoinVariant(LightningCoin),
+    SiaCoinVariant(SiaCoin),
+    SolanaCoinVariant(solana::SolanaCoin),
+    SolanaTokenVariant(solana::SolanaToken),
     #[cfg(any(test, feature = "for-tests"))]
-    Test(TestCoin),
+    TestVariant(TestCoin),
 }
 
 impl From<UtxoStandardCoin> for MmCoinEnum {
     fn from(c: UtxoStandardCoin) -> MmCoinEnum {
-        MmCoinEnum::UtxoCoin(c)
+        MmCoinEnum::UtxoCoinVariant(c)
     }
 }
 
 impl From<EthCoin> for MmCoinEnum {
     fn from(c: EthCoin) -> MmCoinEnum {
-        MmCoinEnum::EthCoin(c)
+        MmCoinEnum::EthCoinVariant(c)
     }
 }
 
 #[cfg(any(test, feature = "for-tests"))]
 impl From<TestCoin> for MmCoinEnum {
     fn from(c: TestCoin) -> MmCoinEnum {
-        MmCoinEnum::Test(c)
+        MmCoinEnum::TestVariant(c)
     }
 }
 
 impl From<QtumCoin> for MmCoinEnum {
     fn from(coin: QtumCoin) -> Self {
-        MmCoinEnum::QtumCoin(coin)
+        MmCoinEnum::QtumCoinVariant(coin)
     }
 }
 
 impl From<Qrc20Coin> for MmCoinEnum {
     fn from(c: Qrc20Coin) -> MmCoinEnum {
-        MmCoinEnum::Qrc20Coin(c)
+        MmCoinEnum::Qrc20CoinVariant(c)
     }
 }
 
 impl From<BchCoin> for MmCoinEnum {
     fn from(c: BchCoin) -> MmCoinEnum {
-        MmCoinEnum::Bch(c)
+        MmCoinEnum::BchVariant(c)
     }
 }
 
 impl From<SlpToken> for MmCoinEnum {
     fn from(c: SlpToken) -> MmCoinEnum {
-        MmCoinEnum::SlpToken(c)
+        MmCoinEnum::SlpTokenVariant(c)
     }
 }
 
 impl From<TendermintCoin> for MmCoinEnum {
     fn from(c: TendermintCoin) -> Self {
-        MmCoinEnum::Tendermint(c)
+        MmCoinEnum::TendermintVariant(c)
     }
 }
 
 impl From<TendermintToken> for MmCoinEnum {
     fn from(c: TendermintToken) -> Self {
-        MmCoinEnum::TendermintToken(c)
+        MmCoinEnum::TendermintTokenVariant(c)
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<LightningCoin> for MmCoinEnum {
     fn from(c: LightningCoin) -> MmCoinEnum {
-        MmCoinEnum::LightningCoin(c)
-    }
-}
-
-#[cfg(feature = "enable-solana")]
-impl From<solana::SolanaCoin> for MmCoinEnum {
-    fn from(c: solana::SolanaCoin) -> MmCoinEnum {
-        MmCoinEnum::Solana(c)
-    }
-}
-
-#[cfg(feature = "enable-solana")]
-impl From<solana::SolanaToken> for MmCoinEnum {
-    fn from(c: solana::SolanaToken) -> MmCoinEnum {
-        MmCoinEnum::SolanaToken(c)
+        MmCoinEnum::LightningCoinVariant(c)
     }
 }
 
 impl From<ZCoin> for MmCoinEnum {
     fn from(c: ZCoin) -> MmCoinEnum {
-        MmCoinEnum::ZCoin(c)
+        MmCoinEnum::ZCoinVariant(c)
     }
 }
 
-#[cfg(feature = "enable-sia")]
 impl From<SiaCoin> for MmCoinEnum {
     fn from(c: SiaCoin) -> MmCoinEnum {
-        MmCoinEnum::SiaCoin(c)
+        MmCoinEnum::SiaCoinVariant(c)
+    }
+}
+
+impl From<solana::SolanaCoin> for MmCoinEnum {
+    fn from(c: solana::SolanaCoin) -> MmCoinEnum {
+        MmCoinEnum::SolanaCoinVariant(c)
+    }
+}
+
+impl From<solana::SolanaToken> for MmCoinEnum {
+    fn from(c: solana::SolanaToken) -> MmCoinEnum {
+        MmCoinEnum::SolanaTokenVariant(c)
     }
 }
 
@@ -3868,25 +3990,22 @@ impl Deref for MmCoinEnum {
     type Target = dyn MmCoin;
     fn deref(&self) -> &dyn MmCoin {
         match self {
-            MmCoinEnum::UtxoCoin(ref c) => c,
-            MmCoinEnum::QtumCoin(ref c) => c,
-            MmCoinEnum::Qrc20Coin(ref c) => c,
-            MmCoinEnum::EthCoin(ref c) => c,
-            MmCoinEnum::Bch(ref c) => c,
-            MmCoinEnum::SlpToken(ref c) => c,
-            MmCoinEnum::Tendermint(ref c) => c,
-            MmCoinEnum::TendermintToken(ref c) => c,
+            MmCoinEnum::UtxoCoinVariant(ref c) => c,
+            MmCoinEnum::QtumCoinVariant(ref c) => c,
+            MmCoinEnum::Qrc20CoinVariant(ref c) => c,
+            MmCoinEnum::EthCoinVariant(ref c) => c,
+            MmCoinEnum::BchVariant(ref c) => c,
+            MmCoinEnum::SlpTokenVariant(ref c) => c,
+            MmCoinEnum::TendermintVariant(ref c) => c,
+            MmCoinEnum::TendermintTokenVariant(ref c) => c,
             #[cfg(not(target_arch = "wasm32"))]
-            MmCoinEnum::LightningCoin(ref c) => c,
-            MmCoinEnum::ZCoin(ref c) => c,
-            #[cfg(feature = "enable-sia")]
-            MmCoinEnum::SiaCoin(ref c) => c,
-            #[cfg(feature = "enable-solana")]
-            MmCoinEnum::Solana(ref c) => c,
-            #[cfg(feature = "enable-solana")]
-            MmCoinEnum::SolanaToken(ref c) => c,
+            MmCoinEnum::LightningCoinVariant(ref c) => c,
+            MmCoinEnum::ZCoinVariant(ref c) => c,
+            MmCoinEnum::SiaCoinVariant(ref c) => c,
+            MmCoinEnum::SolanaCoinVariant(ref c) => c,
+            MmCoinEnum::SolanaTokenVariant(ref c) => c,
             #[cfg(any(test, feature = "for-tests"))]
-            MmCoinEnum::Test(ref c) => c,
+            MmCoinEnum::TestVariant(ref c) => c,
         }
     }
 }
@@ -3894,19 +4013,19 @@ impl Deref for MmCoinEnum {
 impl MmCoinEnum {
     pub fn is_utxo_in_native_mode(&self) -> bool {
         match self {
-            MmCoinEnum::UtxoCoin(ref c) => c.as_ref().rpc_client.is_native(),
-            MmCoinEnum::QtumCoin(ref c) => c.as_ref().rpc_client.is_native(),
-            MmCoinEnum::Qrc20Coin(ref c) => c.as_ref().rpc_client.is_native(),
-            MmCoinEnum::Bch(ref c) => c.as_ref().rpc_client.is_native(),
-            MmCoinEnum::SlpToken(ref c) => c.as_ref().rpc_client.is_native(),
+            MmCoinEnum::UtxoCoinVariant(ref c) => c.as_ref().rpc_client.is_native(),
+            MmCoinEnum::QtumCoinVariant(ref c) => c.as_ref().rpc_client.is_native(),
+            MmCoinEnum::Qrc20CoinVariant(ref c) => c.as_ref().rpc_client.is_native(),
+            MmCoinEnum::BchVariant(ref c) => c.as_ref().rpc_client.is_native(),
+            MmCoinEnum::SlpTokenVariant(ref c) => c.as_ref().rpc_client.is_native(),
             #[cfg(not(target_arch = "wasm32"))]
-            MmCoinEnum::ZCoin(ref c) => c.as_ref().rpc_client.is_native(),
+            MmCoinEnum::ZCoinVariant(ref c) => c.as_ref().rpc_client.is_native(),
             _ => false,
         }
     }
 
     pub fn is_eth(&self) -> bool {
-        matches!(self, MmCoinEnum::EthCoin(_))
+        matches!(self, MmCoinEnum::EthCoinVariant(_))
     }
 
     fn is_platform_coin(&self) -> bool {
@@ -3919,11 +4038,11 @@ impl MmCoinEnum {
     /// Otherwise, the function will default to `SecretHashAlgo::DHASH160`, which may not be correct for the new coin.
     pub fn secret_hash_algo_v2(&self) -> SecretHashAlgo {
         match self {
-            MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_) | MmCoinEnum::EthCoin(_) => {
-                SecretHashAlgo::SHA256
-            },
+            MmCoinEnum::TendermintVariant(_)
+            | MmCoinEnum::TendermintTokenVariant(_)
+            | MmCoinEnum::EthCoinVariant(_) => SecretHashAlgo::SHA256,
             #[cfg(not(target_arch = "wasm32"))]
-            MmCoinEnum::LightningCoin(_) => SecretHashAlgo::SHA256,
+            MmCoinEnum::LightningCoinVariant(_) => SecretHashAlgo::SHA256,
             _ => SecretHashAlgo::DHASH160,
         }
     }
@@ -3985,6 +4104,7 @@ pub enum DexFeeBurnDestination {
 }
 
 /// Represents the different types of DEX fees.
+/// WithBurn is a special case for KMD see: dex_fee_amount function
 #[derive(Clone, Debug, PartialEq)]
 pub enum DexFee {
     /// No dex fee is taken (if taker is dex pubkey)
@@ -4811,14 +4931,11 @@ pub enum CoinProtocol {
         confirmation_targets: PlatformCoinConfirmationTargets,
     },
     ZHTLC(ZcoinProtocolInfo),
-    #[cfg(feature = "enable-sia")]
     SIA,
     NFT {
         platform: String,
     },
-    #[cfg(feature = "enable-solana")]
     SOLANA(solana::SolanaProtocolInfo),
-    #[cfg(feature = "enable-solana")]
     SOLANATOKEN(solana::SolanaTokenProtocolInfo),
 }
 
@@ -4862,11 +4979,8 @@ impl CoinProtocol {
             | CoinProtocol::BCH { .. }
             | CoinProtocol::TENDERMINT(_)
             | CoinProtocol::ZHTLC(_) => None,
-            #[cfg(feature = "enable-sia")]
             CoinProtocol::SIA => None,
-            #[cfg(feature = "enable-solana")]
             CoinProtocol::SOLANA(_) => None,
-            #[cfg(feature = "enable-solana")]
             CoinProtocol::SOLANATOKEN(info) => Some(&info.platform),
         }
     }
@@ -4889,11 +5003,8 @@ impl CoinProtocol {
             | CoinProtocol::NFT { .. } => None,
             #[cfg(not(target_arch = "wasm32"))]
             CoinProtocol::LIGHTNING { .. } => None,
-            #[cfg(feature = "enable-sia")]
             CoinProtocol::SIA => None,
-            #[cfg(feature = "enable-solana")]
             CoinProtocol::SOLANA(_) => None,
-            #[cfg(feature = "enable-solana")]
             CoinProtocol::SOLANATOKEN(info) => Some(info.mint_address.to_string()),
         }
     }
@@ -5221,7 +5332,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         } => {
             let platform_coin = try_s!(lp_coinfind(ctx, platform).await);
             let platform_coin = match platform_coin {
-                Some(MmCoinEnum::Bch(coin)) => coin,
+                Some(MmCoinEnum::BchVariant(coin)) => coin,
                 Some(_) => return ERR!("Platform coin {} is not BCH", platform),
                 None => return ERR!("Platform coin {} is not activated", platform),
             };
@@ -5243,13 +5354,11 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         CoinProtocol::TRX { .. } => return ERR!("TRX protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::LIGHTNING { .. } => return ERR!("Lightning protocol is not supported by lp_coininit"),
-        #[cfg(feature = "enable-sia")]
         CoinProtocol::SIA => {
-            return ERR!("SIA protocol is not supported by lp_coininit. Use task::enable_sia::init");
+            let params = try_s!(SiaCoinActivationRequest::from_legacy_req(req));
+            try_s!(SiaCoin::new(ctx, coins_en, &params, priv_key_policy).await).into()
         },
-        #[cfg(feature = "enable-solana")]
         CoinProtocol::SOLANA(_) => return ERR!("SOLANA is not supported by lp_coininit"),
-        #[cfg(feature = "enable-solana")]
         CoinProtocol::SOLANATOKEN(_) => return ERR!("SOLANATOKEN is not supported by lp_coininit"),
     };
 
@@ -5308,7 +5417,8 @@ pub async fn lp_register_coin(
     Ok(())
 }
 
-fn lp_spawn_tx_history(ctx: MmArc, coin: MmCoinEnum) -> Result<(), String> {
+/// Initiates the transaction history synchronization loop for fetching and processing transactions.
+pub fn lp_spawn_tx_history(ctx: MmArc, coin: MmCoinEnum) -> Result<(), String> {
     let spawner = coin.spawner();
     let fut = async move {
         let _res = coin.process_history_loop(ctx).compat().await;
@@ -5391,7 +5501,7 @@ pub async fn convert_address(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
 
 pub async fn kmd_rewards_info(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
     let coin = match lp_coinfind(&ctx, "KMD").await {
-        Ok(Some(MmCoinEnum::UtxoCoin(t))) => t,
+        Ok(Some(MmCoinEnum::UtxoCoinVariant(t))) => t,
         Ok(Some(_)) => return ERR!("KMD was expected to be UTXO"),
         Ok(None) => return ERR!("KMD is not activated"),
         Err(err) => return ERR!("!lp_coinfind({}): KMD", err),
@@ -5483,7 +5593,7 @@ pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> Delega
                 });
             }
 
-            let MmCoinEnum::Tendermint(tendermint) = coin else {
+            let MmCoinEnum::TendermintVariant(tendermint) = coin else {
                 return MmError::err(DelegationError::CoinDoesntSupportDelegation {
                     coin: coin.ticker().to_string(),
                 });
@@ -5497,7 +5607,7 @@ pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> Delega
         }),
 
         None => match coin {
-            MmCoinEnum::QtumCoin(qtum) => qtum.remove_delegation().compat().await,
+            MmCoinEnum::QtumCoinVariant(qtum) => qtum.remove_delegation().compat().await,
             _ => MmError::err(DelegationError::CoinDoesntSupportDelegation {
                 coin: coin.ticker().to_string(),
             }),
@@ -5510,7 +5620,7 @@ pub async fn delegations_info(ctx: MmArc, req: DelegationsInfo) -> Result<Json, 
 
     match req.info_details {
         DelegationsInfoDetails::Qtum => {
-            let MmCoinEnum::QtumCoin(qtum) = coin else {
+            let MmCoinEnum::QtumCoinVariant(qtum) = coin else {
                 return MmError::err(StakingInfoError::InvalidPayload {
                     reason: format!("{} is not a Qtum coin", req.coin),
                 });
@@ -5520,8 +5630,10 @@ pub async fn delegations_info(ctx: MmArc, req: DelegationsInfo) -> Result<Json, 
         },
 
         DelegationsInfoDetails::Cosmos(r) => match coin {
-            MmCoinEnum::Tendermint(t) => Ok(t.delegations_list(r.paging).await.map(|v| json!(v)).map_mm_err()?),
-            MmCoinEnum::TendermintToken(_) => MmError::err(StakingInfoError::InvalidPayload {
+            MmCoinEnum::TendermintVariant(t) => {
+                Ok(t.delegations_list(r.paging).await.map(|v| json!(v)).map_mm_err()?)
+            },
+            MmCoinEnum::TendermintTokenVariant(_) => MmError::err(StakingInfoError::InvalidPayload {
                 reason: "Tokens are not supported for delegation".into(),
             }),
             _ => MmError::err(StakingInfoError::InvalidPayload {
@@ -5536,12 +5648,12 @@ pub async fn ongoing_undelegations_info(ctx: MmArc, req: UndelegationsInfo) -> R
 
     match req.info_details {
         UndelegationsInfoDetails::Cosmos(r) => match coin {
-            MmCoinEnum::Tendermint(t) => Ok(t
+            MmCoinEnum::TendermintVariant(t) => Ok(t
                 .ongoing_undelegations_list(r.paging)
                 .await
                 .map(|v| json!(v))
                 .map_mm_err()?),
-            MmCoinEnum::TendermintToken(_) => MmError::err(StakingInfoError::InvalidPayload {
+            MmCoinEnum::TendermintTokenVariant(_) => MmError::err(StakingInfoError::InvalidPayload {
                 reason: "Tokens are not supported for delegation".into(),
             }),
             _ => MmError::err(StakingInfoError::InvalidPayload {
@@ -5566,7 +5678,7 @@ pub async fn add_delegation(ctx: MmArc, req: AddDelegateRequest) -> DelegationRe
 
     match req.staking_details {
         StakingDetails::Qtum(req) => {
-            let MmCoinEnum::QtumCoin(qtum) = coin else {
+            let MmCoinEnum::QtumCoinVariant(qtum) = coin else {
                 return MmError::err(DelegationError::CoinDoesntSupportDelegation {
                     coin: coin.ticker().to_string(),
                 });
@@ -5575,7 +5687,7 @@ pub async fn add_delegation(ctx: MmArc, req: AddDelegateRequest) -> DelegationRe
             qtum.add_delegation(req).compat().await
         },
         StakingDetails::Cosmos(req) => {
-            let MmCoinEnum::Tendermint(tendermint) = coin else {
+            let MmCoinEnum::TendermintVariant(tendermint) = coin else {
                 return MmError::err(DelegationError::CoinDoesntSupportDelegation {
                     coin: coin.ticker().to_string(),
                 });
@@ -5591,7 +5703,7 @@ pub async fn claim_staking_rewards(ctx: MmArc, req: ClaimStakingRewardsRequest) 
         ClaimingDetails::Cosmos(r) => {
             let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
-            let MmCoinEnum::Tendermint(tendermint) = coin else {
+            let MmCoinEnum::TendermintVariant(tendermint) = coin else {
                 return MmError::err(DelegationError::InvalidPayload {
                     reason: format!("{} is not a Cosmos coin", req.coin),
                 });
@@ -5609,8 +5721,16 @@ pub async fn send_raw_transaction(ctx: MmArc, req: Json) -> Result<Response<Vec<
         Ok(None) => return ERR!("No such coin: {}", ticker),
         Err(err) => return ERR!("!lp_coinfind({}): {}", ticker, err),
     };
-    let bytes_string = try_s!(req["tx_hex"].as_str().ok_or("No 'tx_hex' field"));
-    let res = try_s!(coin.send_raw_tx(bytes_string).compat().await);
+    // tx_json parsing is required for siacoin because txes are never encoded in hex
+    let tx_string = if let Some(tx_hex) = req["tx_hex"].as_str() {
+        tx_hex.to_owned()
+    } else if let Some(tx_json) = req["tx_json"].as_object() {
+        let json_string = try_s!(json::to_string(tx_json));
+        json_string
+    } else {
+        return ERR!("No 'tx_hex' or 'tx_json' field");
+    };
+    let res = try_s!(coin.send_raw_tx(&tx_string).compat().await);
     let body = try_s!(json::to_vec(&json!({ "tx_hash": res })));
     Ok(try_s!(Response::builder().body(body)))
 }
@@ -5825,7 +5945,7 @@ pub async fn convert_utxo_address(ctx: MmArc, req: Json) -> Result<Response<Vec<
         _ => return ERR!("Coin {} is not activated", req.to_coin),
     };
     let coin = match coin {
-        MmCoinEnum::UtxoCoin(utxo) => utxo,
+        MmCoinEnum::UtxoCoinVariant(utxo) => utxo,
         _ => return ERR!("Coin {} is not utxo", req.to_coin),
     };
     addr.prefix = coin.as_ref().conf.address_prefixes.p2pkh.clone();
@@ -5892,11 +6012,11 @@ pub fn address_by_coin_conf_and_pubkey_str(
             ERR!("address_by_coin_conf_and_pubkey_str is not implemented for lightning protocol yet!")
         },
         CoinProtocol::ZHTLC { .. } => ERR!("address_by_coin_conf_and_pubkey_str is not supported for ZHTLC protocol!"),
-        #[cfg(feature = "enable-sia")]
-        CoinProtocol::SIA => ERR!("address_by_coin_conf_and_pubkey_str is not supported for SIA protocol!"), // TODO Alright
-        #[cfg(feature = "enable-solana")]
+        // TODO Alright - generating a Sia address in this case requires including the ed25519 pubkey in the OrderbookItem
+        // this will require significant changes and this function is only called from "legacy" dispatcher's `orderbook` rpc
+        // so it's not a priority right now
+        CoinProtocol::SIA => ERR!("address_by_coin_conf_and_pubkey_str is not supported for SIA protocol!"),
         CoinProtocol::SOLANA(_) => ERR!("address_by_coin_conf_and_pubkey_str is not implemented for SOLANA yet."),
-        #[cfg(feature = "enable-solana")]
         CoinProtocol::SOLANATOKEN(_) => {
             ERR!("address_by_coin_conf_and_pubkey_str is not implemented for SOLANATOKEN yet.")
         },
@@ -6194,7 +6314,7 @@ pub trait Eip1559Ops {
 pub async fn get_swap_gas_fee_policy(ctx: MmArc, req: GetSwapGasFeePolicyRequest) -> SwapGasFeePolicyResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     match coin {
-        MmCoinEnum::EthCoin(eth_coin) => Ok(eth_coin.get_swap_gas_fee_policy().await.map_mm_err()?),
+        MmCoinEnum::EthCoinVariant(eth_coin) => Ok(eth_coin.get_swap_gas_fee_policy().await.map_mm_err()?),
         _ => MmError::err(SwapGasFeePolicyError::NotSupported(req.coin)),
     }
 }
@@ -6203,7 +6323,7 @@ pub async fn get_swap_gas_fee_policy(ctx: MmArc, req: GetSwapGasFeePolicyRequest
 pub async fn set_swap_gas_fee_policy(ctx: MmArc, req: SetSwapGasFeePolicyRequest) -> SwapGasFeePolicyResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     match coin {
-        MmCoinEnum::EthCoin(eth_coin) => {
+        MmCoinEnum::EthCoinVariant(eth_coin) => {
             eth_coin
                 .set_swap_gas_fee_policy(req.swap_gas_fee_policy)
                 .await
@@ -6306,7 +6426,7 @@ mod tests {
     fn test_lp_coinfind() {
         let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
         let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
-        let coin = MmCoinEnum::Test(TestCoin::new(RICK));
+        let coin = MmCoinEnum::TestVariant(TestCoin::new(RICK));
 
         // Add test coin to coins context
         common::block_on(coins_ctx.add_platform_with_tokens(coin.clone(), vec![], None)).unwrap();
@@ -6331,7 +6451,7 @@ mod tests {
     fn test_lp_coinfind_any() {
         let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
         let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
-        let coin = MmCoinEnum::Test(TestCoin::new(RICK));
+        let coin = MmCoinEnum::TestVariant(TestCoin::new(RICK));
 
         // Add test coin to coins context
         common::block_on(coins_ctx.add_platform_with_tokens(coin.clone(), vec![], None)).unwrap();

@@ -59,7 +59,7 @@ use rpc::v1::types::{
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use script_pubkey::generate_contract_call_script_pubkey;
 use serde_json::{self as json, Value as Json};
-use serialization::{deserialize, serialize, CoinVariant};
+use serialization::{deserialize, serialize};
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use std::num::TryFromIntError;
@@ -731,7 +731,7 @@ impl UtxoCommonOps for Qrc20Coin {
     }
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32> {
-        utxo_common::get_current_mtp(&self.utxo, CoinVariant::Qtum).await
+        utxo_common::get_current_mtp(&self.utxo).await
     }
 
     fn is_unspent_mature(&self, output: &RpcTransaction) -> bool {

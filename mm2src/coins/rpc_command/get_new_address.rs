@@ -342,7 +342,7 @@ impl RpcTask for InitGetNewAddressTask {
         }
 
         match self.coin {
-            MmCoinEnum::UtxoCoin(ref utxo) => {
+            MmCoinEnum::UtxoCoinVariant(ref utxo) => {
                 // Set script type to enable Trezor to correctly validate the derivation path
                 let trezor_script_type = match utxo.addr_format() {
                     AddressFormat::Standard | AddressFormat::CashAddress { .. } => {
@@ -368,7 +368,7 @@ impl RpcTask for InitGetNewAddressTask {
                     .await?,
                 ))
             },
-            MmCoinEnum::QtumCoin(ref qtum) => {
+            MmCoinEnum::QtumCoinVariant(ref qtum) => {
                 // Set script type to enable Trezor to correctly validate the derivation path
                 let trezor_script_type = match qtum.addr_format() {
                     AddressFormat::Standard | AddressFormat::CashAddress { .. } => {
@@ -393,7 +393,7 @@ impl RpcTask for InitGetNewAddressTask {
                     .await?,
                 ))
             },
-            MmCoinEnum::EthCoin(ref eth) => Ok(GetNewAddressResponseEnum::Map(
+            MmCoinEnum::EthCoinVariant(ref eth) => Ok(GetNewAddressResponseEnum::Map(
                 get_new_address_helper(
                     &self.ctx,
                     eth,
@@ -416,13 +416,13 @@ pub async fn get_new_address(
 ) -> MmResult<GetNewAddressResponseEnum, GetNewAddressRpcError> {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     match coin {
-        MmCoinEnum::UtxoCoin(utxo) => Ok(GetNewAddressResponseEnum::Map(
+        MmCoinEnum::UtxoCoinVariant(utxo) => Ok(GetNewAddressResponseEnum::Map(
             utxo.get_new_address_rpc_without_conf(req.params).await?,
         )),
-        MmCoinEnum::QtumCoin(qtum) => Ok(GetNewAddressResponseEnum::Map(
+        MmCoinEnum::QtumCoinVariant(qtum) => Ok(GetNewAddressResponseEnum::Map(
             qtum.get_new_address_rpc_without_conf(req.params).await?,
         )),
-        MmCoinEnum::EthCoin(eth) => Ok(GetNewAddressResponseEnum::Map(
+        MmCoinEnum::EthCoinVariant(eth) => Ok(GetNewAddressResponseEnum::Map(
             eth.get_new_address_rpc_without_conf(req.params).await?,
         )),
         _ => MmError::err(GetNewAddressRpcError::CoinIsActivatedNotWithHDWallet),

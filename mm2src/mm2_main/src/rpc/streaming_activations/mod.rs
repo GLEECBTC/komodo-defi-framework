@@ -5,6 +5,8 @@ mod heartbeat;
 mod network;
 mod orderbook;
 mod orders;
+#[cfg(not(any(target_arch = "wasm32", target_os = "windows")))]
+mod shutdown_signal;
 mod swaps;
 mod tx_history;
 
@@ -16,6 +18,8 @@ pub use heartbeat::*;
 pub use network::*;
 pub use orderbook::*;
 pub use orders::*;
+#[cfg(not(any(target_arch = "wasm32", target_os = "windows")))]
+pub use shutdown_signal::*;
 pub use swaps::*;
 pub use tx_history::*;
 
