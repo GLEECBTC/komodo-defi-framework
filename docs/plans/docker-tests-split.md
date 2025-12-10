@@ -1142,6 +1142,43 @@ Note: Until all feature-gated suites have dedicated CI jobs (Phase 3), individua
 
 ---
 
+### Phase 8 – Documentation update (FINAL PHASE)
+
+**Goal:** Update all documentation to reflect the final state of the docker tests infrastructure.
+
+> ⚠️ **IMPORTANT:** This phase must remain the LAST phase in the plan. Do not add new phases after this one. Any new tasks should be inserted before Phase 8.
+
+#### 8.1 Update AGENTS.md files
+
+- [ ] Update `mm2src/mm2_main/AGENTS.md`:
+  - Document the new docker test module structure
+  - List all feature flags and their purposes
+  - Describe the helpers organization
+
+- [ ] Review and update any other `AGENTS.md` files affected by the refactor
+
+#### 8.2 Update docs/DOCKER_TESTS.md
+
+- [ ] Update file structure documentation to reflect new module organization
+- [ ] Document all CI jobs and their feature flags
+- [ ] Update execution modes documentation
+- [ ] Add troubleshooting section for common issues
+
+#### 8.3 Final documentation audit
+
+- [ ] Verify all code comments are accurate and up-to-date
+- [ ] Remove any stale TODO comments that have been addressed
+- [ ] Ensure inline documentation matches actual behavior
+- [ ] Update any references to old module paths or removed code
+
+#### 8.4 Plan completion
+
+- [ ] Mark this plan file as complete
+- [ ] Move to `docs/plans/completed/` or delete per project conventions
+- [ ] Update root `AGENTS.md` to remove reference to this plan
+
+---
+
 ## Success criteria checklist
 
 - [x] `ReuseMetadata` mode connects to the correct Geth RPC from metadata and fails fast if contract bytecode is missing.
