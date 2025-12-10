@@ -563,46 +563,61 @@ ran in all docker test jobs regardless of the `docker-tests-sia` feature flag. T
 - Gating Sia helpers in `helpers/mod.rs` with `#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-sia"))]`
 - Gating Sia container initialization, image pulling, and health checks in `docker_tests_main.rs`
 
-**Cross-dependency analysis (blocking issue for isolated jobs):**
-Analysis of CI failures revealed that several test modules have circular/cross dependencies through helper initialization:
+**Cross-dependency analysis and resolution strategy:**
+
+Analysis of CI failures (run #20096344554 on 2025-12-10) revealed several categories of issues:
+
+**Category 1: Single-chain jobs needing UTXO for coin-specific tests (RESOLVED)**
+
+These jobs test a specific coin but some tests require MYCOIN for swap counterparty:
 
 1. **QRC20 tests** (`qrc20_tests`):
-   - Contains cross-chain swap tests: `test_trade_qrc20`, `trade_test_with_maker_segwit` → require MYCOIN (UTXO)
-   - If UTXO containers are added, those tests would work
-   - However, UTXO helpers (`qrc20.rs:62`) panic if QRC20 wasn't initialized
+   - Tests like `test_trade_qrc20`, `trade_test_with_maker_segwit` swap QRC20 ↔ MYCOIN
+   - **Resolution:** Add UTXO nodes to `docker-tests-qrc20` job (same chain family, acceptable)
 
 2. **Sia tests** (`sia_tests`):
-   - Contains cross-chain swap tests: `test_bob_sells_dsia_for_mycoin` → require MYCOIN (UTXO)
-   - Same issue: adding UTXO doesn't help because UTXO tests may reference QRC20 helpers
+   - Tests like `test_bob_sells_dsia_for_mycoin` swap DSIA ↔ MYCOIN
+   - **Resolution:** Add UTXO nodes to `docker-tests-sia` job (same chain family, acceptable)
 
-3. **ETH tests** (`eth_docker_tests`, `eth_inner_tests`):
-   - `test_trade_base_rel_eth_erc20_coins` panics with "QTUM_CONF_PATH not initialized"
-   - ETH helpers reference QRC20 helpers that expect QRC20 initialization
+**Category 2: Cross-chain tests requiring multiple distinct chain families (TO BE MOVED)**
 
-4. **UTXO swaps tests** (`utxo_swaps_v1_tests`):
-   - `test_trade_base_rel_mycoin_mycoin1_coins` panics with "QICK_TOKEN_ADDRESS not initialized"
-   - UTXO trade tests use `trade_base_rel` helper from `swap.rs` which calls QRC20 helpers
+Tests that swap between fundamentally different chain types should go to `docker-tests-integration`:
 
-**Root cause:** Helper modules have initialization-time dependencies that assume all container types are available. The `OnceLock` pattern in helpers (e.g., `QICK_TOKEN_ADDRESS`, `QTUM_CONF_PATH`) panics when accessed before the corresponding container is initialized.
+- QRC20 ↔ ETH swaps
+- Tendermint ↔ ETH swaps (currently in `tendermint_swap_tests`)
+- SLP ↔ ETH swaps
+- Any other multi-family cross-chain scenarios
 
-**Required fix (HIGH PRIORITY - blocking Phase 3):**
-1. Refactor helper modules to be self-contained per container type
-2. Remove cross-helper dependencies or make them feature-gated
-3. Ensure tests only reference helpers for containers they actually need
-4. Move cross-chain tests to `docker-tests-integration` job
+**Category 3: Bugs requiring investigation (HIGH PRIORITY)**
 
-Until this is fixed, the affected CI jobs will fail with initialization panics. The split jobs cannot run in isolation.
+These failures are NOT due to missing containers but actual bugs:
+
+1. **ETH tests** (`docker-tests-eth`):
+   - `test_eth_swap_contract_addr_negotiation_same_fallback` fails
+   - **Root cause:** Likely `GETH_SWAP_CONTRACT` OnceLock not initialized in ETH-only path
+   - **Action:** Debug ETH contract initialization in `docker_tests_main.rs`
+
+2. **Watcher tests** (`docker-tests-watchers`):
+   - 3 tests fail: `test_watcher_refunds_taker_payment_erc20`, `test_watcher_refunds_taker_payment_eth`, `test_watcher_spends_maker_payment_erc20_utxo`
+   - All panic at `swap_watcher_tests.rs:233` waiting for `WATCHER_MESSAGE_SENT_LOG`
+   - **Root cause:** Watcher node never sends the expected message (timing/contract/P2P issue)
+   - **Action:** Verify `GETH_WATCHERS_SWAP_CONTRACT` initialization and watcher P2P connectivity
+
+3. **ZCoin tests** (`docker-tests-zcoin`):
+   - `zombie_coin_send_dex_fee` fails at `z_coin_docker_tests.rs:190`
+   - **Root cause:** Likely Zombie container not ready or zcash params missing
+   - **Action:** Verify CI starts `KDF_ZOMBIE_SERVICE` and downloads zcash params
 
 **Implementation summary:**
 All CI jobs now use only feature flags for test selection (no test module filters). The feature-gated modules in `mod.rs` control which tests are compiled and run for each job:
 
 - `docker-tests-eth`: ETH/ERC20 tests (Geth node only)
 - `docker-tests-slp`: BCH/SLP token tests (FORSLP node only)
-- `docker-tests-sia`: Sia tests (Sia node only)
+- `docker-tests-sia`: Sia tests (Sia + UTXO nodes for DSIA↔MYCOIN swaps)
 - `docker-tests-ordermatch`: Ordermatching tests (UTXO + ETH nodes)
 - `docker-tests-swaps-utxo`: UTXO swap protocol tests (UTXO nodes only)
 - `docker-tests-watchers`: Watcher tests (UTXO + ETH nodes)
-- `docker-tests-qrc20`: Qtum/QRC20 tests (Qtum node only)
+- `docker-tests-qrc20`: Qtum/QRC20 tests (Qtum + UTXO nodes for QRC20↔MYCOIN swaps)
 - `docker-tests-tendermint`: Cosmos/IBC tests (Cosmos nodes only)
 - `docker-tests-zcoin`: ZCoin/Zombie tests (Zombie node only)
 
@@ -616,18 +631,18 @@ All CI jobs now use only feature flags for test selection (no test module filter
 
 CI jobs mapping:
 
-| Job                        | Feature flag              | Primary content                                           |
-|---------------------------|---------------------------|-----------------------------------------------------------|
-| `docker-tests-eth`        | `docker-tests-eth`        | ETH/ERC20/721/1155 tests                                 |
-| `docker-tests-slp`        | `docker-tests-slp`        | SLP-only tests                                           |
-| `docker-tests-sia`        | `docker-tests-sia`        | Sia client & DSIA/Mycoin swaps                           |
-| `docker-tests-ordermatch` | `docker-tests-ordermatch` | Ordermatching & wallet/order lifecycle                   |
-| `docker-tests-swaps-utxo` | `docker-tests-swaps-utxo` | UTXO swap protocol v1/v2, file locking, conf sync        |
-| `docker-tests-watchers`   | `docker-tests-watchers`   | Watcher flows and rewards                                |
-| `docker-tests-qrc20`      | `docker-tests-qrc20`      | Qtum/QRC20-specific tests                                |
-| `docker-tests-tendermint` | `docker-tests-tendermint` | Cosmos/Tendermint/IBC tests                              |
-| `docker-tests-zcoin`      | `docker-tests-zcoin`      | ZCoin (Zombie) tests                                     |
-| `docker-tests-integration`| `docker-tests-integration`| Cross-chain, multi-chain swap integration scenarios      |
+| Job                        | Feature flag              | Containers                    | Primary content                                           |
+|---------------------------|---------------------------|-------------------------------|-----------------------------------------------------------|
+| `docker-tests-eth`        | `docker-tests-eth`        | Geth                          | ETH/ERC20/721/1155 tests                                 |
+| `docker-tests-slp`        | `docker-tests-slp`        | FORSLP                        | SLP-only tests                                           |
+| `docker-tests-sia`        | `docker-tests-sia`        | Sia + UTXO                    | Sia client & DSIA↔MYCOIN swaps                           |
+| `docker-tests-ordermatch` | `docker-tests-ordermatch` | UTXO + Geth                   | Ordermatching & wallet/order lifecycle                   |
+| `docker-tests-swaps-utxo` | `docker-tests-swaps-utxo` | UTXO                          | UTXO swap protocol v1/v2, file locking, conf sync        |
+| `docker-tests-watchers`   | `docker-tests-watchers`   | UTXO + Geth                   | Watcher flows and rewards                                |
+| `docker-tests-qrc20`      | `docker-tests-qrc20`      | Qtum + UTXO                   | Qtum/QRC20 tests & QRC20↔MYCOIN swaps                    |
+| `docker-tests-tendermint` | `docker-tests-tendermint` | Cosmos                        | Cosmos/Tendermint/IBC tests (no cross-chain swaps)       |
+| `docker-tests-zcoin`      | `docker-tests-zcoin`      | Zombie                        | ZCoin (Zombie) tests                                     |
+| `docker-tests-integration`| `docker-tests-integration`| ALL (UTXO, Geth, Qtum, Cosmos, etc.) | Cross-chain swaps: ETH↔Tendermint, ETH↔QRC20, etc.       |
 
 #### 4.3.2 Assign modules to jobs
 
@@ -673,9 +688,17 @@ CI jobs mapping:
 
 **Integration (`docker-tests-integration`)** — *NOT YET IMPLEMENTED*
 
-- `swap_tests::trade_test_with_maker_slp`
-- `swap_tests::trade_test_with_taker_slp`
-- Optionally: a very small curated subset of cross-chain tests if coverage is missing elsewhere.
+This job runs cross-chain swap tests between fundamentally different chain families (ETH↔Tendermint, ETH↔QRC20, etc.):
+
+- `tendermint_swap_tests::*` (Tendermint↔ETH swaps, currently gated by `docker-tests-tendermint + docker-tests-eth`):
+   - `swap_nucleus_with_doc` (NUCLEUS <-> DOC)
+   - `swap_nucleus_with_eth` (NUCLEUS <-> ETH)
+   - `swap_doc_with_iris_ibc_nucleus` (DOC <-> IRIS-IBC-NUCLEUS)
+- `swap_tests::trade_test_with_maker_slp` (SLP cross-chain)
+- `swap_tests::trade_test_with_taker_slp` (SLP cross-chain)
+- Any future QRC20↔ETH, Sia↔ETH, or other multi-family swap tests
+
+**Note:** Single-chain jobs (e.g., `docker-tests-qrc20`, `docker-tests-sia`) can include UTXO nodes for swaps against MYCOIN since UTXO is a base chain family. Only swaps between two non-UTXO chain families (e.g., ETH↔Tendermint) belong in the integration job.
 
 **Current behavior:** `swap_tests` is compiled only when `run-docker-tests` is enabled and **no** other `docker-tests-*` features are enabled (legacy negative-gate pattern). The `docker-tests-integration` feature does not yet exist in `Cargo.toml`. This is a future task to introduce a dedicated feature flag.
 
@@ -684,22 +707,24 @@ CI jobs mapping:
 In `docker_tests_main.rs`, adjust container startup based on enabled features:
 
 - **Ordermatching (`docker-tests-ordermatch`):**
-   - Start UTXO containers (`MYCOIN`, `MYCOIN1`).
-   - **Also start Geth/ETH containers** because `docker_tests_inner` contains cross-chain UTXO+ETH ordermatching tests.
+   - Start UTXO containers (`MYCOIN`, `MYCOIN1`) + Geth/ETH containers.
+   - Required because `docker_tests_inner` contains cross-chain UTXO+ETH ordermatching tests.
 - **Swaps (`docker-tests-swaps-utxo`):**
    - Start UTXO containers (`MYCOIN`, `MYCOIN1`) only.
-- **Watchers:**
-   - Start UTXO + Geth (no Cosmos/Sia/etc).
-- **QRC20:**
-   - Start Qtum/QRC20 only (and UTXO if needed for some tests).
-- **Tendermint:**
+- **Watchers (`docker-tests-watchers`):**
+   - Start UTXO + Geth (no Cosmos/Sia/Qtum/etc).
+- **QRC20 (`docker-tests-qrc20`):**
+   - Start Qtum/QRC20 + UTXO containers for QRC20↔MYCOIN swap tests.
+- **Sia (`docker-tests-sia`):**
+   - Start Sia + UTXO containers for DSIA↔MYCOIN swap tests.
+- **Tendermint (`docker-tests-tendermint`):**
    - Start Cosmos nodes (Nucleus, Atom) and relayer; prepare IBC channels.
-- **Tendermint Cross-Chain (`docker-tests-tendermint + docker-tests-eth`):**
-   - Start Cosmos nodes AND Geth/ETH containers for cross-chain swap tests.
-- **ZCoin:**
+   - **Note:** Cross-chain Tendermint↔ETH swaps should move to `docker-tests-integration`.
+- **ZCoin (`docker-tests-zcoin`):**
    - Start Zombie node and ensure zcash params are present.
-- **Integration:**
-   - Start everything required (UTXO, SLP, QRC20, ETH, Cosmos, Sia, etc).
+- **Integration (`docker-tests-integration`):**
+   - Start ALL containers (UTXO, SLP, QRC20, ETH, Cosmos, Sia, etc).
+   - For cross-chain swaps between different chain families: ETH↔Tendermint, ETH↔QRC20, etc.
 
 Mechanics:
 
@@ -773,14 +798,16 @@ docker-tests-<suite>:
 
 **New jobs to add:**
 
-| Job | Feature Flag | Docker Profile | Required Env | Notes |
-|-----|--------------|----------------|--------------|-------|
-| `docker-tests-watchers` | `docker-tests-watchers` | `utxo,evm` | No UTXO/Cosmos/SIA/SLP/Qtum/Zombie | Needs UTXO + Geth |
-| `docker-tests-ordermatch` | `docker-tests-ordermatch` | `utxo` | No ETH/SLP/Qtum/Cosmos/Zombie/SIA | UTXO only |
-| `docker-tests-swaps-utxo` | `docker-tests-swaps-utxo` | `utxo` | No ETH/SLP/Qtum/Cosmos/Zombie/SIA | Needs zcash params |
-| `docker-tests-qrc20` | `docker-tests-qrc20` | `qtum` | No UTXO/ETH/SLP/Cosmos/Zombie/SIA | Qtum only |
-| `docker-tests-tendermint` | `docker-tests-tendermint` | `cosmos` | No UTXO/ETH/SLP/Qtum/Zombie/SIA | Needs IBC setup |
-| `docker-tests-zcoin` | `docker-tests-zcoin` | `zombie` | No UTXO/ETH/SLP/Qtum/Cosmos/SIA | Needs zcash params |
+| Job | Feature Flag | Docker Profile | Notes |
+|-----|--------------|----------------|-------|
+| `docker-tests-watchers` | `docker-tests-watchers` | `utxo,evm` | Needs UTXO + Geth |
+| `docker-tests-ordermatch` | `docker-tests-ordermatch` | `utxo,evm` | Needs UTXO + Geth |
+| `docker-tests-swaps-utxo` | `docker-tests-swaps-utxo` | `utxo` | UTXO only, needs zcash params |
+| `docker-tests-qrc20` | `docker-tests-qrc20` | `qtum,utxo` | Qtum + UTXO for QRC20↔MYCOIN swaps |
+| `docker-tests-tendermint` | `docker-tests-tendermint` | `cosmos` | Cosmos only, needs IBC setup |
+| `docker-tests-zcoin` | `docker-tests-zcoin` | `zombie` | Zombie only, needs zcash params |
+| `docker-tests-sia` | `docker-tests-sia` | `sia,utxo` | Sia + UTXO for DSIA↔MYCOIN swaps |
+| `docker-tests-integration` | `docker-tests-integration` | `all` | All containers for cross-chain swaps |
 
 - Run jobs in parallel.
 - After first iteration, record duration per job and adjust if needed.
@@ -823,27 +850,39 @@ The following runtime fixes have been implemented to prevent `OnceLock` panics w
 
 **Goal (when fully complete):** `cargo check -p mm2_main --tests --features docker-tests-<any>` produces zero warnings AND tests run without initialization panics
 
+- [ ] **Add UTXO nodes to `docker-tests-qrc20` CI job** (HIGH PRIORITY)
+  - Update CI workflow to start both Qtum and UTXO containers
+  - Tests like `test_trade_qrc20`, `trade_test_with_maker_segwit` require MYCOIN for swap counterparty
+  - This is acceptable since UTXO is a base chain family
+
+- [ ] **Add UTXO nodes to `docker-tests-sia` CI job** (HIGH PRIORITY)
+  - Update CI workflow to start both Sia and UTXO containers
+  - Tests like `test_bob_sells_dsia_for_mycoin` require MYCOIN for swap counterparty
+  - This is acceptable since UTXO is a base chain family
+
+- [ ] **Fix `docker-tests-eth` initialization bug** (HIGH PRIORITY)
+  - `test_eth_swap_contract_addr_negotiation_same_fallback` fails
+  - Debug why `GETH_SWAP_CONTRACT` OnceLock is not initialized in ETH-only code path
+  - Check `docker_tests_main.rs` for missing ETH contract initialization
+
+- [ ] **Fix `docker-tests-watchers` watcher message bug** (HIGH PRIORITY)
+  - 3 tests fail waiting for `WATCHER_MESSAGE_SENT_LOG` at `swap_watcher_tests.rs:233`
+  - Verify `GETH_WATCHERS_SWAP_CONTRACT` initialization
+  - Check watcher P2P connectivity and coin enablement
+
+- [ ] **Fix `docker-tests-zcoin` environment setup** (HIGH PRIORITY)
+  - `zombie_coin_send_dex_fee` fails at `z_coin_docker_tests.rs:190`
+  - Verify CI starts `KDF_ZOMBIE_SERVICE` container
+  - Verify zcash params are downloaded before tests
+
 - [ ] **Add `docker-tests-integration` feature flag and CI job**
   - Add `docker-tests-integration = ["run-docker-tests"]` to `mm2_main/Cargo.toml`
-  - Create `docker-tests-integration` CI job that starts all required containers (UTXO, SLP, QRC20, ETH, Cosmos, Sia, etc.)
+  - Create `docker-tests-integration` CI job that starts ALL containers
+  - Move cross-chain tests between different chain families here:
+    - `tendermint_swap_tests::*` (Tendermint↔ETH swaps)
+    - `swap_tests::trade_test_with_maker_slp`, `swap_tests::trade_test_with_taker_slp`
+    - Any future ETH↔QRC20, ETH↔Sia, or other multi-family swaps
   - Migrate `swap_tests` module from legacy negative-gate pattern to explicit `docker-tests-integration` feature
-  - **Tests currently failing in isolated jobs** (require inspection when implementing):
-    - From `eth_inner_tests`: `test_trade_base_rel_eth_erc20_coins`, `test_eth_swap_contract_addr_negotiation_same_fallback`
-    - From `utxo_swaps_v1_tests`: `test_trade_base_rel_mycoin_mycoin1_coins`, `test_trade_base_rel_mycoin_mycoin1_coins_burnkey_as_alice`
-    - From `qrc20_tests`: `test_trade_qrc20`, `trade_test_with_maker_segwit`, and other QTUM<->MYCOIN tests
-    - From `sia_tests`: `test_bob_sells_dsia_for_mycoin` and other Sia<->MYCOIN tests
-    - From `swap_tests`: `trade_test_with_maker_slp`, `trade_test_with_taker_slp`
-  - **Note:** Some failures are due to helper code paths that unnecessarily reference other chain helpers
-    (e.g., ETH/ERC20 trade test should NOT need QRC20). When implementing this task, inspect each
-    failing test to determine if it genuinely requires multiple container types or if the dependency
-    is accidental and can be removed by refactoring the helper code.
-
-- [ ] **Add combined Tendermint+ETH CI job for cross-chain swaps**
-  - `tendermint_swap_tests` is gated by `docker-tests-tendermint + docker-tests-eth` but no CI job currently enables both features
-  - Create a job that starts both Cosmos and Geth containers to run:
-    - `swap_nucleus_with_doc` (NUCLEUS <-> DOC)
-    - `swap_nucleus_with_eth` (NUCLEUS <-> ETH)
-    - `swap_doc_with_iris_ibc_nucleus` (DOC <-> IRIS-IBC-NUCLEUS)
 
 - [ ] **Replace `_KDF_NO_*_DOCKER` env vars with feature-flag-based container control**
   - Currently, two mechanisms control which containers are started:
@@ -863,13 +902,14 @@ The following runtime fixes have been implemented to prevent `OnceLock` panics w
   - Create a mapping from features to required node groups:
     - `docker-tests-eth` → Geth only
     - `docker-tests-slp` → FORSLP only
-    - `docker-tests-sia` → Sia only
-    - `docker-tests-qrc20` → Qtum only
-    - `docker-tests-tendermint` → Cosmos nodes
+    - `docker-tests-sia` → Sia + UTXO (for DSIA↔MYCOIN swaps)
+    - `docker-tests-qrc20` → Qtum + UTXO (for QRC20↔MYCOIN swaps)
+    - `docker-tests-tendermint` → Cosmos nodes only
     - `docker-tests-zcoin` → Zombie only
     - `docker-tests-swaps-utxo` → UTXO (MYCOIN, MYCOIN1)
     - `docker-tests-watchers` → UTXO + Geth
     - `docker-tests-ordermatch` → UTXO + Geth
+    - `docker-tests-integration` → ALL containers
   - Benefits:
     - Single source of truth for container requirements
     - Simpler CI configuration (just set features, no env vars needed)
