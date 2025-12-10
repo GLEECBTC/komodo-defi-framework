@@ -365,7 +365,6 @@ impl fmt::Display for Address {
                 self.hrp.clone().expect("Segwit address should have an hrp"),
                 *version,
             )
-            // FIXME: Is it safe to do that? We perform validation while creation just like hrp.
             .expect("Segwit address should be valid")
             .fmt(f),
             AddressFormat::CashAddress {
