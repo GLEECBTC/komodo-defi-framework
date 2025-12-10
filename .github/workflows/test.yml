@@ -270,6 +270,9 @@ jobs:
       - name: Build cache
         uses: ./.github/actions/build-cache
 
+      - name: Fetch zcash params
+        run: wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/v0.8.1/zcutil/fetch-params-alt.sh | bash
+
       - name: Prepare nodes
         run: ./scripts/ci/docker-test-nodes-setup.sh --skip-cosmos
 
@@ -523,6 +526,9 @@ jobs:
 
       - name: Build cache
         uses: ./.github/actions/build-cache
+
+      - name: Fetch zcash params
+        run: wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/v0.8.1/zcutil/fetch-params-alt.sh | bash
 
       - name: Start Qtum and UTXO nodes
         run: |

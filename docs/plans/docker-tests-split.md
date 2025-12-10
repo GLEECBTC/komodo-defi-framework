@@ -574,10 +574,12 @@ These jobs test a specific coin but some tests require MYCOIN for swap counterpa
 1. **QRC20 tests** (`qrc20_tests`):
    - Tests like `test_trade_qrc20`, `trade_test_with_maker_segwit` swap QRC20 ↔ MYCOIN
    - **Resolution:** Add UTXO nodes to `docker-tests-qrc20` job (same chain family, acceptable)
+   - **Additional fix (2025-12-10):** Added "Fetch zcash params" step to CI job. The MYCOIN/MYCOIN1 containers use the `testblockchain:multiarch` image which is Komodo-based and requires zcash params (`~/.zcash-params`) to start the daemon. Without this step, the containers start but the daemon never opens the RPC port (8000/8001), causing `wait_ready()` to timeout with "Test timed out".
 
 2. **Sia tests** (`sia_tests`):
    - Tests like `test_bob_sells_dsia_for_mycoin` swap DSIA ↔ MYCOIN
    - **Resolution:** Add UTXO nodes to `docker-tests-sia` job (same chain family, acceptable)
+   - **Additional fix (2025-12-10):** Added "Fetch zcash params" step to CI job. Same root cause as QRC20 - MYCOIN/MYCOIN1 containers require zcash params to start the Komodo daemon.
 
 **Category 2: Cross-chain tests requiring multiple distinct chain families (TO BE MOVED)**
 
