@@ -61,11 +61,6 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
                 let (_ctx, coin) = utxo_coin_from_privkey(ticker, priv_key);
                 let my_address = coin.my_address().expect("!my_address");
                 fill_address(&coin, &my_address, 10.into(), timeout);
-                // also fill the Qtum
-                let (_ctx, coin) = qrc20_coin_from_privkey("QICK", priv_key);
-                let my_address = coin.my_address().expect("!my_address");
-                fill_address(&coin, &my_address, 10.into(), timeout);
-
                 priv_key
             },
             "ADEXSLP" | "FORSLP" => Secp256k1Secret::from(get_prefilled_slp_privkey()),
@@ -74,9 +69,18 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
                 fill_eth_erc20_with_private_key(priv_key);
                 priv_key
             },
-            _ => panic!("Expected either QICK or QORTY or MYCOIN or MYCOIN1, found {}", ticker),
+            _ => panic!(
+                "Unsupported ticker: {}. Expected one of: QTUM, QICK, QORTY, MYCOIN, MYCOIN1, ETH, ERC20DEV, FORSLP, ADEXSLP",
+                ticker
+            ),
         }
     }
+
+    // Determine which chain families are needed for this trade pair
+    let uses_eth = matches!(base, "ETH" | "ERC20DEV") || matches!(rel, "ETH" | "ERC20DEV");
+    let uses_qrc20 = matches!(base, "QICK" | "QORTY" | "QTUM") || matches!(rel, "QICK" | "QORTY" | "QTUM");
+    let uses_utxo = matches!(base, "MYCOIN" | "MYCOIN1") || matches!(rel, "MYCOIN" | "MYCOIN1");
+    let uses_slp = matches!(base, "FORSLP" | "ADEXSLP") || matches!(rel, "FORSLP" | "ADEXSLP");
 
     let bob_priv_key = generate_and_fill_priv_key(base);
     let alice_priv_key = generate_and_fill_priv_key(rel);
@@ -91,21 +95,54 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
     if SET_BURN_PUBKEY_TO_ALICE.get() {
         envs.push(("TEST_BURN_ADDR_RAW_PUBKEY", alice_pubkey_str.as_str()));
     }
-    let confpath = qtum_conf_path();
-    let coins = json! ([
-        eth_dev_conf(),
-        erc20_dev_conf(&erc20_contract_checksum()),
-        qrc20_coin_conf_item("QICK"),
-        qrc20_coin_conf_item("QORTY"),
-        {"coin":"MYCOIN","asset":"MYCOIN","required_confirmations":0,"txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","required_confirmations":0,"txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+
+    // Build coins config dynamically based on which chains are needed
+    let mut coins_vec: Vec<Json> = Vec::new();
+
+    if uses_eth {
+        coins_vec.push(eth_dev_conf());
+        coins_vec.push(erc20_dev_conf(&erc20_contract_checksum()));
+    }
+
+    if uses_qrc20 {
+        let confpath = qtum_conf_path();
+        coins_vec.push(qrc20_coin_conf_item("QICK"));
+        coins_vec.push(qrc20_coin_conf_item("QORTY"));
         // TODO: check if we should fix protocol "type":"UTXO" to "QTUM" for this and other QTUM coin tests.
         // Maybe we should use a different coin for "UTXO" protocol and make new tests for "QTUM" protocol
-        {"coin":"QTUM","asset":"QTUM","required_confirmations":0,"decimals":8,"pubtype":120,"p2shtype":110,"wiftype":128,"segwit":true,"txfee":0,"txfee_volatility_percent":0.1, "dust":72800,
-        "mm2":1,"network":"regtest","confpath":confpath,"protocol":{"type":"UTXO"},"bech32_hrp":"qcrt","address_format":{"format":"segwit"}},
-        {"coin":"FORSLP","asset":"FORSLP","required_confirmations":0,"txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"BCH","protocol_data":{"slp_prefix":"slptest"}}},
-        {"coin":"ADEXSLP","protocol":{"type":"SLPTOKEN","protocol_data":{"decimals":8,"token_id":get_slp_token_id(),"platform":"FORSLP"}}}
-    ]);
+        coins_vec.push(json!({
+            "coin": "QTUM", "asset": "QTUM", "required_confirmations": 0, "decimals": 8,
+            "pubtype": 120, "p2shtype": 110, "wiftype": 128, "segwit": true, "txfee": 0,
+            "txfee_volatility_percent": 0.1, "dust": 72800, "mm2": 1, "network": "regtest",
+            "confpath": confpath, "protocol": {"type": "UTXO"}, "bech32_hrp": "qcrt",
+            "address_format": {"format": "segwit"}
+        }));
+    }
+
+    if uses_utxo {
+        coins_vec.push(json!({
+            "coin": "MYCOIN", "asset": "MYCOIN", "required_confirmations": 0,
+            "txversion": 4, "overwintered": 1, "txfee": 1000, "protocol": {"type": "UTXO"}
+        }));
+        coins_vec.push(json!({
+            "coin": "MYCOIN1", "asset": "MYCOIN1", "required_confirmations": 0,
+            "txversion": 4, "overwintered": 1, "txfee": 1000, "protocol": {"type": "UTXO"}
+        }));
+    }
+
+    if uses_slp {
+        coins_vec.push(json!({
+            "coin": "FORSLP", "asset": "FORSLP", "required_confirmations": 0,
+            "txversion": 4, "overwintered": 1, "txfee": 1000,
+            "protocol": {"type": "BCH", "protocol_data": {"slp_prefix": "slptest"}}
+        }));
+        coins_vec.push(json!({
+            "coin": "ADEXSLP",
+            "protocol": {"type": "SLPTOKEN", "protocol_data": {"decimals": 8, "token_id": get_slp_token_id(), "platform": "FORSLP"}}
+        }));
+    }
+
+    let coins = Json::Array(coins_vec);
     let mut mm_bob = block_on(MarketMakerIt::start_with_envs(
         json! ({
             "gui": "nogui",
@@ -143,66 +180,85 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
     block_on(mm_alice.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
-    let swap_contract = swap_contract_checksum();
-    log!("{:?}", block_on(enable_qrc20_native(&mm_bob, "QICK")));
-    log!("{:?}", block_on(enable_qrc20_native(&mm_bob, "QORTY")));
-    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[], None)));
-    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[], None)));
-    log!("{:?}", block_on(enable_native(&mm_bob, "QTUM", &[], None)));
-    log!("{:?}", block_on(enable_native_bch(&mm_bob, "FORSLP", &[])));
-    log!("{:?}", block_on(enable_native(&mm_bob, "ADEXSLP", &[], None)));
-    log!(
-        "{:?}",
-        block_on(enable_eth_coin(
-            &mm_bob,
-            "ETH",
-            &[GETH_RPC_URL],
-            &swap_contract,
-            None,
-            false
-        ))
-    );
-    log!(
-        "{:?}",
-        block_on(enable_eth_coin(
-            &mm_bob,
-            "ERC20DEV",
-            &[GETH_RPC_URL],
-            &swap_contract,
-            None,
-            false
-        ))
-    );
+    // Enable coins based on what's needed for this trade (Bob)
+    if uses_qrc20 {
+        log!("{:?}", block_on(enable_qrc20_native(&mm_bob, "QICK")));
+        log!("{:?}", block_on(enable_qrc20_native(&mm_bob, "QORTY")));
+        log!("{:?}", block_on(enable_native(&mm_bob, "QTUM", &[], None)));
+    }
+    if uses_utxo {
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[], None)));
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[], None)));
+    }
+    if uses_slp {
+        log!("{:?}", block_on(enable_native_bch(&mm_bob, "FORSLP", &[])));
+        log!("{:?}", block_on(enable_native(&mm_bob, "ADEXSLP", &[], None)));
+    }
+    if uses_eth {
+        let swap_contract = swap_contract_checksum();
+        log!(
+            "{:?}",
+            block_on(enable_eth_coin(
+                &mm_bob,
+                "ETH",
+                &[GETH_RPC_URL],
+                &swap_contract,
+                None,
+                false
+            ))
+        );
+        log!(
+            "{:?}",
+            block_on(enable_eth_coin(
+                &mm_bob,
+                "ERC20DEV",
+                &[GETH_RPC_URL],
+                &swap_contract,
+                None,
+                false
+            ))
+        );
+    }
 
-    log!("{:?}", block_on(enable_qrc20_native(&mm_alice, "QICK")));
-    log!("{:?}", block_on(enable_qrc20_native(&mm_alice, "QORTY")));
-    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[], None)));
-    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[], None)));
-    log!("{:?}", block_on(enable_native(&mm_alice, "QTUM", &[], None)));
-    log!("{:?}", block_on(enable_native_bch(&mm_alice, "FORSLP", &[])));
-    log!("{:?}", block_on(enable_native(&mm_alice, "ADEXSLP", &[], None)));
-    log!(
-        "{:?}",
-        block_on(enable_eth_coin(
-            &mm_alice,
-            "ETH",
-            &[GETH_RPC_URL],
-            &swap_contract,
-            None,
-            false
-        ))
-    );
-    log!(
-        "{:?}",
-        block_on(enable_eth_coin(
-            &mm_alice,
-            "ERC20DEV",
-            &[GETH_RPC_URL],
-            &swap_contract,
-            None,
-            false
-        ))
-    );
+    // Enable coins based on what's needed for this trade (Alice)
+    if uses_qrc20 {
+        log!("{:?}", block_on(enable_qrc20_native(&mm_alice, "QICK")));
+        log!("{:?}", block_on(enable_qrc20_native(&mm_alice, "QORTY")));
+        log!("{:?}", block_on(enable_native(&mm_alice, "QTUM", &[], None)));
+    }
+    if uses_utxo {
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[], None)));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[], None)));
+    }
+    if uses_slp {
+        log!("{:?}", block_on(enable_native_bch(&mm_alice, "FORSLP", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "ADEXSLP", &[], None)));
+    }
+    if uses_eth {
+        let swap_contract = swap_contract_checksum();
+        log!(
+            "{:?}",
+            block_on(enable_eth_coin(
+                &mm_alice,
+                "ETH",
+                &[GETH_RPC_URL],
+                &swap_contract,
+                None,
+                false
+            ))
+        );
+        log!(
+            "{:?}",
+            block_on(enable_eth_coin(
+                &mm_alice,
+                "ERC20DEV",
+                &[GETH_RPC_URL],
+                &swap_contract,
+                None,
+                false
+            ))
+        );
+    }
 
     let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,

@@ -785,31 +785,43 @@ docker-tests-<suite>:
 - Run jobs in parallel.
 - After first iteration, record duration per job and adjust if needed.
 
-#### 4.3.5 Future tasks (post Phase 3)
+#### 4.3.5 Fix helper cross-dependencies (partial implementation)
 
-The following tasks are deferred for future implementation:
+**Status:** ⚠️ Partial - Runtime guards implemented
 
-- [ ] **Fix helper cross-dependencies and unused warnings** *(CRITICAL - blocking Phase 3 split jobs)*
-  - **Problem:** Helper modules have circular dependencies through `OnceLock` initialization that panic when containers aren't available:
-    - `qrc20.rs` helpers panic if QRC20 not initialized (affects ETH, UTXO tests)
-    - `eth.rs` helpers reference QRC20 helpers
-    - `swap.rs::trade_base_rel` calls QRC20 helpers (affects all swap tests)
-  - **Symptoms:**
-    - ETH tests fail: "QTUM_CONF_PATH not initialized"
-    - UTXO tests fail: "QICK_TOKEN_ADDRESS not initialized"
-    - QRC20/Sia tests fail when adding UTXO containers due to reverse dependencies
-  - **Additionally:** Unused warnings (27+ per job) from helpers not used by specific feature flags
-  - **Required refactor:**
-    1. **Break circular dependencies** - Each helper module must be self-contained
-    2. **Feature-gate cross-references** - `swap.rs::trade_base_rel` variants gated by features
-    3. **Reorganize into feature-aligned modules:**
-       - `helpers/eth.rs` - ETH-only helpers, gated on `docker-tests-eth`
-       - `helpers/utxo.rs` - UTXO-only helpers, gated on tests needing UTXO
-       - `helpers/qrc20.rs` - QRC20-only helpers, gated on `docker-tests-qrc20`
-       - `helpers/swap.rs` - Generic swap helpers (no chain-specific dependencies)
-       - `helpers/common.rs` - Shared utilities (always compiled)
-    4. **Move cross-chain tests** - Tests requiring multiple container types go to `docker-tests-integration`
-  - **Goal:** `cargo check -p mm2_main --tests --features docker-tests-<any>` produces zero warnings AND tests run without initialization panics
+The following runtime fixes have been implemented to prevent `OnceLock` panics when containers are not available:
+
+**Completed (runtime guards):**
+
+- [x] **Refactored `trade_base_rel` in `helpers/swap.rs`** to dynamically detect which chain families are needed:
+  - Added chain detection flags: `uses_eth`, `uses_qrc20`, `uses_utxo`, `uses_slp`
+  - Coins config now built dynamically based on which chains are actually needed for the trade pair
+  - Coin enablement for Bob and Alice is now conditional based on trade pair requirements
+  - **Result:** ETH-only trades (`ETH`/`ERC20DEV`) no longer call `qtum_conf_path()` or QRC20 helpers
+  - **Result:** UTXO-only trades (`MYCOIN`/`MYCOIN1`) no longer call QRC20 helpers
+
+- [x] **Removed unnecessary QRC20 cross-dependency from MYCOIN/MYCOIN1 wallet generation**:
+  - Previously, `generate_and_fill_priv_key("MYCOIN")` also filled Qtum balance (unnecessary for UTXO coins)
+  - Removed the extra `qrc20_coin_from_privkey` call that caused initialization panics
+
+**What this fixes:**
+- ETH tests no longer panic with "QTUM_CONF_PATH not initialized"
+- UTXO tests no longer panic with "QICK_TOKEN_ADDRESS not initialized"
+- Each test suite using `trade_base_rel` can now run independently with only its required containers
+
+**Remaining tasks (compile-time isolation):**
+
+- [ ] **Add `#[cfg]` guards on imports in `swap.rs`** - Currently imports are unconditional; full compile-time isolation requires feature-gated imports
+- [ ] **Factor chain-specific logic into helpers with real/stub variants** - For zero unused warnings
+- [ ] **Gate helper modules in `helpers/mod.rs` by feature** - Prevents compilation of unused helpers
+- [ ] **Move cross-chain tests to `docker-tests-integration`** - Tests requiring multiple container types
+
+**Current limitations:**
+- Unused code warnings (27+ per job) still exist because all helper code is compiled even when not used
+- Future feature-gating of `helpers/mod.rs` will require additional work on `swap.rs` imports
+- Full compile-time isolation deferred to future implementation
+
+**Goal (when fully complete):** `cargo check -p mm2_main --tests --features docker-tests-<any>` produces zero warnings AND tests run without initialization panics
 
 - [ ] **Add `docker-tests-integration` feature flag and CI job**
   - Add `docker-tests-integration = ["run-docker-tests"]` to `mm2_main/Cargo.toml`
