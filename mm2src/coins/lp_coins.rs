@@ -26,7 +26,10 @@
     clippy::swap_ptr_to_ref,
     clippy::forget_non_drop,
     clippy::doc_lazy_continuation,
-    clippy::needless_lifetimes // mocktopus requires explicit lifetimes
+    clippy::needless_lifetimes, // mocktopus requires explicit lifetimes
+    // TODO: Remove this allow when Rust 1.92 regression is fixed.
+    // See: https://github.com/rust-lang/rust/issues/147648
+    unused_assignments
 )]
 #![allow(uncommon_codepoints)]
 
@@ -187,7 +190,7 @@ macro_rules! try_tx_s {
 
 /// `TransactionErr:Plain` compatible `ERR` macro.
 macro_rules! TX_PLAIN_ERR {
-    ($format: expr, $($args: tt)+) => { Err(crate::TransactionErr::Plain((ERRL!($format, $($args)+)))) };
+    ($format: expr, $($args: tt)+) => { Err(crate::TransactionErr::Plain(ERRL!($format, $($args)+))) };
     ($format: expr) => { Err(crate::TransactionErr::Plain(ERRL!($format))) }
 }
 
