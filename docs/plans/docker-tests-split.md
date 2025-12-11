@@ -867,22 +867,157 @@ The following runtime fixes have been implemented to prevent `OnceLock` panics w
   - **Fix:** Changed `expected_contract` to use `.to_lowercase()` for consistent comparison
   - **File:** `mm2src/mm2_main/tests/docker_tests/eth_inner_tests.rs:331`
 
-- [ ] **Fix `docker-tests-watchers` watcher reward validation bug** (HIGH PRIORITY - COMPLEX)
-  - 3 tests fail: `test_watcher_refunds_taker_payment_erc20`, `test_watcher_refunds_taker_payment_eth`, `test_watcher_spends_maker_payment_erc20_utxo`
-  - All fail at `swap_watcher_tests.rs:233` waiting for `WATCHER_MESSAGE_SENT_LOG`
-  - **Root cause:** MakerPaymentValidateFailed - watcher reward not within expected interval
-  - Error: `"Provided watcher reward 324136960000 is not within the expected interval 255570840000 - 312364360000"`
-  - **Analysis:** This is a gas price volatility issue where the maker's watcher reward doesn't match taker's expected interval
-  - **Potential fixes:**
-    1. Increase watcher reward tolerance in test environment
-    2. Use fixed gas prices in Geth dev node configuration
-    3. Adjust reward interval calculation to be more lenient in tests
-  - Note: UTXO watcher test (`test_watcher_refunds_taker_payment_utxo`) passes - only ETH/ERC20 variants fail
+- [x] **Investigate `docker-tests-watchers` ETH watcher test failures** ✅ FIXED
+  - 3 tests were failing: `test_watcher_refunds_taker_payment_erc20`, `test_watcher_refunds_taker_payment_eth`, `test_watcher_spends_maker_payment_erc20_utxo`
+
+  **Root cause 1 (gas volatility):** Gas price volatility caused `validate_watcher_reward()` to reject payments where the reward (set at payment time T1) exceeded the expected reward (calculated at validation time T2) by more than 10%.
+
+  **Root cause 2 (ABI mismatch):** The `extract_secret` and `search_for_swap_tx_spend` functions in `eth.rs` used a `watcher_reward` parameter to select which ABI function variant to decode (`receiverSpend` vs `receiverSpendReward`, `ethPayment` vs `ethPaymentReward`). When the parameter didn't match the actual ABI function used in the transaction, decoding failed silently and the watcher couldn't find the spend.
+
+  **Fix applied (ABI auto-detection):** Modified both `extract_secret` and `search_for_swap_tx_spend` in `mm2src/coins/eth.rs` to auto-detect which ABI function variant was used by comparing the transaction's function selector (first 4 bytes of tx data) against both variants' signatures. The functions no longer rely on the `watcher_reward` parameter for decoding.
+
+  **Fix applied:** Modified `validate_watcher_reward()` in `watcher_common.rs` to only enforce the **lower bound** for non-exact rewards (`is_exact == false`). The upper bound was removed.
+
+  **Security analysis (comprehensive):**
+
+  1. **The payer of the reward is the one who chooses the amount:**
+     - Maker pays for maker payment reward, taker pays for taker payment reward
+     - Their own node computes `WatcherReward.amount` and encodes it in the contract call
+     - The counterparty validator cannot force them to overpay
+
+  2. **No one can modify the reward after payment:**
+     - `_rewardAmount` is locked into `paymentHash` at `ethPaymentReward`/`erc20PaymentReward` time
+     - `receiverSpendReward`/`senderRefundReward` require exact hash match to succeed
+     - Neither maker, taker, nor watcher can "bump" the reward after the fact
+
+  3. **Where `validate_watcher_reward` is used:**
+     - `validate_payment` (eth.rs:5220, 5343) - maker/taker pre-commit validation
+     - `watcher_validate_taker_payment` (eth.rs:2230, 2327) - watcher validation
+     - All use `is_exact_amount` from `WatcherReward` struct
+
+  4. **A higher reward doesn't reduce counterparty funds:**
+     - Reward is additive to trade amount in the contract
+     - The counterparty receives their negotiated trade amount regardless of reward size
+     - Only the payer's deposit is affected by reward size
+
+  5. **Lower bound still enforced:** Ensures watchers are adequately compensated for gas costs.
+
+  **Files changed:**
+  - `mm2src/coins/watcher_common.rs`: Removed upper bound check in `validate_watcher_reward()` for `is_exact == false` case, updated comments to document all call sites and security rationale
+
+  **Related issue (not fixed, separate enhancement):** Watcher reward economics need improvement.
+
+  ### Watcher Reward Economics Analysis
+
+  #### Who Pays vs Who Benefits
+
+  | Operation | Who Pays Reward | Who Benefits | Notes |
+  |-----------|-----------------|--------------|-------|
+  | `receiverSpendReward` (spend maker payment) | Taker (receives fewer maker coins) | Taker | Watcher spends maker payment to taker |
+  | `senderRefundReward` (refund taker payment) | Taker (from their deposit) | Taker | Watcher refunds taker payment to taker |
+  | ETH/ETH maker payment (current) | Contract pool (other takers) | Taker | **Bug:** Uses shared pool, should use `PaymentSpender` |
+
+  **Key insight:** Taker always benefits from watcher actions, so taker should always pay. Current design is mostly correct except ETH/ETH case uses a shared contract pool which creates cross-swap subsidies.
+
+  #### Issues with Current Implementation
+
+  1. **`REWARD_GAS_AMOUNT = 70000` is insufficient:**
+     - Reward contract functions (`receiverSpendReward`, `senderRefundReward`) use MORE gas than non-reward functions
+     - More complex hashing (additional parameters)
+     - Multiple external transfers (2-4 vs 1)
+     - ERC20 is ~2× more expensive (double token transfers + ETH transfers)
+
+  2. **No profit margin:** Current calculation aims for break-even at best
+
+  3. **Gas volatility not handled:**
+     - Reward is set at payment time (T₀) based on current gas price
+     - Watcher validates at T₁, executes at T₂ with potentially different gas prices
+     - Maker/taker should pay MORE than expected gas to ensure watchers accept
+
+  4. **ETH/ETH uses contract pool:** Should use `PaymentSpender` reward target instead
+
+  #### Watcher Execution Flexibility
+
+  - Watcher can execute with **less gas than budgeted** → they profit more
+  - Watcher can **wait if gas is high** and retry later before locktime expires
+  - Watcher can **retry** if transaction doesn't confirm or wasn't picked up
+  - **Multiple watchers can compete** - first to successfully call `receiverSpendReward`/`senderRefundReward` gets the reward (reward goes to `msg.sender`)
+
+  #### Ordermatching and Exact Amounts
+
+  **Key invariant:** `maker_amount` and `taker_amount` from ordermatching are **net trade amounts**, independent of watcher rewards.
+
+  - Maker always receives exactly `taker_amount` rel (what they wanted)
+  - Taker always receives exactly `maker_amount` base (what they wanted)
+  - Watcher reward is **orthogonal** - funded separately, not deducted from trade amounts
+
+  **How rewards are funded without affecting trade amounts:**
+  1. For ERC20 payments: `msg.value == rewardAmount` ETH attached to payment creation
+  2. For ETH payments with `PaymentSender`/contract reward: separate ETH pool or extra deposit
+  3. The on-chain `_amount` equals the negotiated amount; reward comes from separate funds
+
+  **Validation ensures correct values:**
+  - `validate_watcher_reward` enforces lower bound (90% of expected) in non-exact mode
+  - Order min/max volumes are validated during ordermatching
+  - Swap amounts are validated against negotiated values
+
+  #### Proposed Fixes
+
+  1. **Operation-specific gas constants** for reward functions (measure actual `gasUsed`):
+     ```rust
+     const GAS_ETH_RECEIVER_SPEND_REWARD: u64 = ...;   // measured
+     const GAS_ETH_SENDER_REFUND_REWARD: u64 = ...;
+     const GAS_ERC20_RECEIVER_SPEND_REWARD: u64 = ...; // higher
+     const GAS_ERC20_SENDER_REFUND_REWARD: u64 = ...;
+     ```
+
+  2. **Add profit margin (10%+)** when computing `WatcherReward.amount`:
+     ```rust
+     let reward = gas_cost * (1.0 + REWARD_PROFIT_MARGIN);
+     ```
+
+  3. **Maker/taker should overpay significantly** to handle gas volatility:
+     - If gas spikes between payment and watcher execution, watcher may refuse
+     - Overpaying ensures watcher will still profit even with gas increases
+     - Watcher can wait for lower gas and retry, profiting from the difference
+
+  4. **Watcher execution strategy:**
+     - Try with max affordable gas while maintaining 10% profit minimum
+     - If gas is very high, wait and retry later (before locktime)
+     - Ensures swaps complete rather than timing out
+
+  5. **Fix ETH/ETH maker payment:** Change from `RewardTarget::None` + `send_contract_reward_on_spend=true` to `RewardTarget::PaymentSpender` so taker pays directly
+
+  6. **Reward goes to `msg.sender`** (whoever spends/refunds):
+     - Enables multiple watchers to compete
+     - First successful transaction gets the reward
+     - Contract's `receiverSpendReward`/`senderRefundReward` pay `msg.sender` when `RewardTarget::PaymentSpender`
+
+  #### Relevant Constants
+
+  Current constants in `mm2src/coins/eth.rs` (for **non-reward** operations):
+  - `REWARD_GAS_AMOUNT = 70000` (watcher_common.rs) - **insufficient for reward functions**
+  - `ETH_RECEIVER_SPEND = 65_000` - non-reward ETH spend
+  - `ERC20_RECEIVER_SPEND = 150_000` - non-reward ERC20 spend
+  - `ETH_SENDER_REFUND = 100_000` - non-reward ETH refund
+  - `ERC20_SENDER_REFUND = 150_000` - non-reward ERC20 refund
 
 - [x] **Fix `docker-tests-zcoin` environment setup** ✅ NOT NEEDED (tests passing)
   - Verified CI run 20103549149: all 8 ZCoin tests pass
   - `zombie_coin_send_dex_fee` and other tests completed successfully
   - Docker container setup working correctly with `--profile zombie`
+
+- [ ] **Migrate docker tests CI to GLEEC fork infrastructure**
+  - Currently docker tests CI runs on `https://github.com/KomodoPlatform/komodo-defi-framework`
+  - Need to migrate to `https://github.com/GLEECBTC/komodo-defi-framework` which has:
+    - Updated docker node configurations
+    - Pre-deployed watcher-compatible swap contracts
+    - Test infrastructure aligned with current development
+  - Tasks:
+    - [ ] Update CI workflow to point to GLEEC fork
+    - [ ] Verify docker-compose files are compatible
+    - [ ] Ensure contract addresses in `DockerEnvMetadata` match GLEEC deployments
+    - [ ] Test all docker test suites against GLEEC infrastructure
 
 - [ ] **Add `docker-tests-integration` feature flag and CI job**
   - Add `docker-tests-integration = ["run-docker-tests"]` to `mm2_main/Cargo.toml`
@@ -892,6 +1027,11 @@ The following runtime fixes have been implemented to prevent `OnceLock` panics w
     - `swap_tests::trade_test_with_maker_slp`, `swap_tests::trade_test_with_taker_slp`
     - Any future ETH↔QRC20, ETH↔Sia, or other multi-family swaps
   - Migrate `swap_tests` module from legacy negative-gate pattern to explicit `docker-tests-integration` feature
+
+- [ ] **Feature-gate container startup in testcontainers mode**
+  - **Current problem:** In testcontainers mode, ALL containers (UTXO, Qtum, Geth, Cosmos, Zombie) start regardless of which feature flags are enabled. This wastes time for tests that only need specific containers.
+  - **Example:** Running `--features docker-tests-watchers` (which only needs UTXO + Geth) still starts Qtum, Cosmos IBC relayer, and Zombie containers, adding ~2 minutes of unnecessary setup.
+  - **Fix:** Gate container startup in `docker_tests_main.rs` based on feature flags, so testcontainers mode only starts what's needed.
 
 - [ ] **Replace `_KDF_NO_*_DOCKER` env vars with feature-flag-based container control**
   - Currently, two mechanisms control which containers are started:

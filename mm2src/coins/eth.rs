@@ -1571,14 +1571,8 @@ impl SwapOps for EthCoin {
         input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         let swap_contract_address = try_s!(input.swap_contract_address.try_to_address());
-        self.search_for_swap_tx_spend(
-            input.tx,
-            swap_contract_address,
-            input.secret_hash,
-            input.search_from_block,
-            input.watcher_reward,
-        )
-        .await
+        self.search_for_swap_tx_spend(input.tx, swap_contract_address, input.search_from_block)
+            .await
     }
 
     async fn search_for_swap_tx_spend_other(
@@ -1586,22 +1580,11 @@ impl SwapOps for EthCoin {
         input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         let swap_contract_address = try_s!(input.swap_contract_address.try_to_address());
-        self.search_for_swap_tx_spend(
-            input.tx,
-            swap_contract_address,
-            input.secret_hash,
-            input.search_from_block,
-            input.watcher_reward,
-        )
-        .await
+        self.search_for_swap_tx_spend(input.tx, swap_contract_address, input.search_from_block)
+            .await
     }
 
-    async fn extract_secret(
-        &self,
-        _secret_hash: &[u8],
-        spend_tx: &[u8],
-        _watcher_reward: bool,
-    ) -> Result<[u8; 32], String> {
+    async fn extract_secret(&self, _secret_hash: &[u8], spend_tx: &[u8]) -> Result<[u8; 32], String> {
         let unverified: UnverifiedTransactionWrapper = try_s!(rlp::decode(spend_tx));
         let tx_data = unverified.unsigned().data();
         if tx_data.len() < 4 {
@@ -2375,14 +2358,8 @@ impl WatcherOps for EthCoin {
             Create => return Err(ERRL!("Invalid payment action: the payment action cannot be create")),
         };
 
-        self.search_for_swap_tx_spend(
-            input.tx,
-            swap_contract_address,
-            input.secret_hash,
-            input.search_from_block,
-            true,
-        )
-        .await
+        self.search_for_swap_tx_spend(input.tx, swap_contract_address, input.search_from_block)
+            .await
     }
 
     async fn get_taker_watcher_reward(
@@ -5453,9 +5430,7 @@ impl EthCoin {
         &self,
         tx: &[u8],
         swap_contract_address: Address,
-        _secret_hash: &[u8],
         search_from_block: u64,
-        _watcher_reward: bool,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         let unverified: UnverifiedTransactionWrapper = try_s!(rlp::decode(tx));
         let tx = try_s!(SignedEthTx::new(unverified));

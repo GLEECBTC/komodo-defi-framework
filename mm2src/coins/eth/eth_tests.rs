@@ -901,7 +901,7 @@ fn test_eth_extract_secret() {
         100, 189, 72, 74, 221, 144, 66, 170, 68, 121, 29, 105, 19, 194, 35, 245, 196, 131, 236, 29, 105, 101, 30,
     ];
 
-    let secret = block_on(coin.extract_secret(&[0u8; 20], tx_bytes.as_slice(), false));
+    let secret = block_on(coin.extract_secret(&[0u8; 20], tx_bytes.as_slice()));
     assert!(secret.is_ok());
     let expect_secret = &[
         168, 151, 11, 232, 224, 253, 63, 180, 26, 114, 23, 184, 27, 10, 161, 80, 178, 251, 73, 204, 80, 174, 97, 118,
@@ -924,7 +924,7 @@ fn test_eth_extract_secret() {
         6, 108, 165, 181, 188, 40, 56, 47, 211, 229, 221, 73, 5, 15, 89, 81, 117, 225, 216, 108, 98, 226, 119, 232, 94,
         184, 42, 106,
     ];
-    let secret = block_on(coin.extract_secret(&[0u8; 20], tx_bytes.as_slice(), false))
+    let secret = block_on(coin.extract_secret(&[0u8; 20], tx_bytes.as_slice()))
         .err()
         .unwrap();
     assert!(secret.contains("Expected 'receiverSpend' contract call signature"));

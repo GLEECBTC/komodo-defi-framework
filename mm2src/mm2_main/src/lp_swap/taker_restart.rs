@@ -91,7 +91,6 @@ pub async fn check_maker_payment_spend_and_add_event(
         None => return ERR!("No info about maker payment, swap is not recoverable"),
     };
     let unique_data = swap.unique_swap_data();
-    let watcher_reward = swap.r().watcher_reward;
 
     let maker_payment_spend_tx = match swap.maker_coin
         .search_for_swap_tx_spend_other(SearchForSwapTxSpendInput {
@@ -102,7 +101,6 @@ pub async fn check_maker_payment_spend_and_add_event(
             search_from_block: maker_coin_start_block,
             swap_contract_address: &maker_coin_swap_contract_address,
             swap_unique_data: &unique_data,
-            watcher_reward,
         })
         .await {
             Ok(Some(FoundSwapTxSpend::Spent(maker_payment_spend_tx))) => maker_payment_spend_tx,
@@ -159,7 +157,6 @@ pub async fn check_taker_payment_spend(swap: &TakerSwap) -> Result<Option<FoundS
     let taker_payment_lock = swap.r().data.taker_payment_lock;
     let secret_hash = swap.r().secret_hash.0.clone();
     let unique_data = swap.unique_swap_data();
-    let watcher_reward = swap.r().watcher_reward;
 
     swap.taker_coin
         .search_for_swap_tx_spend_my(SearchForSwapTxSpendInput {
@@ -170,7 +167,6 @@ pub async fn check_taker_payment_spend(swap: &TakerSwap) -> Result<Option<FoundS
             search_from_block: taker_coin_start_block,
             swap_contract_address: &taker_coin_swap_contract_address,
             swap_unique_data: &unique_data,
-            watcher_reward,
         })
         .await
 }
@@ -181,7 +177,6 @@ pub async fn add_taker_payment_spent_event(
     taker_payment_spend_tx: &TransactionEnum,
 ) -> Result<(), String> {
     let secret_hash = swap.r().secret_hash.0.clone();
-    let watcher_reward = swap.r().watcher_reward;
 
     let tx_hash = taker_payment_spend_tx.tx_hash_as_bytes();
     info!("Taker payment spend tx {:02x}", tx_hash);
@@ -189,11 +184,7 @@ pub async fn add_taker_payment_spent_event(
         tx_hex: Bytes::from(taker_payment_spend_tx.tx_hex()),
         tx_hash,
     };
-    let secret = match swap
-        .taker_coin
-        .extract_secret(&secret_hash, &tx_ident.tx_hex, watcher_reward)
-        .await
-    {
+    let secret = match swap.taker_coin.extract_secret(&secret_hash, &tx_ident.tx_hex).await {
         Ok(secret) => H256::from(secret),
         Err(_) => {
             return ERR!("Could not extract secret from taker payment spend transaction");

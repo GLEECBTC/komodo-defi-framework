@@ -98,7 +98,6 @@ fn test_search_for_swap_tx_spend_native_was_refunded_taker() {
         search_from_block: 0,
         swap_contract_address: &None,
         swap_unique_data: &[],
-        watcher_reward: false,
     };
     let found = block_on(coin.search_for_swap_tx_spend_my(search_input))
         .unwrap()
@@ -187,7 +186,6 @@ fn test_search_for_swap_tx_spend_native_was_refunded_maker() {
         search_from_block: 0,
         swap_contract_address: &None,
         swap_unique_data: &[],
-        watcher_reward: false,
     };
     let found = block_on(coin.search_for_swap_tx_spend_my(search_input))
         .unwrap()
@@ -255,7 +253,6 @@ fn test_search_for_taker_swap_tx_spend_native_was_spent_by_maker() {
         search_from_block: 0,
         swap_contract_address: &None,
         swap_unique_data: &[],
-        watcher_reward: false,
     };
     let found = block_on(coin.search_for_swap_tx_spend_my(search_input))
         .unwrap()
@@ -323,7 +320,6 @@ fn test_search_for_maker_swap_tx_spend_native_was_spent_by_taker() {
         search_from_block: 0,
         swap_contract_address: &None,
         swap_unique_data: &[],
-        watcher_reward: false,
     };
     let found = block_on(coin.search_for_swap_tx_spend_my(search_input))
         .unwrap()

@@ -168,7 +168,7 @@ fn test_extract_secret() {
     let expected_secret =
         <[u8; 32]>::from_hex("5c62072b57b6473aeee6d35270c8b56d86975e6d6d4245b25425d771239fae32").unwrap();
     let secret_hash = &*dhash160(&expected_secret);
-    let secret = block_on(coin.extract_secret(secret_hash, &tx_hex, false)).unwrap();
+    let secret = block_on(coin.extract_secret(secret_hash, &tx_hex)).unwrap();
     assert_eq!(secret, expected_secret);
 }
 
@@ -551,7 +551,6 @@ fn test_search_for_swap_tx_spend_electrum_was_spent() {
         search_from_block: 0,
         swap_contract_address: &None,
         swap_unique_data: &[],
-        watcher_reward: false,
     };
     let found = block_on(coin.search_for_swap_tx_spend_my(search_input))
         .unwrap()
@@ -586,7 +585,6 @@ fn test_search_for_swap_tx_spend_electrum_was_refunded() {
         search_from_block: 0,
         swap_contract_address: &None,
         swap_unique_data: &[],
-        watcher_reward: false,
     };
     let found = block_on(coin.search_for_swap_tx_spend_my(search_input))
         .unwrap()

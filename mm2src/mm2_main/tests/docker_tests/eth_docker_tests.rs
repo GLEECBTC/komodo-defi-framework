@@ -459,7 +459,6 @@ fn send_and_refund_eth_maker_payment_impl(swap_txfee_policy: SwapGasFeePolicy) {
         search_from_block: 0,
         swap_contract_address: &Some(swap_contract().as_bytes().into()),
         swap_unique_data: &[],
-        watcher_reward: false,
     };
     let search_tx = block_on(eth_coin.search_for_swap_tx_spend_my(search_input))
         .unwrap()
@@ -546,7 +545,6 @@ fn send_and_spend_eth_maker_payment_impl(swap_txfee_policy: SwapGasFeePolicy) {
         search_from_block: 0,
         swap_contract_address: &Some(swap_contract().as_bytes().into()),
         swap_unique_data: &[],
-        watcher_reward: false,
     };
     let search_tx = block_on(maker_eth_coin.search_for_swap_tx_spend_my(search_input))
         .unwrap()
@@ -632,7 +630,6 @@ fn send_and_refund_erc20_maker_payment_impl(swap_txfee_policy: SwapGasFeePolicy)
         search_from_block: 0,
         swap_contract_address: &Some(swap_contract().as_bytes().into()),
         swap_unique_data: &[],
-        watcher_reward: false,
     };
     let search_tx = block_on(erc20_coin.search_for_swap_tx_spend_my(search_input))
         .unwrap()
@@ -720,7 +717,6 @@ fn send_and_spend_erc20_maker_payment_impl(swap_txfee_policy: SwapGasFeePolicy) 
         search_from_block: 0,
         swap_contract_address: &Some(swap_contract().as_bytes().into()),
         swap_unique_data: &[],
-        watcher_reward: false,
     };
     let search_tx = block_on(maker_erc20_coin.search_for_swap_tx_spend_my(search_input))
         .unwrap()

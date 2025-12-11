@@ -3224,7 +3224,6 @@ fn test_send_taker_payment_refund_preimage_utxo() {
         search_from_block: 0,
         swap_contract_address: &None,
         swap_unique_data: &[],
-        watcher_reward: false,
     };
     let found = block_on(coin.search_for_swap_tx_spend_my(search_input))
         .unwrap()
