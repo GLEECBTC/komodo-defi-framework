@@ -3,20 +3,12 @@ use mm2_err_handle::prelude::MmError;
 
 /// Gas amount used to calculate watcher reward.
 ///
-/// # Known Issues
-///
-/// This value (70K) is insufficient to cover actual watcher gas costs:
+/// This value (150K) is set to cover actual watcher gas costs:
 ///
 /// 1. **Reward functions use more gas than non-reward functions:**
 ///    - `receiverSpendReward` / `senderRefundReward` have additional hashing (more parameters)
 ///    - Multiple external transfers (2-4 vs 1 in non-reward functions)
 ///    - ERC20 is ~2× more expensive (double token transfers + ETH transfers)
-///
-/// 2. **No profit margin:** Current calculation aims for break-even at best.
-///
-/// 3. **Gas volatility:** Reward is set at payment time but watcher executes later
-///    with potentially higher gas prices. Maker/taker should overpay to ensure
-///    watchers accept even when gas increases.
 ///
 /// # Watcher Economics
 ///
@@ -27,13 +19,25 @@ use mm2_err_handle::prelude::MmError;
 /// Therefore taker should pay the watcher reward (which the current design does,
 /// except for ETH/ETH maker payments which use a shared contract pool).
 ///
-/// # Recommended Fixes
+/// # Future Improvements
 ///
-/// 1. Use operation-specific gas constants (measure actual `gasUsed` for reward functions)
-/// 2. Add profit margin (10%+) when computing `WatcherReward.amount`
-/// 3. Maker/taker should overpay to handle gas volatility
-/// 4. Watcher should try with max affordable gas while maintaining 10% profit
-pub const REWARD_GAS_AMOUNT: u64 = 70000;
+/// - Use operation-specific gas constants (measure actual `gasUsed` for each reward function)
+/// - Dynamic reward adjustment based on network conditions
+pub const REWARD_GAS_AMOUNT: u64 = 150000;
+
+/// Overpay factor for watcher reward calculation (1.5 = 50% overpay).
+///
+/// When calculating watcher reward at payment time, multiply the gas cost by this factor
+/// to account for:
+///
+/// 1. **Gas price volatility:** Reward is set at payment time but validator checks it later.
+///    Gas price can increase significantly between these times.
+///
+/// 2. **Profit margin:** Provides buffer for watcher profit (~10%+).
+///
+/// The 50% overpay ensures the reward remains valid even if gas price increases by 30-40%
+/// between payment creation and validation.
+pub const REWARD_OVERPAY_FACTOR: f64 = 1.5;
 
 /// Margin for reward validation (10%).
 ///

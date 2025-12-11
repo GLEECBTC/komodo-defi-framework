@@ -22,7 +22,7 @@
 //
 use self::wallet_connect::{send_transaction_with_walletconnect, WcEthTxParams};
 use super::eth::Action::{Call, Create};
-use super::watcher_common::{validate_watcher_reward, REWARD_GAS_AMOUNT};
+use super::watcher_common::{validate_watcher_reward, REWARD_GAS_AMOUNT, REWARD_OVERPAY_FACTOR};
 use super::*;
 use crate::coin_balance::{
     EnableCoinBalanceError, EnabledCoinBalanceParams, HDAccountBalance, HDAddressBalance, HDWalletBalance,
@@ -1600,25 +1600,43 @@ impl SwapOps for EthCoin {
         &self,
         _secret_hash: &[u8],
         spend_tx: &[u8],
-        watcher_reward: bool,
+        _watcher_reward: bool,
     ) -> Result<[u8; 32], String> {
         let unverified: UnverifiedTransactionWrapper = try_s!(rlp::decode(spend_tx));
-        let function_name = get_function_name("receiverSpend", watcher_reward);
-        let function = try_s!(SWAP_CONTRACT.function(&function_name));
+        let tx_data = unverified.unsigned().data();
+        if tx_data.len() < 4 {
+            return ERR!("Transaction data too short to contain function selector");
+        }
+        let actual_signature = &tx_data[0..4];
 
-        // Validate contract call; expected to be receiverSpend.
-        // https://www.4byte.directory/signatures/?bytes4_signature=02ed292b.
-        let expected_signature = function.short_signature();
-        let actual_signature = &unverified.unsigned().data()[0..4];
-        if actual_signature != expected_signature {
+        // Auto-detect which receiverSpend variant was used by matching the function selector.
+        // Both variants have the secret at index 2, so we can use either for extraction.
+        // Note: receiverSpendReward may not exist until watcher-compatible contracts are deployed.
+        let receiver_spend = try_s!(SWAP_CONTRACT.function("receiverSpend"));
+        let receiver_spend_reward = SWAP_CONTRACT.function("receiverSpendReward").ok();
+
+        let function = if actual_signature == receiver_spend.short_signature() {
+            receiver_spend
+        } else if let Some(reward_func) = receiver_spend_reward.as_ref() {
+            if actual_signature == reward_func.short_signature() {
+                reward_func
+            } else {
+                return ERR!(
+                    "Transaction is not a receiverSpend call. Expected signature {:?} or {:?}, found {:?}",
+                    receiver_spend.short_signature(),
+                    reward_func.short_signature(),
+                    actual_signature
+                );
+            }
+        } else {
             return ERR!(
-                "Expected 'receiverSpend' contract call signature: {:?}, found {:?}",
-                expected_signature,
+                "Transaction is not a receiverSpend call. Expected signature {:?}, found {:?}",
+                receiver_spend.short_signature(),
                 actual_signature
             );
         };
 
-        let tokens = try_s!(decode_contract_call(function, unverified.unsigned().data()));
+        let tokens = try_s!(decode_contract_call(function, tx_data));
         if tokens.len() < 3 {
             return ERR!("Invalid arguments in 'receiverSpend' call: {:?}", tokens);
         }
@@ -4079,7 +4097,10 @@ impl EthCoin {
                 let mut value = trade_amount;
                 let data = match &args.watcher_reward {
                     Some(reward) => {
-                        let reward_amount = try_tx_fus!(u256_from_big_decimal(&reward.amount, self.decimals));
+                        // Apply overpay factor to reward to handle gas price volatility between payment time and validation time until better things are in place.
+                        let overpay_factor = BigDecimal::from_f64(REWARD_OVERPAY_FACTOR).unwrap_or(BigDecimal::from(1));
+                        let reward_with_overpay = &reward.amount * overpay_factor;
+                        let reward_amount = try_tx_fus!(u256_from_big_decimal(&reward_with_overpay, self.decimals));
                         if !matches!(reward.reward_target, RewardTarget::None) || reward.send_contract_reward_on_spend {
                             value += reward_amount;
                         }
@@ -4122,16 +4143,19 @@ impl EthCoin {
 
                 let data = match args.watcher_reward {
                     Some(reward) => {
+                        // Apply overpay factor to reward to handle gas price volatility between payment time and validation time
+                        let overpay_factor = BigDecimal::from_f64(REWARD_OVERPAY_FACTOR).unwrap_or(BigDecimal::from(1));
+                        let reward_with_overpay = &reward.amount * overpay_factor;
                         let reward_amount = match reward.reward_target {
                             RewardTarget::Contract | RewardTarget::PaymentSender => {
                                 let eth_reward_amount =
-                                    try_tx_fus!(u256_from_big_decimal(&reward.amount, ETH_DECIMALS));
+                                    try_tx_fus!(u256_from_big_decimal(&reward_with_overpay, ETH_DECIMALS));
                                 value += eth_reward_amount;
                                 eth_reward_amount
                             },
                             RewardTarget::PaymentSpender => {
                                 let token_reward_amount =
-                                    try_tx_fus!(u256_from_big_decimal(&reward.amount, self.decimals));
+                                    try_tx_fus!(u256_from_big_decimal(&reward_with_overpay, self.decimals));
                                 amount += token_reward_amount;
                                 token_reward_amount
                             },
@@ -4139,7 +4163,7 @@ impl EthCoin {
                                 // TODO tests passed without this change, need to research on how it worked
                                 if reward.send_contract_reward_on_spend {
                                     let eth_reward_amount =
-                                        try_tx_fus!(u256_from_big_decimal(&reward.amount, ETH_DECIMALS));
+                                        try_tx_fus!(u256_from_big_decimal(&reward_with_overpay, ETH_DECIMALS));
                                     value += eth_reward_amount;
                                     eth_reward_amount
                                 } else {
@@ -5431,19 +5455,50 @@ impl EthCoin {
         swap_contract_address: Address,
         _secret_hash: &[u8],
         search_from_block: u64,
-        watcher_reward: bool,
+        _watcher_reward: bool,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         let unverified: UnverifiedTransactionWrapper = try_s!(rlp::decode(tx));
         let tx = try_s!(SignedEthTx::new(unverified));
+        let tx_data = tx.unsigned().data();
+        if tx_data.len() < 4 {
+            return ERR!("Transaction data too short to contain function selector");
+        }
+        let actual_selector = &tx_data[0..4];
 
-        let func_name = match self.coin_type {
-            EthCoinType::Eth => get_function_name("ethPayment", watcher_reward),
-            EthCoinType::Erc20 { .. } => get_function_name("erc20Payment", watcher_reward),
+        // Auto-detect which payment function variant was used by matching the function selector.
+        // The id (first argument) is at the same position in all variants.
+        // Note: Reward functions may not exist until watcher-compatible contracts are deployed.
+        let (payment_func_name, payment_func_reward_name) = match self.coin_type {
+            EthCoinType::Eth => ("ethPayment", "ethPaymentReward"),
+            EthCoinType::Erc20 { .. } => ("erc20Payment", "erc20PaymentReward"),
             EthCoinType::Nft { .. } => return ERR!("Nft Protocol is not supported yet!"),
         };
 
-        let payment_func = try_s!(SWAP_CONTRACT.function(&func_name));
-        let decoded = try_s!(decode_contract_call(payment_func, tx.unsigned().data()));
+        let payment_func = try_s!(SWAP_CONTRACT.function(payment_func_name));
+        let payment_func_reward = SWAP_CONTRACT.function(payment_func_reward_name).ok();
+
+        let func_to_use = if actual_selector == payment_func.short_signature() {
+            payment_func
+        } else if let Some(reward_func) = payment_func_reward.as_ref() {
+            if actual_selector == reward_func.short_signature() {
+                reward_func
+            } else {
+                return ERR!(
+                    "Transaction is not a payment call. Expected selector {:?} or {:?}, found {:?}",
+                    payment_func.short_signature(),
+                    reward_func.short_signature(),
+                    actual_selector
+                );
+            }
+        } else {
+            return ERR!(
+                "Transaction is not a payment call. Expected selector {:?}, found {:?}",
+                payment_func.short_signature(),
+                actual_selector
+            );
+        };
+
+        let decoded = try_s!(decode_contract_call(func_to_use, tx_data));
         let id = match decoded.first() {
             Some(Token::FixedBytes(bytes)) => bytes.clone(),
             invalid_token => return ERR!("Expected Token::FixedBytes, got {:?}", invalid_token),
