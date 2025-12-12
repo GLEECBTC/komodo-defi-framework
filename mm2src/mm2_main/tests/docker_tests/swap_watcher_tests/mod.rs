@@ -87,13 +87,17 @@ struct BalanceResult {
 }
 
 fn enable_coin(mm_node: &MarketMakerIt, coin: &str) {
-    if coin == "MYCOIN" {
+    if coin == "MYCOIN" || coin == "MYCOIN1" {
         log!("{:?}", block_on(enable_native(mm_node, coin, &[], None)));
     } else {
+        #[cfg(feature = "docker-tests-watchers-eth")]
         enable_eth(mm_node, coin);
+        #[cfg(not(feature = "docker-tests-watchers-eth"))]
+        panic!("ETH coin {} requires docker-tests-watchers-eth feature", coin);
     }
 }
 
+#[cfg(feature = "docker-tests-watchers-eth")]
 fn enable_eth(mm_node: &MarketMakerIt, coin: &str) {
     dbg!(block_on(enable_eth_coin(
         mm_node,
@@ -126,12 +130,15 @@ fn start_swaps_and_get_balances(
     watcher_privkey: &str,
     custom_locktime: Option<u64>,
 ) -> BalanceResult {
+    #[cfg(feature = "docker-tests-watchers-eth")]
     let coins = json!([
         eth_dev_conf(),
         erc20_dev_conf(&erc20_contract_checksum()),
         mycoin_conf(1000),
         mycoin1_conf(1000)
     ]);
+    #[cfg(not(feature = "docker-tests-watchers-eth"))]
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
 
     let mut alice_conf = Mm2TestConf::seednode(&format!("0x{alice_privkey}"), &coins);
     if let Some(locktime) = custom_locktime {
@@ -224,6 +231,7 @@ fn start_swaps_and_get_balances(
     enable_coin(&mm_watcher, a_coin);
     enable_coin(&mm_watcher, b_coin);
 
+    #[cfg(feature = "docker-tests-watchers-eth")]
     if a_coin != "ETH" && b_coin != "ETH" {
         enable_coin(&mm_alice, "ETH");
     }
@@ -258,7 +266,10 @@ fn start_swaps_and_get_balances(
         block_on(mm_alice.wait_for_log(120., |log| log.contains(WATCHER_MESSAGE_SENT_LOG))).unwrap();
         alice_acoin_balance_middle = block_on(my_balance(&mm_alice, a_coin)).balance;
         alice_bcoin_balance_middle = block_on(my_balance(&mm_alice, b_coin)).balance;
-        alice_eth_balance_middle = block_on(my_balance(&mm_alice, "ETH")).balance;
+        #[cfg(feature = "docker-tests-watchers-eth")]
+        {
+            alice_eth_balance_middle = block_on(my_balance(&mm_alice, "ETH")).balance;
+        }
         block_on(mm_alice.stop()).unwrap();
     }
 
@@ -269,13 +280,17 @@ fn start_swaps_and_get_balances(
     enable_coin(&mm_alice, a_coin);
     enable_coin(&mm_alice, b_coin);
 
+    #[cfg(feature = "docker-tests-watchers-eth")]
     if a_coin != "ETH" && b_coin != "ETH" {
         enable_coin(&mm_alice, "ETH");
     }
 
     let alice_acoin_balance_after = block_on(my_balance(&mm_alice, a_coin)).balance;
     let alice_bcoin_balance_after = block_on(my_balance(&mm_alice, b_coin)).balance;
+    #[cfg(feature = "docker-tests-watchers-eth")]
     let alice_eth_balance_after = block_on(my_balance(&mm_alice, "ETH")).balance;
+    #[cfg(not(feature = "docker-tests-watchers-eth"))]
+    let alice_eth_balance_after = BigDecimal::zero();
     if !matches!(swap_flow, SwapFlow::WatcherRefundsTakerPayment) {
         bob_acoin_balance_after = block_on(my_balance(&mm_bob, a_coin)).balance;
         bob_bcoin_balance_after = block_on(my_balance(&mm_bob, b_coin)).balance;
