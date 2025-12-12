@@ -450,8 +450,9 @@ jobs:
         if: always()
         run: docker compose -f .docker/test-nodes.yml down -v
 
-  # Watcher tests - watcher flows, refunds, rewards, restart behavior
-  # Requires UTXO + ETH nodes
+  # Watcher tests - UTXO-only watcher flows, refunds, rewards, restart behavior
+  # ETH watcher tests are disabled by default (unstable, behind docker-tests-watchers-eth feature)
+  # Requires UTXO nodes only
   docker-tests-watchers:
     timeout-minutes: 60
     runs-on: ubuntu-latest
@@ -479,11 +480,11 @@ jobs:
       - name: Fetch zcash params
         run: wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/v0.8.1/zcutil/fetch-params-alt.sh | bash
 
-      - name: Start UTXO and ETH nodes
+      - name: Start UTXO nodes
         run: |
-          docker compose -f .docker/test-nodes.yml --profile utxo --profile evm up -d
+          docker compose -f .docker/test-nodes.yml --profile utxo up -d
           echo "Waiting for containers..."
-          sleep 25
+          sleep 15
           docker compose -f .docker/test-nodes.yml ps
 
       - name: Test watchers
@@ -494,6 +495,7 @@ jobs:
           _KDF_NO_COSMOS_DOCKER: "1"
           _KDF_NO_ZOMBIE_DOCKER: "1"
           _KDF_NO_SIA_DOCKER: "1"
+          _KDF_NO_GETH_DOCKER: "1"
         run: |
           cargo test --test 'docker_tests_main' --features docker-tests-watchers --no-fail-fast
 

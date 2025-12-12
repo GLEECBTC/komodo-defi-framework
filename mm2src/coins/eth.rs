@@ -34,6 +34,7 @@ use crate::hd_wallet::{
     DisplayAddress, HDAccountOps, HDCoinAddress, HDCoinWithdrawOps, HDConfirmAddress, HDPathAccountToAddressId,
     HDWalletCoinOps, HDXPubExtractor,
 };
+#[cfg(feature = "enable-eth-watchers")]
 use crate::lp_price::get_base_price_in_rel;
 use crate::nft::nft_errors::ParseContractTypeError;
 use crate::nft::nft_structs::{
@@ -60,10 +61,13 @@ use crate::{
     coin_balance, scan_for_new_addresses_impl, BalanceResult, CoinWithDerivationMethod, DerivationMethod, DexFee,
     Eip1559Ops, GasPriceRpcParam, MakerNftSwapOpsV2, ParseCoinAssocTypes, ParseNftAssocTypes, PrivKeyPolicy,
     RpcCommonOps, SendNftMakerPaymentArgs, SpendNftMakerPaymentArgs, ToBytes, ValidateNftMakerPaymentArgs,
-    ValidateWatcherSpendInput, WatcherSpendType,
 };
+#[cfg(feature = "enable-eth-watchers")]
+use crate::{ValidateWatcherSpendInput, WatcherSpendType};
 use async_trait::async_trait;
-use bitcrypto::{dhash160, keccak256, ripemd160, sha256};
+#[cfg(feature = "enable-eth-watchers")]
+use bitcrypto::dhash160;
+use bitcrypto::{keccak256, ripemd160, sha256};
 use common::custom_futures::repeatable::{Ready, Retry, RetryOnError};
 use common::custom_futures::timeout::FutureTimerExt;
 use common::executor::{
@@ -95,6 +99,7 @@ use futures01::Future;
 use http::Uri;
 use kdf_walletconnect::{WalletConnectCtx, WalletConnectOps};
 use mm2_core::mm_ctx::{MmArc, MmWeak};
+#[cfg(feature = "enable-eth-watchers")]
 use mm2_number::bigdecimal_custom::CheckedDivision;
 use mm2_number::{BigDecimal, BigUint, MmNumber};
 use num_traits::FromPrimitive;
@@ -133,16 +138,19 @@ use super::{
     PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionError,
     RawTransactionFut, RawTransactionRequest, RawTransactionRes, RawTransactionResult, RefundPaymentArgs, RewardTarget,
     RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared, SearchForSwapTxSpendInput,
-    SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignEthTransactionParams, SignRawTransactionEnum,
-    SignRawTransactionRequest, SignatureError, SignatureResult, SpendPaymentArgs, SwapGasFeePolicy, SwapOps, TradeFee,
-    TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction, TransactionDetails,
-    TransactionEnum, TransactionErr, TransactionFut, TransactionType, TxMarshalingErr, UnexpectedDerivationMethod,
-    ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError,
-    ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs,
-    WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-    WatcherValidateTakerFeeInput, WeakSpawner, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest,
-    WithdrawResult, EARLY_CONFIRMATION_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_PAYMENT_STATE_ERR_LOG,
-    INVALID_RECEIVER_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG,
+    SendPaymentArgs, SignEthTransactionParams, SignRawTransactionEnum, SignRawTransactionRequest, SignatureError,
+    SignatureResult, SpendPaymentArgs, SwapGasFeePolicy, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
+    TradePreimageResult, TradePreimageValue, Transaction, TransactionDetails, TransactionEnum, TransactionErr,
+    TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+    ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
+    VerificationError, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherRewardError, WeakSpawner,
+    WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult, EARLY_CONFIRMATION_ERR_LOG,
+    INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_SENDER_ERR_LOG,
+};
+#[cfg(feature = "enable-eth-watchers")]
+use crate::{
+    SendMakerPaymentSpendPreimageInput, TransactionFut, WatcherReward, WatcherSearchForSwapTxSpendInput,
+    WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, INVALID_PAYMENT_STATE_ERR_LOG, INVALID_SWAP_ID_ERR_LOG,
 };
 #[cfg(test)]
 pub(crate) use eth_utils::display_u256_with_decimal_point;
@@ -1753,6 +1761,11 @@ impl SwapOps for EthCoin {
     }
 }
 
+// ETH WatcherOps implementation - gated behind `enable-eth-watchers` feature
+// because ETH watchers are unstable and not completed yet.
+// When disabled, EthCoin uses the default WatcherOps implementation from lp_coins.rs
+// which returns "not implemented" errors.
+#[cfg(feature = "enable-eth-watchers")]
 #[async_trait]
 impl WatcherOps for EthCoin {
     fn send_maker_payment_spend_preimage(&self, input: SendMakerPaymentSpendPreimageInput) -> TransactionFut {
@@ -2445,6 +2458,12 @@ impl WatcherOps for EthCoin {
         }))
     }
 }
+
+// Fallback WatcherOps implementation when ETH watchers are disabled.
+// Uses default implementations from the trait which return "not implemented" errors.
+#[cfg(not(feature = "enable-eth-watchers"))]
+#[async_trait]
+impl WatcherOps for EthCoin {}
 
 #[async_trait]
 #[cfg_attr(test, mockable)]
@@ -4222,6 +4241,7 @@ impl EthCoin {
         }
     }
 
+    #[cfg(feature = "enable-eth-watchers")]
     fn watcher_spends_hash_time_locked_payment(&self, input: SendMakerPaymentSpendPreimageInput) -> EthTxFut {
         let tx: UnverifiedTransactionWrapper = try_tx_fus!(rlp::decode(input.preimage));
         let payment = try_tx_fus!(SignedEthTx::new(tx));
@@ -4341,6 +4361,7 @@ impl EthCoin {
         }
     }
 
+    #[cfg(feature = "enable-eth-watchers")]
     fn watcher_refunds_hash_time_locked_payment(&self, args: RefundPaymentArgs) -> EthTxFut {
         let tx: UnverifiedTransactionWrapper = try_tx_fus!(rlp::decode(args.payment_tx));
         let payment = try_tx_fus!(SignedEthTx::new(tx));

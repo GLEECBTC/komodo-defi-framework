@@ -29,7 +29,10 @@ docker-tests-zcoin = ["run-docker-tests"]       # ZCoin/Zombie coin tests
 # Swap protocol tests (future destination: mm2_main::lp_swap/tests, far future: lp_swap crate)
 docker-tests-swaps-utxo = ["run-docker-tests"]  # UTXO swap protocol tests (v1, v2, confs, file-locks)
 # Watcher tests (future destination: mm2_main::lp_swap::watchers/tests, far future: watchers crate)
-docker-tests-watchers = ["run-docker-tests"]    # Watcher node tests (ETH + UTXO)
+docker-tests-watchers = ["run-docker-tests"]    # Watcher node tests (UTXO-only, stable)
+# ETH watcher tests are disabled by default because ETH watchers are unstable and not completed yet.
+# This feature enables both the ETH watcher implementation code (in coins crate) and the ETH watcher tests.
+docker-tests-watchers-eth = ["docker-tests-watchers", "coins/enable-eth-watchers"]  # Watcher node tests (ETH/ERC20, unstable)
 # Ordermatching tests (future destination: mm2_main::lp_ordermatch/tests, far future: ordermatch crate)
 docker-tests-ordermatch = ["run-docker-tests"]  # Orderbook and matching tests
 default = []
