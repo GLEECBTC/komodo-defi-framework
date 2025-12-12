@@ -35,6 +35,22 @@ docker-tests-watchers = ["run-docker-tests"]    # Watcher node tests (UTXO-only,
 docker-tests-watchers-eth = ["docker-tests-watchers", "coins/enable-eth-watchers"]  # Watcher node tests (ETH/ERC20, unstable)
 # Ordermatching tests (future destination: mm2_main::lp_ordermatch/tests, far future: ordermatch crate)
 docker-tests-ordermatch = ["run-docker-tests"]  # Orderbook and matching tests
+# Integration tests for cross-chain swaps between different chain families (ETH<->Tendermint, SLP<->UTXO, etc.)
+docker-tests-integration = ["run-docker-tests"]  # Cross-chain integration swap tests
+# Aggregate feature for local development - runs all docker test suites
+# Not recommended for CI (use split jobs instead for parallelism)
+docker-tests-all = [
+    "docker-tests-eth",
+    "docker-tests-slp",
+    "docker-tests-sia",
+    "docker-tests-ordermatch",
+    "docker-tests-swaps-utxo",
+    "docker-tests-watchers",
+    "docker-tests-qrc20",
+    "docker-tests-tendermint",
+    "docker-tests-zcoin",
+    "docker-tests-integration",
+]
 default = []
 trezor-udp = ["crypto/trezor-udp"] # use for tests to connect to trezor emulator over udp
 run-device-tests = []

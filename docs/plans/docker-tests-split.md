@@ -9,17 +9,18 @@
 
 ## 1. Goals
 
-1. Stabilize the new Docker infra (Compose/Metadata/Reuse) and fix all correctness issues.
-2. Split the monolithic `docker-tests` job into smaller **functional** jobs:
-   - Ordermatching
-   - Swaps
-   - Watchers
-   - Chain-specific suites (QRC20, Tendermint, ZCoin, SLP, ETH, Sia)
-3. Shorten feedback loop: each job should be reasonably fast and runnable in isolation.
+1. ✅ Stabilize the new Docker infra (Compose/Metadata/Reuse) and fix all correctness issues.
+2. ✅ Split the monolithic `docker-tests` job into smaller **functional** jobs:
+   - Ordermatching (`docker-tests-ordermatch`)
+   - Swaps (`docker-tests-swaps-utxo`)
+   - Watchers (`docker-tests-watchers`)
+   - Chain-specific suites (`docker-tests-qrc20`, `docker-tests-tendermint`, `docker-tests-zcoin`, `docker-tests-slp`, `docker-tests-eth`, `docker-tests-sia`)
+   - Cross-chain integration (`docker-tests-integration`)
+3. ✅ Shorten feedback loop: each job is runnable in isolation.
 4. Preserve **testcontainers** semantics as the baseline:
    - New modes should behave like the old flow from the perspective of tests.
-5. Keep code churn low:
-   - Prefer cfg-gating, helpers, and clear grouping over massive file moves.
+5. ✅ Keep code churn low:
+   - Used cfg-gating, helpers, and clear grouping over massive file moves.
 
 ### 1.1 Non-goals (for now)
 
@@ -636,8 +637,9 @@ All CI jobs now use only feature flags for test selection (no test module filter
 - **Feature flags status (in `mm2_main/Cargo.toml`):**
   - Already present: `docker-tests-eth`, `docker-tests-slp`, `docker-tests-sia`,
     `docker-tests-ordermatch`, `docker-tests-swaps-utxo`, `docker-tests-watchers`,
-    `docker-tests-qrc20`, `docker-tests-tendermint`, `docker-tests-zcoin`
-  - Optional / not yet added: `docker-tests-integration` (for curated cross-chain flows)
+    `docker-tests-qrc20`, `docker-tests-tendermint`, `docker-tests-zcoin`,
+    `docker-tests-integration`
+  - To be added: `docker-tests-all` (aggregate feature for local dev convenience)
 
 CI jobs mapping:
 
@@ -855,6 +857,14 @@ The following runtime fixes have been implemented to prevent `OnceLock` panics w
 
 **Remaining tasks (compile-time isolation):**
 
+- [ ] **Simplify redundant `#[cfg]` gates in `mod.rs`** - Since all `docker-tests-*` features depend on `run-docker-tests`, we can simplify:
+  ```rust
+  // From:
+  #[cfg(all(feature = "run-docker-tests", feature = "docker-tests-eth"))]
+  // To:
+  #[cfg(feature = "docker-tests-eth")]
+  ```
+  Low priority - current setup works correctly, this is just cleanup.
 - [ ] **Add `#[cfg]` guards on imports in `swap.rs`** - Currently imports are unconditional; full compile-time isolation requires feature-gated imports
 - [ ] **Factor chain-specific logic into helpers with real/stub variants** - For zero unused warnings
 - [ ] **Gate helper modules in `helpers/mod.rs` by feature** - Prevents compilation of unused helpers
@@ -910,14 +920,46 @@ The following runtime fixes have been implemented to prevent `OnceLock` panics w
     - [ ] Ensure contract addresses in `DockerEnvMetadata` match GLEEC deployments
     - [ ] Test all docker test suites against GLEEC infrastructure
 
-- [ ] **Add `docker-tests-integration` feature flag and CI job**
-  - Add `docker-tests-integration = ["run-docker-tests"]` to `mm2_main/Cargo.toml`
-  - Create `docker-tests-integration` CI job that starts ALL containers
-  - Move cross-chain tests between different chain families here:
+- [x] **Add `docker-tests-integration` feature flag and CI job** ✅ DONE
+  - Added `docker-tests-integration = ["run-docker-tests"]` to `mm2_main/Cargo.toml`
+  - Created `docker-tests-integration` CI job in `test.yml` (lines 664-709) that:
+    - Starts ALL containers with `--profile all`
+    - Uses 90 minute timeout
+    - Runs `--features docker-tests-integration`
+  - Cross-chain tests gated by `docker-tests-integration`:
     - `tendermint_swap_tests::*` (Tendermint↔ETH swaps)
-    - `swap_tests::trade_test_with_maker_slp`, `swap_tests::trade_test_with_taker_slp`
-    - Any future ETH↔QRC20, ETH↔Sia, or other multi-family swaps
-  - Migrate `swap_tests` module from legacy negative-gate pattern to explicit `docker-tests-integration` feature
+    - `swap_tests::*` (SLP cross-chain swaps)
+  - Migrated `swap_tests` module from legacy negative-gate pattern to explicit `docker-tests-integration` feature
+
+- [x] **Add `docker-tests-all` aggregate feature** ✅ DONE
+  - Added to `mm2_main/Cargo.toml`:
+    ```toml
+    # Aggregate feature for local development - runs all docker test suites
+    docker-tests-all = [
+        "docker-tests-eth",
+        "docker-tests-slp",
+        "docker-tests-sia",
+        "docker-tests-ordermatch",
+        "docker-tests-swaps-utxo",
+        "docker-tests-watchers",
+        "docker-tests-qrc20",
+        "docker-tests-tendermint",
+        "docker-tests-zcoin",
+        "docker-tests-integration",
+    ]
+    ```
+  - **Use case:** Local development convenience - run `cargo test --test docker_tests_main --features docker-tests-all` to run all tests
+  - **Note:** Not recommended for CI (use split jobs instead for parallelism)
+
+- [x] **Remove monolithic `docker-tests` CI job** ✅ DONE
+  - **Problem:** The monolithic `docker-tests` job ran with only `--features run-docker-tests`, which compiled almost no tests because all test modules require additional `docker-tests-*` features.
+  - **Previous behavior:** Started ALL containers (`--profile all`), ran for ~90 minutes, but only executed the `dummy()` test.
+  - **Resolution:** Removed the job entirely. All test suites are covered by the 10 split CI jobs:
+    - `docker-tests-eth`, `docker-tests-slp`, `docker-tests-sia`
+    - `docker-tests-ordermatch`, `docker-tests-swaps-utxo`, `docker-tests-watchers`
+    - `docker-tests-qrc20`, `docker-tests-tendermint`, `docker-tests-zcoin`
+    - `docker-tests-integration`
+  - **For local "run everything":** Use `--features docker-tests-all`
 
 - [ ] **Feature-gate container startup in testcontainers mode**
   - **Current problem:** In testcontainers mode, ALL containers (UTXO, Qtum, Geth, Cosmos, Zombie) start regardless of which feature flags are enabled. This wastes time for tests that only need specific containers.
@@ -958,7 +1000,7 @@ The following runtime fixes have been implemented to prevent `OnceLock` panics w
     - Must rebuild to change node set (but CI already rebuilds per job)
     - Loses runtime flexibility for local dev (can keep env vars as optional overrides if needed)
 
-**Note:** Until these jobs are implemented, the affected tests continue to run in the monolithic `docker-tests` job which uses `--features run-docker-tests` with `--profile all`.
+**Note:** All docker tests are now covered by split CI jobs. The monolithic `docker-tests` job has been removed.
 
 ---
 

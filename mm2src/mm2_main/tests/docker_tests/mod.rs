@@ -73,22 +73,17 @@ mod swaps_confs_settings_sync_tests;
 #[cfg(all(feature = "run-docker-tests", feature = "docker-tests-swaps-utxo"))]
 mod swaps_file_lock_tests;
 
-// BCH-SLP swap tests - main docker job only
+// ============================================================================
+// CROSS-CHAIN INTEGRATION TESTS
+// Tests for atomic swaps between different chain families (requires all containers)
+// Future destination: Integration test suite
+// ============================================================================
+
+// BCH-SLP cross-chain swap tests
 // Tests: BCH/SLP atomic swaps (FORSLP, ADEXSLP pairs)
-// Chains: BCH-SLP
-// Note: Excluded from chain-specific jobs - requires full multi-chain environment
-#[cfg(all(
-    feature = "run-docker-tests",
-    not(feature = "docker-tests-slp"),
-    not(feature = "docker-tests-sia"),
-    not(feature = "docker-tests-eth"),
-    not(feature = "docker-tests-qrc20"),
-    not(feature = "docker-tests-tendermint"),
-    not(feature = "docker-tests-zcoin"),
-    not(feature = "docker-tests-swaps-utxo"),
-    not(feature = "docker-tests-watchers"),
-    not(feature = "docker-tests-ordermatch"),
-))]
+// Chains: BCH-SLP + UTXO
+// Note: Requires multiple chain families - part of integration test suite
+#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-integration"))]
 mod swap_tests;
 
 // ============================================================================
@@ -143,12 +138,8 @@ mod tendermint_tests;
 // Tendermint cross-chain swap tests
 // Tests: NUCLEUS<->DOC, NUCLEUS<->ETH, DOC<->IRIS-IBC-NUCLEUS swaps
 // Chains: Tendermint (NUCLEUS, IRIS) + ETH/Electrum
-// Note: Requires both Tendermint and ETH docker environments
-#[cfg(all(
-    feature = "run-docker-tests",
-    feature = "docker-tests-tendermint",
-    feature = "docker-tests-eth",
-))]
+// Note: Requires multiple chain families (Tendermint + ETH) - part of integration test suite
+#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-integration"))]
 mod tendermint_swap_tests;
 
 // ZCoin/Zombie coin tests

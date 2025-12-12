@@ -658,8 +658,10 @@ jobs:
         if: always()
         run: docker compose -f .docker/test-nodes.yml down -v
 
-  # Remaining docker tests (all other nodes, excludes feature-flagged tests)
-  docker-tests:
+  # Cross-chain integration tests - swaps between different chain families
+  # Tests: Tendermint<->ETH swaps, SLP cross-chain swaps
+  # Requires ALL container types for multi-family cross-chain scenarios
+  docker-tests-integration:
     timeout-minutes: 90
     runs-on: ubuntu-latest
     env:
@@ -689,19 +691,20 @@ jobs:
       - name: Prepare docker test environment
         run: ./scripts/ci/docker-test-nodes-setup.sh
 
-      - name: Start docker test nodes
+      - name: Start all docker nodes
         run: |
           docker compose -f .docker/test-nodes.yml --profile all up -d
-          echo "Waiting for containers to initialize..."
-          sleep 30
+          echo "Waiting for all containers to initialize..."
+          sleep 45
           docker compose -f .docker/test-nodes.yml ps
 
-      - name: Test
+      - name: Test cross-chain integration
         env:
           KDF_DOCKER_COMPOSE_ENV: "1"
-        run: cargo test --test 'docker_tests_main' --features run-docker-tests --no-fail-fast
+        run: |
+          cargo test --test 'docker_tests_main' --features docker-tests-integration --no-fail-fast
 
-      - name: Stop docker test nodes
+      - name: Stop docker nodes
         if: always()
         run: docker compose -f .docker/test-nodes.yml down -v
 
