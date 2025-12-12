@@ -10,27 +10,21 @@ mod utxo;
 #[cfg(feature = "docker-tests-watchers-eth")]
 mod eth;
 
+// Common imports (used by UTXO watcher tests)
 use crate::docker_tests::helpers::env::random_secp256k1_secret;
-use crate::docker_tests::helpers::eth::{
-    erc20_coin_with_random_privkey, erc20_contract_checksum, eth_coin_with_random_privkey, watchers_swap_contract,
-    watchers_swap_contract_checksum, GETH_RPC_URL,
-};
 use crate::docker_tests::helpers::utxo::{generate_utxo_coin_with_privkey, generate_utxo_coin_with_random_privkey};
 use crate::integration_tests_common::*;
 use coins::coin_errors::ValidatePaymentError;
-use coins::eth::EthCoin;
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::utxo::{dhash160, UtxoCommonOps};
 use coins::{
-    ConfirmPaymentInput, DexFee, FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoinEnum, RefundPaymentArgs, RewardTarget,
+    ConfirmPaymentInput, DexFee, FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoinEnum, RefundPaymentArgs,
     SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash,
-    TestCoin, ValidateWatcherSpendInput, WatcherOps, WatcherSpendType, WatcherValidatePaymentInput,
-    WatcherValidateTakerFeeInput, EARLY_CONFIRMATION_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG,
-    INVALID_PAYMENT_STATE_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG,
-    INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG, OLD_TRANSACTION_ERR_LOG,
+    ValidateWatcherSpendInput, WatcherOps, WatcherSpendType, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
+    EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG,
+    INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG,
 };
 use common::{block_on, block_on_f01, now_sec, wait_until_sec};
-use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
 use mm2_main::lp_swap::{
     generate_secret, get_payment_locktime, MAKER_PAYMENT_SENT_LOG, MAKER_PAYMENT_SPEND_FOUND_LOG,
     MAKER_PAYMENT_SPEND_SENT_LOG, REFUND_TEST_FAILURE_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, WATCHER_MESSAGE_SENT_LOG,
@@ -38,14 +32,33 @@ use mm2_main::lp_swap::{
 use mm2_number::BigDecimal;
 use mm2_number::MmNumber;
 use mm2_test_helpers::for_tests::{
-    enable_eth_coin, erc20_dev_conf, eth_dev_conf, eth_jst_testnet_conf, mm_dump, my_balance, my_swap_status,
-    mycoin1_conf, mycoin_conf, start_swaps, wait_for_swaps_finish_and_check_status, MarketMakerIt, Mm2TestConf,
-    DEFAULT_RPC_PASSWORD,
+    mm_dump, my_balance, my_swap_status, mycoin1_conf, mycoin_conf, start_swaps,
+    wait_for_swaps_finish_and_check_status, MarketMakerIt, Mm2TestConf, DEFAULT_RPC_PASSWORD,
 };
-use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::WatcherConf;
 use mocktopus::mocking::*;
-use num_traits::{One, Zero};
+use num_traits::Zero;
+
+// ETH-only imports (used only by ETH watcher tests)
+#[cfg(feature = "docker-tests-watchers-eth")]
+use crate::docker_tests::helpers::eth::{
+    erc20_coin_with_random_privkey, erc20_contract_checksum, eth_coin_with_random_privkey, watchers_swap_contract,
+    watchers_swap_contract_checksum, GETH_RPC_URL,
+};
+#[cfg(feature = "docker-tests-watchers-eth")]
+use coins::eth::EthCoin;
+#[cfg(feature = "docker-tests-watchers-eth")]
+use coins::{
+    RewardTarget, TestCoin, INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_PAYMENT_STATE_ERR_LOG, INVALID_SWAP_ID_ERR_LOG,
+};
+#[cfg(feature = "docker-tests-watchers-eth")]
+use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
+#[cfg(feature = "docker-tests-watchers-eth")]
+use mm2_test_helpers::for_tests::{enable_eth_coin, erc20_dev_conf, eth_dev_conf, eth_jst_testnet_conf};
+#[cfg(feature = "docker-tests-watchers-eth")]
+use mm2_test_helpers::get_passphrase;
+#[cfg(feature = "docker-tests-watchers-eth")]
+use num_traits::One;
 use primitives::hash::H256;
 use serde_json::Value;
 use std::str::FromStr;

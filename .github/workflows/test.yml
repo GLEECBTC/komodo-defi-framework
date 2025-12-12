@@ -495,7 +495,7 @@ jobs:
           _KDF_NO_COSMOS_DOCKER: "1"
           _KDF_NO_ZOMBIE_DOCKER: "1"
           _KDF_NO_SIA_DOCKER: "1"
-          _KDF_NO_GETH_DOCKER: "1"
+          _KDF_NO_ETH_DOCKER: "1"
         run: |
           cargo test --test 'docker_tests_main' --features docker-tests-watchers --no-fail-fast
 
