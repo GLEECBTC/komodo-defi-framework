@@ -20,14 +20,14 @@ pub mod helpers;
 // Ordermatching tests - UTXO + ETH cross-chain orderbook
 // Tests: best_orders, orderbook depth, price aggregation
 // Chains: UTXO-MYCOIN, UTXO-MYCOIN1, ETH, ERC20
-#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-ordermatch"))]
+#[cfg(feature = "docker-tests-ordermatch")]
 mod docker_ordermatch_tests;
 
 // UTXO Ordermatching V1 tests - UTXO-only orderbook mechanics (extracted from docker_tests_inner)
 // Tests: order lifecycle, balance-driven cancellations/updates, restart kickstart, best-price matching,
 //        RPC response formats, min_volume/dust validation, P2P time sync validation
 // Chains: UTXO-MYCOIN, UTXO-MYCOIN1
-#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-ordermatch"))]
+#[cfg(feature = "docker-tests-ordermatch")]
 mod utxo_ordermatch_v1_tests;
 
 // ============================================================================
@@ -40,38 +40,38 @@ mod utxo_ordermatch_v1_tests;
 // Tests: cross-chain order matching, volume validation, orderbook depth
 // Chains: UTXO-MYCOIN, UTXO-MYCOIN1, ETH, ERC20
 // Note: Contains only 4 tests that require BOTH ETH and UTXO chains simultaneously
-#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-ordermatch"))]
+#[cfg(feature = "docker-tests-ordermatch")]
 mod docker_tests_inner;
 
 // ETH Inner tests - ETH-only tests (extracted from docker_tests_inner)
 // Tests: ETH/ERC20 activation, disable, withdraw, swap contract negotiation, order management, ERC20 approval
 // Chains: ETH, ERC20
 // Future: Consider separate feature flag (docker-tests-eth-only) for tests that don't need UTXO
-#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-eth"))]
+#[cfg(feature = "docker-tests-eth")]
 mod eth_inner_tests;
 
 // Swap protocol v2 tests - UTXO-only TPU protocol
 // Tests: MakerSwapStateMachine, TakerSwapStateMachine, trading protocol upgrade
 // Chains: UTXO-MYCOIN, UTXO-MYCOIN1
-#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-swaps-utxo"))]
+#[cfg(feature = "docker-tests-swaps-utxo")]
 mod swap_proto_v2_tests;
 
 // UTXO Swaps V1 tests - UTXO-only swap mechanics (extracted from docker_tests_inner)
 // Tests: swap spend/refund, trade preimage, max taker/maker vol, locked amounts, UTXO merge
 // Chains: UTXO-MYCOIN, UTXO-MYCOIN1
-#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-swaps-utxo"))]
+#[cfg(feature = "docker-tests-swaps-utxo")]
 mod utxo_swaps_v1_tests;
 
 // Swap confirmation settings sync tests - UTXO-only
 // Tests: confirmation requirements, settings synchronization between maker/taker
 // Chains: UTXO-MYCOIN, UTXO-MYCOIN1
-#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-swaps-utxo"))]
+#[cfg(feature = "docker-tests-swaps-utxo")]
 mod swaps_confs_settings_sync_tests;
 
 // Swap file lock tests - UTXO-only infrastructure
 // Tests: concurrent swap file locking, race condition prevention
 // Chains: UTXO-MYCOIN, UTXO-MYCOIN1
-#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-swaps-utxo"))]
+#[cfg(feature = "docker-tests-swaps-utxo")]
 mod swaps_file_lock_tests;
 
 // ============================================================================
@@ -80,11 +80,10 @@ mod swaps_file_lock_tests;
 // Future destination: Integration test suite
 // ============================================================================
 
-// BCH-SLP cross-chain swap tests
+// BCH-SLP swap tests
 // Tests: BCH/SLP atomic swaps (FORSLP, ADEXSLP pairs)
-// Chains: BCH-SLP + UTXO
-// Note: Requires multiple chain families - part of integration test suite
-#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-integration"))]
+// Chains: BCH-SLP (FORSLP node only)
+#[cfg(feature = "docker-tests-slp")]
 mod swap_tests;
 
 // ============================================================================
@@ -97,7 +96,7 @@ mod swap_tests;
 // Tests: watcher node functionality, maker payment spend, taker payment refund
 // Tests: watcher rewards, restart resilience
 // Chains: UTXO-MYCOIN, UTXO-MYCOIN1, ETH, ERC20
-#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-watchers"))]
+#[cfg(feature = "docker-tests-watchers")]
 mod swap_watcher_tests;
 
 // ============================================================================
@@ -109,44 +108,44 @@ mod swap_watcher_tests;
 // ETH/ERC20 coin tests
 // Tests: gas estimation, nonce management, ERC20 activation, NFT swaps
 // Chains: ETH, ERC20, ERC721, ERC1155
-#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-eth"))]
+#[cfg(feature = "docker-tests-eth")]
 mod eth_docker_tests;
 
 // QRC20 coin and swap tests
 // Tests: QRC20 activation, QTUM gas, QRC20<->UTXO swaps
 // Chains: QRC20, UTXO-MYCOIN
-#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-qrc20"))]
+#[cfg(feature = "docker-tests-qrc20")]
 pub mod qrc20_tests;
 
 // SIA coin tests
 // Tests: Sia activation, balance, withdraw
 // Chains: Sia
-#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-sia"))]
+#[cfg(feature = "docker-tests-sia")]
 mod sia_docker_tests;
 
 // SLP/BCH coin tests
 // Tests: SLP token activation, BCH-SLP balance
 // Chains: BCH-SLP (FORSLP, ADEXSLP)
-#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-slp"))]
+#[cfg(feature = "docker-tests-slp")]
 mod slp_tests;
 
 // Tendermint coin and IBC tests (Cosmos-only)
 // Tests: ATOM/Nucleus/IRIS activation, staking, IBC transfers, withdraw, delegation
 // Chains: Tendermint (ATOM, Nucleus, IRIS)
-#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-tendermint"))]
+#[cfg(feature = "docker-tests-tendermint")]
 mod tendermint_tests;
 
 // Tendermint cross-chain swap tests
 // Tests: NUCLEUS<->DOC, NUCLEUS<->ETH, DOC<->IRIS-IBC-NUCLEUS swaps
 // Chains: Tendermint (NUCLEUS, IRIS) + ETH/Electrum
 // Note: Requires multiple chain families (Tendermint + ETH) - part of integration test suite
-#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-integration"))]
+#[cfg(feature = "docker-tests-integration")]
 mod tendermint_swap_tests;
 
 // ZCoin/Zombie coin tests
 // Tests: ZCoin activation, shielded transactions, DEX fee collection
 // Chains: ZCoin/Zombie
-#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-zcoin"))]
+#[cfg(feature = "docker-tests-zcoin")]
 mod z_coin_docker_tests;
 
 // dummy test helping IDE to recognize this as test module

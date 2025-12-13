@@ -153,17 +153,18 @@ impl DockerTestRunner {
                 self.setup_utxo();
                 #[cfg(feature = "docker-tests-qrc20")]
                 self.setup_qtum();
-                #[cfg(feature = "docker-tests-slp")]
+                #[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
                 self.setup_slp();
                 #[cfg(any(
                     feature = "docker-tests-eth",
                     feature = "docker-tests-ordermatch",
-                    feature = "docker-tests-watchers-eth"
+                    feature = "docker-tests-watchers-eth",
+                    feature = "docker-tests-integration"
                 ))]
                 self.setup_geth();
                 #[cfg(feature = "docker-tests-zcoin")]
                 self.setup_zombie();
-                #[cfg(feature = "docker-tests-tendermint")]
+                #[cfg(any(feature = "docker-tests-tendermint", feature = "docker-tests-integration"))]
                 self.setup_cosmos();
                 #[cfg(feature = "docker-tests-sia")]
                 self.setup_sia();
@@ -306,7 +307,7 @@ impl DockerTestRunner {
         self.metadata.initialized.qtum = true;
     }
 
-    #[cfg(feature = "docker-tests-slp")]
+    #[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
     fn setup_slp(&mut self) {
         match self.config.mode {
             DockerTestMode::Testcontainers => {
@@ -338,7 +339,8 @@ impl DockerTestRunner {
     #[cfg(any(
         feature = "docker-tests-eth",
         feature = "docker-tests-ordermatch",
-        feature = "docker-tests-watchers-eth"
+        feature = "docker-tests-watchers-eth",
+        feature = "docker-tests-integration"
     ))]
     fn setup_geth(&mut self) {
         match self.config.mode {
@@ -394,7 +396,7 @@ impl DockerTestRunner {
         self.metadata.initialized.zombie = true;
     }
 
-    #[cfg(feature = "docker-tests-tendermint")]
+    #[cfg(any(feature = "docker-tests-tendermint", feature = "docker-tests-integration"))]
     fn setup_cosmos(&mut self) {
         match self.config.mode {
             DockerTestMode::Testcontainers => {
@@ -490,7 +492,9 @@ fn required_images() -> Vec<&'static str> {
         feature = "docker-tests-ordermatch",
         feature = "docker-tests-watchers",
         feature = "docker-tests-qrc20",
-        feature = "docker-tests-sia"
+        feature = "docker-tests-sia",
+        feature = "docker-tests-slp",
+        feature = "docker-tests-integration"
     ))]
     images.push(UTXO_ASSET_DOCKER_IMAGE_WITH_TAG);
 
@@ -500,11 +504,12 @@ fn required_images() -> Vec<&'static str> {
     #[cfg(any(
         feature = "docker-tests-eth",
         feature = "docker-tests-ordermatch",
-        feature = "docker-tests-watchers-eth"
+        feature = "docker-tests-watchers-eth",
+        feature = "docker-tests-integration"
     ))]
     images.push(GETH_DOCKER_IMAGE_WITH_TAG);
 
-    #[cfg(feature = "docker-tests-tendermint")]
+    #[cfg(any(feature = "docker-tests-tendermint", feature = "docker-tests-integration"))]
     {
         images.push(NUCLEUS_IMAGE);
         images.push(ATOM_IMAGE_WITH_TAG);

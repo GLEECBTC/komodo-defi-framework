@@ -2,25 +2,88 @@
 //!
 //! This module provides high-level cross-chain atomic swap test scenarios.
 //! For chain-specific helpers, import directly from the other `helpers` submodules.
+//!
+//! ## Feature gating
+//!
+//! This module is compiled for all docker tests (gated by `run-docker-tests`), but
+//! chain-specific imports and code blocks are gated by their respective feature flags:
+//!
+//! - ETH: `docker-tests-eth`, `docker-tests-ordermatch`
+//! - QRC20: `docker-tests-qrc20`
+//! - UTXO: `docker-tests-swaps-utxo`, `docker-tests-ordermatch`, `docker-tests-watchers`, `docker-tests-qrc20`, `docker-tests-sia`, `docker-tests-slp`
+//! - SLP: `docker-tests-slp`
 
-use coins::MarketCoinOps;
 use common::block_on;
 use crypto::privkey::key_pair_from_secret;
 use mm2_test_helpers::for_tests::{
-    check_my_swap_status, check_recent_swaps, enable_eth_coin, enable_native, enable_native_bch, erc20_dev_conf,
-    eth_dev_conf, mm_dump, wait_check_stats_swap_status, MarketMakerIt,
+    check_my_swap_status, check_recent_swaps, mm_dump, wait_check_stats_swap_status, MarketMakerIt,
 };
 use serde_json::Value as Json;
 use std::thread;
 use std::time::Duration;
 
 use super::env::{random_secp256k1_secret, Secp256k1Secret, SET_BURN_PUBKEY_TO_ALICE};
+
+// ETH imports
+#[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-ordermatch"))]
 use super::eth::{erc20_contract_checksum, fill_eth_erc20_with_private_key, swap_contract_checksum, GETH_RPC_URL};
+#[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-ordermatch"))]
+use mm2_test_helpers::for_tests::{enable_eth_coin, erc20_dev_conf, eth_dev_conf};
+
+// QRC20 imports
+#[cfg(feature = "docker-tests-qrc20")]
 use super::qrc20::{
     enable_qrc20_native, fill_qrc20_address, generate_segwit_qtum_coin_with_random_privkey, qrc20_coin_conf_item,
     qrc20_coin_from_privkey, qtum_conf_path, wait_for_estimate_smart_fee,
 };
-use super::utxo::{fill_address, get_prefilled_slp_privkey, get_slp_token_id, utxo_coin_from_privkey};
+#[cfg(feature = "docker-tests-qrc20")]
+use super::utxo::fill_address as fill_utxo_address_qrc20;
+#[cfg(feature = "docker-tests-qrc20")]
+use coins::MarketCoinOps;
+#[cfg(feature = "docker-tests-qrc20")]
+use mm2_test_helpers::for_tests::enable_native as enable_native_qrc20;
+
+// UTXO imports (non-QRC20 paths)
+#[cfg(all(
+    any(
+        feature = "docker-tests-swaps-utxo",
+        feature = "docker-tests-ordermatch",
+        feature = "docker-tests-watchers",
+        feature = "docker-tests-sia"
+    ),
+    not(feature = "docker-tests-qrc20")
+))]
+use super::utxo::{fill_address, utxo_coin_from_privkey};
+#[cfg(all(
+    any(
+        feature = "docker-tests-swaps-utxo",
+        feature = "docker-tests-ordermatch",
+        feature = "docker-tests-watchers",
+        feature = "docker-tests-sia"
+    ),
+    not(feature = "docker-tests-qrc20")
+))]
+use coins::MarketCoinOps;
+#[cfg(all(
+    any(
+        feature = "docker-tests-swaps-utxo",
+        feature = "docker-tests-ordermatch",
+        feature = "docker-tests-watchers",
+        feature = "docker-tests-sia"
+    ),
+    not(feature = "docker-tests-qrc20")
+))]
+use mm2_test_helpers::for_tests::enable_native;
+
+// UTXO imports (QRC20 path - already imports fill_address as fill_utxo_address_qrc20)
+#[cfg(feature = "docker-tests-qrc20")]
+use super::utxo::utxo_coin_from_privkey as utxo_coin_from_privkey_qrc20;
+
+// SLP imports
+#[cfg(feature = "docker-tests-slp")]
+use super::utxo::{get_prefilled_slp_privkey, get_slp_token_id};
+#[cfg(feature = "docker-tests-slp")]
+use mm2_test_helpers::for_tests::{enable_native as enable_native_slp, enable_native_bch};
 
 // =============================================================================
 // Cross-chain swap test scenarios
@@ -34,28 +97,52 @@ use super::utxo::{fill_address, get_prefilled_slp_privkey, get_slp_token_id, utx
 /// 3. Enables all required coins on both instances
 /// 4. Places a setprice order and matches with a buy order
 /// 5. Waits for swap completion and verifies both sides
+///
+/// ## Feature requirements
+///
+/// Different coin pairs require different feature flags:
+/// - ETH/ERC20DEV: `docker-tests-eth` or `docker-tests-ordermatch`
+/// - QTUM/QICK/QORTY: `docker-tests-qrc20`
+/// - MYCOIN/MYCOIN1: `docker-tests-swaps-utxo`, `docker-tests-ordermatch`, `docker-tests-watchers`, `docker-tests-qrc20`, `docker-tests-sia`
+/// - FORSLP/ADEXSLP: `docker-tests-slp`
 pub fn trade_base_rel((base, rel): (&str, &str)) {
-    /// Generate a wallet with the random private key and fill the wallet with Qtum (required by gas_fee) and specified in `ticker` coin.
+    /// Generate a wallet with the random private key and fill the wallet with funds.
     fn generate_and_fill_priv_key(ticker: &str) -> Secp256k1Secret {
         let timeout = 30; // timeout if test takes more than 30 seconds to run
 
         match ticker {
+            #[cfg(feature = "docker-tests-qrc20")]
             "QTUM" => {
-                //Segwit QTUM
                 wait_for_estimate_smart_fee(timeout).expect("!wait_for_estimate_smart_fee");
                 let (_ctx, _coin, priv_key) = generate_segwit_qtum_coin_with_random_privkey("QTUM", 10.into(), Some(0));
-
                 priv_key
             },
+            #[cfg(feature = "docker-tests-qrc20")]
             "QICK" | "QORTY" => {
                 let priv_key = random_secp256k1_secret();
                 let (_ctx, coin) = qrc20_coin_from_privkey(ticker, priv_key);
                 let my_address = coin.my_address().expect("!my_address");
-                fill_address(&coin, &my_address, 10.into(), timeout);
+                fill_utxo_address_qrc20(&coin, &my_address, 10.into(), timeout);
                 fill_qrc20_address(&coin, 10.into(), timeout);
-
                 priv_key
             },
+            #[cfg(feature = "docker-tests-qrc20")]
+            "MYCOIN" | "MYCOIN1" => {
+                let priv_key = random_secp256k1_secret();
+                let (_ctx, coin) = utxo_coin_from_privkey_qrc20(ticker, priv_key);
+                let my_address = coin.my_address().expect("!my_address");
+                fill_utxo_address_qrc20(&coin, &my_address, 10.into(), timeout);
+                priv_key
+            },
+            #[cfg(all(
+                any(
+                    feature = "docker-tests-swaps-utxo",
+                    feature = "docker-tests-ordermatch",
+                    feature = "docker-tests-watchers",
+                    feature = "docker-tests-sia"
+                ),
+                not(feature = "docker-tests-qrc20")
+            ))]
             "MYCOIN" | "MYCOIN1" => {
                 let priv_key = random_secp256k1_secret();
                 let (_ctx, coin) = utxo_coin_from_privkey(ticker, priv_key);
@@ -63,24 +150,24 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
                 fill_address(&coin, &my_address, 10.into(), timeout);
                 priv_key
             },
+            #[cfg(feature = "docker-tests-slp")]
             "ADEXSLP" | "FORSLP" => Secp256k1Secret::from(get_prefilled_slp_privkey()),
+            #[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-ordermatch"))]
             "ETH" | "ERC20DEV" => {
                 let priv_key = random_secp256k1_secret();
                 fill_eth_erc20_with_private_key(priv_key);
                 priv_key
             },
             _ => panic!(
-                "Unsupported ticker: {}. Expected one of: QTUM, QICK, QORTY, MYCOIN, MYCOIN1, ETH, ERC20DEV, FORSLP, ADEXSLP",
+                "Unsupported ticker: {}. Check that the required feature flag is enabled. \
+                 ETH/ERC20DEV: docker-tests-eth or docker-tests-ordermatch. \
+                 QTUM/QICK/QORTY/MYCOIN: docker-tests-qrc20. \
+                 MYCOIN/MYCOIN1: docker-tests-swaps-utxo, docker-tests-ordermatch, docker-tests-watchers, docker-tests-sia. \
+                 FORSLP/ADEXSLP: docker-tests-slp.",
                 ticker
             ),
         }
     }
-
-    // Determine which chain families are needed for this trade pair
-    let uses_eth = matches!(base, "ETH" | "ERC20DEV") || matches!(rel, "ETH" | "ERC20DEV");
-    let uses_qrc20 = matches!(base, "QICK" | "QORTY" | "QTUM") || matches!(rel, "QICK" | "QORTY" | "QTUM");
-    let uses_utxo = matches!(base, "MYCOIN" | "MYCOIN1") || matches!(rel, "MYCOIN" | "MYCOIN1");
-    let uses_slp = matches!(base, "FORSLP" | "ADEXSLP") || matches!(rel, "FORSLP" | "ADEXSLP");
 
     let bob_priv_key = generate_and_fill_priv_key(base);
     let alice_priv_key = generate_and_fill_priv_key(rel);
@@ -96,20 +183,20 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
         envs.push(("TEST_BURN_ADDR_RAW_PUBKEY", alice_pubkey_str.as_str()));
     }
 
-    // Build coins config dynamically based on which chains are needed
+    // Build coins config based on enabled features
     let mut coins_vec: Vec<Json> = Vec::new();
 
-    if uses_eth {
+    #[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-ordermatch"))]
+    {
         coins_vec.push(eth_dev_conf());
         coins_vec.push(erc20_dev_conf(&erc20_contract_checksum()));
     }
 
-    if uses_qrc20 {
+    #[cfg(feature = "docker-tests-qrc20")]
+    {
         let confpath = qtum_conf_path();
         coins_vec.push(qrc20_coin_conf_item("QICK"));
         coins_vec.push(qrc20_coin_conf_item("QORTY"));
-        // TODO: check if we should fix protocol "type":"UTXO" to "QTUM" for this and other QTUM coin tests.
-        // Maybe we should use a different coin for "UTXO" protocol and make new tests for "QTUM" protocol
         coins_vec.push(json!({
             "coin": "QTUM", "asset": "QTUM", "required_confirmations": 0, "decimals": 8,
             "pubtype": 120, "p2shtype": 110, "wiftype": 128, "segwit": true, "txfee": 0,
@@ -117,9 +204,6 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
             "confpath": confpath, "protocol": {"type": "UTXO"}, "bech32_hrp": "qcrt",
             "address_format": {"format": "segwit"}
         }));
-    }
-
-    if uses_utxo {
         coins_vec.push(json!({
             "coin": "MYCOIN", "asset": "MYCOIN", "required_confirmations": 0,
             "txversion": 4, "overwintered": 1, "txfee": 1000, "protocol": {"type": "UTXO"}
@@ -130,7 +214,28 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
         }));
     }
 
-    if uses_slp {
+    #[cfg(all(
+        any(
+            feature = "docker-tests-swaps-utxo",
+            feature = "docker-tests-ordermatch",
+            feature = "docker-tests-watchers",
+            feature = "docker-tests-sia"
+        ),
+        not(feature = "docker-tests-qrc20")
+    ))]
+    {
+        coins_vec.push(json!({
+            "coin": "MYCOIN", "asset": "MYCOIN", "required_confirmations": 0,
+            "txversion": 4, "overwintered": 1, "txfee": 1000, "protocol": {"type": "UTXO"}
+        }));
+        coins_vec.push(json!({
+            "coin": "MYCOIN1", "asset": "MYCOIN1", "required_confirmations": 0,
+            "txversion": 4, "overwintered": 1, "txfee": 1000, "protocol": {"type": "UTXO"}
+        }));
+    }
+
+    #[cfg(feature = "docker-tests-slp")]
+    {
         coins_vec.push(json!({
             "coin": "FORSLP", "asset": "FORSLP", "required_confirmations": 0,
             "txversion": 4, "overwintered": 1, "txfee": 1000,
@@ -147,7 +252,7 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
         json! ({
             "gui": "nogui",
             "netid": 9000,
-            "dht": "on",  // Enable DHT without delay.
+            "dht": "on",
             "passphrase": format!("0x{}", hex::encode(bob_priv_key)),
             "coins": coins,
             "rpc_password": "pass",
@@ -166,7 +271,7 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
         json! ({
             "gui": "nogui",
             "netid": 9000,
-            "dht": "on",  // Enable DHT without delay.
+            "dht": "on",
             "passphrase": format!("0x{}", hex::encode(alice_priv_key)),
             "coins": coins,
             "rpc_password": "pass",
@@ -180,21 +285,38 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
     block_on(mm_alice.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
-    // Enable coins based on what's needed for this trade (Bob)
-    if uses_qrc20 {
+    // Enable coins for Bob based on enabled features
+    #[cfg(feature = "docker-tests-qrc20")]
+    {
         log!("{:?}", block_on(enable_qrc20_native(&mm_bob, "QICK")));
         log!("{:?}", block_on(enable_qrc20_native(&mm_bob, "QORTY")));
-        log!("{:?}", block_on(enable_native(&mm_bob, "QTUM", &[], None)));
+        log!("{:?}", block_on(enable_native_qrc20(&mm_bob, "QTUM", &[], None)));
+        log!("{:?}", block_on(enable_native_qrc20(&mm_bob, "MYCOIN", &[], None)));
+        log!("{:?}", block_on(enable_native_qrc20(&mm_bob, "MYCOIN1", &[], None)));
     }
-    if uses_utxo {
+
+    #[cfg(all(
+        any(
+            feature = "docker-tests-swaps-utxo",
+            feature = "docker-tests-ordermatch",
+            feature = "docker-tests-watchers",
+            feature = "docker-tests-sia"
+        ),
+        not(feature = "docker-tests-qrc20")
+    ))]
+    {
         log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[], None)));
         log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[], None)));
     }
-    if uses_slp {
+
+    #[cfg(feature = "docker-tests-slp")]
+    {
         log!("{:?}", block_on(enable_native_bch(&mm_bob, "FORSLP", &[])));
-        log!("{:?}", block_on(enable_native(&mm_bob, "ADEXSLP", &[], None)));
+        log!("{:?}", block_on(enable_native_slp(&mm_bob, "ADEXSLP", &[], None)));
     }
-    if uses_eth {
+
+    #[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-ordermatch"))]
+    {
         let swap_contract = swap_contract_checksum();
         log!(
             "{:?}",
@@ -220,21 +342,38 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
         );
     }
 
-    // Enable coins based on what's needed for this trade (Alice)
-    if uses_qrc20 {
+    // Enable coins for Alice based on enabled features
+    #[cfg(feature = "docker-tests-qrc20")]
+    {
         log!("{:?}", block_on(enable_qrc20_native(&mm_alice, "QICK")));
         log!("{:?}", block_on(enable_qrc20_native(&mm_alice, "QORTY")));
-        log!("{:?}", block_on(enable_native(&mm_alice, "QTUM", &[], None)));
+        log!("{:?}", block_on(enable_native_qrc20(&mm_alice, "QTUM", &[], None)));
+        log!("{:?}", block_on(enable_native_qrc20(&mm_alice, "MYCOIN", &[], None)));
+        log!("{:?}", block_on(enable_native_qrc20(&mm_alice, "MYCOIN1", &[], None)));
     }
-    if uses_utxo {
+
+    #[cfg(all(
+        any(
+            feature = "docker-tests-swaps-utxo",
+            feature = "docker-tests-ordermatch",
+            feature = "docker-tests-watchers",
+            feature = "docker-tests-sia"
+        ),
+        not(feature = "docker-tests-qrc20")
+    ))]
+    {
         log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[], None)));
         log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[], None)));
     }
-    if uses_slp {
+
+    #[cfg(feature = "docker-tests-slp")]
+    {
         log!("{:?}", block_on(enable_native_bch(&mm_alice, "FORSLP", &[])));
-        log!("{:?}", block_on(enable_native(&mm_alice, "ADEXSLP", &[], None)));
+        log!("{:?}", block_on(enable_native_slp(&mm_alice, "ADEXSLP", &[], None)));
     }
-    if uses_eth {
+
+    #[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-ordermatch"))]
+    {
         let swap_contract = swap_contract_checksum();
         log!(
             "{:?}",
