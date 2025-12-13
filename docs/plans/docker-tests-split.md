@@ -961,27 +961,60 @@ The following runtime fixes have been implemented to prevent `OnceLock` panics w
     - `docker-tests-integration`
   - **For local "run everything":** Use `--features docker-tests-all`
 
-- [ ] **Feature-gate container startup in testcontainers mode**
-  - **Current problem:** In testcontainers mode, ALL containers (UTXO, Qtum, Geth, Cosmos, Zombie) start regardless of which feature flags are enabled. This wastes time for tests that only need specific containers.
-  - **Example:** Running `--features docker-tests-watchers` (which only needs UTXO + Geth) still starts Qtum, Cosmos IBC relayer, and Zombie containers, adding ~2 minutes of unnecessary setup.
-  - **Fix:** Gate container startup in `docker_tests_main.rs` based on feature flags, so testcontainers mode only starts what's needed.
+- [x] **Feature-gate container startup in testcontainers mode** ✅ DONE
+  - **Previous problem:** In testcontainers mode, ALL containers (UTXO, Qtum, Geth, Cosmos, Zombie) started regardless of which feature flags were enabled.
+  - **Solution:** Gate container startup in `docker_tests_main.rs` based on feature flags using `RequiredNodes` struct.
+  - Container startup now only starts what's needed based on which feature flags are enabled.
 
-- [ ] **Replace `_KDF_NO_*_DOCKER` env vars with feature-flag-based container control**
-  - Currently, two mechanisms control which containers are started:
-    - Feature flags (`docker-tests-eth`, etc.) control which test modules are **compiled**
-    - Env vars (`_KDF_NO_ETH_DOCKER`, etc.) control which containers are **initialized at runtime**
-  - This creates duplication: CI jobs must set both the feature flag AND the corresponding env vars
-  - Proposed refactor: Derive `disable_*` flags from feature flags at compile time:
+- [x] **Replace `_KDF_NO_*_DOCKER` env vars with feature-flag-based container control** ✅ DONE
+  - **Implementation:** Added `RequiredNodes` struct with per-node granularity in `docker_tests_main.rs`:
     ```rust
-    // Instead of: let disable_eth = env::var("_KDF_NO_ETH_DOCKER").is_ok();
-    // Use:
-    let disable_eth = !cfg!(any(
-        feature = "docker-tests-eth",
-        feature = "docker-tests-watchers",
-        feature = "docker-tests-ordermatch",
-    ));
+    #[derive(Debug, Clone, Copy, Default)]
+    struct RequiredNodes {
+        mycoin: bool,
+        mycoin1: bool,
+        forslp: bool,
+        qtum: bool,
+        eth: bool,
+        cosmos: bool,
+        zombie: bool,
+        sia: bool,
+    }
+
+    impl RequiredNodes {
+        fn from_features() -> Self {
+            Self {
+                mycoin: cfg!(feature = "docker-tests-swaps-utxo")
+                    || cfg!(feature = "docker-tests-ordermatch")
+                    || cfg!(feature = "docker-tests-watchers")
+                    || cfg!(feature = "docker-tests-qrc20")
+                    || cfg!(feature = "docker-tests-sia")
+                    || cfg!(feature = "docker-tests-integration"),
+                mycoin1: cfg!(feature = "docker-tests-swaps-utxo")
+                    || cfg!(feature = "docker-tests-ordermatch")
+                    || cfg!(feature = "docker-tests-watchers")
+                    || cfg!(feature = "docker-tests-integration"),
+                forslp: cfg!(feature = "docker-tests-slp") || cfg!(feature = "docker-tests-integration"),
+                qtum: cfg!(feature = "docker-tests-qrc20") || cfg!(feature = "docker-tests-integration"),
+                eth: cfg!(feature = "docker-tests-eth")
+                    || cfg!(feature = "docker-tests-ordermatch")
+                    || cfg!(feature = "docker-tests-watchers-eth")
+                    || cfg!(feature = "docker-tests-integration"),
+                cosmos: cfg!(feature = "docker-tests-tendermint") || cfg!(feature = "docker-tests-integration"),
+                zombie: cfg!(feature = "docker-tests-zcoin") || cfg!(feature = "docker-tests-integration"),
+                sia: cfg!(feature = "docker-tests-sia") || cfg!(feature = "docker-tests-integration"),
+            }
+        }
+        fn needs_utxo_image(&self) -> bool { self.mycoin || self.mycoin1 || self.forslp }
+    }
     ```
-  - Create a mapping from features to required node groups:
+  - **Removed:** All `_KDF_NO_*_DOCKER` env var constants and their usage from `docker_tests_main.rs`
+  - **Updated CI:** Removed all `_KDF_NO_*` env vars from CI jobs in `.github/workflows/test.yml`
+  - **Benefits achieved:**
+    - Single source of truth for container requirements (feature flags only)
+    - Simpler CI configuration (just set features, no env vars needed)
+    - Compile-time determination of container dependencies
+  - Feature→node mapping implemented:
     - `docker-tests-eth` → Geth only
     - `docker-tests-slp` → FORSLP only
     - `docker-tests-sia` → Sia + UTXO (for DSIA↔MYCOIN swaps)
@@ -989,16 +1022,9 @@ The following runtime fixes have been implemented to prevent `OnceLock` panics w
     - `docker-tests-tendermint` → Cosmos nodes only
     - `docker-tests-zcoin` → Zombie only
     - `docker-tests-swaps-utxo` → UTXO (MYCOIN, MYCOIN1)
-    - `docker-tests-watchers` → UTXO + Geth
+    - `docker-tests-watchers` → UTXO only (ETH requires docker-tests-watchers-eth)
     - `docker-tests-ordermatch` → UTXO + Geth
     - `docker-tests-integration` → ALL containers
-  - Benefits:
-    - Single source of truth for container requirements
-    - Simpler CI configuration (just set features, no env vars needed)
-    - Compile-time verification of container dependencies
-  - Trade-offs:
-    - Must rebuild to change node set (but CI already rebuilds per job)
-    - Loses runtime flexibility for local dev (can keep env vars as optional overrides if needed)
 
 **Note:** All docker tests are now covered by split CI jobs. The monolithic `docker-tests` job has been removed.
 

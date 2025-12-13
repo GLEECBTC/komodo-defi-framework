@@ -174,6 +174,15 @@ cargo clippy --all-targets --all-features -- -D warnings
 
 See `docs/DEV_ENVIRONMENT.md` for full setup and running specific tests.
 
+### Test Environment Variables
+
+Set these environment variables before running docker or integration tests:
+
+```bash
+export BOB_PASSPHRASE="also shoot benefit prefer juice shell elder veteran woman mimic image kidney"
+export ALICE_PASSPHRASE="spice describe gravity federal blast come thank unfair canal monkey style afraid"
+```
+
 ## Testing
 
 - **Bug fixes**: Prefer writing a failing test first, then fix the bug
