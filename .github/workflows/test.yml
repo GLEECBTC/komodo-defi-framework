@@ -13,6 +13,7 @@ env:
 
 jobs:
   linux-x86-64-unit:
+    name: Unit / Linux
     timeout-minutes: 90
     runs-on: ubuntu-latest
     env:
@@ -41,6 +42,7 @@ jobs:
           cargo test --bins --lib --no-fail-fast
 
   mac-x86-64-unit:
+    name: Unit / macOS
     timeout-minutes: 90
     runs-on: macos-latest
     env:
@@ -69,6 +71,7 @@ jobs:
           cargo test --bins --lib --no-fail-fast
 
   win-x86-64-unit:
+    name: Unit / Windows
     timeout-minutes: 90
     runs-on: windows-latest
     env:
@@ -97,6 +100,7 @@ jobs:
           cargo test --bins --lib --no-fail-fast
 
   linux-x86-64-kdf-integration:
+    name: Integration / Linux
     timeout-minutes: 90
     runs-on: ubuntu-latest
     env:
@@ -126,6 +130,7 @@ jobs:
           cargo test --test 'mm2_tests_main' --no-fail-fast
 
   mac-x86-64-kdf-integration:
+    name: Integration / macOS
     timeout-minutes: 90
     runs-on: macos-latest
     env:
@@ -158,6 +163,7 @@ jobs:
           cargo test --test 'mm2_tests_main' --no-fail-fast
 
   win-x86-64-kdf-integration:
+    name: Integration / Windows
     timeout-minutes: 90
     runs-on: windows-latest
     env:
@@ -196,6 +202,7 @@ jobs:
   # SLP tests - isolated BCH/SLP token tests (FORSLP node only)
   # Uses docker-tests-slp feature flag to compile only SLP tests
   docker-tests-slp:
+    name: Docker / SLP
     timeout-minutes: 45
     runs-on: ubuntu-latest
     env:
@@ -242,6 +249,7 @@ jobs:
   # Sia docker tests - Sia + UTXO for DSIA<->MYCOIN swap tests
   # sia_tests module contains swap tests between Sia and MYCOIN
   docker-tests-sia:
+    name: Docker / Sia
     timeout-minutes: 30
     runs-on: ubuntu-latest
     env:
@@ -290,6 +298,7 @@ jobs:
   # ETH/EVM tests - isolated Ethereum and ERC20 tests (GETH node only)
   # Uses docker-tests-eth feature flag to compile only ETH tests
   docker-tests-eth:
+    name: Docker / ETH
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
@@ -330,9 +339,10 @@ jobs:
         if: always()
         run: docker compose -f .docker/test-nodes.yml down -v
 
-  # Ordermatching tests - order lifecycle, matching, volume, persistence
-  # Requires UTXO + ETH nodes (cross-chain ordermatching tests in docker_tests_inner)
+  # Ordermatching tests - UTXO-only order lifecycle, matching, volume, persistence
+  # Cross-chain ordermatching tests moved to docker-tests-integration
   docker-tests-ordermatch:
+    name: Docker / Ordermatch (UTXO)
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
@@ -359,11 +369,11 @@ jobs:
       - name: Fetch zcash params
         run: wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/v0.8.1/zcutil/fetch-params-alt.sh | bash
 
-      - name: Start UTXO and ETH nodes
+      - name: Start UTXO nodes
         run: |
-          docker compose -f .docker/test-nodes.yml --profile utxo --profile evm up -d
+          docker compose -f .docker/test-nodes.yml --profile utxo up -d
           echo "Waiting for containers..."
-          sleep 25
+          sleep 15
           docker compose -f .docker/test-nodes.yml ps
 
       - name: Test ordermatching
@@ -379,6 +389,7 @@ jobs:
   # UTXO swap protocol tests - v1/v2 swap mechanics, file locks, conf sync
   # Requires only UTXO nodes
   docker-tests-swaps-utxo:
+    name: Docker / Swaps (UTXO)
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
@@ -426,6 +437,7 @@ jobs:
   # ETH watcher tests are disabled by default (unstable, behind docker-tests-watchers-eth feature)
   # Requires UTXO nodes only
   docker-tests-watchers:
+    name: Docker / Watchers (UTXO)
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
@@ -472,6 +484,7 @@ jobs:
   # QRC20/Qtum tests - Qtum coin and QRC20 token tests
   # Requires Qtum + UTXO nodes for cross-chain swap tests (QTUM/MYCOIN pairs)
   docker-tests-qrc20:
+    name: Docker / QRC20
     timeout-minutes: 45
     runs-on: ubuntu-latest
     env:
@@ -518,6 +531,7 @@ jobs:
   # Tendermint/Cosmos tests - Cosmos chain and IBC tests
   # Requires Cosmos nodes (Nucleus, Atom, IBC-Relayer)
   docker-tests-tendermint:
+    name: Docker / Tendermint
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
@@ -564,6 +578,7 @@ jobs:
   # ZCoin/Zombie tests - Zcash-based coin tests
   # Requires only Zombie node
   docker-tests-zcoin:
+    name: Docker / ZCoin
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
@@ -611,6 +626,7 @@ jobs:
   # Tests: Tendermint<->ETH swaps, SLP cross-chain swaps
   # Requires ALL container types for multi-family cross-chain scenarios
   docker-tests-integration:
+    name: Docker / Integration (Cross-chain)
     timeout-minutes: 90
     runs-on: ubuntu-latest
     env:
@@ -658,6 +674,7 @@ jobs:
         run: docker compose -f .docker/test-nodes.yml down -v
 
   wasm:
+    name: WASM
     timeout-minutes: 90
     runs-on: ubuntu-latest
     env:

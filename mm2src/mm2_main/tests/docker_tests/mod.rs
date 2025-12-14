@@ -36,10 +36,10 @@ mod utxo_ordermatch_v1_tests;
 // ============================================================================
 
 // Cross-chain tests - UTXO + ETH cross-chain order matching and validation
-// Tests: cross-chain order matching, volume validation, orderbook depth
+// Tests: cross-chain order matching, volume validation, orderbook depth, best_orders
 // Chains: UTXO-MYCOIN, UTXO-MYCOIN1, ETH, ERC20
-// Note: Contains only 4 tests that require BOTH ETH and UTXO chains simultaneously
-#[cfg(feature = "docker-tests-ordermatch")]
+// Note: Contains tests that require BOTH ETH and UTXO chains simultaneously
+#[cfg(feature = "docker-tests-integration")]
 mod docker_tests_inner;
 
 // ETH Inner tests - ETH-only tests (extracted from docker_tests_inner)
