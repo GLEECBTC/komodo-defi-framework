@@ -5,8 +5,8 @@
 //!
 //! ## Module organization
 //!
-//! - `docker_ops` - Docker operations trait (`CoinDockerOps`) for coins in containers
-//! - `env` - Environment setup: shared contexts, service constants, metadata loading
+//! - `docker_ops` - Docker operations trait and funding locks for coins in containers
+//! - `env` - Environment setup: shared contexts, service constants
 //! - `eth` - Ethereum/ERC20: Geth initialization, contract deployment, funding
 //! - `utxo` - UTXO coins: MYCOIN, MYCOIN1, BCH/SLP helpers
 //! - `qrc20` - Qtum/QRC20: contract initialization, coin creation
@@ -14,10 +14,21 @@
 //! - `swap` - Cross-chain swap orchestration helpers
 //! - `tendermint` - Cosmos/Tendermint: node setup, IBC channels
 //! - `zcoin` - ZCoin/Zombie: sapling cache, node setup
-//! - `locks` - Simple lock helpers used by UTXO/QRC20 helpers
 
 // Docker-specific helpers, only needed when docker tests are enabled.
-#[cfg(feature = "run-docker-tests")]
+// Gated on specific features to avoid unused code warnings.
+
+// docker_ops - trait used by multiple chain-specific setups
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-sia",
+    feature = "docker-tests-slp",
+    feature = "docker-tests-zcoin",
+    feature = "docker-tests-integration"
+))]
 pub mod docker_ops;
 
 // Environment helpers - also used by sepolia tests
@@ -30,37 +41,52 @@ pub mod env;
 
 // ETH helpers - also used by sepolia tests
 #[cfg(any(
-    feature = "run-docker-tests",
+    feature = "docker-tests-eth",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers-eth",
+    feature = "docker-tests-integration",
     feature = "sepolia-maker-swap-v2-tests",
     feature = "sepolia-taker-swap-v2-tests",
 ))]
 pub mod eth;
 
-// Simple lock helpers used by UTXO/QRC20 helpers.
-#[cfg(feature = "run-docker-tests")]
-pub mod locks;
-
 // QRC20 helpers (Qtum/QRC20 docker nodes & contracts).
-#[cfg(feature = "run-docker-tests")]
+#[cfg(feature = "docker-tests-qrc20")]
 pub mod qrc20;
 
 // Sia helpers (Sia docker nodes).
-// Gated on docker-tests-sia to prevent compilation in other docker test jobs.
-#[cfg(all(feature = "run-docker-tests", feature = "docker-tests-sia"))]
+#[cfg(feature = "docker-tests-sia")]
 pub mod sia;
 
 // Cross-chain swap orchestration helpers.
-#[cfg(feature = "run-docker-tests")]
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-eth",
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-slp",
+    feature = "docker-tests-integration"
+))]
 pub mod swap;
 
 // Tendermint / IBC helpers.
-#[cfg(feature = "run-docker-tests")]
+#[cfg(any(feature = "docker-tests-tendermint", feature = "docker-tests-integration"))]
 pub mod tendermint;
 
 // UTXO (incl. SLP) helpers.
-#[cfg(feature = "run-docker-tests")]
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-sia",
+    feature = "docker-tests-slp",
+    feature = "docker-tests-zcoin",
+    feature = "docker-tests-integration"
+))]
 pub mod utxo;
 
 // ZCoin/Zombie helpers.
-#[cfg(feature = "run-docker-tests")]
+#[cfg(feature = "docker-tests-zcoin")]
 pub mod zcoin;

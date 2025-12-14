@@ -10,10 +10,10 @@
 //
 // Gated by: docker-tests-eth
 
-use crate::docker_tests::helpers::env::{random_secp256k1_secret, MM_CTX};
+use crate::docker_tests::helpers::env::random_secp256k1_secret;
 use crate::docker_tests::helpers::eth::{
     erc20_coin_with_random_privkey, erc20_contract_checksum, fill_eth_erc20_with_private_key, swap_contract,
-    swap_contract_checksum, GETH_RPC_URL,
+    swap_contract_checksum, GETH_RPC_URL, MM_CTX,
 };
 use crate::docker_tests::helpers::swap::trade_base_rel;
 use crate::integration_tests_common::rmd160_from_passphrase;

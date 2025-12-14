@@ -1,9 +1,9 @@
-use super::helpers::env::{random_secp256k1_secret, MM_CTX, MM_CTX1};
+use super::helpers::env::random_secp256k1_secret;
 use super::helpers::eth::{
     erc20_coin_with_random_privkey, erc20_contract, erc20_contract_checksum, eth_coin_with_random_privkey,
     eth_coin_with_random_privkey_using_urls, fill_erc20, fill_eth, geth_account, geth_erc1155_contract,
     geth_erc721_contract, geth_maker_swap_v2, geth_nft_maker_swap_v2, geth_taker_swap_v2, swap_contract,
-    swap_contract_checksum, GETH_DEV_CHAIN_ID, GETH_NONCE_LOCK, GETH_RPC_URL, GETH_WEB3,
+    swap_contract_checksum, GETH_DEV_CHAIN_ID, GETH_NONCE_LOCK, GETH_RPC_URL, GETH_WEB3, MM_CTX, MM_CTX1,
 };
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use super::helpers::eth::{

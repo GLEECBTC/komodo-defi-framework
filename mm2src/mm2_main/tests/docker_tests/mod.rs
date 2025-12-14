@@ -1,6 +1,5 @@
 #![allow(static_mut_refs)]
 
-pub mod docker_env_metadata;
 pub mod runner;
 
 // Helpers are used by all docker tests, and also by some sepolia tests

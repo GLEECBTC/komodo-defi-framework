@@ -26,7 +26,6 @@
 #
 # For CI/local reuse:
 #   KDF_DOCKER_COMPOSE_ENV=1        - Test harness attaches to running containers
-#   KDF_DOCKER_ENV_STATE_FILE=path  - Skip initialization, load from metadata
 
 name: kdf-test-nodes
 

@@ -7,14 +7,16 @@
 //! - Coin creation helpers
 //! - Geth initialization with contract deployment
 
-use crate::docker_tests::helpers::env::{random_secp256k1_secret, DockerNode, Secp256k1Secret, MM_CTX};
+use crate::docker_tests::helpers::env::{random_secp256k1_secret, DockerNode, Secp256k1Secret};
 use coins::eth::addr_from_raw_pubkey;
 use coins::eth::{checksum_address, eth_coin_from_conf_and_request, EthCoin, ERC20_ABI};
 use coins::{CoinProtocol, CoinWithDerivationMethod, DerivationMethod, PrivKeyBuildPolicy};
 use common::block_on;
+use common::custom_futures::timeout::FutureTimerExt;
 use crypto::privkey::key_pair_from_seed;
 use ethabi::Token;
 use ethereum_types::{H160 as H160Eth, U256};
+use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_test_helpers::for_tests::{erc20_dev_conf, eth_dev_conf};
 use mm2_test_helpers::get_passphrase;
 use std::sync::{Mutex, OnceLock};
@@ -35,6 +37,21 @@ lazy_static! {
     pub static ref GETH_WEB3: Web3<Http> = Web3::new(Http::new(GETH_RPC_URL).unwrap());
     /// Mutex used to prevent nonce re-usage during funding addresses used in tests
     pub static ref GETH_NONCE_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Shared MmArc context for single-instance tests
+    pub static ref MM_CTX: MmArc = MmCtxBuilder::new()
+        .with_conf(json!({"coins":[eth_dev_conf()],"use_trading_proto_v2": true}))
+        .into_mm_arc();
+
+    /// Second MmCtx instance for Maker/Taker tests using same private keys.
+    ///
+    /// When enabling coins for both Maker and Taker, two distinct coin instances are created.
+    /// Different instances of the same coin should have separate global nonce locks.
+    /// Using different MmCtx instances assigns Maker and Taker coins to separate CoinsCtx,
+    /// addressing the "replacement transaction" issue (same nonce for different transactions).
+    pub static ref MM_CTX1: MmArc = MmCtxBuilder::new()
+        .with_conf(json!({"use_trading_proto_v2": true}))
+        .into_mm_arc();
 }
 
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
@@ -196,71 +213,6 @@ pub fn geth_nft_maker_swap_v2() -> Address {
         .expect("GETH_NFT_MAKER_SWAP_V2 not initialized - call init_geth_node() first")
 }
 
-// =============================================================================
-// Address setters - for loading from metadata files
-// =============================================================================
-
-/// Set the Geth account address (for metadata loading).
-pub fn set_geth_account(addr: Address) {
-    GETH_ACCOUNT.set(addr).expect("GETH_ACCOUNT already initialized");
-}
-
-/// Set the ERC20 contract address (for metadata loading).
-pub fn set_erc20_contract(addr: Address) {
-    GETH_ERC20_CONTRACT
-        .set(addr)
-        .expect("GETH_ERC20_CONTRACT already initialized");
-}
-
-/// Set the swap contract address (for metadata loading).
-pub fn set_swap_contract(addr: Address) {
-    GETH_SWAP_CONTRACT
-        .set(addr)
-        .expect("GETH_SWAP_CONTRACT already initialized");
-}
-
-/// Set the Maker Swap V2 contract address (for metadata loading).
-pub fn set_geth_maker_swap_v2(addr: Address) {
-    GETH_MAKER_SWAP_V2
-        .set(addr)
-        .expect("GETH_MAKER_SWAP_V2 already initialized");
-}
-
-/// Set the Taker Swap V2 contract address (for metadata loading).
-pub fn set_geth_taker_swap_v2(addr: Address) {
-    GETH_TAKER_SWAP_V2
-        .set(addr)
-        .expect("GETH_TAKER_SWAP_V2 already initialized");
-}
-
-/// Set the watchers swap contract address (for metadata loading).
-pub fn set_watchers_swap_contract(addr: Address) {
-    GETH_WATCHERS_SWAP_CONTRACT
-        .set(addr)
-        .expect("GETH_WATCHERS_SWAP_CONTRACT already initialized");
-}
-
-/// Set the ERC721 contract address (for metadata loading).
-pub fn set_geth_erc721_contract(addr: Address) {
-    GETH_ERC721_CONTRACT
-        .set(addr)
-        .expect("GETH_ERC721_CONTRACT already initialized");
-}
-
-/// Set the ERC1155 contract address (for metadata loading).
-pub fn set_geth_erc1155_contract(addr: Address) {
-    GETH_ERC1155_CONTRACT
-        .set(addr)
-        .expect("GETH_ERC1155_CONTRACT already initialized");
-}
-
-/// Set the NFT Maker Swap V2 contract address (for metadata loading).
-pub fn set_geth_nft_maker_swap_v2(addr: Address) {
-    GETH_NFT_MAKER_SWAP_V2
-        .set(addr)
-        .expect("GETH_NFT_MAKER_SWAP_V2 already initialized");
-}
-
 /// Return ERC20 dev token contract address in checksum format
 pub fn erc20_contract_checksum() -> String {
     checksum_address(&format!("{:02x}", erc20_contract()))
@@ -272,6 +224,7 @@ pub fn swap_contract_checksum() -> String {
 }
 
 /// Return watchers swap contract address in checksum format (with 0x prefix)
+#[cfg(feature = "docker-tests-watchers")]
 pub fn watchers_swap_contract_checksum() -> String {
     checksum_address(&format!("{:02x}", watchers_swap_contract()))
 }
@@ -290,6 +243,33 @@ pub fn geth_docker_node(ticker: &'static str, port: u16) -> DockerNode {
         container,
         ticker: ticker.into(),
         port,
+    }
+}
+
+/// Wait for the Geth node to be ready to accept connections.
+///
+/// Polls the node's block number endpoint until it responds successfully.
+/// Used in compose mode where the node may still be starting up.
+pub fn wait_for_geth_node_ready() {
+    let mut attempts = 0;
+    loop {
+        if attempts >= 5 {
+            panic!("Failed to connect to Geth node after several attempts.");
+        }
+        match block_on(GETH_WEB3.eth().block_number().timeout(Duration::from_secs(6))) {
+            Ok(Ok(block_number)) => {
+                log!("Geth node is ready, latest block number: {:?}", block_number);
+                break;
+            },
+            Ok(Err(e)) => {
+                log!("Failed to connect to Geth node: {:?}, retrying...", e);
+            },
+            Err(_) => {
+                log!("Connection to Geth node timed out, retrying...");
+            },
+        }
+        attempts += 1;
+        thread::sleep(Duration::from_secs(1));
     }
 }
 

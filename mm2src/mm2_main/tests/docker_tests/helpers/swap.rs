@@ -24,6 +24,16 @@ use std::time::Duration;
 
 use super::env::{random_secp256k1_secret, Secp256k1Secret, SET_BURN_PUBKEY_TO_ALICE};
 
+/// Timeout in seconds for wallet funding operations during test setup.
+#[cfg(any(
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-sia"
+))]
+const WALLET_FUNDING_TIMEOUT_SEC: u64 = 30;
+
 // ETH imports
 #[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-ordermatch"))]
 use super::eth::{erc20_contract_checksum, fill_eth_erc20_with_private_key, swap_contract_checksum, GETH_RPC_URL};
@@ -108,12 +118,10 @@ use mm2_test_helpers::for_tests::{enable_native as enable_native_slp, enable_nat
 pub fn trade_base_rel((base, rel): (&str, &str)) {
     /// Generate a wallet with the random private key and fill the wallet with funds.
     fn generate_and_fill_priv_key(ticker: &str) -> Secp256k1Secret {
-        let timeout = 30; // timeout if test takes more than 30 seconds to run
-
         match ticker {
             #[cfg(feature = "docker-tests-qrc20")]
             "QTUM" => {
-                wait_for_estimate_smart_fee(timeout).expect("!wait_for_estimate_smart_fee");
+                wait_for_estimate_smart_fee(WALLET_FUNDING_TIMEOUT_SEC).expect("!wait_for_estimate_smart_fee");
                 let (_ctx, _coin, priv_key) = generate_segwit_qtum_coin_with_random_privkey("QTUM", 10.into(), Some(0));
                 priv_key
             },
@@ -122,8 +130,8 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
                 let priv_key = random_secp256k1_secret();
                 let (_ctx, coin) = qrc20_coin_from_privkey(ticker, priv_key);
                 let my_address = coin.my_address().expect("!my_address");
-                fill_utxo_address_qrc20(&coin, &my_address, 10.into(), timeout);
-                fill_qrc20_address(&coin, 10.into(), timeout);
+                fill_utxo_address_qrc20(&coin, &my_address, 10.into(), WALLET_FUNDING_TIMEOUT_SEC);
+                fill_qrc20_address(&coin, 10.into(), WALLET_FUNDING_TIMEOUT_SEC);
                 priv_key
             },
             #[cfg(feature = "docker-tests-qrc20")]
@@ -131,7 +139,7 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
                 let priv_key = random_secp256k1_secret();
                 let (_ctx, coin) = utxo_coin_from_privkey_qrc20(ticker, priv_key);
                 let my_address = coin.my_address().expect("!my_address");
-                fill_utxo_address_qrc20(&coin, &my_address, 10.into(), timeout);
+                fill_utxo_address_qrc20(&coin, &my_address, 10.into(), WALLET_FUNDING_TIMEOUT_SEC);
                 priv_key
             },
             #[cfg(all(
@@ -147,7 +155,7 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
                 let priv_key = random_secp256k1_secret();
                 let (_ctx, coin) = utxo_coin_from_privkey(ticker, priv_key);
                 let my_address = coin.my_address().expect("!my_address");
-                fill_address(&coin, &my_address, 10.into(), timeout);
+                fill_address(&coin, &my_address, 10.into(), WALLET_FUNDING_TIMEOUT_SEC);
                 priv_key
             },
             #[cfg(feature = "docker-tests-slp")]

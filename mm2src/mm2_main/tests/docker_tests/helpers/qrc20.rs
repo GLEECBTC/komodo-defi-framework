@@ -5,8 +5,10 @@
 //! - Qtum docker node helpers
 //! - QRC20 contract initialization
 
-use crate::docker_tests::helpers::env::{random_secp256k1_secret, DockerNode, Secp256k1Secret};
-use crate::docker_tests::helpers::locks::QTUM_LOCK;
+use crate::docker_tests::helpers::docker_ops::{
+    docker_cp_from_container, resolve_compose_container_id, wait_for_file, QTUM_LOCK,
+};
+use crate::docker_tests::helpers::env::{random_secp256k1_secret, DockerNode, Secp256k1Secret, KDF_QTUM_SERVICE};
 use crate::docker_tests::helpers::utxo::fill_address;
 use coins::qrc20::rpc_clients::for_tests::Qrc20NativeWalletOps;
 use coins::qrc20::{qrc20_coin_with_priv_key, Qrc20ActivationParams, Qrc20Coin};
@@ -110,6 +112,24 @@ pub fn set_qrc20_swap_contract_address(addr: H160Eth) {
 /// Set the Qtum config file path (for initialization).
 pub fn set_qtum_conf_path(path: PathBuf) {
     QTUM_CONF_PATH.set(path).expect("QTUM_CONF_PATH already initialized");
+}
+
+/// Setup Qtum configuration from a docker-compose container.
+///
+/// Copies the Qtum configuration file from the compose container to the local
+/// daemon data directory. Used when tests run against pre-started compose nodes.
+pub fn setup_qtum_conf_for_compose() {
+    use coins::utxo::coin_daemon_data_dir;
+
+    let mut conf_path = coin_daemon_data_dir("qtum", false);
+    std::fs::create_dir_all(&conf_path).unwrap();
+    conf_path.push("qtum.conf");
+
+    let container_id = resolve_compose_container_id(KDF_QTUM_SERVICE);
+    docker_cp_from_container(&container_id, "/data/node_0/qtum.conf", &conf_path);
+    wait_for_file(&conf_path, 3000);
+
+    set_qtum_conf_path(conf_path);
 }
 
 // =============================================================================

@@ -9,7 +9,7 @@
 
 ## 1. Goals
 
-1. ✅ Stabilize the new Docker infra (Compose/Metadata/Reuse) and fix all correctness issues.
+1. ✅ Stabilize the new Docker infra (Compose) and fix all correctness issues.
 2. ✅ Split the monolithic `docker-tests` job into smaller **functional** jobs:
    - Ordermatching (`docker-tests-ordermatch`)
    - Swaps (`docker-tests-swaps-utxo`)
@@ -35,22 +35,20 @@
 
 ### 2.1 Environment modes
 
-`docker_tests_main.rs` currently supports three modes:
+`docker_tests_main.rs` currently supports two modes:
 
 - `Testcontainers` (legacy / default)
    - Tests spin up containers via `testcontainers`.
 - `ComposeInit`
    - Assumes docker-compose is already running.
-   - Initializes nodes (contracts, tokens, IBC, etc.) and writes `DockerEnvMetadata`.
-- `ReuseMetadata`
-   - Loads `DockerEnvMetadata` and reuses running containers, performing basic health checks.
+   - Initializes nodes (contracts, tokens, IBC, etc.) on each run.
 
-**Note:** `ComposeInit` always saves metadata to `.docker/container-runtime/docker_env_state.json` (via `default_path()`); `ReuseMetadata` is only entered when `KDF_DOCKER_ENV_STATE_FILE` is set (there is no current default auto-load).
+**Note:** Docker env metadata persistence (`DockerEnvMetadata` / `KDF_DOCKER_ENV_STATE_FILE` / ReuseMetadata) was removed because it was not used by CI and added unnecessary complexity.
 
 New infra:
 
-- `DockerEnvMetadata`:
-   - Captures RPC URLs, ports, conf paths, contract addresses, token IDs, etc.
+- Contract helpers:
+   - ETH contracts: `swap_contract()`, `watchers_swap_contract()`, `erc20_contract()`, etc.
 - `docker_tests::helpers::eth`:
    - `geth_account()`, `swap_contract()`, `watchers_swap_contract()`, `erc20_contract_checksum()`, `eth_coin_with_random_privkey`, `fill_eth_erc20_with_private_key`, etc.
 
@@ -119,7 +117,7 @@ We want to group tests by behavior and feature area:
    - ETH
    - Sia
 - **Cross-chain integration**
-   - A small set of “everything together” swaps (e.g. SLP ↔ UTXO ↔ QRC20 ↔ ETH).
+   - A small set of "everything together" swaps (e.g. SLP ↔ UTXO ↔ QRC20 ↔ ETH).
 
 ---
 
@@ -169,18 +167,13 @@ Each phase should be implemented in one or more small PRs.
 - [x] Replace `temp_dir()` in `setup_qtum_conf_for_compose` with a stable, repo-relative path. Two safe choices:
    - `coin_daemon_data_dir("QTUM", true)/qtum.conf` (consistent with UTXO), or
    - `project_root/.docker/container-runtime/qtum/qtum.conf`
-- [x] Store the chosen `qtum.conf` path into `DockerEnvMetadata.qtum.conf_path` when initializing.
-- [x] In Reuse mode, assert the conf path exists:
-   - If missing → "Qtum config missing at X; metadata is stale. Re-run docker env init."
+- [x] Store the chosen `qtum.conf` path for future reference (if needed).
 
 #### 4.1.3 Single source of truth for metadata file path (non-breaking)
 
 **File:** `mm2src/mm2_main/tests/docker_tests/docker_env_metadata.rs`
 
-- [x] Keep `get_metadata_file_path()` returning `Option<PathBuf>` from `KDF_DOCKER_ENV_STATE_FILE`.
-- [x] Add `fn get_or_default_metadata_path() -> PathBuf` that returns the env path if set, else `default_path()`.
-- [x] Use `get_or_default_metadata_path()` when saving the metadata (ComposeInit).
-- [x] Keep `ReuseMetadata` gated by `KDF_DOCKER_ENV_STATE_FILE` for now (no behavior change, but the writer side is centralized).
+**Status:** ✅ Removed - metadata persistence not used by CI.
 
 #### 4.1.4 Semantic health checks (minimal slice)
 
@@ -533,6 +526,14 @@ After plan completion, the sum of all split jobs must equal this baseline.
   - All other modules have correct single-feature gates matching their CI job
 
 **Future cleanup (post-plan):**
+- [ ] Reduce `#[cfg(feature = ...)]` complexity across docker test infrastructure:
+  - **Restructure file organization**: Group related functionality into feature-specific submodules
+    - Split `runner.rs` into `runner/utxo.rs`, `runner/eth.rs`, `runner/tendermint.rs`, etc.
+    - Split `helpers/` into chain-specific modules that are conditionally compiled as units
+  - **Use module-level gating**: `#[cfg] mod utxo;` instead of individual function/import gating
+  - **Split then combine approach**: Each chain's setup logic in its own file, then combine via conditional imports
+  - **Reduce import duplication**: Consolidate feature gates to module boundaries rather than individual items
+  - **Benefits**: Cleaner code, fewer warnings about unused items, easier maintenance
 - [ ] Review `utxo_swaps_v1_tests.rs` for tests that don't belong in swaps category:
   - UTXO merge tests may belong in a separate UTXO maintenance module
   - Some tests may better fit in ordermatching category
@@ -917,7 +918,7 @@ The following runtime fixes have been implemented to prevent `OnceLock` panics w
   - Tasks:
     - [ ] Update CI workflow to point to GLEEC fork
     - [ ] Verify docker-compose files are compatible
-    - [ ] Ensure contract addresses in `DockerEnvMetadata` match GLEEC deployments
+    - [ ] Ensure contract addresses match GLEEC deployments
     - [ ] Test all docker test suites against GLEEC infrastructure
 
 - [x] **Add `docker-tests-integration` feature flag and CI job** ✅ DONE
@@ -1040,7 +1041,7 @@ The following runtime fixes have been implemented to prevent `OnceLock` panics w
 
 **Goal:** Reduce complexity to a minimal set of environment modes and clarify what metadata is responsible for.
 
-#### 4.4.1 Dedicated “docker env init” command
+#### 4.4.1 Dedicated "docker env init" command
 
 - Extract Compose-related initialization into a dedicated binary or subcommand, for example:
 
@@ -1071,29 +1072,23 @@ In `docker_tests_runner`:
 
 - Keep only two modes:
    - `Testcontainers` (self-contained; legacy behavior).
-   - `ReuseMetadata` (connect to a pre-initialized environment using metadata).
-- Remove `ComposeInit` as a runtime mode:
-   - That logic now lives exclusively in `docker_env_init`.
+   - `ComposeInit` (connect to a running docker-compose environment and initialize on each run).
 
 This keeps test execution simple:
 
 - Local dev: `cargo test -p mm2 --test docker_tests_main` (testcontainers).
 - CI / composed env:
-   - Run env init once → then always `ReuseMetadata`.
+   - `docker compose up -d ...`
+   - `cargo test -p mm2 --features docker-tests-...` (uses ComposeInit mode)
 
-#### 4.4.3 Slim down `DockerEnvMetadata`
+#### 4.4.3 Environment configuration
 
-- Retain only “generated” artifacts that are expensive or impossible to infer:
-   - Contract addresses (swap, watcher, NFTs, ERC20).
-   - QRC20 swap contracts, token contracts.
-   - SLP token IDs & owners (if required).
-- Remove:
-   - Hard-coded ports/hosts that can be read from env or shared config.
-   - Direct file paths that follow a pre-known directory layout where possible.
-- Keep a small `.docker/config.json` or `.env` to hold stable host/port information, shared between:
-   - docker-compose
-   - `docker_env_init`
-   - tests.
+- Use shared configuration:
+   - Keep a small `.docker/config.json` or `.env` to hold stable host/port information.
+   - Share between docker-compose and tests.
+- Contract addresses:
+   - Initialize in `docker_tests_main.rs` on each run.
+   - No persistence needed for CI workflows.
 
 #### 4.4.4 Guard global statics
 
@@ -1119,7 +1114,7 @@ This keeps test execution simple:
    - Locktimes (since these are local test networks).
    - Confirmation counts where safe (e.g. 1 conf instead of 3 if semantics permit).
 - Tighten:
-   - `wait_for_log` durations to “just enough” + small buffer.
+   - `wait_for_log` durations to "just enough" + small buffer.
 - Remove or merge redundant scenarios:
    - If multiple tests cover effectively the same pattern, keep one representative.
 
@@ -1293,6 +1288,170 @@ Note: Until all feature-gated suites have dedicated CI jobs (Phase 3), individua
 
 ---
 
+### Phase 7.5 – Module restructuring for maintainability
+
+**Goal:** Improve separation of concerns, reduce feature flag sprawl, and make the codebase more maintainable.
+
+**Status:** All docker test features pass clippy with zero warnings. This phase focuses on architectural improvements.
+
+#### 7.5.1 Create framework layer
+
+**Goal:** Separate "framework" utilities from chain-specific helpers.
+
+**New directory:** `mm2src/mm2_main/tests/docker_tests/framework/`
+
+Actions:
+
+- [ ] Create `framework/mod.rs` (re-exports)
+- [ ] Create `framework/compose.rs`:
+  - Move `resolve_compose_container_id`, `docker_cp_from_container`, `wait_for_file` from `helpers/docker_ops.rs`
+  - Optional: add caching to avoid repeated `docker ps` calls
+- [ ] Create `framework/locks.rs`:
+  - Move `MYCOIN_LOCK`, `MYCOIN1_LOCK`, `FORSLP_LOCK`, `QTUM_LOCK`, `ZCOIN_*` locks from `helpers/docker_ops.rs`
+  - Move `get_funding_lock()` function
+- [ ] Create `framework/coin_docker_ops.rs`:
+  - Move `CoinDockerOps` trait from `helpers/docker_ops.rs`
+- [ ] Create `framework/node.rs`:
+  - Move `DockerNode` from `helpers/env.rs`
+- [ ] Create `framework/services.rs`:
+  - Move `KDF_*_SERVICE` constants from `helpers/env.rs`
+- [ ] Create `framework/keys.rs`:
+  - Move `random_secp256k1_secret()` and `Secp256k1Secret` re-export from `helpers/env.rs`
+- [ ] Update `helpers/env.rs` to be a thin re-export façade for backward compatibility
+- [ ] Update all imports in helpers and runner
+
+#### 7.5.2 Convert ETH helper to directory module
+
+**Goal:** Split large `helpers/eth.rs` (~877 LOC) into focused submodules.
+
+Actions:
+
+- [ ] Convert `helpers/eth.rs` → `helpers/eth/mod.rs`
+- [ ] Create submodules:
+  - `helpers/eth/state.rs` – global state / OnceLocks consolidated into `GethState` struct
+  - `helpers/eth/node.rs` – `geth_docker_node`, `wait_for_geth_node_ready`
+  - `helpers/eth/contracts.rs` – bytecode constants + deploy functions
+  - `helpers/eth/funding.rs` – `fill_eth`, `fill_erc20`, confirmation wait
+  - `helpers/eth/coins.rs` – coin creation helpers
+  - `helpers/eth/sepolia.rs` – sepolia-only addresses & locks (gated separately)
+- [ ] Consolidate OnceLock statics into single `GethState` struct:
+  ```rust
+  pub struct GethState {
+      pub account: Address,
+      pub contracts: GethContracts,
+      pub nonce_lock: Mutex<()>,
+      pub web3: Web3<Http>,
+  }
+  static GETH: OnceLock<GethState> = OnceLock::new();
+  ```
+- [ ] Remove `static mut` sepolia addresses, replace with `OnceLock<SepoliaContracts>`
+- [ ] Update `include_str!` paths to use `CARGO_MANIFEST_DIR` for stability
+
+#### 7.5.3 Convert UTXO helper to directory module
+
+**Goal:** Split `helpers/utxo.rs` (~421 LOC) into focused submodules.
+
+Actions:
+
+- [ ] Convert `helpers/utxo.rs` → `helpers/utxo/mod.rs`
+- [ ] Create submodules:
+  - `helpers/utxo/node.rs` – `utxo_asset_docker_node`, `setup_utxo_conf_for_compose`
+  - `helpers/utxo/ops.rs` – `UtxoAssetDockerOps`, `BchDockerOps`
+  - `helpers/utxo/funding.rs` – `fill_address_async`, `fill_address`
+  - `helpers/utxo/coins.rs` – coin creation helpers
+  - `helpers/utxo/slp.rs` – SLP token initialization (gated to `docker-tests-slp`)
+
+#### 7.5.4 Convert QRC20 helper to directory module
+
+**Goal:** Split `helpers/qrc20.rs` (~522 LOC) into focused submodules.
+
+Actions:
+
+- [ ] Convert `helpers/qrc20.rs` → `helpers/qrc20/mod.rs`
+- [ ] Create submodules:
+  - `helpers/qrc20/state.rs` – consolidated `QtumState` struct
+  - `helpers/qrc20/node.rs` – `qtum_docker_node`, `setup_qtum_conf_for_compose`
+  - `helpers/qrc20/ops.rs` – `QtumDockerOps` + contract initialization
+  - `helpers/qrc20/coins.rs` – coin creation helpers
+  - `helpers/qrc20/funding.rs` – `fill_qrc20_address`, `wait_for_estimate_smart_fee`
+
+#### 7.5.5 Refactor swap helper to reduce cfg sprawl
+
+**Goal:** Reduce feature flag explosion in `helpers/swap.rs` (~480 LOC).
+
+Actions:
+
+- [ ] Convert `helpers/swap.rs` → `helpers/swap/mod.rs`
+- [ ] Create submodules:
+  - `helpers/swap/fund.rs` – ticker → funding logic (behind cfg)
+  - `helpers/swap/config.rs` – coins config builder (behind cfg)
+  - `helpers/swap/enable.rs` – enable coin per family (behind cfg)
+  - `helpers/swap/scenario.rs` – orchestration logic
+
+Alternative approach (bigger win):
+- [ ] Introduce `TestChainOps` trait per family:
+  ```rust
+  trait TestChainOps {
+      fn supports_ticker(ticker: &str) -> bool;
+      fn coin_conf_items() -> Vec<Json>;
+      fn fund_address(privkey: Secp256k1Secret, ticker: &str);
+      fn enable(mm: &MarketMakerIt, ticker: &str) -> Json;
+  }
+  ```
+
+#### 7.5.6 Refactor runner to setup registry pattern
+
+**Goal:** Eliminate duplicated feature maps in `runner.rs`.
+
+Actions:
+
+- [ ] Create `framework/setup.rs` with `ChainSetup` trait:
+  ```rust
+  pub trait ChainSetup {
+      fn images(&self) -> &'static [&'static str];
+      fn setup(&self, runner: &mut DockerTestRunner);
+  }
+  ```
+- [ ] Create per-chain setup structs: `UtxoSetup`, `QtumSetup`, `SlpSetup`, `GethSetup`, `ZCoinSetup`, `CosmosSetup`, `SiaSetup`
+- [ ] Replace `setup_or_reuse_nodes()` body with "collect setups then run"
+- [ ] Replace `required_images()` with `setups().iter().flat_map(|s| s.images())`
+
+#### 7.5.7 Split large test files into directories
+
+**Goal:** Improve navigability and ownership of large test suites.
+
+Actions:
+
+- [ ] Convert `swap_watcher_tests/mod.rs`:
+  - Move common harness to `swap_watcher_tests/common.rs`
+  - Keep `mod.rs` as thin dispatcher
+- [ ] Rename `docker_tests_inner.rs` → `ordermatch_cross_chain_tests.rs`
+- [ ] Convert `eth_docker_tests.rs` (~2947 LOC) → `eth_docker_tests/mod.rs` with topical submodules
+- [ ] Convert `utxo_ordermatch_v1_tests.rs` similarly
+
+#### 7.5.8 Feature flag improvements
+
+**Goal:** Encode feature dependencies in Cargo.toml.
+
+Actions:
+
+- [ ] Add feature dependencies in `mm2_main/Cargo.toml`:
+  ```toml
+  docker-tests-ordermatch = ["docker-chain-utxo", "docker-chain-eth"]
+  docker-tests-watchers = ["docker-chain-utxo"]
+  docker-tests-watchers-eth = ["docker-tests-watchers", "docker-chain-eth"]
+  ```
+- [ ] Ensure sepolia features don't compile docker-heavy modules
+
+#### 7.5.9 Validation
+
+- [ ] All docker test features still pass clippy with zero warnings
+- [ ] All docker test features compile successfully
+- [ ] Existing tests continue to pass
+- [ ] Import paths remain backward compatible where possible
+
+---
+
 ### Phase 8 – Documentation update (FINAL PHASE)
 
 **Goal:** Update all documentation to reflect the final state of the docker tests infrastructure.
@@ -1332,7 +1491,7 @@ Note: Until all feature-gated suites have dedicated CI jobs (Phase 3), individua
 
 ## Success criteria checklist
 
-- [x] `ReuseMetadata` mode connects to the correct Geth RPC from metadata and fails fast if contract bytecode is missing.
+- [x] `ComposeInit` mode connects to the correct Geth RPC and initializes contracts on each run.
 - [x] Qtum compose runs are stable across test invocations (no `temp_dir()` dependency).
 - [x] New feature flags build only the intended suites; CI runs watchers/ordermatch/swaps/qrc20/tendermint/zcoin as separate green jobs using Compose mode.
   - **Validated 2025-12-13:** All 10 docker test jobs passing (run #20185482849)

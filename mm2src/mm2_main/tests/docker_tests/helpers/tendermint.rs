@@ -4,7 +4,8 @@
 //! - Docker node helpers for Nucleus, Atom, and IBC relayer
 //! - IBC channel preparation utilities
 
-use crate::docker_tests::helpers::env::DockerNode;
+use crate::docker_tests::helpers::docker_ops::resolve_compose_container_id;
+use crate::docker_tests::helpers::env::{DockerNode, KDF_IBC_RELAYER_SERVICE};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::thread;
@@ -138,4 +139,24 @@ pub fn wait_until_relayer_container_is_ready(container_id: &str) {
 
         thread::sleep(Duration::from_secs(2));
     }
+}
+
+// =============================================================================
+// Compose mode utilities
+// =============================================================================
+
+/// Prepare IBC channels for compose mode.
+///
+/// Resolves the IBC relayer container ID from docker-compose and prepares channels.
+pub fn prepare_ibc_channels_compose() {
+    let container_id = resolve_compose_container_id(KDF_IBC_RELAYER_SERVICE);
+    prepare_ibc_channels(&container_id);
+}
+
+/// Wait for IBC relayer to be ready in compose mode.
+///
+/// Resolves the IBC relayer container ID from docker-compose and waits for readiness.
+pub fn wait_until_relayer_container_is_ready_compose() {
+    let container_id = resolve_compose_container_id(KDF_IBC_RELAYER_SERVICE);
+    wait_until_relayer_container_is_ready(&container_id);
 }

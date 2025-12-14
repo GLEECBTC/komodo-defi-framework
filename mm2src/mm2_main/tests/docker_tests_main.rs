@@ -7,7 +7,7 @@
 #[cfg(test)]
 #[macro_use]
 extern crate common;
-#[cfg(test)]
+#[cfg(all(test, feature = "docker-tests-qrc20"))]
 #[macro_use]
 extern crate gstuff;
 #[cfg(test)]

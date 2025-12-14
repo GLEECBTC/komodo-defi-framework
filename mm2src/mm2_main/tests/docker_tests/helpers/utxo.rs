@@ -5,9 +5,10 @@
 //! - BCH/SLP docker node helpers (FORSLP)
 //! - Coin creation and funding utilities
 
-use crate::docker_tests::helpers::docker_ops::CoinDockerOps;
+use crate::docker_tests::helpers::docker_ops::{
+    docker_cp_from_container, get_funding_lock, resolve_compose_container_id, wait_for_file, CoinDockerOps,
+};
 use crate::docker_tests::helpers::env::{random_secp256k1_secret, DockerNode, Secp256k1Secret};
-use crate::docker_tests::helpers::locks::get_funding_lock;
 use bitcrypto::dhash160;
 use chain::TransactionOutput;
 use coins::utxo::bch::{bch_coin_with_priv_key, BchActivationRequest, BchCoin};
@@ -262,6 +263,22 @@ pub fn utxo_asset_docker_node(ticker: &'static str, port: u16) -> DockerNode {
         ticker: ticker.into(),
         port,
     }
+}
+
+/// Setup UTXO coin configuration from a docker-compose container.
+///
+/// Copies the coin configuration file from the compose container to the local
+/// daemon data directory. Used when tests run against pre-started compose nodes
+/// rather than testcontainers.
+pub fn setup_utxo_conf_for_compose(ticker: &str, service_name: &str) {
+    let mut conf_path = coin_daemon_data_dir(ticker, true);
+    std::fs::create_dir_all(&conf_path).unwrap();
+    conf_path.push(format!("{ticker}.conf"));
+
+    let container_id = resolve_compose_container_id(service_name);
+    let src = format!("/data/node_0/{ticker}.conf");
+    docker_cp_from_container(&container_id, &src, &conf_path);
+    wait_for_file(&conf_path, 3000);
 }
 
 // =============================================================================

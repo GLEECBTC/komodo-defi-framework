@@ -51,9 +51,8 @@ docker compose -f .docker/test-nodes.yml --profile all up -d
 # 3. Run tests with external nodes
 KDF_DOCKER_COMPOSE_ENV=1 cargo test --test 'docker_tests_main' --features run-docker-tests
 
-# 4. Run additional test suites (reuses same nodes)
-KDF_DOCKER_ENV_STATE_FILE=.docker/container-runtime/docker_env_state.json \
-  cargo test --test 'docker_tests_main' --features run-docker-tests -- specific_test
+# 4. Run additional test suites (reuses same nodes; initialization will run each time)
+KDF_DOCKER_COMPOSE_ENV=1 cargo test --test 'docker_tests_main' --features run-docker-tests -- specific_test
 
 # 5. Stop nodes when done
 docker compose -f .docker/test-nodes.yml down -v
@@ -113,7 +112,6 @@ Available skip variables:
 | Variable | Description |
 |----------|-------------|
 | `KDF_DOCKER_COMPOSE_ENV` | When set to `1`, test harness attaches to running compose containers instead of starting new ones |
-| `KDF_DOCKER_ENV_STATE_FILE` | Path to metadata JSON file; skips both container start and initialization |
 | `KDF_CONTAINER_RUNTIME_DIR` | Override path to container runtime data (default: `.docker/container-runtime`) |
 | `ZCASH_PARAMS_PATH` | Path to zcash-params directory (default: `~/.zcash-params`) |
 
@@ -125,7 +123,7 @@ The test infrastructure has two modes:
 
 1. **Testcontainers Mode** (default): Each test run starts fresh containers that are automatically cleaned up. Uses the `testcontainers` Rust crate.
 
-2. **Docker Compose Mode** (development): Containers run independently, allowing multiple test runs to share the same initialized nodes.
+2. **Docker Compose Mode** (development): Containers run independently, allowing multiple test runs to share the same running nodes.
 
 ### Initialization Flow
 
@@ -137,17 +135,6 @@ When nodes start, the test harness performs initialization:
 4. **Geth**: Deploy ERC20, swap, NFT, and V2 contracts; fund test accounts
 5. **Cosmos**: Wait for IBC relayer to establish channels
 6. **Sia**: Mine initial blocks and start background miner
-
-### State Persistence
-
-When using `KDF_DOCKER_COMPOSE_ENV=1`, the harness writes initialization results to `.docker/container-runtime/docker_env_state.json`. This includes:
-
-- Deployed contract addresses
-- Minted token IDs
-- Funded wallet keys
-- RPC endpoints
-
-Subsequent runs with `KDF_DOCKER_ENV_STATE_FILE` load this metadata instead of re-initializing.
 
 ## File Structure
 
@@ -162,8 +149,7 @@ Subsequent runs with `KDF_DOCKER_ENV_STATE_FILE` load this metadata instead of r
     ├── atom-testnet-data/
     ├── nucleus-testnet-data/
     ├── ibc-relayer-data/
-    ├── sia-config/
-    └── docker_env_state.json
+    └── sia-config/
 
 scripts/ci/
 └── docker-test-nodes-setup.sh  # Prepares runtime environment
@@ -172,7 +158,6 @@ mm2src/mm2_main/tests/
 ├── docker_tests_main.rs        # Test entry point / custom test runner
 ├── docker_tests/
 │   ├── mod.rs                  # Feature-gated test module index
-│   ├── docker_env_metadata.rs  # DockerEnvMetadata & metadata path helpers
 │   ├── helpers/
 │   │   ├── mod.rs              # Helper module index
 │   │   ├── env.rs              # MmCtx creation, docker-compose service constants, DockerNode
@@ -287,31 +272,23 @@ The workflow uses docker-compose mode rather than testcontainers, which enables:
 
 ## Execution Modes
 
-The test harness supports three execution modes:
+The test harness supports two execution modes:
 
 | Mode | Trigger | Container Start | Initialization |
 |------|---------|-----------------|----------------|
 | **Testcontainers** | Default (no env vars) | ✅ Via testcontainers | ✅ Full |
-| **ComposeInit** | `KDF_DOCKER_COMPOSE_ENV=1` | ❌ Assumes running | ✅ Full (saves metadata) |
-| **ReuseMetadata** | `KDF_DOCKER_ENV_STATE_FILE=path` | ❌ Assumes running | ❌ Loads from file |
+| **ComposeInit** | `KDF_DOCKER_COMPOSE_ENV=1` | ❌ Assumes running | ✅ Full |
 
 ### Mode Selection Logic
 
 ```
-if KDF_DOCKER_ENV_STATE_FILE is set:
-    → ReuseMetadata mode
-    → Load metadata, validate node health, skip initialization
-elif KDF_DOCKER_COMPOSE_ENV is set:
+if KDF_DOCKER_COMPOSE_ENV is set:
     → ComposeInit mode
-    → Attach to running containers, run initialization, save metadata
+    → Attach to running containers, run initialization
 else:
     → Testcontainers mode
     → Start fresh containers, run initialization
 ```
-
-### Health Checks
-
-When loading metadata in ReuseMetadata mode, the harness validates that all initialized nodes are reachable before proceeding. If any health check fails, tests abort with an error message indicating which node is unreachable.
 
 ## Future Work
 
