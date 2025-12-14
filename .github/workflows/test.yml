@@ -133,479 +133,163 @@ jobs:
       - name: Test
         run: cargo test --test 'mm2_tests_main' --no-fail-fast
 
+  # ==========================================================================
+  # Docker Test Suites (using reusable workflow)
+  # ==========================================================================
+
   # SLP tests - isolated BCH/SLP token tests (FORSLP node only)
-  # Uses docker-tests-slp feature flag to compile only SLP tests
   docker-tests-slp:
-    name: Docker / SLP
-    timeout-minutes: 45
-    runs-on: ubuntu-latest
-    env:
+    uses: ./.github/workflows/_docker-test.yml
+    with:
+      name: SLP
+      features: docker-tests-slp
+      compose-profiles: "--profile slp"
+      timeout: 45
+    secrets:
       BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_LINUX }}
       BOB_USERPASS: ${{ secrets.BOB_USERPASS_LINUX }}
       ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_LINUX }}
       ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
       TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
-    steps:
-      - uses: actions/checkout@v3
-      - name: Install toolchain
-        run: |
-          rustup toolchain install stable --no-self-update --profile=minimal
-          rustup default stable
-
-      - name: Install build deps
-        uses: ./.github/actions/deps-install
-        with:
-          deps: ('protoc')
-
-      - name: Build cache
-        uses: ./.github/actions/build-cache
-
-      - name: Fetch zcash params
-        run: wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/v0.8.1/zcutil/fetch-params-alt.sh | bash
-
-      - name: Start SLP node
-        run: |
-          docker compose -f .docker/test-nodes.yml --profile slp up -d
-          echo "Waiting for SLP container..."
-          sleep 15
-          docker compose -f .docker/test-nodes.yml ps
-
-      - name: Test SLP
-        env:
-          KDF_DOCKER_COMPOSE_ENV: "1"
-        run: |
-          cargo test --test 'docker_tests_main' --features docker-tests-slp --no-fail-fast
-
-      - name: Stop docker nodes
-        if: always()
-        run: docker compose -f .docker/test-nodes.yml down -v
 
   # Sia docker tests - Sia + UTXO for DSIA<->MYCOIN swap tests
-  # sia_tests module contains swap tests between Sia and MYCOIN
   docker-tests-sia:
-    name: Docker / Sia
-    timeout-minutes: 30
-    runs-on: ubuntu-latest
-    env:
+    uses: ./.github/workflows/_docker-test.yml
+    with:
+      name: Sia
+      features: docker-tests-sia
+      compose-profiles: "--profile sia --profile utxo"
+      timeout: 30
+      needs-nodes-setup: true
+      nodes-setup-args: "--skip-cosmos"
+    secrets:
       BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_LINUX }}
       BOB_USERPASS: ${{ secrets.BOB_USERPASS_LINUX }}
       ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_LINUX }}
       ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
-    steps:
-      - uses: actions/checkout@v3
-      - name: Install toolchain
-        run: |
-          rustup toolchain install stable --no-self-update --profile=minimal
-          rustup default stable
-
-      - name: Install build deps
-        uses: ./.github/actions/deps-install
-        with:
-          deps: ('protoc')
-
-      - name: Build cache
-        uses: ./.github/actions/build-cache
-
-      - name: Fetch zcash params
-        run: wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/v0.8.1/zcutil/fetch-params-alt.sh | bash
-
-      - name: Prepare nodes
-        run: ./scripts/ci/docker-test-nodes-setup.sh --skip-cosmos
-
-      - name: Start Sia and UTXO nodes
-        run: |
-          docker compose -f .docker/test-nodes.yml --profile sia --profile utxo up -d
-          echo "Waiting for containers..."
-          sleep 15
-          docker compose -f .docker/test-nodes.yml ps
-
-      - name: Test Sia
-        env:
-          KDF_DOCKER_COMPOSE_ENV: "1"
-        run: |
-          cargo test --test 'docker_tests_main' --features docker-tests-sia --no-fail-fast
-
-      - name: Stop docker nodes
-        if: always()
-        run: docker compose -f .docker/test-nodes.yml down -v
 
   # ETH/EVM tests - isolated Ethereum and ERC20 tests (GETH node only)
-  # Uses docker-tests-eth feature flag to compile only ETH tests
   docker-tests-eth:
-    name: Docker / ETH
-    timeout-minutes: 60
-    runs-on: ubuntu-latest
-    env:
+    uses: ./.github/workflows/_docker-test.yml
+    with:
+      name: ETH
+      features: docker-tests-eth
+      compose-profiles: "--profile evm"
+      needs-zcash-params: false
+    secrets:
       BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_LINUX }}
       BOB_USERPASS: ${{ secrets.BOB_USERPASS_LINUX }}
       ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_LINUX }}
       ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
       TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
-    steps:
-      - uses: actions/checkout@v3
-      - name: Install toolchain
-        run: |
-          rustup toolchain install stable --no-self-update --profile=minimal
-          rustup default stable
-
-      - name: Install build deps
-        uses: ./.github/actions/deps-install
-        with:
-          deps: ('protoc')
-
-      - name: Build cache
-        uses: ./.github/actions/build-cache
-
-      - name: Start ETH node
-        run: |
-          docker compose -f .docker/test-nodes.yml --profile evm up -d
-          echo "Waiting for GETH container..."
-          sleep 15
-          docker compose -f .docker/test-nodes.yml ps
-
-      - name: Test ETH
-        env:
-          KDF_DOCKER_COMPOSE_ENV: "1"
-        run: |
-          cargo test --test 'docker_tests_main' --features docker-tests-eth --no-fail-fast
-
-      - name: Stop docker nodes
-        if: always()
-        run: docker compose -f .docker/test-nodes.yml down -v
 
   # Ordermatching tests - UTXO-only order lifecycle, matching, volume, persistence
-  # Cross-chain ordermatching tests moved to docker-tests-integration
   docker-tests-ordermatch:
-    name: Docker / Ordermatch (UTXO)
-    timeout-minutes: 60
-    runs-on: ubuntu-latest
-    env:
+    uses: ./.github/workflows/_docker-test.yml
+    with:
+      name: Ordermatch (UTXO)
+      features: docker-tests-ordermatch
+      compose-profiles: "--profile utxo"
+    secrets:
       BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_LINUX }}
       BOB_USERPASS: ${{ secrets.BOB_USERPASS_LINUX }}
       ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_LINUX }}
       ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
       TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
-    steps:
-      - uses: actions/checkout@v3
-      - name: Install toolchain
-        run: |
-          rustup toolchain install stable --no-self-update --profile=minimal
-          rustup default stable
-
-      - name: Install build deps
-        uses: ./.github/actions/deps-install
-        with:
-          deps: ('protoc')
-
-      - name: Build cache
-        uses: ./.github/actions/build-cache
-
-      - name: Fetch zcash params
-        run: wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/v0.8.1/zcutil/fetch-params-alt.sh | bash
-
-      - name: Start UTXO nodes
-        run: |
-          docker compose -f .docker/test-nodes.yml --profile utxo up -d
-          echo "Waiting for containers..."
-          sleep 15
-          docker compose -f .docker/test-nodes.yml ps
-
-      - name: Test ordermatching
-        env:
-          KDF_DOCKER_COMPOSE_ENV: "1"
-        run: |
-          cargo test --test 'docker_tests_main' --features docker-tests-ordermatch --no-fail-fast
-
-      - name: Stop docker nodes
-        if: always()
-        run: docker compose -f .docker/test-nodes.yml down -v
 
   # UTXO swap protocol tests - v1/v2 swap mechanics, file locks, conf sync
-  # Requires only UTXO nodes
   docker-tests-swaps-utxo:
-    name: Docker / Swaps (UTXO)
-    timeout-minutes: 60
-    runs-on: ubuntu-latest
-    env:
+    uses: ./.github/workflows/_docker-test.yml
+    with:
+      name: Swaps (UTXO)
+      features: docker-tests-swaps-utxo
+      compose-profiles: "--profile utxo"
+      container-wait-time: 20
+    secrets:
       BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_LINUX }}
       BOB_USERPASS: ${{ secrets.BOB_USERPASS_LINUX }}
       ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_LINUX }}
       ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
       TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
-    steps:
-      - uses: actions/checkout@v3
-      - name: Install toolchain
-        run: |
-          rustup toolchain install stable --no-self-update --profile=minimal
-          rustup default stable
-
-      - name: Install build deps
-        uses: ./.github/actions/deps-install
-        with:
-          deps: ('protoc')
-
-      - name: Build cache
-        uses: ./.github/actions/build-cache
-
-      - name: Fetch zcash params
-        run: wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/v0.8.1/zcutil/fetch-params-alt.sh | bash
-
-      - name: Start UTXO nodes
-        run: |
-          docker compose -f .docker/test-nodes.yml --profile utxo up -d
-          echo "Waiting for UTXO containers..."
-          sleep 20
-          docker compose -f .docker/test-nodes.yml ps
-
-      - name: Test UTXO swaps
-        env:
-          KDF_DOCKER_COMPOSE_ENV: "1"
-        run: |
-          cargo test --test 'docker_tests_main' --features docker-tests-swaps-utxo --no-fail-fast
-
-      - name: Stop docker nodes
-        if: always()
-        run: docker compose -f .docker/test-nodes.yml down -v
 
   # Watcher tests - UTXO-only watcher flows, refunds, rewards, restart behavior
-  # ETH watcher tests are disabled by default (unstable, behind docker-tests-watchers-eth feature)
-  # Requires UTXO nodes only
   docker-tests-watchers:
-    name: Docker / Watchers (UTXO)
-    timeout-minutes: 60
-    runs-on: ubuntu-latest
-    env:
+    uses: ./.github/workflows/_docker-test.yml
+    with:
+      name: Watchers (UTXO)
+      features: docker-tests-watchers
+      compose-profiles: "--profile utxo"
+    secrets:
       BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_LINUX }}
       BOB_USERPASS: ${{ secrets.BOB_USERPASS_LINUX }}
       ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_LINUX }}
       ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
       TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
-    steps:
-      - uses: actions/checkout@v3
-      - name: Install toolchain
-        run: |
-          rustup toolchain install stable --no-self-update --profile=minimal
-          rustup default stable
-
-      - name: Install build deps
-        uses: ./.github/actions/deps-install
-        with:
-          deps: ('protoc')
-
-      - name: Build cache
-        uses: ./.github/actions/build-cache
-
-      - name: Fetch zcash params
-        run: wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/v0.8.1/zcutil/fetch-params-alt.sh | bash
-
-      - name: Start UTXO nodes
-        run: |
-          docker compose -f .docker/test-nodes.yml --profile utxo up -d
-          echo "Waiting for containers..."
-          sleep 15
-          docker compose -f .docker/test-nodes.yml ps
-
-      - name: Test watchers
-        env:
-          KDF_DOCKER_COMPOSE_ENV: "1"
-        run: |
-          cargo test --test 'docker_tests_main' --features docker-tests-watchers --no-fail-fast
-
-      - name: Stop docker nodes
-        if: always()
-        run: docker compose -f .docker/test-nodes.yml down -v
 
   # QRC20/Qtum tests - Qtum coin and QRC20 token tests
-  # Requires Qtum + UTXO nodes for cross-chain swap tests (QTUM/MYCOIN pairs)
   docker-tests-qrc20:
-    name: Docker / QRC20
-    timeout-minutes: 45
-    runs-on: ubuntu-latest
-    env:
+    uses: ./.github/workflows/_docker-test.yml
+    with:
+      name: QRC20
+      features: docker-tests-qrc20
+      compose-profiles: "--profile qrc20 --profile utxo"
+      timeout: 45
+      container-wait-time: 20
+    secrets:
       BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_LINUX }}
       BOB_USERPASS: ${{ secrets.BOB_USERPASS_LINUX }}
       ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_LINUX }}
       ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
       TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
-    steps:
-      - uses: actions/checkout@v3
-      - name: Install toolchain
-        run: |
-          rustup toolchain install stable --no-self-update --profile=minimal
-          rustup default stable
-
-      - name: Install build deps
-        uses: ./.github/actions/deps-install
-        with:
-          deps: ('protoc')
-
-      - name: Build cache
-        uses: ./.github/actions/build-cache
-
-      - name: Fetch zcash params
-        run: wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/v0.8.1/zcutil/fetch-params-alt.sh | bash
-
-      - name: Start Qtum and UTXO nodes
-        run: |
-          docker compose -f .docker/test-nodes.yml --profile qrc20 --profile utxo up -d
-          echo "Waiting for containers..."
-          sleep 20
-          docker compose -f .docker/test-nodes.yml ps
-
-      - name: Test QRC20
-        env:
-          KDF_DOCKER_COMPOSE_ENV: "1"
-        run: |
-          cargo test --test 'docker_tests_main' --features docker-tests-qrc20 --no-fail-fast
-
-      - name: Stop docker nodes
-        if: always()
-        run: docker compose -f .docker/test-nodes.yml down -v
 
   # Tendermint/Cosmos tests - Cosmos chain and IBC tests
-  # Requires Cosmos nodes (Nucleus, Atom, IBC-Relayer)
   docker-tests-tendermint:
-    name: Docker / Tendermint
-    timeout-minutes: 60
-    runs-on: ubuntu-latest
-    env:
+    uses: ./.github/workflows/_docker-test.yml
+    with:
+      name: Tendermint
+      features: docker-tests-tendermint
+      compose-profiles: "--profile cosmos"
+      needs-zcash-params: false
+      needs-nodes-setup: true
+      container-wait-time: 30
+    secrets:
       BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_LINUX }}
       BOB_USERPASS: ${{ secrets.BOB_USERPASS_LINUX }}
       ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_LINUX }}
       ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
       TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
-    steps:
-      - uses: actions/checkout@v3
-      - name: Install toolchain
-        run: |
-          rustup toolchain install stable --no-self-update --profile=minimal
-          rustup default stable
-
-      - name: Install build deps
-        uses: ./.github/actions/deps-install
-        with:
-          deps: ('protoc')
-
-      - name: Build cache
-        uses: ./.github/actions/build-cache
-
-      - name: Prepare docker test environment
-        run: ./scripts/ci/docker-test-nodes-setup.sh
-
-      - name: Start Cosmos nodes
-        run: |
-          docker compose -f .docker/test-nodes.yml --profile cosmos up -d
-          echo "Waiting for Cosmos containers..."
-          sleep 30
-          docker compose -f .docker/test-nodes.yml ps
-
-      - name: Test Tendermint
-        env:
-          KDF_DOCKER_COMPOSE_ENV: "1"
-        run: |
-          cargo test --test 'docker_tests_main' --features docker-tests-tendermint --no-fail-fast
-
-      - name: Stop docker nodes
-        if: always()
-        run: docker compose -f .docker/test-nodes.yml down -v
 
   # ZCoin/Zombie tests - Zcash-based coin tests
-  # Requires only Zombie node
   docker-tests-zcoin:
-    name: Docker / ZCoin
-    timeout-minutes: 60
-    runs-on: ubuntu-latest
-    env:
+    uses: ./.github/workflows/_docker-test.yml
+    with:
+      name: ZCoin
+      features: docker-tests-zcoin
+      compose-profiles: "--profile zombie"
+      container-wait-time: 30
+    secrets:
       BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_LINUX }}
       BOB_USERPASS: ${{ secrets.BOB_USERPASS_LINUX }}
       ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_LINUX }}
       ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
       TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
-    steps:
-      - uses: actions/checkout@v3
-      - name: Install toolchain
-        run: |
-          rustup toolchain install stable --no-self-update --profile=minimal
-          rustup default stable
-
-      - name: Install build deps
-        uses: ./.github/actions/deps-install
-        with:
-          deps: ('protoc')
-
-      - name: Build cache
-        uses: ./.github/actions/build-cache
-
-      - name: Fetch zcash params
-        run: wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/v0.8.1/zcutil/fetch-params-alt.sh | bash
-
-      - name: Start Zombie node
-        run: |
-          docker compose -f .docker/test-nodes.yml --profile zombie up -d
-          echo "Waiting for Zombie container..."
-          sleep 30
-          docker compose -f .docker/test-nodes.yml ps
-
-      - name: Test ZCoin
-        env:
-          KDF_DOCKER_COMPOSE_ENV: "1"
-        run: |
-          cargo test --test 'docker_tests_main' --features docker-tests-zcoin --no-fail-fast
-
-      - name: Stop docker nodes
-        if: always()
-        run: docker compose -f .docker/test-nodes.yml down -v
 
   # Cross-chain integration tests - swaps between different chain families
-  # Tests: Tendermint<->ETH swaps, SLP cross-chain swaps
-  # Requires ALL container types for multi-family cross-chain scenarios
   docker-tests-integration:
-    name: Docker / Integration (Cross-chain)
-    timeout-minutes: 90
-    runs-on: ubuntu-latest
-    env:
+    uses: ./.github/workflows/_docker-test.yml
+    with:
+      name: Integration (Cross-chain)
+      features: docker-tests-integration
+      compose-profiles: "--profile all"
+      timeout: 90
+      needs-nodes-setup: true
+      container-wait-time: 45
+    secrets:
       BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_LINUX }}
       BOB_USERPASS: ${{ secrets.BOB_USERPASS_LINUX }}
       ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_LINUX }}
       ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
       TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
-    steps:
-      - uses: actions/checkout@v3
-      - name: Install toolchain
-        run: |
-          rustup toolchain install stable --no-self-update --profile=minimal
-          rustup default stable
-
-      - name: Install build deps
-        uses: ./.github/actions/deps-install
-        with:
-          deps: ('protoc')
-
-      - name: Build cache
-        uses: ./.github/actions/build-cache
-
-      - name: Fetch zcash params
-        run: wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/v0.8.1/zcutil/fetch-params-alt.sh | bash
-
-      - name: Prepare docker test environment
-        run: ./scripts/ci/docker-test-nodes-setup.sh
-
-      - name: Start all docker nodes
-        run: |
-          docker compose -f .docker/test-nodes.yml --profile all up -d
-          echo "Waiting for all containers to initialize..."
-          sleep 45
-          docker compose -f .docker/test-nodes.yml ps
-
-      - name: Test cross-chain integration
-        env:
-          KDF_DOCKER_COMPOSE_ENV: "1"
-        run: |
-          cargo test --test 'docker_tests_main' --features docker-tests-integration --no-fail-fast
-
-      - name: Stop docker nodes
-        if: always()
-        run: docker compose -f .docker/test-nodes.yml down -v
 
   wasm:
     name: WASM
