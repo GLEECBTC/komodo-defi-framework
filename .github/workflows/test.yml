@@ -134,162 +134,161 @@ jobs:
         run: cargo test --test 'mm2_tests_main' --no-fail-fast
 
   # ==========================================================================
-  # Docker Test Suites (using reusable workflow)
+  # Docker Test Suites (matrix job for clean GitHub UI grouping)
   # ==========================================================================
+  docker:
+    name: Docker / ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # SLP tests - BCH/SLP token tests
+          - name: SLP
+            features: docker-tests-slp
+            compose-profiles: "--profile slp"
+            timeout: 45
+            needs-zcash-params: true
+            needs-nodes-setup: false
+            nodes-setup-args: ""
+            container-wait-time: 15
 
-  # SLP tests - isolated BCH/SLP token tests (FORSLP node only)
-  docker-tests-slp:
-    uses: ./.github/workflows/_docker-test.yml
-    with:
-      name: SLP
-      features: docker-tests-slp
-      compose-profiles: "--profile slp"
-      timeout: 45
-    secrets:
+          # Sia tests - Sia + UTXO for swaps
+          - name: Sia
+            features: docker-tests-sia
+            compose-profiles: "--profile sia --profile utxo"
+            timeout: 30
+            needs-zcash-params: true
+            needs-nodes-setup: true
+            nodes-setup-args: "--skip-cosmos"
+            container-wait-time: 15
+
+          # ETH/EVM tests - Ethereum and ERC20
+          - name: ETH
+            features: docker-tests-eth
+            compose-profiles: "--profile evm"
+            timeout: 60
+            needs-zcash-params: false
+            needs-nodes-setup: false
+            nodes-setup-args: ""
+            container-wait-time: 15
+
+          # Ordermatching tests - UTXO order lifecycle
+          - name: Ordermatch (UTXO)
+            features: docker-tests-ordermatch
+            compose-profiles: "--profile utxo"
+            timeout: 60
+            needs-zcash-params: true
+            needs-nodes-setup: false
+            nodes-setup-args: ""
+            container-wait-time: 15
+
+          # UTXO swap protocol tests
+          - name: Swaps (UTXO)
+            features: docker-tests-swaps-utxo
+            compose-profiles: "--profile utxo"
+            timeout: 60
+            needs-zcash-params: true
+            needs-nodes-setup: false
+            nodes-setup-args: ""
+            container-wait-time: 20
+
+          # Watcher tests - UTXO watcher flows
+          - name: Watchers (UTXO)
+            features: docker-tests-watchers
+            compose-profiles: "--profile utxo"
+            timeout: 60
+            needs-zcash-params: true
+            needs-nodes-setup: false
+            nodes-setup-args: ""
+            container-wait-time: 15
+
+          # QRC20/Qtum tests
+          - name: QRC20
+            features: docker-tests-qrc20
+            compose-profiles: "--profile qrc20 --profile utxo"
+            timeout: 45
+            needs-zcash-params: true
+            needs-nodes-setup: false
+            nodes-setup-args: ""
+            container-wait-time: 20
+
+          # Tendermint/Cosmos tests
+          - name: Tendermint
+            features: docker-tests-tendermint
+            compose-profiles: "--profile cosmos"
+            timeout: 60
+            needs-zcash-params: false
+            needs-nodes-setup: true
+            nodes-setup-args: ""
+            container-wait-time: 30
+
+          # ZCoin/Zombie tests
+          - name: ZCoin
+            features: docker-tests-zcoin
+            compose-profiles: "--profile zombie"
+            timeout: 60
+            needs-zcash-params: true
+            needs-nodes-setup: false
+            nodes-setup-args: ""
+            container-wait-time: 30
+
+          # Cross-chain integration tests
+          - name: Integration (Cross-chain)
+            features: docker-tests-integration
+            compose-profiles: "--profile all"
+            timeout: 90
+            needs-zcash-params: true
+            needs-nodes-setup: true
+            nodes-setup-args: ""
+            container-wait-time: 45
+
+    env:
       BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_LINUX }}
       BOB_USERPASS: ${{ secrets.BOB_USERPASS_LINUX }}
       ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_LINUX }}
       ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
       TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
+    steps:
+      - uses: actions/checkout@v3
 
-  # Sia docker tests - Sia + UTXO for DSIA<->MYCOIN swap tests
-  docker-tests-sia:
-    uses: ./.github/workflows/_docker-test.yml
-    with:
-      name: Sia
-      features: docker-tests-sia
-      compose-profiles: "--profile sia --profile utxo"
-      timeout: 30
-      needs-nodes-setup: true
-      nodes-setup-args: "--skip-cosmos"
-    secrets:
-      BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_LINUX }}
-      BOB_USERPASS: ${{ secrets.BOB_USERPASS_LINUX }}
-      ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_LINUX }}
-      ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
+      - name: Install toolchain
+        run: |
+          rustup toolchain install stable --no-self-update --profile=minimal
+          rustup default stable
 
-  # ETH/EVM tests - isolated Ethereum and ERC20 tests (GETH node only)
-  docker-tests-eth:
-    uses: ./.github/workflows/_docker-test.yml
-    with:
-      name: ETH
-      features: docker-tests-eth
-      compose-profiles: "--profile evm"
-      needs-zcash-params: false
-    secrets:
-      BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_LINUX }}
-      BOB_USERPASS: ${{ secrets.BOB_USERPASS_LINUX }}
-      ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_LINUX }}
-      ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
-      TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
 
-  # Ordermatching tests - UTXO-only order lifecycle, matching, volume, persistence
-  docker-tests-ordermatch:
-    uses: ./.github/workflows/_docker-test.yml
-    with:
-      name: Ordermatch (UTXO)
-      features: docker-tests-ordermatch
-      compose-profiles: "--profile utxo"
-    secrets:
-      BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_LINUX }}
-      BOB_USERPASS: ${{ secrets.BOB_USERPASS_LINUX }}
-      ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_LINUX }}
-      ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
-      TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
-  # UTXO swap protocol tests - v1/v2 swap mechanics, file locks, conf sync
-  docker-tests-swaps-utxo:
-    uses: ./.github/workflows/_docker-test.yml
-    with:
-      name: Swaps (UTXO)
-      features: docker-tests-swaps-utxo
-      compose-profiles: "--profile utxo"
-      container-wait-time: 20
-    secrets:
-      BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_LINUX }}
-      BOB_USERPASS: ${{ secrets.BOB_USERPASS_LINUX }}
-      ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_LINUX }}
-      ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
-      TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
+      - name: Fetch zcash params
+        if: ${{ matrix.needs-zcash-params }}
+        run: wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/v0.8.1/zcutil/fetch-params-alt.sh | bash
 
-  # Watcher tests - UTXO-only watcher flows, refunds, rewards, restart behavior
-  docker-tests-watchers:
-    uses: ./.github/workflows/_docker-test.yml
-    with:
-      name: Watchers (UTXO)
-      features: docker-tests-watchers
-      compose-profiles: "--profile utxo"
-    secrets:
-      BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_LINUX }}
-      BOB_USERPASS: ${{ secrets.BOB_USERPASS_LINUX }}
-      ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_LINUX }}
-      ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
-      TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
+      - name: Prepare docker test environment
+        if: ${{ matrix.needs-nodes-setup }}
+        run: ./scripts/ci/docker-test-nodes-setup.sh ${{ matrix.nodes-setup-args }}
 
-  # QRC20/Qtum tests - Qtum coin and QRC20 token tests
-  docker-tests-qrc20:
-    uses: ./.github/workflows/_docker-test.yml
-    with:
-      name: QRC20
-      features: docker-tests-qrc20
-      compose-profiles: "--profile qrc20 --profile utxo"
-      timeout: 45
-      container-wait-time: 20
-    secrets:
-      BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_LINUX }}
-      BOB_USERPASS: ${{ secrets.BOB_USERPASS_LINUX }}
-      ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_LINUX }}
-      ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
-      TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
+      - name: Start docker nodes
+        run: |
+          docker compose -f .docker/test-nodes.yml ${{ matrix.compose-profiles }} up -d
+          echo "Waiting for containers to initialize..."
+          sleep ${{ matrix.container-wait-time }}
+          docker compose -f .docker/test-nodes.yml ps
 
-  # Tendermint/Cosmos tests - Cosmos chain and IBC tests
-  docker-tests-tendermint:
-    uses: ./.github/workflows/_docker-test.yml
-    with:
-      name: Tendermint
-      features: docker-tests-tendermint
-      compose-profiles: "--profile cosmos"
-      needs-zcash-params: false
-      needs-nodes-setup: true
-      container-wait-time: 30
-    secrets:
-      BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_LINUX }}
-      BOB_USERPASS: ${{ secrets.BOB_USERPASS_LINUX }}
-      ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_LINUX }}
-      ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
-      TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
+      - name: Run tests
+        env:
+          KDF_DOCKER_COMPOSE_ENV: "1"
+        run: cargo test --test 'docker_tests_main' --features ${{ matrix.features }} --no-fail-fast
 
-  # ZCoin/Zombie tests - Zcash-based coin tests
-  docker-tests-zcoin:
-    uses: ./.github/workflows/_docker-test.yml
-    with:
-      name: ZCoin
-      features: docker-tests-zcoin
-      compose-profiles: "--profile zombie"
-      container-wait-time: 30
-    secrets:
-      BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_LINUX }}
-      BOB_USERPASS: ${{ secrets.BOB_USERPASS_LINUX }}
-      ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_LINUX }}
-      ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
-      TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
-
-  # Cross-chain integration tests - swaps between different chain families
-  docker-tests-integration:
-    uses: ./.github/workflows/_docker-test.yml
-    with:
-      name: Integration (Cross-chain)
-      features: docker-tests-integration
-      compose-profiles: "--profile all"
-      timeout: 90
-      needs-nodes-setup: true
-      container-wait-time: 45
-    secrets:
-      BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_LINUX }}
-      BOB_USERPASS: ${{ secrets.BOB_USERPASS_LINUX }}
-      ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_LINUX }}
-      ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
-      TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
+      - name: Stop docker nodes
+        if: always()
+        run: docker compose -f .docker/test-nodes.yml down -v
 
   wasm:
     name: WASM
