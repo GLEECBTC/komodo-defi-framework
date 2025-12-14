@@ -46,7 +46,8 @@ pub const KDF_MYCOIN_SERVICE: &str = "mycoin";
     feature = "docker-tests-swaps-utxo",
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers",
-    feature = "docker-tests-qrc20"
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-sia"
 ))]
 pub const KDF_MYCOIN1_SERVICE: &str = "mycoin1";
 

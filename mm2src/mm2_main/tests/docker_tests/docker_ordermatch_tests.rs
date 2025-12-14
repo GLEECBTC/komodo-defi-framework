@@ -7,7 +7,8 @@ use mm2_rpc::data::legacy::OrderbookResponse;
 use mm2_test_helpers::for_tests::{mm_dump, mycoin1_conf, mycoin_conf, MarketMakerIt};
 
 use mm2_test_helpers::structs::{
-    BuyOrSellRpcResult, MyOrdersRpcResult, OrderbookDepthResponse, SetPriceResponse,
+    BestOrdersResponse, BestOrdersV2Response, BuyOrSellRpcResult, MyOrdersRpcResult, OrderbookDepthResponse,
+    RpcV2Response, SetPriceResponse,
 };
 use serde_json::Value as Json;
 use std::thread;

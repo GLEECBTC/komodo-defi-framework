@@ -27,6 +27,7 @@
     feature = "docker-tests-sia",
     feature = "docker-tests-slp",
     feature = "docker-tests-zcoin",
+    feature = "docker-tests-tendermint",
     feature = "docker-tests-integration"
 ))]
 pub mod docker_ops;
