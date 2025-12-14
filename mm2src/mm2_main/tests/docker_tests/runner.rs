@@ -1,6 +1,5 @@
 #[cfg(any(
     feature = "docker-tests-eth",
-    feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers-eth",
     feature = "docker-tests-integration",
     feature = "docker-tests-sia"
@@ -16,7 +15,6 @@ use std::process::Command;
     feature = "docker-tests-tendermint",
     feature = "docker-tests-integration",
     feature = "docker-tests-eth",
-    feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers-eth"
 ))]
 use std::thread;
@@ -24,7 +22,6 @@ use std::thread;
     feature = "docker-tests-tendermint",
     feature = "docker-tests-integration",
     feature = "docker-tests-eth",
-    feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers-eth"
 ))]
 use std::time::Duration;
@@ -70,7 +67,6 @@ use crate::docker_tests::helpers::qrc20::{
 // ETH imports
 #[cfg(any(
     feature = "docker-tests-eth",
-    feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers-eth",
     feature = "docker-tests-integration"
 ))]
@@ -186,7 +182,6 @@ impl DockerTestRunner {
         self.setup_slp();
         #[cfg(any(
             feature = "docker-tests-eth",
-            feature = "docker-tests-ordermatch",
             feature = "docker-tests-watchers-eth",
             feature = "docker-tests-integration"
         ))]
@@ -312,7 +307,6 @@ impl DockerTestRunner {
 
     #[cfg(any(
         feature = "docker-tests-eth",
-        feature = "docker-tests-ordermatch",
         feature = "docker-tests-watchers-eth",
         feature = "docker-tests-integration"
     ))]
@@ -436,7 +430,6 @@ fn required_images() -> Vec<&'static str> {
 
     #[cfg(any(
         feature = "docker-tests-eth",
-        feature = "docker-tests-ordermatch",
         feature = "docker-tests-watchers-eth",
         feature = "docker-tests-integration"
     ))]

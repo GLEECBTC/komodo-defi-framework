@@ -16,9 +16,9 @@ pub mod helpers;
 // Future destination: mm2_main::lp_ordermatch/tests
 // ============================================================================
 
-// Ordermatching tests - UTXO + ETH cross-chain orderbook
-// Tests: best_orders, orderbook depth, price aggregation
-// Chains: UTXO-MYCOIN, UTXO-MYCOIN1, ETH, ERC20
+// Ordermatching tests - UTXO-only orderbook
+// Tests: best_orders, orderbook depth, price aggregation, custom orderbook tickers
+// Chains: UTXO-MYCOIN, UTXO-MYCOIN1
 #[cfg(feature = "docker-tests-ordermatch")]
 mod docker_ordermatch_tests;
 
