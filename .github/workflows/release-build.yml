@@ -75,9 +75,9 @@ jobs:
       - name: Build and push container image
         run: |
           export CONTAINER_TAG=$(./target/release/kdf --version | awk '{print $3}')
-          docker build -t komodoofficial/komodo-defi-framework:"$CONTAINER_TAG" -t komodoofficial/komodo-defi-framework:main-latest -f .docker/Dockerfile.release .
-          docker push komodoofficial/komodo-defi-framework:"$CONTAINER_TAG"
-          docker push komodoofficial/komodo-defi-framework:main-latest
+          docker build -t gleec/komodo-defi-framework:"$CONTAINER_TAG" -t gleec/komodo-defi-framework:main-latest -f .docker/Dockerfile.release .
+          docker push gleec/komodo-defi-framework:"$CONTAINER_TAG"
+          docker push gleec/komodo-defi-framework:main-latest
 
   mac-x86-64:
     timeout-minutes: 60

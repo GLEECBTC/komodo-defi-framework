@@ -16,9 +16,9 @@ use mm2_number::{BigDecimal, BigUint};
 use std::num::NonZeroUsize;
 use std::str::FromStr;
 
-const MORALIS_API_ENDPOINT_TEST: &str = "https://moralis-proxy.komodian.info/api/v2";
+const MORALIS_API_ENDPOINT_TEST: &str = "https://moralis.gleec.com/api/v2";
 const TEST_WALLET_ADDR_EVM: &str = "0x394d86994f954ed931b86791b62fe64f4c5dac37";
-const BLOCKLIST_API_ENDPOINT: &str = "https://nft.antispam.dragonhound.info";
+const BLOCKLIST_API_ENDPOINT: &str = "https://nft-antispam.gleec.com";
 const TOKEN_ADD: &str = "0xfd913a305d70a60aac4faac70c739563738e1f81";
 const TOKEN_ID: &str = "214300044414";
 const TX_HASH: &str = "0x1e9f04e9b571b283bde02c98c2a97da39b2bb665b57c1f2b0b733f9b681debbe";
