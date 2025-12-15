@@ -4,8 +4,7 @@
 //! - Docker node helpers for Nucleus, Atom, and IBC relayer
 //! - IBC channel preparation utilities
 
-use crate::docker_tests::helpers::docker_ops::resolve_compose_container_id;
-use crate::docker_tests::helpers::env::{DockerNode, KDF_IBC_RELAYER_SERVICE};
+use crate::docker_tests::helpers::env::{resolve_compose_container_id, DockerNode, KDF_IBC_RELAYER_SERVICE};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::thread;

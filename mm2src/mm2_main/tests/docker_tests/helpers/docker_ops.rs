@@ -13,6 +13,8 @@ use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
+use super::env::resolve_compose_container_id;
+
 // =============================================================================
 // CoinDockerOps trait
 // =============================================================================
@@ -69,47 +71,6 @@ pub trait CoinDockerOps {
 // =============================================================================
 // Docker Compose Utilities
 // =============================================================================
-
-/// Find the container ID for a docker-compose service, independent of project name.
-///
-/// Uses label-based lookup (`com.docker.compose.service=<service>`) which works
-/// regardless of project name or container_name settings.
-pub fn resolve_compose_container_id(service_name: &str) -> String {
-    let output = Command::new("docker")
-        .args([
-            "ps",
-            "-q",
-            "--filter",
-            &format!("label=com.docker.compose.service={}", service_name),
-            "--filter",
-            "status=running",
-        ])
-        .output()
-        .expect("failed to execute `docker ps`");
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    if let Some(container_id) = stdout.lines().next().map(str::trim).filter(|s| !s.is_empty()) {
-        return container_id.to_string();
-    }
-
-    // Fallback: try by container name pattern
-    let fallback_name = format!("kdf-{}", service_name);
-    let output = Command::new("docker")
-        .args(["ps", "-q", "--filter", &format!("name={}", fallback_name)])
-        .output()
-        .expect("failed to execute `docker ps` (name filter)");
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    if let Some(container_id) = stdout.lines().next().map(str::trim).filter(|s| !s.is_empty()) {
-        return container_id.to_string();
-    }
-
-    panic!(
-        "No running container found for docker-compose service '{}'. \
-         Make sure `.docker/test-nodes.yml` is up and containers are started.",
-        service_name
-    );
-}
 
 /// Copy a file from a compose container to the host.
 pub fn docker_cp_from_container(container_id: &str, src: &str, dst: &std::path::Path) {

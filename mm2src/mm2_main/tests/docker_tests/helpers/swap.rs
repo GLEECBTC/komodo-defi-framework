@@ -40,7 +40,8 @@ use super::env::random_secp256k1_secret;
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-qrc20",
     feature = "docker-tests-slp",
-    feature = "docker-tests-eth"
+    feature = "docker-tests-eth",
+    feature = "docker-tests-integration"
 ))]
 use super::env::SET_BURN_PUBKEY_TO_ALICE;
 

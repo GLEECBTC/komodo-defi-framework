@@ -1,5 +1,5 @@
 // block_on - only used in setup_sia
-#[cfg(any(feature = "docker-tests-sia", feature = "docker-tests-integration"))]
+#[cfg(feature = "docker-tests-sia")]
 use common::block_on;
 use std::any::Any;
 use std::env;
@@ -61,14 +61,13 @@ use crate::docker_tests::helpers::utxo::{utxo_asset_docker_node, UTXO_ASSET_DOCK
 ))]
 use crate::docker_tests::helpers::docker_ops::setup_utxo_conf_for_compose;
 
-// UtxoAssetDockerOps - only needed by features that use MYCOIN/MYCOIN1 setup
+// UtxoAssetDockerOps - only needed by features that call setup_utxo
 #[cfg(any(
     feature = "docker-tests-swaps-utxo",
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers",
     feature = "docker-tests-qrc20",
-    feature = "docker-tests-sia",
-    feature = "docker-tests-integration"
+    feature = "docker-tests-sia"
 ))]
 use crate::docker_tests::helpers::utxo::UtxoAssetDockerOps;
 

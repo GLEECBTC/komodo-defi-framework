@@ -18,7 +18,8 @@
 // Docker-specific helpers, only needed when docker tests are enabled.
 // Gated on specific features to avoid unused code warnings.
 
-// docker_ops - trait used by multiple chain-specific setups
+// docker_ops - CoinDockerOps trait and UTXO compose utilities
+// (tendermint uses resolve_compose_container_id from env.rs instead)
 #[cfg(any(
     feature = "docker-tests-swaps-utxo",
     feature = "docker-tests-ordermatch",
@@ -27,7 +28,6 @@
     feature = "docker-tests-sia",
     feature = "docker-tests-slp",
     feature = "docker-tests-zcoin",
-    feature = "docker-tests-tendermint",
     feature = "docker-tests-integration"
 ))]
 pub mod docker_ops;

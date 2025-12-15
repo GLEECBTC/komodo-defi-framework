@@ -5,8 +5,10 @@
 //! - Qtum docker node helpers
 //! - QRC20 contract initialization
 
-use crate::docker_tests::helpers::docker_ops::{docker_cp_from_container, resolve_compose_container_id, wait_for_file};
-use crate::docker_tests::helpers::env::{random_secp256k1_secret, DockerNode, KDF_QTUM_SERVICE};
+use crate::docker_tests::helpers::docker_ops::{docker_cp_from_container, wait_for_file};
+use crate::docker_tests::helpers::env::{
+    random_secp256k1_secret, resolve_compose_container_id, DockerNode, KDF_QTUM_SERVICE,
+};
 use crate::docker_tests::helpers::utxo::fill_address;
 use crate::docker_tests::helpers::utxo::QTUM_LOCK;
 use coins::qrc20::rpc_clients::for_tests::Qrc20NativeWalletOps;

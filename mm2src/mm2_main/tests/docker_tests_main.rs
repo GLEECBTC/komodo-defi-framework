@@ -13,7 +13,22 @@ extern crate gstuff;
 #[cfg(test)]
 #[macro_use]
 extern crate lazy_static;
-#[cfg(test)]
+// serde_json macro_use: only for features whose test files don't have explicit `use serde_json::json`
+// tendermint tests have explicit imports so don't need this
+#[cfg(all(
+    test,
+    any(
+        feature = "docker-tests-swaps-utxo",
+        feature = "docker-tests-ordermatch",
+        feature = "docker-tests-watchers",
+        feature = "docker-tests-qrc20",
+        feature = "docker-tests-eth",
+        feature = "docker-tests-slp",
+        feature = "docker-tests-zcoin",
+        feature = "docker-tests-sia",
+        feature = "docker-tests-integration"
+    )
+))]
 #[macro_use]
 extern crate serde_json;
 #[cfg(test)]
