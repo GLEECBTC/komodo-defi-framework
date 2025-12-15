@@ -63,8 +63,7 @@ pub mod sia;
     feature = "docker-tests-swaps-utxo",
     feature = "docker-tests-eth",
     feature = "docker-tests-qrc20",
-    feature = "docker-tests-slp",
-    feature = "docker-tests-integration"
+    feature = "docker-tests-slp"
 ))]
 pub mod swap;
 

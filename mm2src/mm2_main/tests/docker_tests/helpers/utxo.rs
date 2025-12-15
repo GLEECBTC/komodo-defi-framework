@@ -96,8 +96,7 @@ use primitives::hash::H160;
 #[cfg(any(
     feature = "docker-tests-swaps-utxo",
     feature = "docker-tests-ordermatch",
-    feature = "docker-tests-watchers",
-    feature = "docker-tests-integration"
+    feature = "docker-tests-watchers"
 ))]
 use crate::docker_tests::helpers::env::random_secp256k1_secret;
 
@@ -158,11 +157,11 @@ pub const UTXO_ASSET_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/artempikulin/testb
 // =============================================================================
 
 /// Ticker of MYCOIN dockerized blockchain.
-#[cfg(any(feature = "docker-tests-swaps-utxo", feature = "docker-tests-integration"))]
+#[cfg(feature = "docker-tests-swaps-utxo")]
 pub const MYCOIN: &str = "MYCOIN";
 
 /// Ticker of MYCOIN1 dockerized blockchain.
-#[cfg(any(feature = "docker-tests-swaps-utxo", feature = "docker-tests-integration"))]
+#[cfg(feature = "docker-tests-swaps-utxo")]
 pub const MYCOIN1: &str = "MYCOIN1";
 
 // =============================================================================
@@ -407,13 +406,13 @@ pub fn rmd160_from_priv(privkey: Secp256k1Secret) -> H160 {
 }
 
 /// Get a prefilled SLP privkey from the pool.
-#[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
+#[cfg(feature = "docker-tests-slp")]
 pub fn get_prefilled_slp_privkey() -> [u8; 32] {
     SLP_TOKEN_OWNERS.lock().unwrap().remove(0)
 }
 
 /// Get the SLP token ID as hex string.
-#[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
+#[cfg(feature = "docker-tests-slp")]
 pub fn get_slp_token_id() -> String {
     hex::encode(SLP_TOKEN_ID.lock().unwrap().as_slice())
 }
@@ -480,7 +479,7 @@ pub fn generate_utxo_coin_with_privkey(ticker: &str, balance: BigDecimal, priv_k
 
 /// Fund a UTXO address with the specified balance (async version).
 /// Only used by Sia tests which need async funding.
-#[cfg(any(feature = "docker-tests-sia", feature = "docker-tests-integration"))]
+#[cfg(feature = "docker-tests-sia")]
 pub async fn fund_privkey_utxo(ticker: &str, balance: BigDecimal, priv_key: &Secp256k1Secret) {
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let conf = json!({"coin":ticker,"asset":ticker,"txversion":4,"overwintered":1,"txfee":1000,"network":"regtest"});
@@ -497,8 +496,7 @@ pub async fn fund_privkey_utxo(ticker: &str, balance: BigDecimal, priv_key: &Sec
 #[cfg(any(
     feature = "docker-tests-swaps-utxo",
     feature = "docker-tests-ordermatch",
-    feature = "docker-tests-watchers",
-    feature = "docker-tests-integration"
+    feature = "docker-tests-watchers"
 ))]
 pub fn generate_utxo_coin_with_random_privkey(
     ticker: &str,

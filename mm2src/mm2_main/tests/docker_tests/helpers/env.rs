@@ -77,7 +77,8 @@ pub const KDF_QTUM_SERVICE: &str = "qtum";
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers",
     feature = "docker-tests-qrc20",
-    feature = "docker-tests-sia"
+    feature = "docker-tests-sia",
+    feature = "docker-tests-integration"
 ))]
 pub const KDF_MYCOIN_SERVICE: &str = "mycoin";
 
@@ -86,7 +87,8 @@ pub const KDF_MYCOIN_SERVICE: &str = "mycoin";
     feature = "docker-tests-swaps-utxo",
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers",
-    feature = "docker-tests-qrc20"
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-integration"
 ))]
 pub const KDF_MYCOIN1_SERVICE: &str = "mycoin1";
 
@@ -144,6 +146,20 @@ pub fn random_secp256k1_secret() -> Secp256k1Secret {
 ///
 /// Uses label-based lookup (`com.docker.compose.service=<service>`) which works
 /// regardless of project name or container_name settings.
+///
+/// Note: This function is in env.rs for tendermint tests that don't have docker_ops.
+/// Features with docker_ops use the copy there.
+#[cfg(any(
+    feature = "docker-tests-tendermint",
+    feature = "docker-tests-integration",
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-sia",
+    feature = "docker-tests-slp",
+    feature = "docker-tests-zcoin"
+))]
 pub fn resolve_compose_container_id(service_name: &str) -> String {
     use std::process::Command;
 

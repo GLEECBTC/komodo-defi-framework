@@ -7,10 +7,16 @@
 //! - Coin creation helpers
 //! - Geth initialization with contract deployment
 
-use crate::docker_tests::helpers::env::{random_secp256k1_secret, DockerNode};
+#[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-watchers-eth"))]
+use crate::docker_tests::helpers::env::random_secp256k1_secret;
+use crate::docker_tests::helpers::env::DockerNode;
 use coins::eth::addr_from_raw_pubkey;
-use coins::eth::{checksum_address, eth_coin_from_conf_and_request, EthCoin, ERC20_ABI};
-use coins::{CoinProtocol, CoinWithDerivationMethod, DerivationMethod, PrivKeyBuildPolicy};
+#[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-watchers-eth"))]
+use coins::eth::EthCoin;
+use coins::eth::{checksum_address, eth_coin_from_conf_and_request, ERC20_ABI};
+#[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-watchers-eth"))]
+use coins::DerivationMethod;
+use coins::{CoinProtocol, CoinWithDerivationMethod, PrivKeyBuildPolicy};
 use common::block_on;
 use common::custom_futures::timeout::FutureTimerExt;
 use crypto::privkey::key_pair_from_seed;
@@ -337,9 +343,11 @@ pub fn fill_erc20(to_addr: Address, amount: U256) {
 
 // =============================================================================
 // Coin creation utilities - create test coins with random keys
+// Only used by docker-tests-eth and docker-tests-watchers-eth (not integration)
 // =============================================================================
 
 /// Creates ETH protocol coin supplied with 100 ETH
+#[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-watchers-eth"))]
 pub fn eth_coin_with_random_privkey_using_urls(swap_contract_address: Address, urls: &[&str]) -> EthCoin {
     let eth_conf = eth_dev_conf();
     let req = json!({
@@ -374,11 +382,13 @@ pub fn eth_coin_with_random_privkey_using_urls(swap_contract_address: Address, u
 }
 
 /// Creates ETH protocol coin supplied with 100 ETH, using the default GETH_RPC_URL
+#[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-watchers-eth"))]
 pub fn eth_coin_with_random_privkey(swap_contract_address: Address) -> EthCoin {
     eth_coin_with_random_privkey_using_urls(swap_contract_address, &[GETH_RPC_URL])
 }
 
 /// Creates ERC20 protocol coin supplied with 1 ETH and 100 tokens
+#[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-watchers-eth"))]
 pub fn erc20_coin_with_random_privkey(swap_contract_address: Address) -> EthCoin {
     let erc20_conf = erc20_dev_conf(&erc20_contract_checksum());
     let req = json!({

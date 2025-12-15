@@ -23,7 +23,8 @@ use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers",
     feature = "docker-tests-qrc20",
-    feature = "docker-tests-sia"
+    feature = "docker-tests-sia",
+    feature = "docker-tests-integration"
 ))]
 use crate::docker_tests::helpers::env::KDF_MYCOIN_SERVICE;
 
@@ -32,7 +33,8 @@ use crate::docker_tests::helpers::env::KDF_MYCOIN_SERVICE;
     feature = "docker-tests-swaps-utxo",
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers",
-    feature = "docker-tests-qrc20"
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-integration"
 ))]
 use crate::docker_tests::helpers::env::KDF_MYCOIN1_SERVICE;
 
@@ -67,7 +69,8 @@ use crate::docker_tests::helpers::docker_ops::setup_utxo_conf_for_compose;
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers",
     feature = "docker-tests-qrc20",
-    feature = "docker-tests-sia"
+    feature = "docker-tests-sia",
+    feature = "docker-tests-integration"
 ))]
 use crate::docker_tests::helpers::utxo::UtxoAssetDockerOps;
 
@@ -193,7 +196,8 @@ impl DockerTestRunner {
             feature = "docker-tests-ordermatch",
             feature = "docker-tests-watchers",
             feature = "docker-tests-qrc20",
-            feature = "docker-tests-sia"
+            feature = "docker-tests-sia",
+            feature = "docker-tests-integration"
         ))]
         self.setup_utxo();
         #[cfg(feature = "docker-tests-qrc20")]
@@ -239,7 +243,8 @@ impl DockerTestRunner {
         feature = "docker-tests-ordermatch",
         feature = "docker-tests-watchers",
         feature = "docker-tests-qrc20",
-        feature = "docker-tests-sia"
+        feature = "docker-tests-sia",
+        feature = "docker-tests-integration"
     ))]
     fn setup_utxo(&mut self) {
         // MYCOIN
@@ -262,7 +267,8 @@ impl DockerTestRunner {
             feature = "docker-tests-swaps-utxo",
             feature = "docker-tests-ordermatch",
             feature = "docker-tests-watchers",
-            feature = "docker-tests-qrc20"
+            feature = "docker-tests-qrc20",
+            feature = "docker-tests-integration"
         ))]
         {
             match self.config.mode {
