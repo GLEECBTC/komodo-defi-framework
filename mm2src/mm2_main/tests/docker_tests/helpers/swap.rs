@@ -22,7 +22,28 @@ use serde_json::Value as Json;
 use std::thread;
 use std::time::Duration;
 
-use super::env::{random_secp256k1_secret, Secp256k1Secret, SET_BURN_PUBKEY_TO_ALICE};
+use super::env::Secp256k1Secret;
+
+// random_secp256k1_secret - used by non-SLP swap paths
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-eth"
+))]
+use super::env::random_secp256k1_secret;
+
+// SET_BURN_PUBKEY_TO_ALICE - used by trade_base_rel
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-slp",
+    feature = "docker-tests-eth"
+))]
+use super::env::SET_BURN_PUBKEY_TO_ALICE;
 
 /// Timeout in seconds for wallet funding operations during test setup.
 #[cfg(any(

@@ -1,9 +1,5 @@
-#[cfg(any(
-    feature = "docker-tests-eth",
-    feature = "docker-tests-watchers-eth",
-    feature = "docker-tests-integration",
-    feature = "docker-tests-sia"
-))]
+// block_on - only used in setup_sia
+#[cfg(any(feature = "docker-tests-sia", feature = "docker-tests-integration"))]
 use common::block_on;
 use std::any::Any;
 use std::env;
@@ -11,24 +7,17 @@ use std::io::{BufRead, BufReader};
 #[cfg(any(feature = "docker-tests-tendermint", feature = "docker-tests-integration"))]
 use std::path::PathBuf;
 use std::process::Command;
-#[cfg(any(
-    feature = "docker-tests-tendermint",
-    feature = "docker-tests-integration",
-    feature = "docker-tests-eth",
-    feature = "docker-tests-watchers-eth"
-))]
+// thread and Duration - only used in setup_cosmos for thread::sleep
+#[cfg(any(feature = "docker-tests-tendermint", feature = "docker-tests-integration"))]
 use std::thread;
-#[cfg(any(
-    feature = "docker-tests-tendermint",
-    feature = "docker-tests-integration",
-    feature = "docker-tests-eth",
-    feature = "docker-tests-watchers-eth"
-))]
+#[cfg(any(feature = "docker-tests-tendermint", feature = "docker-tests-integration"))]
 use std::time::Duration;
 use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
 
 // UTXO imports - needed for UTXO-based test features
 // Note: CoinDockerOps trait is accessed via UFCS to avoid unused import warnings
+
+// KDF_MYCOIN_SERVICE - needed by setup_utxo for compose mode
 #[cfg(any(
     feature = "docker-tests-swaps-utxo",
     feature = "docker-tests-ordermatch",
@@ -36,7 +25,18 @@ use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
     feature = "docker-tests-qrc20",
     feature = "docker-tests-sia"
 ))]
-use crate::docker_tests::helpers::env::{KDF_MYCOIN1_SERVICE, KDF_MYCOIN_SERVICE};
+use crate::docker_tests::helpers::env::KDF_MYCOIN_SERVICE;
+
+// KDF_MYCOIN1_SERVICE - only needed by features that use MYCOIN1 (not Sia)
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-qrc20"
+))]
+use crate::docker_tests::helpers::env::KDF_MYCOIN1_SERVICE;
+
+// UTXO docker image and utxo_asset_docker_node - used by many features
 #[cfg(any(
     feature = "docker-tests-swaps-utxo",
     feature = "docker-tests-ordermatch",
@@ -47,9 +47,31 @@ use crate::docker_tests::helpers::env::{KDF_MYCOIN1_SERVICE, KDF_MYCOIN_SERVICE}
     feature = "docker-tests-zcoin",
     feature = "docker-tests-integration"
 ))]
-use crate::docker_tests::helpers::utxo::{
-    setup_utxo_conf_for_compose, utxo_asset_docker_node, UtxoAssetDockerOps, UTXO_ASSET_DOCKER_IMAGE_WITH_TAG,
-};
+use crate::docker_tests::helpers::utxo::{utxo_asset_docker_node, UTXO_ASSET_DOCKER_IMAGE_WITH_TAG};
+
+// setup_utxo_conf_for_compose - used by setup_utxo and setup_slp in compose mode
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-sia",
+    feature = "docker-tests-slp",
+    feature = "docker-tests-zcoin",
+    feature = "docker-tests-integration"
+))]
+use crate::docker_tests::helpers::utxo::setup_utxo_conf_for_compose;
+
+// UtxoAssetDockerOps - only needed by features that use MYCOIN/MYCOIN1 setup
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-sia",
+    feature = "docker-tests-integration"
+))]
+use crate::docker_tests::helpers::utxo::UtxoAssetDockerOps;
 
 // SLP imports
 #[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]

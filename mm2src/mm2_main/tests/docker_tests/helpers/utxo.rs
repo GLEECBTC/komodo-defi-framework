@@ -5,39 +5,107 @@
 //! - BCH/SLP docker node helpers (FORSLP)
 //! - Coin creation and funding utilities
 
+// =============================================================================
+// Common imports (used by multiple feature sets)
+// =============================================================================
+
 use crate::docker_tests::helpers::docker_ops::{
     docker_cp_from_container, get_funding_lock, resolve_compose_container_id, wait_for_file, CoinDockerOps,
 };
-use crate::docker_tests::helpers::env::{random_secp256k1_secret, DockerNode, Secp256k1Secret};
-use bitcrypto::dhash160;
-use chain::TransactionOutput;
-use coins::utxo::bch::{bch_coin_with_priv_key, BchActivationRequest, BchCoin};
+use crate::docker_tests::helpers::env::{DockerNode, Secp256k1Secret};
 use coins::utxo::rpc_clients::{UtxoRpcClientEnum, UtxoRpcClientOps};
-use coins::utxo::slp::{slp_genesis_output, SlpOutput, SlpToken};
-use coins::utxo::utxo_common::send_outputs_from_my_address;
-use coins::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
-use coins::utxo::{coin_daemon_data_dir, zcash_params_path, UtxoActivationParams, UtxoCoinFields, UtxoCommonOps};
-use coins::{ConfirmPaymentInput, MarketCoinOps, Transaction};
+use coins::utxo::{coin_daemon_data_dir, zcash_params_path, UtxoCoinFields};
+use coins::{ConfirmPaymentInput, MarketCoinOps};
 use common::executor::Timer;
 use common::Future01CompatExt;
-use common::{block_on, block_on_f01, now_ms, now_sec, wait_until_ms, wait_until_sec};
-use keys::{AddressBuilder, KeyPair, NetworkPrefix as CashAddrPrefix};
-use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
+use common::{block_on, now_ms, now_sec, wait_until_ms, wait_until_sec};
 use mm2_number::BigDecimal;
-use primitives::hash::{H160, H256};
-use script::Builder;
-use std::convert::TryFrom;
 use std::process::Command;
-use std::sync::Mutex;
 use testcontainers::core::Mount;
 use testcontainers::runners::SyncRunner;
 use testcontainers::GenericImage;
 use testcontainers::{core::WaitFor, RunnableImage};
 
+// UtxoStandardCoin imports - only needed by features that create UTXO coins
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-sia",
+    feature = "docker-tests-integration"
+))]
+use coins::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-sia",
+    feature = "docker-tests-integration"
+))]
+use coins::utxo::UtxoActivationParams;
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-sia",
+    feature = "docker-tests-slp",
+    feature = "docker-tests-integration"
+))]
+use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
+
+// UtxoCommonOps - needed for my_public_key() in SLP initialization
+#[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
+use coins::utxo::UtxoCommonOps;
+
+// Transaction trait - needed for tx_hex() in SLP initialization
+#[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
+use coins::Transaction;
+
+// SLP-specific imports
+#[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
+use chain::TransactionOutput;
+#[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
+use coins::utxo::bch::{bch_coin_with_priv_key, BchActivationRequest, BchCoin};
+#[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
+use coins::utxo::slp::{slp_genesis_output, SlpOutput, SlpToken};
+#[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
+use coins::utxo::utxo_common::send_outputs_from_my_address;
+#[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
+use common::block_on_f01;
+#[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
+use keys::{AddressBuilder, KeyPair, NetworkPrefix as CashAddrPrefix};
+#[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
+use primitives::hash::H256;
+#[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
+use script::Builder;
+#[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
+use std::convert::TryFrom;
+#[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
+use std::sync::Mutex;
+
+// rmd160_from_priv imports
+#[cfg(any(feature = "docker-tests-ordermatch", feature = "docker-tests-swaps-utxo"))]
+use bitcrypto::dhash160;
+#[cfg(any(feature = "docker-tests-ordermatch", feature = "docker-tests-swaps-utxo"))]
+use primitives::hash::H160;
+
+// random_secp256k1_secret import - only for features that use generate_utxo_coin_with_random_privkey
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-integration"
+))]
+use crate::docker_tests::helpers::env::random_secp256k1_secret;
+
 // =============================================================================
-// SLP token metadata
+// SLP token metadata (SLP-only)
 // =============================================================================
 
+#[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
 lazy_static! {
     /// SLP token ID (genesis tx hash)
     pub static ref SLP_TOKEN_ID: Mutex<H256> = Mutex::new(H256::default());
@@ -56,31 +124,70 @@ pub const UTXO_ASSET_DOCKER_IMAGE: &str = "docker.io/artempikulin/testblockchain
 pub const UTXO_ASSET_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/artempikulin/testblockchain:multiarch";
 
 // =============================================================================
-// Ticker constants
+// Ticker constants (UTXO asset features only)
 // =============================================================================
 
 /// Ticker of MYCOIN dockerized blockchain.
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-integration"
+))]
 pub const MYCOIN: &str = "MYCOIN";
+
 /// Ticker of MYCOIN1 dockerized blockchain.
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-integration"
+))]
 pub const MYCOIN1: &str = "MYCOIN1";
 
 // =============================================================================
-// UtxoAssetDockerOps
+// UtxoAssetDockerOps (UTXO asset features only)
 // =============================================================================
 
 /// Docker operations for standard UTXO assets (MYCOIN, MYCOIN1).
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-sia",
+    feature = "docker-tests-integration"
+))]
 pub struct UtxoAssetDockerOps {
     #[allow(dead_code)]
     ctx: MmArc,
     coin: UtxoStandardCoin,
 }
 
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-sia",
+    feature = "docker-tests-integration"
+))]
 impl CoinDockerOps for UtxoAssetDockerOps {
     fn rpc_client(&self) -> &UtxoRpcClientEnum {
         &self.coin.as_ref().rpc_client
     }
 }
 
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-sia",
+    feature = "docker-tests-integration"
+))]
 impl UtxoAssetDockerOps {
     /// Create UtxoAssetDockerOps from ticker.
     pub fn from_ticker(ticker: &str) -> UtxoAssetDockerOps {
@@ -96,16 +203,18 @@ impl UtxoAssetDockerOps {
 }
 
 // =============================================================================
-// BchDockerOps
+// BchDockerOps (SLP features only)
 // =============================================================================
 
 /// Docker operations for BCH/SLP coins (FORSLP).
+#[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
 pub struct BchDockerOps {
     #[allow(dead_code)]
     ctx: MmArc,
     coin: BchCoin,
 }
 
+#[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
 impl BchDockerOps {
     /// Create BchDockerOps from ticker.
     pub fn from_ticker(ticker: &str) -> BchDockerOps {
@@ -211,6 +320,7 @@ impl BchDockerOps {
     }
 }
 
+#[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
 impl CoinDockerOps for BchDockerOps {
     fn rpc_client(&self) -> &UtxoRpcClientEnum {
         &self.coin.as_ref().rpc_client
@@ -286,6 +396,7 @@ pub fn setup_utxo_conf_for_compose(ticker: &str, service_name: &str) {
 // =============================================================================
 
 /// Compute RIPEMD160(SHA256(pubkey)) from a private key.
+#[cfg(any(feature = "docker-tests-ordermatch", feature = "docker-tests-swaps-utxo"))]
 pub fn rmd160_from_priv(privkey: Secp256k1Secret) -> H160 {
     use secp256k1::{PublicKey, Secp256k1, SecretKey};
     let secret = SecretKey::from_slice(privkey.as_slice()).unwrap();
@@ -294,16 +405,25 @@ pub fn rmd160_from_priv(privkey: Secp256k1Secret) -> H160 {
 }
 
 /// Get a prefilled SLP privkey from the pool.
+#[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
 pub fn get_prefilled_slp_privkey() -> [u8; 32] {
     SLP_TOKEN_OWNERS.lock().unwrap().remove(0)
 }
 
 /// Get the SLP token ID as hex string.
+#[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
 pub fn get_slp_token_id() -> String {
     hex::encode(SLP_TOKEN_ID.lock().unwrap().as_slice())
 }
 
 /// Import an address to the coin's wallet.
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-integration"
+))]
 pub async fn import_address<T>(coin: &T)
 where
     T: MarketCoinOps + AsRef<UtxoCoinFields>,
@@ -325,6 +445,13 @@ where
 }
 
 /// Build asset `UtxoStandardCoin` from ticker and privkey without filling the balance.
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-integration"
+))]
 pub fn utxo_coin_from_privkey(ticker: &str, priv_key: Secp256k1Secret) -> (MmArc, UtxoStandardCoin) {
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let conf = json!({"coin":ticker,"asset":ticker,"txversion":4,"overwintered":1,"txfee":1000,"network":"regtest"});
@@ -336,6 +463,12 @@ pub fn utxo_coin_from_privkey(ticker: &str, priv_key: Secp256k1Secret) -> (MmArc
 }
 
 /// Create a UTXO coin for the given privkey and fill its address with the specified balance.
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-integration"
+))]
 pub fn generate_utxo_coin_with_privkey(ticker: &str, balance: BigDecimal, priv_key: Secp256k1Secret) {
     let (_, coin) = utxo_coin_from_privkey(ticker, priv_key);
     let timeout = 30; // timeout if test takes more than 30 seconds to run
@@ -344,6 +477,8 @@ pub fn generate_utxo_coin_with_privkey(ticker: &str, balance: BigDecimal, priv_k
 }
 
 /// Fund a UTXO address with the specified balance (async version).
+/// Only used by Sia tests which need async funding.
+#[cfg(any(feature = "docker-tests-sia", feature = "docker-tests-integration"))]
 pub async fn fund_privkey_utxo(ticker: &str, balance: BigDecimal, priv_key: &Secp256k1Secret) {
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let conf = json!({"coin":ticker,"asset":ticker,"txversion":4,"overwintered":1,"txfee":1000,"network":"regtest"});
@@ -357,6 +492,12 @@ pub async fn fund_privkey_utxo(ticker: &str, balance: BigDecimal, priv_key: &Sec
 }
 
 /// Generate random privkey, create a UTXO coin and fill its address with the specified balance.
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-integration"
+))]
 pub fn generate_utxo_coin_with_random_privkey(
     ticker: &str,
     balance: BigDecimal,
@@ -370,6 +511,14 @@ pub fn generate_utxo_coin_with_random_privkey(
 }
 
 /// Fill address with the specified amount (synchronous wrapper).
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-slp",
+    feature = "docker-tests-integration"
+))]
 pub fn fill_address<T>(coin: &T, address: &str, amount: BigDecimal, timeout: u64)
 where
     T: MarketCoinOps + AsRef<UtxoCoinFields>,

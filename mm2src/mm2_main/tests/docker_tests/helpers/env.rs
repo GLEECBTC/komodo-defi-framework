@@ -4,16 +4,48 @@
 //! - Docker-compose service name constants
 //! - Generic docker node helpers and types
 
-use secp256k1::SecretKey;
-use std::cell::Cell;
 use testcontainers::{Container, GenericImage};
 
 pub use crypto::Secp256k1Secret;
+
+// secp256k1 import only needed for random_secp256k1_secret
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-watchers-eth",
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-eth",
+    feature = "docker-tests-sia",
+    feature = "docker-tests-integration"
+))]
+use secp256k1::SecretKey;
+
+// Cell import only needed for SET_BURN_PUBKEY_TO_ALICE
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-slp",
+    feature = "docker-tests-eth",
+    feature = "docker-tests-integration"
+))]
+use std::cell::Cell;
 
 // =============================================================================
 // Thread-local test flags
 // =============================================================================
 
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-slp",
+    feature = "docker-tests-eth",
+    feature = "docker-tests-integration"
+))]
 thread_local! {
     /// Set test dex pubkey as Taker (to check DexFee::NoFee)
     pub static SET_BURN_PUBKEY_TO_ALICE: Cell<bool> = const { Cell::new(false) };
@@ -46,8 +78,7 @@ pub const KDF_MYCOIN_SERVICE: &str = "mycoin";
     feature = "docker-tests-swaps-utxo",
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers",
-    feature = "docker-tests-qrc20",
-    feature = "docker-tests-sia"
+    feature = "docker-tests-qrc20"
 ))]
 pub const KDF_MYCOIN1_SERVICE: &str = "mycoin1";
 
@@ -82,6 +113,16 @@ pub struct DockerNode {
 // =============================================================================
 
 /// Generate a random secp256k1 secret key for testing.
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-watchers-eth",
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-eth",
+    feature = "docker-tests-sia",
+    feature = "docker-tests-integration"
+))]
 pub fn random_secp256k1_secret() -> Secp256k1Secret {
     let priv_key = SecretKey::new(&mut rand6::thread_rng());
     Secp256k1Secret::from(*priv_key.as_ref())

@@ -9,7 +9,9 @@
 //! The locks prevent concurrent funding operations that would cause RPC failures
 //! (insufficient funds, nonce reuse, transaction confirmation race conditions).
 
-use coins::utxo::rpc_clients::{NativeClient, UtxoRpcClientEnum, UtxoRpcClientOps};
+#[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
+use coins::utxo::rpc_clients::NativeClient;
+use coins::utxo::rpc_clients::{UtxoRpcClientEnum, UtxoRpcClientOps};
 use common::{block_on_f01, now_ms, wait_until_ms};
 use std::process::Command;
 use std::thread;
@@ -34,6 +36,8 @@ pub trait CoinDockerOps {
     fn rpc_client(&self) -> &UtxoRpcClientEnum;
 
     /// Get the native RPC client, panicking if not native.
+    /// Only used by BchDockerOps::initialize_slp for SLP token setup.
+    #[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
     fn native_client(&self) -> &NativeClient {
         match self.rpc_client() {
             UtxoRpcClientEnum::Native(native) => native,
