@@ -22,15 +22,15 @@ use serde_json::Value as Json;
 use std::thread;
 use std::time::Duration;
 
-use super::env::Secp256k1Secret;
+use crypto::Secp256k1Secret;
 
 // random_secp256k1_secret - used by non-SLP swap paths
 #[cfg(any(
     feature = "docker-tests-swaps-utxo",
     feature = "docker-tests-ordermatch",
-    feature = "docker-tests-watchers",
     feature = "docker-tests-qrc20",
-    feature = "docker-tests-eth"
+    feature = "docker-tests-eth",
+    feature = "docker-tests-sia"
 ))]
 use super::env::random_secp256k1_secret;
 
@@ -38,7 +38,6 @@ use super::env::random_secp256k1_secret;
 #[cfg(any(
     feature = "docker-tests-swaps-utxo",
     feature = "docker-tests-ordermatch",
-    feature = "docker-tests-watchers",
     feature = "docker-tests-qrc20",
     feature = "docker-tests-slp",
     feature = "docker-tests-eth"
@@ -49,16 +48,14 @@ use super::env::SET_BURN_PUBKEY_TO_ALICE;
 #[cfg(any(
     feature = "docker-tests-qrc20",
     feature = "docker-tests-swaps-utxo",
-    feature = "docker-tests-ordermatch",
-    feature = "docker-tests-watchers",
     feature = "docker-tests-sia"
 ))]
 const WALLET_FUNDING_TIMEOUT_SEC: u64 = 30;
 
 // ETH imports
-#[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-ordermatch"))]
+#[cfg(feature = "docker-tests-eth")]
 use super::eth::{erc20_contract_checksum, fill_eth_erc20_with_private_key, swap_contract_checksum, GETH_RPC_URL};
-#[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-ordermatch"))]
+#[cfg(feature = "docker-tests-eth")]
 use mm2_test_helpers::for_tests::{enable_eth_coin, erc20_dev_conf, eth_dev_conf};
 
 // QRC20 imports
@@ -76,32 +73,17 @@ use mm2_test_helpers::for_tests::enable_native as enable_native_qrc20;
 
 // UTXO imports (non-QRC20 paths)
 #[cfg(all(
-    any(
-        feature = "docker-tests-swaps-utxo",
-        feature = "docker-tests-ordermatch",
-        feature = "docker-tests-watchers",
-        feature = "docker-tests-sia"
-    ),
+    any(feature = "docker-tests-swaps-utxo", feature = "docker-tests-sia"),
     not(feature = "docker-tests-qrc20")
 ))]
 use super::utxo::{fill_address, utxo_coin_from_privkey};
 #[cfg(all(
-    any(
-        feature = "docker-tests-swaps-utxo",
-        feature = "docker-tests-ordermatch",
-        feature = "docker-tests-watchers",
-        feature = "docker-tests-sia"
-    ),
+    any(feature = "docker-tests-swaps-utxo", feature = "docker-tests-sia"),
     not(feature = "docker-tests-qrc20")
 ))]
 use coins::MarketCoinOps;
 #[cfg(all(
-    any(
-        feature = "docker-tests-swaps-utxo",
-        feature = "docker-tests-ordermatch",
-        feature = "docker-tests-watchers",
-        feature = "docker-tests-sia"
-    ),
+    any(feature = "docker-tests-swaps-utxo", feature = "docker-tests-sia"),
     not(feature = "docker-tests-qrc20")
 ))]
 use mm2_test_helpers::for_tests::enable_native;
@@ -167,7 +149,6 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
                 any(
                     feature = "docker-tests-swaps-utxo",
                     feature = "docker-tests-ordermatch",
-                    feature = "docker-tests-watchers",
                     feature = "docker-tests-sia"
                 ),
                 not(feature = "docker-tests-qrc20")
@@ -181,7 +162,7 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
             },
             #[cfg(feature = "docker-tests-slp")]
             "ADEXSLP" | "FORSLP" => Secp256k1Secret::from(get_prefilled_slp_privkey()),
-            #[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-ordermatch"))]
+            #[cfg(feature = "docker-tests-eth")]
             "ETH" | "ERC20DEV" => {
                 let priv_key = random_secp256k1_secret();
                 fill_eth_erc20_with_private_key(priv_key);
@@ -215,7 +196,7 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
     // Build coins config based on enabled features
     let mut coins_vec: Vec<Json> = Vec::new();
 
-    #[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-ordermatch"))]
+    #[cfg(feature = "docker-tests-eth")]
     {
         coins_vec.push(eth_dev_conf());
         coins_vec.push(erc20_dev_conf(&erc20_contract_checksum()));
@@ -247,7 +228,6 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
         any(
             feature = "docker-tests-swaps-utxo",
             feature = "docker-tests-ordermatch",
-            feature = "docker-tests-watchers",
             feature = "docker-tests-sia"
         ),
         not(feature = "docker-tests-qrc20")
@@ -328,7 +308,6 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
         any(
             feature = "docker-tests-swaps-utxo",
             feature = "docker-tests-ordermatch",
-            feature = "docker-tests-watchers",
             feature = "docker-tests-sia"
         ),
         not(feature = "docker-tests-qrc20")
@@ -344,7 +323,7 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
         log!("{:?}", block_on(enable_native_slp(&mm_bob, "ADEXSLP", &[], None)));
     }
 
-    #[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-ordermatch"))]
+    #[cfg(feature = "docker-tests-eth")]
     {
         let swap_contract = swap_contract_checksum();
         log!(
@@ -385,7 +364,6 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
         any(
             feature = "docker-tests-swaps-utxo",
             feature = "docker-tests-ordermatch",
-            feature = "docker-tests-watchers",
             feature = "docker-tests-sia"
         ),
         not(feature = "docker-tests-qrc20")
@@ -401,7 +379,7 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
         log!("{:?}", block_on(enable_native_slp(&mm_alice, "ADEXSLP", &[], None)));
     }
 
-    #[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-ordermatch"))]
+    #[cfg(feature = "docker-tests-eth")]
     {
         let swap_contract = swap_contract_checksum();
         log!(

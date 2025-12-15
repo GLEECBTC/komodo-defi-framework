@@ -69,20 +69,28 @@ use uuid::Uuid;
 #[derive(Debug, Clone)]
 struct BalanceResult {
     alice_acoin_balance_before: BigDecimal,
+    #[cfg(feature = "docker-tests-watchers-eth")]
     alice_acoin_balance_middle: BigDecimal,
     alice_acoin_balance_after: BigDecimal,
     alice_bcoin_balance_before: BigDecimal,
+    #[cfg(feature = "docker-tests-watchers-eth")]
     alice_bcoin_balance_middle: BigDecimal,
     alice_bcoin_balance_after: BigDecimal,
+    #[cfg(feature = "docker-tests-watchers-eth")]
     alice_eth_balance_middle: BigDecimal,
+    #[cfg(feature = "docker-tests-watchers-eth")]
     alice_eth_balance_after: BigDecimal,
     bob_acoin_balance_before: BigDecimal,
     bob_acoin_balance_after: BigDecimal,
     bob_bcoin_balance_before: BigDecimal,
     bob_bcoin_balance_after: BigDecimal,
+    #[cfg(feature = "docker-tests-watchers-eth")]
     watcher_acoin_balance_before: BigDecimal,
+    #[cfg(feature = "docker-tests-watchers-eth")]
     watcher_acoin_balance_after: BigDecimal,
+    #[cfg(feature = "docker-tests-watchers-eth")]
     watcher_bcoin_balance_before: BigDecimal,
+    #[cfg(feature = "docker-tests-watchers-eth")]
     watcher_bcoin_balance_after: BigDecimal,
 }
 
@@ -240,11 +248,16 @@ fn start_swaps_and_get_balances(
     let alice_bcoin_balance_before = block_on(my_balance(&mm_alice, b_coin)).balance;
     let bob_acoin_balance_before = block_on(my_balance(&mm_bob, a_coin)).balance;
     let bob_bcoin_balance_before = block_on(my_balance(&mm_bob, b_coin)).balance;
+    #[cfg(feature = "docker-tests-watchers-eth")]
     let watcher_acoin_balance_before = block_on(my_balance(&mm_watcher, a_coin)).balance;
+    #[cfg(feature = "docker-tests-watchers-eth")]
     let watcher_bcoin_balance_before = block_on(my_balance(&mm_watcher, b_coin)).balance;
 
+    #[cfg(feature = "docker-tests-watchers-eth")]
     let mut alice_acoin_balance_middle = BigDecimal::zero();
+    #[cfg(feature = "docker-tests-watchers-eth")]
     let mut alice_bcoin_balance_middle = BigDecimal::zero();
+    #[cfg(feature = "docker-tests-watchers-eth")]
     let mut alice_eth_balance_middle = BigDecimal::zero();
     let mut bob_acoin_balance_after = BigDecimal::zero();
     let mut bob_bcoin_balance_after = BigDecimal::zero();
@@ -264,10 +277,10 @@ fn start_swaps_and_get_balances(
     }
     if !matches!(swap_flow, SwapFlow::TakerSpendsMakerPayment) {
         block_on(mm_alice.wait_for_log(120., |log| log.contains(WATCHER_MESSAGE_SENT_LOG))).unwrap();
-        alice_acoin_balance_middle = block_on(my_balance(&mm_alice, a_coin)).balance;
-        alice_bcoin_balance_middle = block_on(my_balance(&mm_alice, b_coin)).balance;
         #[cfg(feature = "docker-tests-watchers-eth")]
         {
+            alice_acoin_balance_middle = block_on(my_balance(&mm_alice, a_coin)).balance;
+            alice_bcoin_balance_middle = block_on(my_balance(&mm_alice, b_coin)).balance;
             alice_eth_balance_middle = block_on(my_balance(&mm_alice, "ETH")).balance;
         }
         block_on(mm_alice.stop()).unwrap();
@@ -289,31 +302,39 @@ fn start_swaps_and_get_balances(
     let alice_bcoin_balance_after = block_on(my_balance(&mm_alice, b_coin)).balance;
     #[cfg(feature = "docker-tests-watchers-eth")]
     let alice_eth_balance_after = block_on(my_balance(&mm_alice, "ETH")).balance;
-    #[cfg(not(feature = "docker-tests-watchers-eth"))]
-    let alice_eth_balance_after = BigDecimal::zero();
     if !matches!(swap_flow, SwapFlow::WatcherRefundsTakerPayment) {
         bob_acoin_balance_after = block_on(my_balance(&mm_bob, a_coin)).balance;
         bob_bcoin_balance_after = block_on(my_balance(&mm_bob, b_coin)).balance;
     }
+    #[cfg(feature = "docker-tests-watchers-eth")]
     let watcher_acoin_balance_after = block_on(my_balance(&mm_watcher, a_coin)).balance;
+    #[cfg(feature = "docker-tests-watchers-eth")]
     let watcher_bcoin_balance_after = block_on(my_balance(&mm_watcher, b_coin)).balance;
 
     BalanceResult {
         alice_acoin_balance_before,
+        #[cfg(feature = "docker-tests-watchers-eth")]
         alice_acoin_balance_middle,
         alice_acoin_balance_after,
         alice_bcoin_balance_before,
+        #[cfg(feature = "docker-tests-watchers-eth")]
         alice_bcoin_balance_middle,
         alice_bcoin_balance_after,
+        #[cfg(feature = "docker-tests-watchers-eth")]
         alice_eth_balance_middle,
+        #[cfg(feature = "docker-tests-watchers-eth")]
         alice_eth_balance_after,
         bob_acoin_balance_before,
         bob_acoin_balance_after,
         bob_bcoin_balance_before,
         bob_bcoin_balance_after,
+        #[cfg(feature = "docker-tests-watchers-eth")]
         watcher_acoin_balance_before,
+        #[cfg(feature = "docker-tests-watchers-eth")]
         watcher_acoin_balance_after,
+        #[cfg(feature = "docker-tests-watchers-eth")]
         watcher_bcoin_balance_before,
+        #[cfg(feature = "docker-tests-watchers-eth")]
         watcher_bcoin_balance_after,
     }
 }

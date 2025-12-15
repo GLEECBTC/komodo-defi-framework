@@ -43,7 +43,6 @@ pub mod env;
 // ETH helpers - also used by sepolia tests
 #[cfg(any(
     feature = "docker-tests-eth",
-    feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers-eth",
     feature = "docker-tests-integration",
     feature = "sepolia-maker-swap-v2-tests",
@@ -62,8 +61,6 @@ pub mod sia;
 // Cross-chain swap orchestration helpers.
 #[cfg(any(
     feature = "docker-tests-swaps-utxo",
-    feature = "docker-tests-ordermatch",
-    feature = "docker-tests-watchers",
     feature = "docker-tests-eth",
     feature = "docker-tests-qrc20",
     feature = "docker-tests-slp",
@@ -83,7 +80,6 @@ pub mod tendermint;
     feature = "docker-tests-qrc20",
     feature = "docker-tests-sia",
     feature = "docker-tests-slp",
-    feature = "docker-tests-zcoin",
     feature = "docker-tests-integration"
 ))]
 pub mod utxo;

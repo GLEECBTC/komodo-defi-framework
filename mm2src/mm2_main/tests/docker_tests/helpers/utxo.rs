@@ -9,22 +9,22 @@
 // Common imports (used by multiple feature sets)
 // =============================================================================
 
-use crate::docker_tests::helpers::docker_ops::{
-    docker_cp_from_container, get_funding_lock, resolve_compose_container_id, wait_for_file, CoinDockerOps,
-};
-use crate::docker_tests::helpers::env::{DockerNode, Secp256k1Secret};
+use crate::docker_tests::helpers::docker_ops::CoinDockerOps;
+use crate::docker_tests::helpers::env::DockerNode;
 use coins::utxo::rpc_clients::{UtxoRpcClientEnum, UtxoRpcClientOps};
 use coins::utxo::{coin_daemon_data_dir, zcash_params_path, UtxoCoinFields};
 use coins::{ConfirmPaymentInput, MarketCoinOps};
 use common::executor::Timer;
 use common::Future01CompatExt;
 use common::{block_on, now_ms, now_sec, wait_until_ms, wait_until_sec};
+use crypto::Secp256k1Secret;
 use mm2_number::BigDecimal;
 use std::process::Command;
 use testcontainers::core::Mount;
 use testcontainers::runners::SyncRunner;
 use testcontainers::GenericImage;
 use testcontainers::{core::WaitFor, RunnableImage};
+use tokio::sync::Mutex as AsyncMutex;
 
 // UtxoStandardCoin imports - only needed by features that create UTXO coins
 #[cfg(any(
@@ -102,6 +102,36 @@ use primitives::hash::H160;
 use crate::docker_tests::helpers::env::random_secp256k1_secret;
 
 // =============================================================================
+// Funding Locks
+// =============================================================================
+
+lazy_static! {
+    /// Lock for MYCOIN funding operations
+    pub static ref MYCOIN_LOCK: AsyncMutex<()> = AsyncMutex::new(());
+
+    /// Lock for MYCOIN1 funding operations
+    pub static ref MYCOIN1_LOCK: AsyncMutex<()> = AsyncMutex::new(());
+
+    /// Lock for FORSLP (BCH/SLP) funding operations
+    pub static ref FORSLP_LOCK: AsyncMutex<()> = AsyncMutex::new(());
+
+    /// Lock for Qtum/QRC20 funding operations.
+    /// Shared by QTUM, QICK, and QORTY coins since they all run on the same Qtum node.
+    pub static ref QTUM_LOCK: AsyncMutex<()> = AsyncMutex::new(());
+}
+
+/// Get the appropriate funding lock for a given ticker.
+fn get_funding_lock(ticker: &str) -> &'static AsyncMutex<()> {
+    match ticker {
+        "MYCOIN" => &MYCOIN_LOCK,
+        "MYCOIN1" => &MYCOIN1_LOCK,
+        "FORSLP" => &FORSLP_LOCK,
+        "QTUM" | "QICK" | "QORTY" => &QTUM_LOCK,
+        _ => panic!("No funding lock defined for ticker: {}", ticker),
+    }
+}
+
+// =============================================================================
 // SLP token metadata (SLP-only)
 // =============================================================================
 
@@ -128,23 +158,11 @@ pub const UTXO_ASSET_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/artempikulin/testb
 // =============================================================================
 
 /// Ticker of MYCOIN dockerized blockchain.
-#[cfg(any(
-    feature = "docker-tests-swaps-utxo",
-    feature = "docker-tests-ordermatch",
-    feature = "docker-tests-watchers",
-    feature = "docker-tests-qrc20",
-    feature = "docker-tests-integration"
-))]
+#[cfg(any(feature = "docker-tests-swaps-utxo", feature = "docker-tests-integration"))]
 pub const MYCOIN: &str = "MYCOIN";
 
 /// Ticker of MYCOIN1 dockerized blockchain.
-#[cfg(any(
-    feature = "docker-tests-swaps-utxo",
-    feature = "docker-tests-ordermatch",
-    feature = "docker-tests-watchers",
-    feature = "docker-tests-qrc20",
-    feature = "docker-tests-integration"
-))]
+#[cfg(any(feature = "docker-tests-swaps-utxo", feature = "docker-tests-integration"))]
 pub const MYCOIN1: &str = "MYCOIN1";
 
 // =============================================================================
@@ -373,22 +391,6 @@ pub fn utxo_asset_docker_node(ticker: &'static str, port: u16) -> DockerNode {
         ticker: ticker.into(),
         port,
     }
-}
-
-/// Setup UTXO coin configuration from a docker-compose container.
-///
-/// Copies the coin configuration file from the compose container to the local
-/// daemon data directory. Used when tests run against pre-started compose nodes
-/// rather than testcontainers.
-pub fn setup_utxo_conf_for_compose(ticker: &str, service_name: &str) {
-    let mut conf_path = coin_daemon_data_dir(ticker, true);
-    std::fs::create_dir_all(&conf_path).unwrap();
-    conf_path.push(format!("{ticker}.conf"));
-
-    let container_id = resolve_compose_container_id(service_name);
-    let src = format!("/data/node_0/{ticker}.conf");
-    docker_cp_from_container(&container_id, &src, &conf_path);
-    wait_for_file(&conf_path, 3000);
 }
 
 // =============================================================================

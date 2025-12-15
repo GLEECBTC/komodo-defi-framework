@@ -36,7 +36,7 @@ use crate::docker_tests::helpers::env::KDF_MYCOIN_SERVICE;
 ))]
 use crate::docker_tests::helpers::env::KDF_MYCOIN1_SERVICE;
 
-// UTXO docker image and utxo_asset_docker_node - used by many features
+// UTXO docker image and utxo_asset_docker_node - used for MYCOIN/MYCOIN1/FORSLP setup
 #[cfg(any(
     feature = "docker-tests-swaps-utxo",
     feature = "docker-tests-ordermatch",
@@ -44,7 +44,6 @@ use crate::docker_tests::helpers::env::KDF_MYCOIN1_SERVICE;
     feature = "docker-tests-qrc20",
     feature = "docker-tests-sia",
     feature = "docker-tests-slp",
-    feature = "docker-tests-zcoin",
     feature = "docker-tests-integration"
 ))]
 use crate::docker_tests::helpers::utxo::{utxo_asset_docker_node, UTXO_ASSET_DOCKER_IMAGE_WITH_TAG};
@@ -60,7 +59,7 @@ use crate::docker_tests::helpers::utxo::{utxo_asset_docker_node, UTXO_ASSET_DOCK
     feature = "docker-tests-zcoin",
     feature = "docker-tests-integration"
 ))]
-use crate::docker_tests::helpers::utxo::setup_utxo_conf_for_compose;
+use crate::docker_tests::helpers::docker_ops::setup_utxo_conf_for_compose;
 
 // UtxoAssetDockerOps - only needed by features that use MYCOIN/MYCOIN1 setup
 #[cfg(any(

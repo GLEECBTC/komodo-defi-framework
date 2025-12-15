@@ -1,14 +1,10 @@
-//! Docker operations and funding locks for docker tests.
+//! Docker operations for docker tests.
 //!
 //! This module provides shared infrastructure for docker test helpers:
 //! - `CoinDockerOps` trait for coins running in docker containers
-//! - Funding locks to prevent concurrent operations causing RPC failures
-//!
-//! ## Funding Locks
-//!
-//! The locks prevent concurrent funding operations that would cause RPC failures
-//! (insufficient funds, nonce reuse, transaction confirmation race conditions).
+//! - Docker compose utilities for container management
 
+use coins::utxo::coin_daemon_data_dir;
 #[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
 use coins::utxo::rpc_clients::NativeClient;
 use coins::utxo::rpc_clients::{UtxoRpcClientEnum, UtxoRpcClientOps};
@@ -16,7 +12,6 @@ use common::{block_on_f01, now_ms, wait_until_ms};
 use std::process::Command;
 use std::thread;
 use std::time::Duration;
-use tokio::sync::Mutex as AsyncMutex;
 
 // =============================================================================
 // CoinDockerOps trait
@@ -68,57 +63,6 @@ pub trait CoinDockerOps {
             assert!(now_ms() < timeout, "Test timed out");
             thread::sleep(Duration::from_secs(1));
         }
-    }
-}
-
-// =============================================================================
-// Funding Locks
-// =============================================================================
-
-lazy_static! {
-    // -------------------------------------------------------------------------
-    // UTXO coin locks
-    // -------------------------------------------------------------------------
-
-    /// Lock for MYCOIN funding operations
-    pub static ref MYCOIN_LOCK: AsyncMutex<()> = AsyncMutex::new(());
-
-    /// Lock for MYCOIN1 funding operations
-    pub static ref MYCOIN1_LOCK: AsyncMutex<()> = AsyncMutex::new(());
-
-    /// Lock for FORSLP (BCH/SLP) funding operations
-    pub static ref FORSLP_LOCK: AsyncMutex<()> = AsyncMutex::new(());
-
-    // -------------------------------------------------------------------------
-    // Qtum/QRC20 lock
-    // -------------------------------------------------------------------------
-
-    /// Lock for Qtum/QRC20 funding operations.
-    /// Shared by QTUM, QICK, and QORTY coins since they all run on the same Qtum node.
-    pub static ref QTUM_LOCK: AsyncMutex<()> = AsyncMutex::new(());
-
-    // -------------------------------------------------------------------------
-    // ZCoin locks
-    // -------------------------------------------------------------------------
-
-    /// Lock for ZCoin generation TX (address 1)
-    pub static ref ZCOIN_GEN_TX_LOCK: AsyncMutex<()> = AsyncMutex::new(());
-
-    /// Lock for ZCoin generation TX (address 2)
-    pub static ref ZCOIN_GEN_TX_LOCK_ADDR2: AsyncMutex<()> = AsyncMutex::new(());
-}
-
-/// Get the appropriate funding lock for a given ticker.
-///
-/// This centralizes the ticker-to-lock mapping and provides a clear error
-/// message when an unknown ticker is used.
-pub fn get_funding_lock(ticker: &str) -> &'static AsyncMutex<()> {
-    match ticker {
-        "MYCOIN" => &MYCOIN_LOCK,
-        "MYCOIN1" => &MYCOIN1_LOCK,
-        "FORSLP" => &FORSLP_LOCK,
-        "QTUM" | "QICK" | "QORTY" => &QTUM_LOCK,
-        _ => panic!("No funding lock defined for ticker: {}", ticker),
     }
 }
 
@@ -187,4 +131,20 @@ pub fn wait_for_file(path: &std::path::Path, timeout_ms: u64) {
         assert!(now_ms() < timeout, "Timed out waiting for {:?}", path);
         thread::sleep(Duration::from_millis(100));
     }
+}
+
+/// Setup UTXO coin configuration from a docker-compose container.
+///
+/// Copies the coin configuration file from the compose container to the local
+/// daemon data directory. Used when tests run against pre-started compose nodes
+/// rather than testcontainers.
+pub fn setup_utxo_conf_for_compose(ticker: &str, service_name: &str) {
+    let mut conf_path = coin_daemon_data_dir(ticker, true);
+    std::fs::create_dir_all(&conf_path).unwrap();
+    conf_path.push(format!("{ticker}.conf"));
+
+    let container_id = resolve_compose_container_id(service_name);
+    let src = format!("/data/node_0/{ticker}.conf");
+    docker_cp_from_container(&container_id, &src, &conf_path);
+    wait_for_file(&conf_path, 3000);
 }

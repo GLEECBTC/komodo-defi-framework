@@ -5,11 +5,10 @@
 //! - Qtum docker node helpers
 //! - QRC20 contract initialization
 
-use crate::docker_tests::helpers::docker_ops::{
-    docker_cp_from_container, resolve_compose_container_id, wait_for_file, QTUM_LOCK,
-};
-use crate::docker_tests::helpers::env::{random_secp256k1_secret, DockerNode, Secp256k1Secret, KDF_QTUM_SERVICE};
+use crate::docker_tests::helpers::docker_ops::{docker_cp_from_container, resolve_compose_container_id, wait_for_file};
+use crate::docker_tests::helpers::env::{random_secp256k1_secret, DockerNode, KDF_QTUM_SERVICE};
 use crate::docker_tests::helpers::utxo::fill_address;
+use crate::docker_tests::helpers::utxo::QTUM_LOCK;
 use coins::qrc20::rpc_clients::for_tests::Qrc20NativeWalletOps;
 use coins::qrc20::{qrc20_coin_with_priv_key, Qrc20ActivationParams, Qrc20Coin};
 use coins::utxo::qtum::QtumBasedCoin;
@@ -18,6 +17,7 @@ use coins::utxo::rpc_clients::{UtxoRpcClientEnum, UtxoRpcClientOps};
 use coins::utxo::{sat_from_big_decimal, UtxoActivationParams, UtxoCoinFields};
 use coins::{ConfirmPaymentInput, MarketCoinOps};
 use common::{block_on, block_on_f01, now_ms, now_sec, temp_dir, wait_until_ms, wait_until_sec};
+use crypto::Secp256k1Secret;
 use ethereum_types::H160 as H160Eth;
 use http::StatusCode;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};

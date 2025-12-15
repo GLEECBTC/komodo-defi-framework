@@ -7,13 +7,15 @@
 //! - Coin creation helpers
 //! - Geth initialization with contract deployment
 
-use crate::docker_tests::helpers::env::{random_secp256k1_secret, DockerNode, Secp256k1Secret};
+use crate::docker_tests::helpers::env::{random_secp256k1_secret, DockerNode};
 use coins::eth::addr_from_raw_pubkey;
 use coins::eth::{checksum_address, eth_coin_from_conf_and_request, EthCoin, ERC20_ABI};
 use coins::{CoinProtocol, CoinWithDerivationMethod, DerivationMethod, PrivKeyBuildPolicy};
 use common::block_on;
 use common::custom_futures::timeout::FutureTimerExt;
 use crypto::privkey::key_pair_from_seed;
+#[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-integration"))]
+use crypto::Secp256k1Secret;
 use ethabi::Token;
 use ethereum_types::{H160 as H160Eth, U256};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
@@ -219,6 +221,11 @@ pub fn erc20_contract_checksum() -> String {
 }
 
 /// Return swap contract address in checksum format (with 0x prefix)
+#[cfg(any(
+    feature = "docker-tests-eth",
+    feature = "docker-tests-tendermint",
+    feature = "docker-tests-integration"
+))]
 pub fn swap_contract_checksum() -> String {
     checksum_address(&format!("{:02x}", swap_contract()))
 }
@@ -408,6 +415,7 @@ pub fn erc20_coin_with_random_privkey(swap_contract_address: Address) -> EthCoin
 }
 
 /// Fills the private key's public address with ETH and ERC20 tokens
+#[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-integration"))]
 pub fn fill_eth_erc20_with_private_key(priv_key: Secp256k1Secret) {
     let eth_conf = eth_dev_conf();
     let req = json!({

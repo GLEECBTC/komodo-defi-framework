@@ -6,9 +6,17 @@
 
 use testcontainers::{Container, GenericImage};
 
-pub use crypto::Secp256k1Secret;
-
-// secp256k1 import only needed for random_secp256k1_secret
+#[cfg(any(
+    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-ordermatch",
+    feature = "docker-tests-watchers",
+    feature = "docker-tests-watchers-eth",
+    feature = "docker-tests-qrc20",
+    feature = "docker-tests-eth",
+    feature = "docker-tests-sia",
+    feature = "docker-tests-integration"
+))]
+use crypto::Secp256k1Secret;
 #[cfg(any(
     feature = "docker-tests-swaps-utxo",
     feature = "docker-tests-ordermatch",
