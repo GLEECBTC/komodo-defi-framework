@@ -832,6 +832,33 @@ pub fn tbtc_segwit_conf() -> Json {
     })
 }
 
+pub fn tbtc_taproot_conf() -> Json {
+    json!({
+        "coin": "tBTC-taproot",
+        "asset":"tBTC-taproot",
+        "rpcport": 18332,
+        "pubtype": 111,
+        "p2shtype": 196,
+        "wiftype": 239,
+        "segwit": true,
+        "bech32_hrp": "tb",
+        "address_format": {
+            "format": "segwit",
+            "version": 1
+        },
+        "orderbook_ticker": "tBTC",
+        "txfee": 0,
+        "estimate_fee_mode": "ECONOMICAL",
+        "mm2": 1,
+        "is_testnet": true,
+        "required_confirmations": 0,
+        "protocol": {
+            "type": "UTXO"
+        },
+        "derivation_path": "m/86'/1'"
+  })
+}
+
 pub fn tbtc_with_spv_conf() -> Json {
     json!({
         "coin": "tBTC-TEST",
