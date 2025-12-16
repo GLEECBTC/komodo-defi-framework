@@ -23,9 +23,9 @@ use testcontainers::{core::WaitFor, GenericImage, RunnableImage};
 // =============================================================================
 
 /// Zombie asset docker image
-pub const ZOMBIE_ASSET_DOCKER_IMAGE: &str = "docker.io/borngraced/zombietestrunner";
+pub const ZOMBIE_ASSET_DOCKER_IMAGE: &str = "docker.io/gleec/zombietestrunner";
 /// Zombie asset docker image with tag
-pub const ZOMBIE_ASSET_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/borngraced/zombietestrunner:multiarch";
+pub const ZOMBIE_ASSET_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/gleec/zombietestrunner:multiarch";
 
 // =============================================================================
 // ZCoinAssetDockerOps

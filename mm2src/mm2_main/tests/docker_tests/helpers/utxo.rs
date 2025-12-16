@@ -148,9 +148,9 @@ lazy_static! {
 // =============================================================================
 
 /// UTXO asset docker image
-pub const UTXO_ASSET_DOCKER_IMAGE: &str = "docker.io/artempikulin/testblockchain";
+pub const UTXO_ASSET_DOCKER_IMAGE: &str = "docker.io/gleec/testblockchain";
 /// UTXO asset docker image with tag
-pub const UTXO_ASSET_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/artempikulin/testblockchain:multiarch";
+pub const UTXO_ASSET_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/gleec/testblockchain:multiarch";
 
 // =============================================================================
 // Ticker constants (UTXO asset features only)

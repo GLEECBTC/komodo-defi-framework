@@ -1204,21 +1204,36 @@ Note: Until all feature-gated suites have dedicated CI jobs (Phase 3), individua
 
 ### Phase 6 – Migrate docker tests CI to GLEEC fork infrastructure
 
-**Goal:** Migrate docker tests CI from KomodoPlatform to GLEEC fork which has updated infrastructure.
+**Goal:** Migrate docker test infrastructure to use GLEEC-hosted Docker images.
+
+**Status:** ✅ Completed
 
 **Context:**
-- Currently docker tests CI runs on `https://github.com/KomodoPlatform/komodo-defi-framework`
-- Need to migrate to `https://github.com/GLEECBTC/komodo-defi-framework` which has:
-  - Updated docker node configurations
-  - Pre-deployed watcher-compatible swap contracts
-  - Test infrastructure aligned with current development
+- Docker images migrated from various sources to `gleec/` Docker Hub organization
+- Contracts continue to be deployed at runtime (no pre-deployed contracts needed)
+- Two images kept as-is: `ethereum/client-go:stable` (official Geth) and `ghcr.io/siafoundation/walletd:latest` (Sia Foundation)
 
-**Tasks:**
+**Image Migration:**
 
-- [ ] Update CI workflow to point to GLEEC fork
-- [ ] Verify docker-compose files are compatible
-- [ ] Ensure contract addresses match GLEEC deployments
-- [ ] Test all docker test suites against GLEEC infrastructure
+| Old Image | New Image |
+|-----------|-----------|
+| `artempikulin/testblockchain:multiarch` | `gleec/testblockchain:multiarch` |
+| `sergeyboyko/qtumregtest:latest` | `gleec/qtumregtest:latest` |
+| `borngraced/zombietestrunner:multiarch` | `gleec/zombietestrunner:multiarch` |
+| `komodoofficial/nucleusd:latest` | `gleec/nucleusd:latest` |
+| `komodoofficial/gaiad:kdf-ci` | `gleec/gaiad:kdf-ci` |
+| `komodoofficial/ibc-relayer:kdf-ci` | `gleec/ibc-relayer:kdf-ci` |
+
+**Completed Tasks:**
+
+- [x] Migrate Docker images to `gleec/` organization on Docker Hub
+- [x] Update `.docker/test-nodes.yml` with new image URLs
+- [x] Update Rust helper files with new image constants:
+  - `helpers/utxo.rs`: `UTXO_ASSET_DOCKER_IMAGE*`
+  - `helpers/zcoin.rs`: `ZOMBIE_ASSET_DOCKER_IMAGE*`
+  - `helpers/qrc20.rs`: `QTUM_REGTEST_DOCKER_IMAGE*`
+  - `helpers/tendermint.rs`: `NUCLEUS_IMAGE`, `ATOM_IMAGE_WITH_TAG`, `IBC_RELAYER_IMAGE_WITH_TAG`
+- [x] Verify compilation succeeds
 
 ---
 

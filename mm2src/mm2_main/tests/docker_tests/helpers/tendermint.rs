@@ -18,11 +18,11 @@ use testcontainers::{GenericImage, RunnableImage};
 // =============================================================================
 
 /// Nucleus docker image
-pub const NUCLEUS_IMAGE: &str = "docker.io/komodoofficial/nucleusd";
+pub const NUCLEUS_IMAGE: &str = "docker.io/gleec/nucleusd";
 /// Atom (Gaia) docker image with tag
-pub const ATOM_IMAGE_WITH_TAG: &str = "docker.io/komodoofficial/gaiad:kdf-ci";
+pub const ATOM_IMAGE_WITH_TAG: &str = "docker.io/gleec/gaiad:kdf-ci";
 /// IBC relayer docker image with tag
-pub const IBC_RELAYER_IMAGE_WITH_TAG: &str = "docker.io/komodoofficial/ibc-relayer:kdf-ci";
+pub const IBC_RELAYER_IMAGE_WITH_TAG: &str = "docker.io/gleec/ibc-relayer:kdf-ci";
 
 // =============================================================================
 // Docker node helpers

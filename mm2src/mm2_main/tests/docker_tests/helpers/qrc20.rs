@@ -41,9 +41,9 @@ use testcontainers::{GenericImage, RunnableImage};
 // =============================================================================
 
 /// Qtum regtest docker image
-pub const QTUM_REGTEST_DOCKER_IMAGE: &str = "docker.io/sergeyboyko/qtumregtest";
+pub const QTUM_REGTEST_DOCKER_IMAGE: &str = "docker.io/gleec/qtumregtest";
 /// Qtum regtest docker image with tag
-pub const QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/sergeyboyko/qtumregtest:latest";
+pub const QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/gleec/qtumregtest:latest";
 
 // =============================================================================
 // Global state (OnceLock for contract addresses)

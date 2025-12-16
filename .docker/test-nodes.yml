@@ -35,7 +35,7 @@ services:
   # ============================================================================
 
   mycoin:
-    image: docker.io/artempikulin/testblockchain:multiarch
+    image: docker.io/gleec/testblockchain:multiarch
     profiles: ["utxo", "all"]
     container_name: kdf-mycoin
     ports:
@@ -59,7 +59,7 @@ services:
       start_period: 10s
 
   mycoin1:
-    image: docker.io/artempikulin/testblockchain:multiarch
+    image: docker.io/gleec/testblockchain:multiarch
     profiles: ["utxo", "all"]
     container_name: kdf-mycoin1
     ports:
@@ -87,7 +87,7 @@ services:
   # ============================================================================
 
   forslp:
-    image: docker.io/artempikulin/testblockchain:multiarch
+    image: docker.io/gleec/testblockchain:multiarch
     profiles: ["slp", "all"]
     container_name: kdf-forslp
     ports:
@@ -115,7 +115,7 @@ services:
   # ============================================================================
 
   qtum:
-    image: docker.io/sergeyboyko/qtumregtest:latest
+    image: docker.io/gleec/qtumregtest:latest
     profiles: ["qrc20", "all"]
     container_name: kdf-qtum
     ports:
@@ -157,7 +157,7 @@ services:
   # ============================================================================
 
   zombie:
-    image: docker.io/borngraced/zombietestrunner:multiarch
+    image: docker.io/gleec/zombietestrunner:multiarch
     profiles: ["zombie", "all"]
     container_name: kdf-zombie
     ports:
@@ -179,7 +179,7 @@ services:
   # ============================================================================
 
   nucleus:
-    image: docker.io/komodoofficial/nucleusd:latest
+    image: docker.io/gleec/nucleusd:latest
     profiles: ["cosmos", "all"]
     container_name: kdf-nucleus
     network_mode: host
@@ -187,7 +187,7 @@ services:
       - ${KDF_CONTAINER_RUNTIME_DIR:-./container-runtime}/nucleus-testnet-data:/root/.nucleus
 
   atom:
-    image: docker.io/komodoofficial/gaiad:kdf-ci
+    image: docker.io/gleec/gaiad:kdf-ci
     profiles: ["cosmos", "all"]
     container_name: kdf-atom
     network_mode: host
@@ -195,7 +195,7 @@ services:
       - ${KDF_CONTAINER_RUNTIME_DIR:-./container-runtime}/atom-testnet-data:/root/.gaia
 
   ibc-relayer:
-    image: docker.io/komodoofficial/ibc-relayer:kdf-ci
+    image: docker.io/gleec/ibc-relayer:kdf-ci
     profiles: ["cosmos", "all"]
     container_name: kdf-ibc-relayer
     network_mode: host
