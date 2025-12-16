@@ -2356,7 +2356,9 @@ fn test_metrics_method() {
         .expect(r#"Couldn't find a metric with key = "traffic.out" and label: coin = "RICK" in received json"#);
 }
 
+// TODO: Re-enable once Electrum servers are dockerized: https://github.com/KomodoPlatform/komodo-defi-framework/issues/2708
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_electrum_tx_history() {
     fn get_tx_history_request_count(mm: &MarketMakerIt) -> u64 {
@@ -2777,7 +2779,9 @@ fn test_convert_eth_address() {
     assert!(rc.1.contains("Address must be prefixed with 0x"));
 }
 
+// TODO: Re-enable once Electrum servers are dockerized: https://github.com/KomodoPlatform/komodo-defi-framework/issues/2708
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_add_delegation_qtum() {
     let coins = json!([{
@@ -2927,7 +2931,9 @@ fn test_remove_delegation_qtum() {
     );
 }
 
+// TODO: Re-enable once Electrum servers are dockerized: https://github.com/KomodoPlatform/komodo-defi-framework/issues/2708
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_query_delegations_info_qtum() {
     let coins = json!([{
@@ -3410,7 +3416,9 @@ fn qrc20_activate_electrum() {
     assert_eq!(electrum_json["balance"].as_str(), Some("139"));
 }
 
+// TODO: Re-enable once Electrum servers are dockerized: https://github.com/KomodoPlatform/komodo-defi-framework/issues/2708
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_qrc20_withdraw() {
     // corresponding private key: [3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72, 172, 110, 180, 13, 123, 179, 10, 49]

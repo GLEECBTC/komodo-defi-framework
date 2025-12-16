@@ -1678,7 +1678,9 @@ fn test_network_info_negative_time_offset() {
     let _info: NetworkInfo = json::from_str(info_str).unwrap();
 }
 
+// TODO: Re-enable once Electrum servers are dockerized: https://github.com/KomodoPlatform/komodo-defi-framework/issues/2708
 #[test]
+#[ignore]
 fn test_unavailable_electrum_proto_version() {
     ElectrumClientImpl::try_new_arc.mock_safe(
         |client_settings, block_headers_storage, streaming_manager, abortable_system, event_handlers, chain_variant| {
@@ -1759,7 +1761,9 @@ fn test_spam_rick() {
     }
 }
 
+// TODO: Re-enable once Electrum servers are dockerized: https://github.com/KomodoPlatform/komodo-defi-framework/issues/2708
 #[test]
+#[ignore]
 fn test_one_unavailable_electrum_proto_version() {
     // First mock with an unrealistically high version requirement that no server would support
     ElectrumClientImpl::try_new_arc.mock_safe(
@@ -1848,7 +1852,9 @@ fn test_qtum_generate_pod() {
     assert_eq!(expected_res, res.to_string());
 }
 
+// TODO: Re-enable once Electrum servers are dockerized: https://github.com/KomodoPlatform/komodo-defi-framework/issues/2708
 #[test]
+#[ignore]
 fn test_qtum_add_delegation() {
     let keypair = key_pair_from_seed("asthma turtle lizard tone genuine tube hunt valley soap cloth urge alpha amazing frost faculty cycle mammal leaf normal bright topple avoid pulse buffalo").unwrap();
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110, "mature_confirmations":1});
@@ -1924,7 +1930,9 @@ fn test_qtum_add_delegation_on_already_delegating() {
     assert!(res.is_err());
 }
 
+// TODO: Re-enable once Electrum servers are dockerized: https://github.com/KomodoPlatform/komodo-defi-framework/issues/2708
 #[test]
+#[ignore]
 fn test_qtum_get_delegation_infos() {
     let keypair =
         key_pair_from_seed("federal stay trigger hour exist success game vapor become comfort action phone bright ill target wild nasty crumble dune close rare fabric hen iron").unwrap();

@@ -251,7 +251,9 @@ fn test_validate_maker_payment() {
     }
 }
 
+// TODO: Re-enable once Electrum servers are dockerized: https://github.com/KomodoPlatform/komodo-defi-framework/issues/2708
 #[test]
+#[ignore]
 fn test_wait_for_confirmations_excepted() {
     // this priv_key corresponds to "taker_passphrase" passphrase
     let priv_key = [
