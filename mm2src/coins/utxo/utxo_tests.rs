@@ -38,8 +38,11 @@ use crate::{
 #[cfg(not(target_arch = "wasm32"))]
 use crate::{WaitForHTLCTxSpendArgs, WithdrawFee};
 use chain::{BlockHeader, BlockHeaderBits, OutPoint};
+use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
-use common::{block_on, block_on_f01, wait_until_sec, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{
+    block_on, block_on_f01, repeatable, wait_until_sec, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY,
+};
 use crypto::{privkey::key_pair_from_seed, Bip44Chain, HDPathToAccount, RpcDerivationPath, Secp256k1Secret};
 #[cfg(not(target_arch = "wasm32"))]
 use db_common::sqlite::rusqlite::Connection;
@@ -65,6 +68,7 @@ use std::convert::TryFrom;
 use std::iter;
 use std::num::NonZeroUsize;
 use std::str::FromStr;
+use std::time::Duration;
 
 #[cfg(test)]
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
@@ -5433,9 +5437,36 @@ fn test_block_header_utxo_loop() {
     let loop_fut = async move { block_header_utxo_loop(weak_client, loop_handle, spv_conf.unwrap()).await };
 
     let test_fut = async move {
+        // Helper to poll until target height is reached and expected steps are consumed
+        async fn wait_for_height(
+            client: &ElectrumClient,
+            expected_steps: &Arc<Mutex<Vec<(u64, u64)>>>,
+            target_height: u64,
+        ) {
+            repeatable!(async {
+                let height = client
+                    .block_headers_storage()
+                    .get_last_block_height()
+                    .await
+                    .ok()
+                    .flatten()
+                    .unwrap_or(0);
+                let steps_empty = expected_steps.lock().unwrap().is_empty();
+                if height >= target_height && steps_empty {
+                    Ready(())
+                } else {
+                    Retry(())
+                }
+            })
+            .repeat_every(Duration::from_millis(100))
+            .with_timeout_ms(30_000)
+            .await
+            .expect("Timed out waiting for block headers to sync");
+        }
+
         *expected_steps.lock().unwrap() = vec![(2, 5), (6, 9), (10, 13), (14, 14)];
         CURRENT_BLOCK_COUNT.store(14, Ordering::Relaxed);
-        Timer::sleep(3.).await;
+        wait_for_height(&client, &expected_steps, 14).await;
         let get_headers_count = client
             .block_headers_storage()
             .get_last_block_height()
@@ -5447,7 +5478,7 @@ fn test_block_header_utxo_loop() {
 
         *expected_steps.lock().unwrap() = vec![(15, 18)];
         CURRENT_BLOCK_COUNT.store(18, Ordering::Relaxed);
-        Timer::sleep(2.).await;
+        wait_for_height(&client, &expected_steps, 18).await;
         let get_headers_count = client
             .block_headers_storage()
             .get_last_block_height()
@@ -5459,7 +5490,7 @@ fn test_block_header_utxo_loop() {
 
         *expected_steps.lock().unwrap() = vec![(19, 19)];
         CURRENT_BLOCK_COUNT.store(19, Ordering::Relaxed);
-        Timer::sleep(2.).await;
+        wait_for_height(&client, &expected_steps, 19).await;
         let get_headers_count = client
             .block_headers_storage()
             .get_last_block_height()
@@ -5481,7 +5512,6 @@ fn test_block_header_utxo_loop() {
 
             assert_eq!(header, None);
         }
-        Timer::sleep(2.).await;
     };
 
     if let Either::Left(_) = block_on(futures::future::select(loop_fut.boxed(), test_fut.boxed())) {
