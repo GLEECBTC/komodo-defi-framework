@@ -27,6 +27,7 @@ use ethereum_types::{H160 as H160Eth, U256};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_test_helpers::for_tests::{erc20_dev_conf, eth_dev_conf};
 use mm2_test_helpers::get_passphrase;
+use serde_json::json;
 use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;

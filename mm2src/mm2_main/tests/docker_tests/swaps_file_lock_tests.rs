@@ -6,7 +6,7 @@ use crypto::Secp256k1Secret;
 use keys::{KeyPair, Private};
 use mm2_io::file_lock::FileLock;
 use mm2_test_helpers::for_tests::{mm_dump, new_mm2_temp_folder_path, MarketMakerIt};
-use serde_json::Value as Json;
+use serde_json::{json, Value as Json};
 use std::thread;
 use std::time::Duration;
 

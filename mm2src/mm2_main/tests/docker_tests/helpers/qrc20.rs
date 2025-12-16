@@ -25,7 +25,7 @@ use http::StatusCode;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::MarketMakerIt;
-use serde_json::{self as json, Value as Json};
+use serde_json::{self as json, json, Value as Json};
 use std::path::PathBuf;
 use std::process::Command;
 use std::str::FromStr;

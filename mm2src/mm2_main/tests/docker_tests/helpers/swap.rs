@@ -18,7 +18,7 @@ use crypto::privkey::key_pair_from_secret;
 use mm2_test_helpers::for_tests::{
     check_my_swap_status, check_recent_swaps, mm_dump, wait_check_stats_swap_status, MarketMakerIt,
 };
-use serde_json::Value as Json;
+use serde_json::{json, Value as Json};
 use std::thread;
 use std::time::Duration;
 

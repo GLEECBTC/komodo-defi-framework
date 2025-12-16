@@ -4,7 +4,7 @@ use common::block_on;
 use mm2_main::lp_swap::get_payment_locktime;
 use mm2_rpc::data::legacy::OrderConfirmationsSettings;
 use mm2_test_helpers::for_tests::{mm_dump, MarketMakerIt};
-use serde_json::Value as Json;
+use serde_json::{json, Value as Json};
 use std::thread;
 use std::time::Duration;
 

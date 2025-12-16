@@ -68,14 +68,14 @@ pub mod swap;
 #[cfg(any(feature = "docker-tests-tendermint", feature = "docker-tests-integration"))]
 pub mod tendermint;
 
-// UTXO (incl. SLP) helpers.
+// UTXO helpers (MYCOIN, MYCOIN1).
+// Note: SLP has its own self-contained module (slp.rs) and doesn't need utxo.
 #[cfg(any(
     feature = "docker-tests-swaps-utxo",
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers",
     feature = "docker-tests-qrc20",
     feature = "docker-tests-sia",
-    feature = "docker-tests-slp",
     feature = "docker-tests-integration"
 ))]
 pub mod utxo;

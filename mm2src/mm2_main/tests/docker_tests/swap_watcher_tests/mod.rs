@@ -38,6 +38,7 @@ use mm2_test_helpers::for_tests::{
 use mm2_test_helpers::structs::WatcherConf;
 use mocktopus::mocking::*;
 use num_traits::Zero;
+use serde_json::json;
 
 // ETH-only imports (used only by ETH watcher tests)
 #[cfg(feature = "docker-tests-watchers-eth")]

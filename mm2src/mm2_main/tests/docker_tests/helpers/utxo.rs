@@ -2,23 +2,27 @@
 //!
 //! This module provides:
 //! - UTXO asset docker node helpers (MYCOIN, MYCOIN1)
-//! - BCH/SLP docker node helpers (FORSLP)
 //! - Coin creation and funding utilities
+//!
+//! Note: BCH/SLP helpers are in the separate `slp` module.
 
 // =============================================================================
-// Common imports (used by multiple feature sets)
+// Imports
 // =============================================================================
 
 use crate::docker_tests::helpers::docker_ops::CoinDockerOps;
 use crate::docker_tests::helpers::env::DockerNode;
 use coins::utxo::rpc_clients::{UtxoRpcClientEnum, UtxoRpcClientOps};
-use coins::utxo::{coin_daemon_data_dir, zcash_params_path, UtxoCoinFields};
+use coins::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
+use coins::utxo::{coin_daemon_data_dir, zcash_params_path, UtxoActivationParams, UtxoCoinFields};
 use coins::{ConfirmPaymentInput, MarketCoinOps};
 use common::executor::Timer;
 use common::Future01CompatExt;
 use common::{block_on, now_ms, now_sec, wait_until_ms, wait_until_sec};
 use crypto::Secp256k1Secret;
+use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::BigDecimal;
+use serde_json::json;
 use std::process::Command;
 use testcontainers::core::Mount;
 use testcontainers::runners::SyncRunner;
@@ -26,43 +30,13 @@ use testcontainers::GenericImage;
 use testcontainers::{core::WaitFor, RunnableImage};
 use tokio::sync::Mutex as AsyncMutex;
 
-// UtxoStandardCoin imports - only needed by features that create UTXO coins
-#[cfg(any(
-    feature = "docker-tests-swaps-utxo",
-    feature = "docker-tests-ordermatch",
-    feature = "docker-tests-watchers",
-    feature = "docker-tests-qrc20",
-    feature = "docker-tests-sia",
-    feature = "docker-tests-integration"
-))]
-use coins::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
-#[cfg(any(
-    feature = "docker-tests-swaps-utxo",
-    feature = "docker-tests-ordermatch",
-    feature = "docker-tests-watchers",
-    feature = "docker-tests-qrc20",
-    feature = "docker-tests-sia",
-    feature = "docker-tests-integration"
-))]
-use coins::utxo::UtxoActivationParams;
-#[cfg(any(
-    feature = "docker-tests-swaps-utxo",
-    feature = "docker-tests-ordermatch",
-    feature = "docker-tests-watchers",
-    feature = "docker-tests-qrc20",
-    feature = "docker-tests-sia",
-    feature = "docker-tests-slp",
-    feature = "docker-tests-integration"
-))]
-use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
-
-// rmd160_from_priv imports
+// rmd160_from_priv imports (only for ordermatch/swaps-utxo)
 #[cfg(any(feature = "docker-tests-ordermatch", feature = "docker-tests-swaps-utxo"))]
 use bitcrypto::dhash160;
 #[cfg(any(feature = "docker-tests-ordermatch", feature = "docker-tests-swaps-utxo"))]
 use primitives::hash::H160;
 
-// random_secp256k1_secret import - only for features that use generate_utxo_coin_with_random_privkey
+// random_secp256k1_secret import (only for features using generate_utxo_coin_with_random_privkey)
 #[cfg(any(
     feature = "docker-tests-swaps-utxo",
     feature = "docker-tests-ordermatch",
@@ -81,9 +55,6 @@ lazy_static! {
     /// Lock for MYCOIN1 funding operations
     pub static ref MYCOIN1_LOCK: AsyncMutex<()> = AsyncMutex::new(());
 
-    /// Lock for FORSLP (BCH/SLP) funding operations
-    pub static ref FORSLP_LOCK: AsyncMutex<()> = AsyncMutex::new(());
-
     /// Lock for Qtum/QRC20 funding operations.
     /// Shared by QTUM, QICK, and QORTY coins since they all run on the same Qtum node.
     pub static ref QTUM_LOCK: AsyncMutex<()> = AsyncMutex::new(());
@@ -94,7 +65,6 @@ fn get_funding_lock(ticker: &str) -> &'static AsyncMutex<()> {
     match ticker {
         "MYCOIN" => &MYCOIN_LOCK,
         "MYCOIN1" => &MYCOIN1_LOCK,
-        "FORSLP" => &FORSLP_LOCK,
         "QTUM" | "QICK" | "QORTY" => &QTUM_LOCK,
         _ => panic!("No funding lock defined for ticker: {}", ticker),
     }
@@ -122,46 +92,22 @@ pub const MYCOIN: &str = "MYCOIN";
 pub const MYCOIN1: &str = "MYCOIN1";
 
 // =============================================================================
-// UtxoAssetDockerOps (UTXO asset features only)
+// UtxoAssetDockerOps
 // =============================================================================
 
 /// Docker operations for standard UTXO assets (MYCOIN, MYCOIN1).
-#[cfg(any(
-    feature = "docker-tests-swaps-utxo",
-    feature = "docker-tests-ordermatch",
-    feature = "docker-tests-watchers",
-    feature = "docker-tests-qrc20",
-    feature = "docker-tests-sia",
-    feature = "docker-tests-integration"
-))]
 pub struct UtxoAssetDockerOps {
     #[allow(dead_code)]
     ctx: MmArc,
     coin: UtxoStandardCoin,
 }
 
-#[cfg(any(
-    feature = "docker-tests-swaps-utxo",
-    feature = "docker-tests-ordermatch",
-    feature = "docker-tests-watchers",
-    feature = "docker-tests-qrc20",
-    feature = "docker-tests-sia",
-    feature = "docker-tests-integration"
-))]
 impl CoinDockerOps for UtxoAssetDockerOps {
     fn rpc_client(&self) -> &UtxoRpcClientEnum {
         &self.coin.as_ref().rpc_client
     }
 }
 
-#[cfg(any(
-    feature = "docker-tests-swaps-utxo",
-    feature = "docker-tests-ordermatch",
-    feature = "docker-tests-watchers",
-    feature = "docker-tests-qrc20",
-    feature = "docker-tests-sia",
-    feature = "docker-tests-integration"
-))]
 impl UtxoAssetDockerOps {
     /// Create UtxoAssetDockerOps from ticker.
     pub fn from_ticker(ticker: &str) -> UtxoAssetDockerOps {
@@ -336,7 +282,6 @@ pub fn generate_utxo_coin_with_random_privkey(
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers",
     feature = "docker-tests-qrc20",
-    feature = "docker-tests-slp",
     feature = "docker-tests-integration"
 ))]
 pub fn fill_address<T>(coin: &T, address: &str, amount: BigDecimal, timeout: u64)

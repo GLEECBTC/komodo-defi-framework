@@ -24,6 +24,7 @@ use mm2_test_helpers::for_tests::{
 };
 use mm2_test_helpers::structs::BestOrdersResponse;
 use mm2_test_helpers::{get_passphrase, structs::*};
+use serde_json::json;
 
 // =============================================================================
 // Cross-Chain Matching Tests (UTXO + ETH)

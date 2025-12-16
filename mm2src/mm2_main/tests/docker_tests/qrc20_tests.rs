@@ -27,7 +27,7 @@ use mm2_rpc::data::legacy::{CoinInitResponse, OrderbookResponse};
 use mm2_test_helpers::for_tests::{mm_dump, MarketMakerIt};
 use mm2_test_helpers::structs::{trade_preimage_error, RpcErrorResponse, RpcSuccessResponse, TransactionDetails};
 use rand6::Rng;
-use serde_json::{self as json, Value as Json};
+use serde_json::{self as json, json, Value as Json};
 use std::convert::TryFrom;
 use std::env;
 use std::str::FromStr;

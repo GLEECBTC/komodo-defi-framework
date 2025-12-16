@@ -19,6 +19,7 @@ use mm2_test_helpers::for_tests::{
 };
 use mm2_test_helpers::structs::MmNumberMultiRepr;
 use script::{Builder, Opcode};
+use serde_json::json;
 use serialization::serialize;
 use std::time::Duration;
 use uuid::Uuid;

@@ -10,7 +10,7 @@ use mm2_test_helpers::structs::{
     BestOrdersResponse, BestOrdersV2Response, BuyOrSellRpcResult, MyOrdersRpcResult, OrderbookDepthResponse,
     RpcV2Response, SetPriceResponse,
 };
-use serde_json::Value as Json;
+use serde_json::{json, Value as Json};
 use std::thread;
 use std::time::Duration;
 

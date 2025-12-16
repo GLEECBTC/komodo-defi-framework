@@ -12,7 +12,7 @@ use mm2_test_helpers::for_tests::{MarketMakerIt, Mm2TestConf};
 
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as Json;
+use serde_json::{json, Value as Json};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::time::Duration;

@@ -43,7 +43,7 @@ use mm2_test_helpers::structs::{
     Bip44Chain, EnableCoinBalanceMap, EthWithTokensActivationResult, HDAccountAddressId, TokenInfo,
 };
 use num_traits::FromPrimitive;
-use serde_json::Value as Json;
+use serde_json::{json, Value as Json};
 use std::str::FromStr;
 use std::thread;
 use std::time::Duration;

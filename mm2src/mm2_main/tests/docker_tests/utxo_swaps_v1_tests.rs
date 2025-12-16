@@ -28,7 +28,7 @@ use mm2_test_helpers::for_tests::{
     MarketMakerIt, Mm2TestConf,
 };
 use mm2_test_helpers::structs::*;
-use serde_json::Value as Json;
+use serde_json::{json, Value as Json};
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::thread;

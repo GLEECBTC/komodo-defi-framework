@@ -202,12 +202,17 @@ fn required_images() -> Vec<&'static str> {
         feature = "docker-tests-watchers",
         feature = "docker-tests-qrc20",
         feature = "docker-tests-sia",
-        feature = "docker-tests-slp",
         feature = "docker-tests-integration"
     ))]
     {
         use crate::docker_tests::helpers::utxo::UTXO_ASSET_DOCKER_IMAGE_WITH_TAG;
         images.push(UTXO_ASSET_DOCKER_IMAGE_WITH_TAG);
+    }
+
+    #[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
+    {
+        use crate::docker_tests::helpers::slp::FORSLP_IMAGE_WITH_TAG;
+        images.push(FORSLP_IMAGE_WITH_TAG);
     }
 
     #[cfg(feature = "docker-tests-qrc20")]

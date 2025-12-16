@@ -7,7 +7,7 @@ use coins::siacoin::{ApiClientHelpers, SiaTransactionTypes};
 use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::{start_swaps, wait_for_swap_finished_or_err};
 use serde::Deserialize;
-use serde_json::Value as Json;
+use serde_json::{json, Value as Json};
 
 use std::str::FromStr;
 

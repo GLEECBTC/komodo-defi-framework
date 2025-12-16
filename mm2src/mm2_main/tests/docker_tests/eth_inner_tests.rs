@@ -28,7 +28,7 @@ use mm2_test_helpers::for_tests::{
     Mm2TestConf, DEFAULT_RPC_PASSWORD,
 };
 use mm2_test_helpers::structs::*;
-use serde_json::Value as Json;
+use serde_json::{json, Value as Json};
 use std::collections::HashSet;
 use std::iter::FromIterator;
 use std::str::FromStr;

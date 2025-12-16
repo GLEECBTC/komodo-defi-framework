@@ -19,7 +19,7 @@ use mm2_test_helpers::for_tests::{
     check_my_swap_status_amounts, mm_dump, mycoin1_conf, mycoin_conf, MarketMakerIt, Mm2TestConf,
 };
 use mm2_test_helpers::structs::*;
-use serde_json::Value as Json;
+use serde_json::{json, Value as Json};
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::env;
