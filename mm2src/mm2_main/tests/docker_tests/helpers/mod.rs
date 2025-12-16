@@ -51,6 +51,10 @@ pub mod qrc20;
 #[cfg(feature = "docker-tests-sia")]
 pub mod sia;
 
+// SLP helpers (BCH/SLP tokens).
+#[cfg(any(feature = "docker-tests-slp", feature = "docker-tests-integration"))]
+pub mod slp;
+
 // Cross-chain swap orchestration helpers.
 #[cfg(any(
     feature = "docker-tests-swaps-utxo",

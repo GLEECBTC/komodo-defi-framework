@@ -95,7 +95,7 @@ use super::utxo::utxo_coin_from_privkey as utxo_coin_from_privkey_qrc20;
 
 // SLP imports
 #[cfg(feature = "docker-tests-slp")]
-use super::utxo::{get_prefilled_slp_privkey, get_slp_token_id};
+use super::slp::{get_prefilled_slp_privkey, get_slp_token_id};
 #[cfg(feature = "docker-tests-slp")]
 use mm2_test_helpers::for_tests::{enable_native as enable_native_slp, enable_native_bch};
 

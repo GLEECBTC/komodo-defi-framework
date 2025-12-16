@@ -1312,12 +1312,24 @@ Note: Until all feature-gated suites have dedicated CI jobs (Phase 3), individua
 | Helper comment | `helpers/env.rs` | Claims `resolve_compose_container_id` has a "copy" in docker_ops | ✅ Fixed: docker_ops imports from env.rs |
 | Watcher comment | `tests/docker_tests/mod.rs` | Says watchers are "UTXO + ETH" | ✅ Fixed: UTXO by default, ETH behind separate feature |
 
-#### 8.3 Future architectural improvements (not in this phase)
+#### 8.3 Architectural improvements ✅
 
-Heavy `#[cfg(...)]` peppering indicates these future improvements:
-- Push cfg to module boundaries
-- Split `runner.rs` into per-chain setup modules
-- Split `helpers/utxo.rs` SLP bits into internal module or separate `helpers/slp.rs`
+The following improvements were implemented to push cfg gates to module boundaries:
+
+- ✅ **Split `helpers/utxo.rs` SLP code into `helpers/slp.rs`**
+  - Extracted `BchDockerOps`, `SLP_TOKEN_ID`, `SLP_TOKEN_OWNERS`, `get_prefilled_slp_privkey()`, `get_slp_token_id()`
+  - Added `pub mod slp` to `helpers/mod.rs` with appropriate feature gate
+  - Updated imports in `swap.rs`, `slp_tests.rs`, and runner
+
+- ✅ **Split `runner.rs` into per-chain setup modules**
+  - Converted `runner.rs` to `runner/mod.rs` with submodules
+  - Created: `runner/utxo.rs`, `runner/slp.rs`, `runner/qtum.rs`, `runner/geth.rs`, `runner/zcoin.rs`, `runner/tendermint.rs`, `runner/sia.rs`
+  - Each module has a `setup(runner)` function
+  - Cfg gates are now at module boundaries in `runner/mod.rs`
+
+- ✅ **Pushed cfg to module boundaries**
+  - Per-chain modules are conditionally compiled via `#[cfg(...)]` on `mod` declarations
+  - Setup calls in `setup_or_reuse_nodes()` match the module gates
 
 #### 8.4 Completion tasks
 

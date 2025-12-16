@@ -1,4 +1,4 @@
-use crate::docker_tests::helpers::utxo::{get_prefilled_slp_privkey, get_slp_token_id};
+use crate::docker_tests::helpers::slp::{get_prefilled_slp_privkey, get_slp_token_id};
 use crate::integration_tests_common::enable_native;
 use bitcrypto::ChecksumType;
 use coins::utxo::UtxoAddressFormat;
