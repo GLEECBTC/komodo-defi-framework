@@ -147,8 +147,8 @@ pub fn random_secp256k1_secret() -> Secp256k1Secret {
 /// Uses label-based lookup (`com.docker.compose.service=<service>`) which works
 /// regardless of project name or container_name settings.
 ///
-/// Note: This function is in env.rs for tendermint tests that don't have docker_ops.
-/// Features with docker_ops use the copy there.
+/// Note: kept in `helpers::env` so both docker-compose setup helpers and Tendermint helpers
+/// can reuse it without extra dependencies.
 #[cfg(any(
     feature = "docker-tests-tendermint",
     feature = "docker-tests-integration",

@@ -1291,6 +1291,45 @@ Note: Until all feature-gated suites have dedicated CI jobs (Phase 3), individua
 
 ---
 
+### Phase 8 – Cleanup review
+
+**Goal:** Clean up stale documentation and comments identified in post-completion review.
+
+**Status:** ✅ Complete
+
+#### 8.1 What's solid in the refactor (no changes needed)
+
+- **Test-suite split via feature flags (`mm2_main/Cargo.toml`)**: Clear and scalable with all docker-tests-* features
+- **Module-level gating in `tests/docker_tests/mod.rs`**: Keeps compilation/test selection understandable
+- **Helpers layout** (env/docker_ops/utxo/eth/qrc20/tendermint/zcoin/sia/swap): Conceptually correct
+
+#### 8.2 Stale documentation/comments cleanup
+
+| Item | Location | Issue | Fix |
+|------|----------|-------|-----|
+| `_KDF_NO_*_DOCKER` env vars | `.docker/test-nodes.yml` | Comments document env vars that are no longer used (feature flags control containers now) | ✅ Removed stale comments |
+| Module comment | `swap_tests.rs` | Documented as "cross-chain integration" but tests are SLP platform swaps only | ✅ Updated module docstring |
+| Helper comment | `helpers/env.rs` | Claims `resolve_compose_container_id` has a "copy" in docker_ops | ✅ Fixed: docker_ops imports from env.rs |
+| Watcher comment | `tests/docker_tests/mod.rs` | Says watchers are "UTXO + ETH" | ✅ Fixed: UTXO by default, ETH behind separate feature |
+
+#### 8.3 Future architectural improvements (not in this phase)
+
+Heavy `#[cfg(...)]` peppering indicates these future improvements:
+- Push cfg to module boundaries
+- Split `runner.rs` into per-chain setup modules
+- Split `helpers/utxo.rs` SLP bits into internal module or separate `helpers/slp.rs`
+
+#### 8.4 Completion tasks
+
+- [x] Remove stale `_KDF_NO_*_DOCKER` documentation from `.docker/test-nodes.yml`
+- [x] Fix stale module docstring in `swap_tests.rs`
+- [x] Fix stale comment in `helpers/env.rs`
+- [x] Fix watcher suite comment in `tests/docker_tests/mod.rs`
+- [ ] After cleanup: delete this plan file (history remains in git)
+- [ ] Update root `CLAUDE.md` to remove reference to this plan if present
+
+---
+
 ## Success criteria checklist
 
 - [x] `ComposeInit` mode connects to the correct Geth RPC and initializes contracts on each run.

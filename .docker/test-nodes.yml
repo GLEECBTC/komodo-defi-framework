@@ -15,17 +15,10 @@
 #   - cosmos: NUCLEUS, ATOM, IBC-RELAYER (Tendermint/IBC testing)
 #   - sia:    SIA (Sia testing)
 #
-# Environment variables (set to skip specific node groups):
-#   _KDF_NO_UTXO_DOCKER=1   - Skip MYCOIN/MYCOIN1
-#   _KDF_NO_SLP_DOCKER=1    - Skip FORSLP
-#   _KDF_NO_QTUM_DOCKER=1   - Skip QTUM
-#   _KDF_NO_ETH_DOCKER=1    - Skip GETH
-#   _KDF_NO_ZOMBIE_DOCKER=1 - Skip ZOMBIE
-#   _KDF_NO_COSMOS_DOCKER=1 - Skip NUCLEUS/ATOM/IBC-RELAYER
-#   _KDF_NO_SIA_DOCKER=1    - Skip SIA
+# Node groups are controlled via compose profiles (see above).
 #
 # For CI/local reuse:
-#   KDF_DOCKER_COMPOSE_ENV=1        - Test harness attaches to running containers
+#   KDF_DOCKER_COMPOSE_ENV=1 - Test harness attaches to running containers
 
 name: kdf-test-nodes
 

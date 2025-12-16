@@ -87,10 +87,9 @@ mod swap_tests;
 // Future destination: mm2_main::lp_swap::watchers/tests
 // ============================================================================
 
-// Swap watcher tests - UTXO + ETH
-// Tests: watcher node functionality, maker payment spend, taker payment refund
-// Tests: watcher rewards, restart resilience
-// Chains: UTXO-MYCOIN, UTXO-MYCOIN1, ETH, ERC20
+// Swap watcher tests.
+// UTXO watcher tests are enabled with `docker-tests-watchers`.
+// ETH/ERC20 watcher tests are behind `docker-tests-watchers-eth` (disabled by default).
 #[cfg(feature = "docker-tests-watchers")]
 mod swap_watcher_tests;
 
