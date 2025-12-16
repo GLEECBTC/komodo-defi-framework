@@ -7772,7 +7772,9 @@ impl CommonSwapOpsV2 for EthCoin {
 
 #[cfg(all(feature = "for-tests", not(target_arch = "wasm32")))]
 impl EthCoin {
-    pub async fn set_coin_type(&self, new_coin_type: EthCoinType) -> EthCoin {
+    /// Creates a new EthCoin with a different coin type and decimals.
+    /// This is useful for tests that need to convert an ETH coin to ERC20.
+    pub async fn set_coin_type(&self, new_coin_type: EthCoinType, decimals: u8) -> EthCoin {
         let coin = EthCoinImpl {
             ticker: self.ticker.clone(),
             coin_type: new_coin_type,
@@ -7785,7 +7787,7 @@ impl EthCoin {
             fallback_swap_contract: self.fallback_swap_contract,
             contract_supports_watchers: self.contract_supports_watchers,
             web3_instances: AsyncMutex::new(self.web3_instances.lock().await.clone()),
-            decimals: self.decimals,
+            decimals,
             history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
             required_confirmations: AtomicU64::new(
                 self.required_confirmations.load(std::sync::atomic::Ordering::SeqCst),

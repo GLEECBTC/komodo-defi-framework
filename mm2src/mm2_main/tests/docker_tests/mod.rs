@@ -2,12 +2,8 @@
 
 pub mod runner;
 
-// Helpers are used by all docker tests, and also by some sepolia tests
-#[cfg(any(
-    feature = "run-docker-tests",
-    feature = "sepolia-maker-swap-v2-tests",
-    feature = "sepolia-taker-swap-v2-tests",
-))]
+// Helpers are used by all docker tests
+#[cfg(feature = "run-docker-tests")]
 pub mod helpers;
 
 // ============================================================================

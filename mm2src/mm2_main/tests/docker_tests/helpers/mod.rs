@@ -1,7 +1,6 @@
 //! Shared helper functions for docker tests.
 //!
-//! These helpers are organized by chain type. Most are gated on `run-docker-tests`,
-//! while some (env, eth) are also available for sepolia tests.
+//! These helpers are organized by chain type and are gated on `run-docker-tests`.
 //!
 //! ## Module organization
 //!
@@ -32,21 +31,15 @@
 ))]
 pub mod docker_ops;
 
-// Environment helpers - also used by sepolia tests
-#[cfg(any(
-    feature = "run-docker-tests",
-    feature = "sepolia-maker-swap-v2-tests",
-    feature = "sepolia-taker-swap-v2-tests",
-))]
+// Environment helpers
+#[cfg(feature = "run-docker-tests")]
 pub mod env;
 
-// ETH helpers - also used by sepolia tests
+// ETH helpers
 #[cfg(any(
     feature = "docker-tests-eth",
     feature = "docker-tests-watchers-eth",
     feature = "docker-tests-integration",
-    feature = "sepolia-maker-swap-v2-tests",
-    feature = "sepolia-taker-swap-v2-tests",
 ))]
 pub mod eth;
 

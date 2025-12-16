@@ -54,8 +54,6 @@ docker-tests-all = [
 default = []
 trezor-udp = ["crypto/trezor-udp"] # use for tests to connect to trezor emulator over udp
 run-device-tests = []
-sepolia-maker-swap-v2-tests = []
-sepolia-taker-swap-v2-tests = []
 test-ext-api = ["trading_api/test-ext-api"]
 new-db-arch = ["mm2_core/new-db-arch"] # A temporary feature to integrate the new db architecture incrementally
 # Temporary feature for implementing IBC wrap/unwrap mechanism and will be removed
