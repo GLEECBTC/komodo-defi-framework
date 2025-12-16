@@ -927,7 +927,7 @@ fn test_eth_extract_secret() {
     let secret = block_on(coin.extract_secret(&[0u8; 20], tx_bytes.as_slice()))
         .err()
         .unwrap();
-    assert!(secret.contains("Expected 'receiverSpend' contract call signature"));
+    assert!(secret.contains("Transaction is not a receiverSpend call"));
 }
 
 #[test]
