@@ -7,6 +7,7 @@ use crate::hd_wallet::{
     load_hd_accounts_from_storage, HDAccountsMutex, HDPathAccountToAddressId, HDWalletCoinStorage,
     HDWalletStorageError, DEFAULT_GAP_LIMIT,
 };
+use crate::is_wallet_only_conf;
 use crate::nft::get_nfts_for_activation;
 use crate::nft::nft_errors::{GetNftInfoError, ParseChainTypeError};
 use crate::nft::nft_structs::Chain;
@@ -230,7 +231,8 @@ pub struct EthActivationV2Request {
     pub nodes: Vec<EthNode>,
     #[serde(default)]
     pub rpc_mode: EthRpcMode,
-    pub swap_contract_address: Address,
+    #[serde(default)]
+    pub swap_contract_address: Option<Address>,
     #[serde(default)]
     pub swap_v2_contracts: Option<SwapV2Contracts>,
     pub fallback_swap_contract: Option<Address>,
@@ -656,6 +658,76 @@ impl EthCoin {
     }
 }
 
+/// Resolved swap contracts after validation.
+struct ResolvedSwapContracts {
+    swap_contract_address: Address,
+    swap_v2_contracts: Option<SwapV2Contracts>,
+    fallback_swap_contract: Option<Address>,
+}
+
+/// Validates and resolves all swap contract configuration.
+/// - Wallet-only: swap contracts are irrelevant, accepts any values
+/// - Trading-capable: validates V1 and V2 contracts as required
+fn resolve_swap_contracts(
+    wallet_only: bool,
+    use_trading_proto_v2: bool,
+    swap_contract_address: Option<Address>,
+    swap_v2_contracts: Option<SwapV2Contracts>,
+    fallback_swap_contract: Option<Address>,
+) -> MmResult<ResolvedSwapContracts, EthActivationV2Error> {
+    if wallet_only {
+        return Ok(ResolvedSwapContracts {
+            swap_contract_address: swap_contract_address.unwrap_or_default(),
+            swap_v2_contracts,
+            fallback_swap_contract,
+        });
+    }
+
+    // Trading-capable: V1 swap contract is required and must be non-zero
+    let swap_contract_address = swap_contract_address.ok_or_else(|| {
+        EthActivationV2Error::InvalidSwapContractAddr(
+            "swap_contract_address is required for trading-capable coins".to_string(),
+        )
+    })?;
+    if swap_contract_address == Address::default() {
+        return MmError::err(EthActivationV2Error::InvalidSwapContractAddr(
+            "swap_contract_address can't be zero address".to_string(),
+        ));
+    }
+
+    // Trading-capable with V2 protocol: V2 contracts are required
+    if use_trading_proto_v2 {
+        let contracts = swap_v2_contracts.as_ref().ok_or_else(|| {
+            EthActivationV2Error::InvalidPayload(
+                "swap_v2_contracts must be provided when using trading protocol v2".to_string(),
+            )
+        })?;
+        if contracts.maker_swap_v2_contract == Address::default()
+            || contracts.taker_swap_v2_contract == Address::default()
+            || contracts.nft_maker_swap_v2_contract == Address::default()
+        {
+            return MmError::err(EthActivationV2Error::InvalidSwapContractAddr(
+                "All swap_v2_contracts addresses must be non-zero".to_string(),
+            ));
+        }
+    }
+
+    // Fallback contract: if provided, must be non-zero
+    if let Some(fallback) = fallback_swap_contract {
+        if fallback == Address::default() {
+            return MmError::err(EthActivationV2Error::InvalidFallbackSwapContract(
+                "fallback_swap_contract can't be zero address".to_string(),
+            ));
+        }
+    }
+
+    Ok(ResolvedSwapContracts {
+        swap_contract_address,
+        swap_v2_contracts,
+        fallback_swap_contract,
+    })
+}
+
 /// Activate eth coin from coin config and private key build policy,
 /// version 2 of the activation function, with no intrinsic tokens creation.
 pub async fn eth_coin_from_conf_and_request_v2(
@@ -666,38 +738,14 @@ pub async fn eth_coin_from_conf_and_request_v2(
     priv_key_build_policy: EthPrivKeyBuildPolicy,
     chain_spec: ChainSpec,
 ) -> MmResult<EthCoin, EthActivationV2Error> {
-    if req.swap_contract_address == Address::default() {
-        return Err(EthActivationV2Error::InvalidSwapContractAddr(
-            "swap_contract_address can't be zero address".to_string(),
-        )
-        .into());
-    }
-
-    if ctx.use_trading_proto_v2() {
-        let contracts = req.swap_v2_contracts.as_ref().ok_or_else(|| {
-            EthActivationV2Error::InvalidPayload(
-                "swap_v2_contracts must be provided when using trading protocol v2".to_string(),
-            )
-        })?;
-        if contracts.maker_swap_v2_contract == Address::default()
-            || contracts.taker_swap_v2_contract == Address::default()
-            || contracts.nft_maker_swap_v2_contract == Address::default()
-        {
-            return Err(EthActivationV2Error::InvalidSwapContractAddr(
-                "All swap_v2_contracts addresses must be non-zero".to_string(),
-            )
-            .into());
-        }
-    }
-
-    if let Some(fallback) = req.fallback_swap_contract {
-        if fallback == Address::default() {
-            return Err(EthActivationV2Error::InvalidFallbackSwapContract(
-                "fallback_swap_contract can't be zero address".to_string(),
-            )
-            .into());
-        }
-    }
+    let wallet_only = is_wallet_only_conf(conf);
+    let swap_contracts = resolve_swap_contracts(
+        wallet_only,
+        ctx.use_trading_proto_v2(),
+        req.swap_contract_address,
+        req.swap_v2_contracts,
+        req.fallback_swap_contract,
+    )?;
 
     let (priv_key_policy, derivation_method) = build_address_and_priv_key_policy(
         ctx,
@@ -778,9 +826,9 @@ pub async fn eth_coin_from_conf_and_request_v2(
         coin_type,
         chain_spec,
         sign_message_prefix,
-        swap_contract_address: req.swap_contract_address,
-        swap_v2_contracts: req.swap_v2_contracts,
-        fallback_swap_contract: req.fallback_swap_contract,
+        swap_contract_address: swap_contracts.swap_contract_address,
+        swap_v2_contracts: swap_contracts.swap_v2_contracts,
+        fallback_swap_contract: swap_contracts.fallback_swap_contract,
         contract_supports_watchers: req.contract_supports_watchers,
         decimals,
         ticker: ticker.to_string(),

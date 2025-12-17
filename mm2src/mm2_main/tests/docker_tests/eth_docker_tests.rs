@@ -422,7 +422,7 @@ fn global_nft_with_random_privkey(
     let platform_request = EthActivationV2Request {
         nodes: vec![node],
         rpc_mode: Default::default(),
-        swap_contract_address,
+        swap_contract_address: Some(swap_contract_address),
         swap_v2_contracts: Some(swap_v2_contracts),
         fallback_swap_contract: Some(fallback_swap_contract_address),
         contract_supports_watchers: false,
@@ -497,7 +497,7 @@ fn sepolia_coin_from_privkey(ctx: &MmArc, secret: &'static str, ticker: &str, co
     let platform_request = EthActivationV2Request {
         nodes: vec![node],
         rpc_mode: Default::default(),
-        swap_contract_address: swap_addr.swap_contract_address,
+        swap_contract_address: Some(swap_addr.swap_contract_address),
         swap_v2_contracts: Some(swap_addr.swap_v2_contracts),
         fallback_swap_contract: Some(swap_addr.fallback_swap_contract_address),
         contract_supports_watchers: false,
@@ -1568,7 +1568,7 @@ fn eth_coin_v2_activation_with_random_privkey(
     let platform_request = EthActivationV2Request {
         nodes: vec![node],
         rpc_mode: Default::default(),
-        swap_contract_address: swap_addr.swap_contract_address,
+        swap_contract_address: Some(swap_addr.swap_contract_address),
         swap_v2_contracts: Some(swap_addr.swap_v2_contracts),
         fallback_swap_contract: Some(swap_addr.fallback_swap_contract_address),
         contract_supports_watchers: false,
