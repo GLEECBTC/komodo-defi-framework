@@ -767,6 +767,11 @@ pub async fn eth_coin_from_conf_and_request_v2(
         get_conf_param_or_from_plaform_coin(ctx, conf, &coin_type, SWAP_GAS_FEE_POLICY)?.unwrap_or_default();
     let swap_gas_fee_policy: SwapGasFeePolicy = req.swap_gas_fee_policy.unwrap_or(swap_gas_fee_policy_default);
 
+    let decimals = match &chain_spec {
+        ChainSpec::Evm { .. } => ETH_DECIMALS,
+        ChainSpec::Tron { .. } => tron::TRX_DECIMALS,
+    };
+
     let coin = EthCoinImpl {
         priv_key_policy,
         derivation_method: Arc::new(derivation_method),
@@ -777,7 +782,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         swap_v2_contracts: req.swap_v2_contracts,
         fallback_swap_contract: req.fallback_swap_contract,
         contract_supports_watchers: req.contract_supports_watchers,
-        decimals: ETH_DECIMALS,
+        decimals,
         ticker: ticker.to_string(),
         web3_instances: AsyncMutex::new(web3_instances),
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
