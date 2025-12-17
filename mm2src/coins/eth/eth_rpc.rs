@@ -163,8 +163,8 @@ impl EthCoin {
             // TODO use Tron client
             let sun = U256::zero();
             warn!(
-                "Using stub implementation for Tron address_balance for {}, returning {sun} SUN",
-                format!("{:?}", TronAddress::from(&address)),
+                "Using stub implementation for Tron address_balance for {:?}, returning {sun} SUN",
+                TronAddress::from(&address),
             );
             return Ok(sun);
         }
