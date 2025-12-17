@@ -9,7 +9,7 @@ use mm2_err_handle::prelude::*;
 #[derive(Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum GetEnabledCoinsError {
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
@@ -22,7 +22,7 @@ impl HttpStatusCode for GetEnabledCoinsError {
 }
 
 #[derive(Deserialize)]
-pub struct GetEnabledCoinsRequest;
+pub struct GetEnabledCoinsRequest {}
 
 #[derive(Debug, Serialize)]
 pub struct GetEnabledCoinsResponse {
@@ -36,14 +36,14 @@ pub struct EnabledCoinV2 {
 
 pub async fn get_enabled_coins_rpc(
     ctx: MmArc,
-    _req: GetEnabledCoinsRequest,
+    _req: Option<GetEnabledCoinsRequest>,
 ) -> MmResult<GetEnabledCoinsResponse, GetEnabledCoinsError> {
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(GetEnabledCoinsError::Internal)?;
     let coins_map = coins_ctx.coins.lock().await;
 
     let coins = coins_map
-        .iter()
-        .map(|(ticker, _coin)| EnabledCoinV2 { ticker: ticker.clone() })
+        .keys()
+        .map(|ticker| EnabledCoinV2 { ticker: ticker.clone() })
         .collect();
     Ok(GetEnabledCoinsResponse { coins })
 }

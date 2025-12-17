@@ -28,46 +28,40 @@ pub enum TxProviderError {
 
 #[derive(Debug, Display)]
 pub enum UtxoSignTxError {
-    #[display(fmt = "Coin '{}' is not supported with Trezor", coin)]
+    #[display(fmt = "Coin '{coin}' is not supported with Trezor")]
     CoinNotSupportedWithTrezor { coin: String },
     #[display(fmt = "Trezor doesn't support P2WPKH outputs yet")]
     TrezorDoesntSupportP2WPKH,
-    #[display(fmt = "Trezor client error: {}", _0)]
+    #[display(fmt = "Trezor client error: {_0}")]
     TrezorError(TrezorError),
-    #[display(fmt = "Encountered invalid parameter '{}': {}", param, description)]
+    #[display(fmt = "Encountered invalid parameter '{param}': {description}")]
     InvalidSignParam { param: String, description: String },
     #[display(
-        fmt = "Hardware Device returned an invalid number of signatures: '{}', number of inputs: '{}'",
-        actual,
-        expected
+        fmt = "Hardware Device returned an invalid number of signatures: '{actual}', number of inputs: '{expected}'"
     )]
     InvalidSignaturesNumber { actual: usize, expected: usize },
     #[display(fmt = "Error signing using a private key")]
     ErrorSigning(keys::Error),
     #[display(
-        fmt = "{} script '{}' built from input key pair doesn't match expected prev script '{}'",
-        script_type,
-        script,
-        prev_script
+        fmt = "{script_type} script '{script}' built from input key pair doesn't match expected prev script '{prev_script}'"
     )]
     MismatchScript {
         script_type: String,
         script: Script,
         prev_script: Script,
     },
-    #[display(
-        fmt = "Can't spend the UTXO with script = '{}'. This script format isn't supported",
-        script
-    )]
+    #[display(fmt = "Can't spend the UTXO with script = '{script}'. This script format isn't supported")]
     UnspendableUTXO { script: Script },
-    #[display(fmt = "Transport error: {}", _0)]
+    #[display(fmt = "Transport error: {_0}")]
     Transport(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
 impl From<TrezorError> for UtxoSignTxError {
-    fn from(e: TrezorError) -> Self { UtxoSignTxError::TrezorError(e) }
+    fn from(e: TrezorError) -> Self {
+        UtxoSignTxError::TrezorError(e)
+    }
 }
 
 impl From<UtxoSignWithKeyPairError> for UtxoSignTxError {
@@ -94,7 +88,9 @@ impl From<UtxoSignWithKeyPairError> for UtxoSignTxError {
 }
 
 impl From<keys::Error> for UtxoSignTxError {
-    fn from(e: keys::Error) -> Self { UtxoSignTxError::ErrorSigning(e) }
+    fn from(e: keys::Error) -> Self {
+        UtxoSignTxError::ErrorSigning(e)
+    }
 }
 
 impl From<TxProviderError> for UtxoSignTxError {

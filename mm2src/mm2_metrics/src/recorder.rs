@@ -173,9 +173,13 @@ impl Recorder for MmRecorder {
         // mm2_metrics doesn't use this method
     }
 
-    fn register_counter(&self, key: &Key) -> Counter { self.registry.get_or_create_counter(key, |e| e.clone().into()) }
+    fn register_counter(&self, key: &Key) -> Counter {
+        self.registry.get_or_create_counter(key, |e| e.clone().into())
+    }
 
-    fn register_gauge(&self, key: &Key) -> Gauge { self.registry.get_or_create_gauge(key, |e| e.clone().into()) }
+    fn register_gauge(&self, key: &Key) -> Gauge {
+        self.registry.get_or_create_gauge(key, |e| e.clone().into())
+    }
 
     fn register_histogram(&self, key: &Key) -> Histogram {
         self.registry.get_or_create_histogram(key, |e| e.clone().into())

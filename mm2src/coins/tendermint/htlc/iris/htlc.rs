@@ -65,7 +65,9 @@ impl TryFrom<&IrisCreateHtlcProto> for IrisCreateHtlcMsg {
 }
 
 impl From<IrisCreateHtlcMsg> for IrisCreateHtlcProto {
-    fn from(t: IrisCreateHtlcMsg) -> IrisCreateHtlcProto { IrisCreateHtlcProto::from(&t) }
+    fn from(t: IrisCreateHtlcMsg) -> IrisCreateHtlcProto {
+        IrisCreateHtlcProto::from(&t)
+    }
 }
 
 impl From<&IrisCreateHtlcMsg> for IrisCreateHtlcProto {
@@ -126,7 +128,9 @@ impl TryFrom<&IrisClaimHtlcProto> for IrisClaimHtlcMsg {
 }
 
 impl From<IrisClaimHtlcMsg> for IrisClaimHtlcProto {
-    fn from(coin: IrisClaimHtlcMsg) -> IrisClaimHtlcProto { IrisClaimHtlcProto::from(&coin) }
+    fn from(coin: IrisClaimHtlcMsg) -> IrisClaimHtlcProto {
+        IrisClaimHtlcProto::from(&coin)
+    }
 }
 
 impl From<&IrisClaimHtlcMsg> for IrisClaimHtlcProto {

@@ -13,7 +13,7 @@ use mm2_net::grpc_web::{post_grpc_web, PostGrpcWebErr};
 use std::convert::TryInto;
 
 #[derive(Debug, Display)]
-#[display(fmt = "Error {:?} on request to the url {}", err, to_url)]
+#[display(fmt = "Error {err:?} on request to the url {to_url}")]
 pub struct GrpcWebMultiUrlReqErr {
     to_url: String,
     err: PostGrpcWebErr,
@@ -53,21 +53,17 @@ where
 #[derive(Debug, Display)]
 pub enum ValidateSlpUtxosErrKind {
     MultiReqErr(GrpcWebMultiUrlReqErr),
-    #[display(fmt = "Expected {} token id, but got {}", expected, actual)]
+    #[display(fmt = "Expected {expected} token id, but got {actual}")]
     UnexpectedTokenId {
         expected: H256,
         actual: H256,
     },
-    #[display(
-        fmt = "Unexpected validity_result {:?} for unspent {:?}",
-        validity_result,
-        for_unspent
-    )]
+    #[display(fmt = "Unexpected validity_result {validity_result:?} for unspent {for_unspent:?}")]
     UnexpectedValidityResultType {
         for_unspent: SlpUnspent,
         validity_result: Option<ValidityResultType>,
     },
-    #[display(fmt = "Unexpected utxo {:?} in response", outpoint)]
+    #[display(fmt = "Unexpected utxo {outpoint:?} in response")]
     UnexpectedUtxoInResponse {
         outpoint: OutPoint,
     },
@@ -75,7 +71,7 @@ pub enum ValidateSlpUtxosErrKind {
 }
 
 #[derive(Debug, Display)]
-#[display(fmt = "Error {} on request to the url {}", kind, to_url)]
+#[display(fmt = "Error {kind} on request to the url {to_url}")]
 pub struct ValidateSlpUtxosErr {
     to_url: String,
     kind: ValidateSlpUtxosErrKind,
@@ -142,8 +138,7 @@ pub async fn validate_slp_utxos(
                     .map_to_mm(|_| ValidateSlpUtxosErr {
                         to_url: url.clone(),
                         kind: ValidateSlpUtxosErrKind::InvalidSlpTxData(format!(
-                            "Invalid token_id length: expected 32 bytes, got {}",
-                            token_id_len
+                            "Invalid token_id length: expected 32 bytes, got {token_id_len}"
                         )),
                     })?;
                 arr.into()
@@ -166,8 +161,7 @@ pub async fn validate_slp_utxos(
                     .map_to_mm(|_| ValidateSlpUtxosErr {
                         to_url: url.clone(),
                         kind: ValidateSlpUtxosErrKind::InvalidSlpTxData(format!(
-                            "Invalid prev_out_hash length: expected 32 bytes, got {}",
-                            prev_out_hash_len
+                            "Invalid prev_out_hash length: expected 32 bytes, got {prev_out_hash_len}"
                         )),
                     })?;
                 arr.into()
@@ -216,7 +210,7 @@ pub async fn validate_slp_utxos(
 #[derive(Debug, Display)]
 pub enum CheckSlpTransactionErrKind {
     MultiReqErr(GrpcWebMultiUrlReqErr),
-    #[display(fmt = "Transaction {:?} is not valid with reason {}", transaction, reason)]
+    #[display(fmt = "Transaction {transaction:?} is not valid with reason {reason}")]
     InvalidTransaction {
         transaction: Vec<u8>,
         reason: String,
@@ -224,7 +218,7 @@ pub enum CheckSlpTransactionErrKind {
 }
 
 #[derive(Debug, Display)]
-#[display(fmt = "Error {} on request to the url {}", kind, to_url)]
+#[display(fmt = "Error {kind} on request to the url {to_url}")]
 pub struct CheckSlpTransactionErr {
     to_url: String,
     kind: CheckSlpTransactionErrKind,
@@ -382,18 +376,21 @@ mod bchd_grpc_tests {
             slp_amount: 999,
         };
 
-        let slp_utxos = [invalid_utxo.clone(), SlpUnspent {
-            bch_unspent: UnspentInfo {
-                outpoint: OutPoint {
-                    hash: tx_hash,
-                    index: 2,
+        let slp_utxos = [
+            invalid_utxo.clone(),
+            SlpUnspent {
+                bch_unspent: UnspentInfo {
+                    outpoint: OutPoint {
+                        hash: tx_hash,
+                        index: 2,
+                    },
+                    value: 0,
+                    height: None,
+                    script: Vec::new().into(),
                 },
-                value: 0,
-                height: None,
-                script: Vec::new().into(),
+                slp_amount: 8999,
             },
-            slp_amount: 8999,
-        }];
+        ];
 
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
         let err = block_on(validate_slp_utxos(BCHD_TESTNET_URLS, &slp_utxos, &token_id)).unwrap_err();
@@ -470,7 +467,7 @@ mod bchd_grpc_tests {
         let err = block_on(check_slp_transaction(BCHD_TESTNET_URLS, tx)).unwrap_err();
         match err.into_inner().kind {
             CheckSlpTransactionErrKind::InvalidTransaction { reason, .. } => {
-                println!("{}", reason);
+                println!("{reason}");
             },
             err => panic!("Unexpected error {:?}", err),
         }

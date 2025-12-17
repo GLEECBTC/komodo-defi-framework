@@ -6,7 +6,9 @@ pub trait BoxFutureSpawner {
 }
 
 impl<S: SpawnFuture> BoxFutureSpawner for S {
-    fn spawn_boxed(&self, f: Box<dyn Future03<Output = ()> + Send + Unpin + 'static>) { self.spawn(f) }
+    fn spawn_boxed(&self, f: Box<dyn Future03<Output = ()> + Send + Unpin + 'static>) {
+        self.spawn(f)
+    }
 }
 
 pub trait SpawnFuture {

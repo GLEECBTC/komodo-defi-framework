@@ -73,7 +73,9 @@ pub fn tbtc_electrums() -> Vec<Json> {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub fn tqtum_electrums() -> Vec<Json> { vec![json!({ "url": "electrum3.cipig.net:30071", "protocol": "WSS" })] }
+pub fn tqtum_electrums() -> Vec<Json> {
+    vec![json!({ "url": "electrum3.cipig.net:30071", "protocol": "WSS" })]
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn tqtum_electrums() -> Vec<Json> {

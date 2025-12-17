@@ -7,9 +7,9 @@ use derive_more::Display;
 #[derive(Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum RpcTaskStatusError {
-    #[display(fmt = "No such task '{}'", _0)]
+    #[display(fmt = "No such task '{_0}'")]
     NoSuchTask(TaskId),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
@@ -27,9 +27,9 @@ impl HttpStatusCode for RpcTaskStatusError {
 #[derive(Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum RpcTaskUserActionError {
-    #[display(fmt = "No such task '{}'", _0)]
+    #[display(fmt = "No such task '{_0}'")]
     NoSuchTask(TaskId),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 
@@ -56,11 +56,11 @@ impl HttpStatusCode for RpcTaskUserActionError {
 #[derive(Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum CancelRpcTaskError {
-    #[display(fmt = "No such task '{}'", _0)]
+    #[display(fmt = "No such task '{_0}'")]
     NoSuchTask(TaskId),
     #[display(fmt = "Task is finished already")]
     TaskFinished(TaskId),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
 }
 

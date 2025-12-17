@@ -73,7 +73,9 @@ impl ConnectionContext {
     }
 
     /// Resets the suspend time.
-    pub(super) fn connected(&self) { self.suspend_timer.reset(); }
+    pub(super) fn connected(&self) {
+        self.suspend_timer.reset();
+    }
 
     /// Inform the connection context that the connection has been disconnected.
     ///
@@ -84,8 +86,12 @@ impl ConnectionContext {
     }
 
     /// Returns the time the server should be suspended until (when to take it up) in milliseconds.
-    pub(super) fn suspended_till(&self) -> u64 { self.suspend_timer.get_suspend_until() }
+    pub(super) fn suspended_till(&self) -> u64 {
+        self.suspend_timer.get_suspend_until()
+    }
 
     /// Adds a subscription to the connection context.
-    pub(super) fn add_sub(&self, address: Address) { self.subs.lock().unwrap().insert(address); }
+    pub(super) fn add_sub(&self, address: Address) {
+        self.subs.lock().unwrap().insert(address);
+    }
 }

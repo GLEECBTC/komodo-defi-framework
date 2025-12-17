@@ -13,16 +13,18 @@ pub(crate) const AUTHENTICATION_PATH: &str = "SLIP-0021/Authentication key/";
 #[derive(Debug, Display, PartialEq)]
 #[allow(dead_code)]
 pub enum SLIP21Error {
-    #[display(fmt = "Error deriving key: {}", _0)]
+    #[display(fmt = "Error deriving key: {_0}")]
     KeyDerivationError(String),
-    #[display(fmt = "Error encrypting mnemonic: {}", _0)]
+    #[display(fmt = "Error encrypting mnemonic: {_0}")]
     EncryptionFailed(String),
-    #[display(fmt = "Error decrypting mnemonic: {}", _0)]
+    #[display(fmt = "Error decrypting mnemonic: {_0}")]
     DecryptionFailed(String),
 }
 
 impl From<KeyDerivationError> for SLIP21Error {
-    fn from(e: KeyDerivationError) -> Self { SLIP21Error::KeyDerivationError(e.to_string()) }
+    fn from(e: KeyDerivationError) -> Self {
+        SLIP21Error::KeyDerivationError(e.to_string())
+    }
 }
 
 /// Encrypts data using SLIP-0021 derived keys.

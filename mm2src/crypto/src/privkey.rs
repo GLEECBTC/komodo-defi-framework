@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright © 2023 Pampex LTD and TillyHK LTD                                *
+ * Copyright © 2025 Gleec Holding OÜ                                *
  *                                                                            *
  * See the CONTRIBUTOR-LICENSE-AGREEMENT, COPYING, LICENSE-COPYRIGHT-NOTICE   *
  * and DEVELOPER-CERTIFICATE-OF-ORIGIN files in the LEGAL directory in        *
@@ -20,47 +20,56 @@
 //
 
 use crate::global_hd_ctx::Bip39Seed;
+use bip32::Error as Bip32Error;
+use bip39::Error as Bip39Error;
 use bitcrypto::{sha256, ChecksumType};
-use derive_more::Display;
+use ed25519_dalek_bip32::{DerivationPath as Ed25519DerivationPath, Error as Ed25519Bip32Error};
 use keys::{Error as KeysError, KeyPair, Private, Secret as Secp256k1Secret};
 use mm2_err_handle::prelude::*;
 use rustc_hex::FromHexError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use thiserror::Error;
 
 pub type PrivKeyResult<T> = Result<T, MmError<PrivKeyError>>;
 
-#[derive(Debug, Display, Serialize)]
+#[derive(Debug, Error)]
 pub enum PrivKeyError {
-    #[display(fmt = "Provided WIF passphrase has invalid checksum!")]
-    WifPassphraseInvalidChecksum,
-    #[display(fmt = "Error parsing passphrase: {}", _0)]
-    ErrorParsingPassphrase(String),
-    #[display(fmt = "Invalid private key: {}", _0)]
-    InvalidPrivKey(String),
-    #[display(fmt = "We only support compressed keys at the moment")]
+    #[error("bip39_seed_from_passphrase: Error parsing passphrase: {0}")]
+    Bip39Parsing(#[from] Bip39Error),
+    #[error("private_from_seed: Error parsing provided WIF: {0}")]
+    WifSecp256k1Parsing(KeysError),
+    #[error(
+        "private_from_seed: Error parsing raw secp256k1 private key, expected 0x prefixed 32 byte hex string: {0}"
+    )]
+    RawSecp256k1Parsing(#[from] FromHexError),
+    #[error("GlobalHDAccountCtx::new: Failed to calculate secp256k1 master xpriv from bip39 seed: {0}")]
+    Secp256k1MasterKey(Bip32Error),
+    #[error("GlobalHDAccountCtx::new: Failed to calculate ed25519 master xpriv from bip39 seed: {0}")]
+    Ed25519MasterKey(Ed25519Bip32Error),
+    #[error("GlobalHDAccountCtx::derive_ed25519_signing_key: Failed to derive key for path:{1} with error: {0}")]
+    Ed25519DeriveKey(Ed25519Bip32Error, Ed25519DerivationPath),
+    #[error("GlobalHDAccountCtx::new: Failed to derive internal secp256k1 private key: {0}")]
+    Secp256k1InternalKey(Bip32Error),
+    #[error("key_pair_from_secret: Failed to create KeyPair from byte array {0}")]
+    KeyPairFromSecret(KeysError),
+    #[error("key_pair_from_seed: Expected compressed public key, found uncompressed")]
     ExpectedCompressedKeys,
+    #[error("key_pair_from_seed: Failed to create KeyPair from Private {0}")]
+    PrivateIntoKeyPair(KeysError),
 }
-
-impl From<FromHexError> for PrivKeyError {
-    fn from(e: FromHexError) -> Self { PrivKeyError::ErrorParsingPassphrase(e.to_string()) }
-}
-
-impl From<KeysError> for PrivKeyError {
-    fn from(e: KeysError) -> Self { PrivKeyError::InvalidPrivKey(e.to_string()) }
-}
-
-impl std::error::Error for PrivKeyError {}
 
 fn private_from_seed(seed: &str) -> PrivKeyResult<Private> {
+    // Attempt to parse the seed as a WIF
     match seed.parse() {
         Ok(private) => return Ok(private),
         Err(e) => {
             if let KeysError::InvalidChecksum = e {
-                return MmError::err(PrivKeyError::WifPassphraseInvalidChecksum);
+                return MmError::err(PrivKeyError::WifSecp256k1Parsing(e));
             }
         }, // else ignore other errors, assume the passphrase is not WIF
     }
 
+    // If the seed starts with 0x, we treat it as hex string representing a secp256k1 private key
     match seed.strip_prefix("0x") {
         Some(stripped) => {
             let hash: Secp256k1Secret = stripped.parse()?;
@@ -98,7 +107,7 @@ pub fn key_pair_from_seed(seed: &str) -> PrivKeyResult<KeyPair> {
     if !private.compressed {
         return MmError::err(PrivKeyError::ExpectedCompressedKeys);
     }
-    let pair = KeyPair::from_private(private)?;
+    let pair = KeyPair::from_private(private).map_err(PrivKeyError::PrivateIntoKeyPair)?;
     // Just a sanity check. We rely on the public key being 33 bytes (aka compressed).
     assert_eq!(pair.public().len(), 33);
     Ok(pair)
@@ -111,12 +120,11 @@ pub fn key_pair_from_secret(secret: &[u8; 32]) -> PrivKeyResult<KeyPair> {
         compressed: true,
         checksum_type: ChecksumType::DSHA256,
     };
-    Ok(KeyPair::from_private(private)?)
+    Ok(KeyPair::from_private(private).map_err(PrivKeyError::KeyPairFromSecret)?)
 }
 
-pub fn bip39_seed_from_passphrase(passphrase: &str) -> PrivKeyResult<Bip39Seed> {
-    let mnemonic = bip39::Mnemonic::parse_in_normalized(bip39::Language::English, passphrase)
-        .map_to_mm(|e| PrivKeyError::ErrorParsingPassphrase(e.to_string()))?;
+pub fn bip39_seed_from_mnemonic(mnemonic_str: &str) -> PrivKeyResult<Bip39Seed> {
+    let mnemonic = bip39::Mnemonic::parse_in_normalized(bip39::Language::English, mnemonic_str)?;
     let seed = mnemonic.to_seed_normalized("");
     Ok(Bip39Seed(seed))
 }
@@ -127,7 +135,9 @@ pub struct SerializableSecp256k1Keypair {
 }
 
 impl PartialEq for SerializableSecp256k1Keypair {
-    fn eq(&self, other: &Self) -> bool { self.inner.public() == other.inner.public() }
+    fn eq(&self, other: &Self) -> bool {
+        self.inner.public() == other.inner.public()
+    }
 }
 
 impl Eq for SerializableSecp256k1Keypair {}
@@ -139,11 +149,17 @@ impl SerializableSecp256k1Keypair {
         })
     }
 
-    pub fn key_pair(&self) -> &KeyPair { &self.inner }
+    pub fn key_pair(&self) -> &KeyPair {
+        &self.inner
+    }
 
-    pub fn public_slice(&self) -> &[u8] { self.inner.public_slice() }
+    pub fn public_slice(&self) -> &[u8] {
+        self.inner.public_slice()
+    }
 
-    pub fn priv_key(&self) -> [u8; 32] { self.inner.private().secret.take() }
+    pub fn priv_key(&self) -> [u8; 32] {
+        self.inner.private().secret.take()
+    }
 
     pub fn random() -> Self {
         SerializableSecp256k1Keypair {
@@ -151,11 +167,15 @@ impl SerializableSecp256k1Keypair {
         }
     }
 
-    pub fn into_inner(self) -> KeyPair { self.inner }
+    pub fn into_inner(self) -> KeyPair {
+        self.inner
+    }
 }
 
 impl From<KeyPair> for SerializableSecp256k1Keypair {
-    fn from(inner: KeyPair) -> Self { SerializableSecp256k1Keypair { inner } }
+    fn from(inner: KeyPair) -> Self {
+        SerializableSecp256k1Keypair { inner }
+    }
 }
 
 impl Serialize for SerializableSecp256k1Keypair {
@@ -184,7 +204,7 @@ fn serializable_secp256k1_keypair_test() {
     let key_pair = KeyPair::random_compressed();
     let serializable = SerializableSecp256k1Keypair { inner: key_pair };
     let serialized = json::to_string(&serializable).unwrap();
-    println!("{}", serialized);
+    println!("{serialized}");
     let deserialized = json::from_str(&serialized).unwrap();
     assert_eq!(serializable, deserialized);
 
@@ -194,5 +214,5 @@ fn serializable_secp256k1_keypair_test() {
     ];
     let invalid_privkey_serialized = json::to_string(&invalid_privkey).unwrap();
     let err = json::from_str::<SerializableSecp256k1Keypair>(&invalid_privkey_serialized).unwrap_err();
-    println!("{}", err);
+    println!("{err}");
 }

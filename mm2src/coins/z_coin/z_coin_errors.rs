@@ -22,7 +22,8 @@ use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use zcash_client_backend::data_api::error::ChainInvalid;
 #[cfg(not(target_arch = "wasm32"))]
 use zcash_client_sqlite::error::SqliteClientError;
-#[cfg(target_arch = "wasm32")] use zcash_extras::NoteId;
+#[cfg(target_arch = "wasm32")]
+use zcash_extras::NoteId;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
 
@@ -40,29 +41,41 @@ pub enum UpdateBlocksCacheErr {
 }
 
 impl From<ZcoinStorageError> for UpdateBlocksCacheErr {
-    fn from(err: ZcoinStorageError) -> Self { UpdateBlocksCacheErr::ZcashDBError(err.to_string()) }
+    fn from(err: ZcoinStorageError) -> Self {
+        UpdateBlocksCacheErr::ZcashDBError(err.to_string())
+    }
 }
 
 impl From<tonic::Status> for UpdateBlocksCacheErr {
-    fn from(err: tonic::Status) -> Self { UpdateBlocksCacheErr::GrpcError(err) }
+    fn from(err: tonic::Status) -> Self {
+        UpdateBlocksCacheErr::GrpcError(err)
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<SqliteError> for UpdateBlocksCacheErr {
-    fn from(err: SqliteError) -> Self { UpdateBlocksCacheErr::ZcashDBError(err.to_string()) }
+    fn from(err: SqliteError) -> Self {
+        UpdateBlocksCacheErr::ZcashDBError(err.to_string())
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<SqliteClientError> for UpdateBlocksCacheErr {
-    fn from(err: SqliteClientError) -> Self { UpdateBlocksCacheErr::ZcashDBError(err.to_string()) }
+    fn from(err: SqliteClientError) -> Self {
+        UpdateBlocksCacheErr::ZcashDBError(err.to_string())
+    }
 }
 
 impl From<UtxoRpcError> for UpdateBlocksCacheErr {
-    fn from(err: UtxoRpcError) -> Self { UpdateBlocksCacheErr::UtxoRpcError(err) }
+    fn from(err: UtxoRpcError) -> Self {
+        UpdateBlocksCacheErr::UtxoRpcError(err)
+    }
 }
 
 impl From<JsonRpcError> for UpdateBlocksCacheErr {
-    fn from(err: JsonRpcError) -> Self { UpdateBlocksCacheErr::JsonRpcError(err) }
+    fn from(err: JsonRpcError) -> Self {
+        UpdateBlocksCacheErr::JsonRpcError(err)
+    }
 }
 
 /// This enum encompasses various error scenarios that may arise
@@ -74,23 +87,29 @@ impl From<JsonRpcError> for UpdateBlocksCacheErr {
 pub enum ZcoinClientInitError {
     ZcoinStorageError(String),
     EmptyLightwalletdUris,
-    #[display(fmt = "Fail to init clients while iterating lightwalletd urls {:?}", _0)]
+    #[display(fmt = "Fail to init clients while iterating lightwalletd urls {_0:?}")]
     UrlIterFailure(Vec<UrlIterError>),
     UpdateBlocksCacheErr(UpdateBlocksCacheErr),
     UtxoCoinBuildError(UtxoCoinBuildError),
 }
 
 impl From<ZcoinStorageError> for ZcoinClientInitError {
-    fn from(err: ZcoinStorageError) -> Self { ZcoinClientInitError::ZcoinStorageError(err.to_string()) }
+    fn from(err: ZcoinStorageError) -> Self {
+        ZcoinClientInitError::ZcoinStorageError(err.to_string())
+    }
 }
 
 impl From<UpdateBlocksCacheErr> for ZcoinClientInitError {
-    fn from(err: UpdateBlocksCacheErr) -> Self { ZcoinClientInitError::UpdateBlocksCacheErr(err) }
+    fn from(err: UpdateBlocksCacheErr) -> Self {
+        ZcoinClientInitError::UpdateBlocksCacheErr(err)
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<SqliteClientError> for ZcoinClientInitError {
-    fn from(err: SqliteClientError) -> Self { ZcoinClientInitError::ZcoinStorageError(err.to_string()) }
+    fn from(err: SqliteClientError) -> Self {
+        ZcoinClientInitError::ZcoinStorageError(err.to_string())
+    }
 }
 
 #[derive(Debug, Display)]
@@ -107,12 +126,7 @@ pub enum GenTxError {
     DecryptedOutputNotFound,
     GetWitnessErr(GetUnspentWitnessErr),
     FailedToGetMerklePath,
-    #[display(
-        fmt = "Not enough {} to generate a tx: available {}, required at least {}",
-        coin,
-        available,
-        required
-    )]
+    #[display(fmt = "Not enough {coin} to generate a tx: available {available}, required at least {required}")]
     InsufficientBalance {
         coin: String,
         available: BigDecimal,
@@ -122,7 +136,7 @@ pub enum GenTxError {
     Rpc(UtxoRpcError),
     PrevTxNotConfirmed,
     TxBuilderError(ZTxBuilderError),
-    #[display(fmt = "Failed to read ZCash tx from bytes {:?} with error {}", hex, err)]
+    #[display(fmt = "Failed to read ZCash tx from bytes {hex:?} with error {err}")]
     TxReadError {
         hex: BytesJson,
         err: std::io::Error,
@@ -137,24 +151,34 @@ pub enum GenTxError {
 }
 
 impl From<GetUnspentWitnessErr> for GenTxError {
-    fn from(err: GetUnspentWitnessErr) -> GenTxError { GenTxError::GetWitnessErr(err) }
+    fn from(err: GetUnspentWitnessErr) -> GenTxError {
+        GenTxError::GetWitnessErr(err)
+    }
 }
 
 impl From<NumConversError> for GenTxError {
-    fn from(err: NumConversError) -> GenTxError { GenTxError::NumConversion(err) }
+    fn from(err: NumConversError) -> GenTxError {
+        GenTxError::NumConversion(err)
+    }
 }
 
 impl From<UtxoRpcError> for GenTxError {
-    fn from(err: UtxoRpcError) -> GenTxError { GenTxError::Rpc(err) }
+    fn from(err: UtxoRpcError) -> GenTxError {
+        GenTxError::Rpc(err)
+    }
 }
 
 impl From<ZTxBuilderError> for GenTxError {
-    fn from(err: ZTxBuilderError) -> GenTxError { GenTxError::TxBuilderError(err) }
+    fn from(err: ZTxBuilderError) -> GenTxError {
+        GenTxError::TxBuilderError(err)
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<SqliteClientError> for GenTxError {
-    fn from(err: SqliteClientError) -> Self { GenTxError::LightClientErr(err.to_string()) }
+    fn from(err: SqliteClientError) -> Self {
+        GenTxError::LightClientErr(err.to_string())
+    }
 }
 
 impl From<GenTxError> for WithdrawError {
@@ -193,7 +217,9 @@ pub struct BlockchainScanStopped {}
 
 impl From<BlockchainScanStopped> for GenTxError {
     #[inline]
-    fn from(_: BlockchainScanStopped) -> Self { GenTxError::BlockchainScanStopped }
+    fn from(_: BlockchainScanStopped) -> Self {
+        GenTxError::BlockchainScanStopped
+    }
 }
 
 #[derive(Debug, Display)]
@@ -208,19 +234,27 @@ pub enum SendOutputsErr {
 }
 
 impl From<PrivKeyPolicyNotAllowed> for SendOutputsErr {
-    fn from(err: PrivKeyPolicyNotAllowed) -> Self { SendOutputsErr::PrivKeyPolicyNotAllowed(err) }
+    fn from(err: PrivKeyPolicyNotAllowed) -> Self {
+        SendOutputsErr::PrivKeyPolicyNotAllowed(err)
+    }
 }
 
 impl From<GenTxError> for SendOutputsErr {
-    fn from(err: GenTxError) -> SendOutputsErr { SendOutputsErr::GenTxError(err) }
+    fn from(err: GenTxError) -> SendOutputsErr {
+        SendOutputsErr::GenTxError(err)
+    }
 }
 
 impl From<NumConversError> for SendOutputsErr {
-    fn from(err: NumConversError) -> SendOutputsErr { SendOutputsErr::NumConversion(err) }
+    fn from(err: NumConversError) -> SendOutputsErr {
+        SendOutputsErr::NumConversion(err)
+    }
 }
 
 impl From<UtxoRpcError> for SendOutputsErr {
-    fn from(err: UtxoRpcError) -> SendOutputsErr { SendOutputsErr::Rpc(err) }
+    fn from(err: UtxoRpcError) -> SendOutputsErr {
+        SendOutputsErr::Rpc(err)
+    }
 }
 
 #[derive(Debug, Display)]
@@ -233,7 +267,9 @@ pub enum GetUnspentWitnessErr {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<SqliteError> for GetUnspentWitnessErr {
-    fn from(err: SqliteError) -> GetUnspentWitnessErr { GetUnspentWitnessErr::ZcashDBError(err.to_string()) }
+    fn from(err: SqliteError) -> GetUnspentWitnessErr {
+        GetUnspentWitnessErr::ZcashDBError(err.to_string())
+    }
 }
 
 #[derive(Debug, Display, EnumFromStringify)]
@@ -243,7 +279,7 @@ pub enum ZCoinBuildError {
     #[from_stringify("LockedNotesStorageError")]
     ZcashDBError(String),
     Rpc(String),
-    #[display(fmt = "Sapling cache DB does not exist at {}. Please download it.", path)]
+    #[display(fmt = "Sapling cache DB does not exist at {path}. Please download it.")]
     SaplingCacheDbDoesNotExist {
         path: String,
     },
@@ -257,19 +293,27 @@ pub enum ZCoinBuildError {
 }
 
 impl From<UtxoRpcError> for ZCoinBuildError {
-    fn from(err: UtxoRpcError) -> ZCoinBuildError { ZCoinBuildError::Rpc(err.to_string()) }
+    fn from(err: UtxoRpcError) -> ZCoinBuildError {
+        ZCoinBuildError::Rpc(err.to_string())
+    }
 }
 
 impl From<std::io::Error> for ZCoinBuildError {
-    fn from(err: std::io::Error) -> ZCoinBuildError { ZCoinBuildError::Io(err) }
+    fn from(err: std::io::Error) -> ZCoinBuildError {
+        ZCoinBuildError::Io(err)
+    }
 }
 
 impl From<UtxoCoinBuildError> for ZCoinBuildError {
-    fn from(err: UtxoCoinBuildError) -> Self { ZCoinBuildError::UtxoBuilderError(err) }
+    fn from(err: UtxoCoinBuildError) -> Self {
+        ZCoinBuildError::UtxoBuilderError(err)
+    }
 }
 
 impl From<ZcoinClientInitError> for ZCoinBuildError {
-    fn from(err: ZcoinClientInitError) -> Self { ZCoinBuildError::RpcClientInitErr(err) }
+    fn from(err: ZcoinClientInitError) -> Self {
+        ZCoinBuildError::RpcClientInitErr(err)
+    }
 }
 
 #[derive(Debug, Display)]
@@ -282,22 +326,30 @@ pub(crate) enum ZTxHistoryError {
 }
 
 impl From<ZTxHistoryError> for MyTxHistoryErrorV2 {
-    fn from(err: ZTxHistoryError) -> Self { MyTxHistoryErrorV2::StorageError(err.to_string()) }
+    fn from(err: ZTxHistoryError) -> Self {
+        MyTxHistoryErrorV2::StorageError(err.to_string())
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<SqliteError> for ZTxHistoryError {
-    fn from(err: SqliteError) -> Self { ZTxHistoryError::Sql(err) }
+    fn from(err: SqliteError) -> Self {
+        ZTxHistoryError::Sql(err)
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
 impl From<DbTransactionError> for ZTxHistoryError {
-    fn from(err: DbTransactionError) -> Self { ZTxHistoryError::IndexedDbError(err.to_string()) }
+    fn from(err: DbTransactionError) -> Self {
+        ZTxHistoryError::IndexedDbError(err.to_string())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
 impl From<CursorError> for ZTxHistoryError {
-    fn from(err: CursorError) -> Self { ZTxHistoryError::IndexedDbError(err.to_string()) }
+    fn from(err: CursorError) -> Self {
+        ZTxHistoryError::IndexedDbError(err.to_string())
+    }
 }
 
 #[derive(Debug)]
@@ -320,7 +372,9 @@ pub enum ZCoinBalanceError {
 }
 
 impl From<ZcoinStorageError> for ZCoinBalanceError {
-    fn from(value: ZcoinStorageError) -> Self { ZCoinBalanceError::BalanceError(value.to_string()) }
+    fn from(value: ZcoinStorageError) -> Self {
+        ZCoinBalanceError::BalanceError(value.to_string())
+    }
 }
 
 /// The `ValidateBlocksError` enum encapsulates different types of errors that may occur
@@ -347,11 +401,15 @@ pub enum ValidateBlocksError {
 }
 
 impl From<ValidateBlocksError> for ZcoinStorageError {
-    fn from(value: ValidateBlocksError) -> Self { Self::ValidateBlocksError(value) }
+    fn from(value: ValidateBlocksError) -> Self {
+        Self::ValidateBlocksError(value)
+    }
 }
 
 impl From<MmError<ZcoinStorageError>> for ValidateBlocksError {
-    fn from(value: MmError<ZcoinStorageError>) -> Self { Self::ZcoinStorageError(value.to_string()) }
+    fn from(value: MmError<ZcoinStorageError>) -> Self {
+        Self::ZcoinStorageError(value.to_string())
+    }
 }
 
 impl ValidateBlocksError {
@@ -414,11 +472,11 @@ pub enum ZcoinStorageError {
     CorruptedData(String),
     InvalidMemo(String),
     BackendError(String),
-    #[display(fmt = "Add to storage err: {}", _0)]
+    #[display(fmt = "Add to storage err: {_0}")]
     AddToStorageErr(String),
-    #[display(fmt = "Remove from storage err: {}", _0)]
+    #[display(fmt = "Remove from storage err: {_0}")]
     RemoveFromStorageErr(String),
-    #[display(fmt = "Get from storage err: {}", _0)]
+    #[display(fmt = "Get from storage err: {_0}")]
     GetFromStorageError(String),
     #[display(fmt = "Error getting {ticker} block height from storage: {err}")]
     BlockHeightNotFound {
@@ -438,7 +496,9 @@ pub enum ZcoinStorageError {
 }
 
 impl From<UpdateBlocksCacheErr> for ZcoinStorageError {
-    fn from(err: UpdateBlocksCacheErr) -> Self { ZcoinStorageError::DbError(err.to_string()) }
+    fn from(err: UpdateBlocksCacheErr) -> Self {
+        ZcoinStorageError::DbError(err.to_string())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]

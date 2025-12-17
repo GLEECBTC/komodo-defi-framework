@@ -1,4 +1,6 @@
-use crate::hw_client::{HwClient, HwConnectionStatus, HwDeviceInfo, HwProcessingError, HwPubkey, TrezorConnectProcessor};
+use crate::hw_client::{
+    HwClient, HwConnectionStatus, HwDeviceInfo, HwProcessingError, HwPubkey, TrezorConnectProcessor,
+};
 use crate::hw_error::HwError;
 use crate::trezor::TrezorSession;
 use crate::{mm2_internal_der_path, HwWalletType};
@@ -27,11 +29,15 @@ pub struct HardwareWalletArc(Arc<HardwareWalletCtx>);
 impl Deref for HardwareWalletArc {
     type Target = HardwareWalletCtx;
 
-    fn deref(&self) -> &Self::Target { &self.0 }
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl HardwareWalletArc {
-    pub fn new(ctx: HardwareWalletCtx) -> HardwareWalletArc { HardwareWalletArc(Arc::new(ctx)) }
+    pub fn new(ctx: HardwareWalletCtx) -> HardwareWalletArc {
+        HardwareWalletArc(Arc::new(ctx))
+    }
 }
 
 pub struct HardwareWalletCtx {
@@ -72,7 +78,9 @@ impl HardwareWalletCtx {
         Ok((hw_device_info, hw_ctx))
     }
 
-    pub fn hw_wallet_type(&self) -> HwWalletType { self.hw_wallet_type }
+    pub fn hw_wallet_type(&self) -> HwWalletType {
+        self.hw_wallet_type
+    }
 
     /// Returns a Trezor session.
     pub async fn trezor(
@@ -108,13 +116,19 @@ impl HardwareWalletCtx {
         }
     }
 
-    pub fn secp256k1_pubkey(&self) -> PublicKey { PublicKey::Compressed(self.hw_internal_pubkey) }
+    pub fn secp256k1_pubkey(&self) -> PublicKey {
+        PublicKey::Compressed(self.hw_internal_pubkey)
+    }
 
     /// Returns `RIPEMD160(SHA256(x))` where x is a pubkey extracted from the Hardware wallet.
-    pub fn rmd160(&self) -> H160 { h160_from_h264(&self.hw_internal_pubkey) }
+    pub fn rmd160(&self) -> H160 {
+        h160_from_h264(&self.hw_internal_pubkey)
+    }
 
     /// Returns serializable/deserializable Hardware wallet pubkey.
-    pub fn hw_pubkey(&self) -> HwPubkey { hw_pubkey_from_h264(&self.hw_internal_pubkey) }
+    pub fn hw_pubkey(&self) -> HwPubkey {
+        hw_pubkey_from_h264(&self.hw_internal_pubkey)
+    }
 
     pub(crate) async fn trezor_mm_internal_pubkey(
         trezor_session: &mut TrezorSession<'_>,
@@ -188,7 +202,11 @@ impl HardwareWalletCtx {
 }
 
 /// Applies `RIPEMD160(SHA256(h264))` to the given `h264`.
-fn h160_from_h264(h264: &H264) -> H160 { dhash160(h264.as_slice()) }
+fn h160_from_h264(h264: &H264) -> H160 {
+    dhash160(h264.as_slice())
+}
 
 /// Converts `H264` into a serializable/deserializable Hardware wallet pubkey.
-fn hw_pubkey_from_h264(h264: &H264) -> HwPubkey { HwPubkey::from(h160_from_h264(h264).take()) }
+fn hw_pubkey_from_h264(h264: &H264) -> HwPubkey {
+    HwPubkey::from(h160_from_h264(h264).take())
+}

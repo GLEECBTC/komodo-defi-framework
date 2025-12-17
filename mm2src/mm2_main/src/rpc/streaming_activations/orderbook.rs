@@ -23,7 +23,9 @@ pub enum OrderbookStreamingRequestError {
 }
 
 impl HttpStatusCode for OrderbookStreamingRequestError {
-    fn status_code(&self) -> StatusCode { StatusCode::BAD_REQUEST }
+    fn status_code(&self) -> StatusCode {
+        StatusCode::BAD_REQUEST
+    }
 }
 
 pub async fn enable_orderbook(

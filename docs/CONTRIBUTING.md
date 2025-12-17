@@ -49,5 +49,5 @@ and we use [rustfmt](https://github.com/rust-lang/rustfmt) to make our code clea
 1. Download Gecko driver for your OS: https://github.com/mozilla/geckodriver/releases
 1. Run the tests
     ```
-    WASM_BINDGEN_TEST_TIMEOUT=180 GECKODRIVER=PATH_TO_GECKO_DRIVER_BIN wasm-pack test --firefox --headless mm2src/mm2_main
+    WASM_BINDGEN_TEST_TIMEOUT=600 GECKODRIVER=PATH_TO_GECKO_DRIVER_BIN wasm-pack test --firefox --headless mm2src/mm2_main
     ```

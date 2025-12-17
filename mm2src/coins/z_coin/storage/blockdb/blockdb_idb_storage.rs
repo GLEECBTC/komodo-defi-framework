@@ -1,13 +1,17 @@
-use crate::z_coin::storage::{scan_cached_block, validate_chain, BlockDbImpl, BlockProcessingMode, CompactBlockRow,
-                             LockedNotesStorage, ZcoinConsensusParams, ZcoinStorageRes};
+use crate::z_coin::storage::{
+    scan_cached_block, validate_chain, BlockDbImpl, BlockProcessingMode, CompactBlockRow, LockedNotesStorage,
+    ZcoinConsensusParams, ZcoinStorageRes,
+};
 use crate::z_coin::tx_history_events::ZCoinTxHistoryEventStreamer;
 use crate::z_coin::z_balance_streaming::ZCoinBalanceEventStreamer;
 use crate::z_coin::z_coin_errors::ZcoinStorageError;
 
 use async_trait::async_trait;
 use mm2_core::mm_ctx::MmArc;
-use mm2_db::indexed_db::{BeBigUint, ConstructibleDb, DbIdentifier, DbInstance, DbLocked, DbUpgrader, IndexedDb,
-                         IndexedDbBuilder, InitDbResult, MultiIndex, OnUpgradeResult, TableSignature};
+use mm2_db::indexed_db::{
+    BeBigUint, ConstructibleDb, DbIdentifier, DbInstance, DbLocked, DbUpgrader, IndexedDb, IndexedDbBuilder,
+    InitDbResult, MultiIndex, OnUpgradeResult, TableSignature,
+};
 use mm2_err_handle::prelude::*;
 use mm2_event_stream::DeriveStreamerId;
 use protobuf::Message;
@@ -64,7 +68,9 @@ impl DbInstance for BlockDbInner {
 }
 
 impl BlockDbInner {
-    pub fn get_inner(&self) -> &IndexedDb { &self.0 }
+    pub fn get_inner(&self) -> &IndexedDb {
+        &self.0
+    }
 }
 
 impl BlockDbImpl {

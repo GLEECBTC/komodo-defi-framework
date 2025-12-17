@@ -11,7 +11,9 @@ pub struct ElectrumConnectionManagerNotifier {
 }
 
 impl RpcTransportEventHandler for ElectrumConnectionManagerNotifier {
-    fn debug_info(&self) -> String { "ElectrumConnectionManagerNotifier".into() }
+    fn debug_info(&self) -> String {
+        "ElectrumConnectionManagerNotifier".into()
+    }
 
     fn on_connected(&self, address: &str) -> Result<(), String> {
         self.connection_manager.on_connected(address);

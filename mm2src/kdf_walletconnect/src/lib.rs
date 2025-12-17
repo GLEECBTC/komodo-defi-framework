@@ -1,14 +1,19 @@
 pub mod chain;
 mod connection_handler;
-#[allow(unused)] pub mod error;
+#[allow(unused)]
+pub mod error;
 pub mod inbound_message;
 mod metadata;
-#[allow(unused)] mod pairing;
+#[allow(unused)]
+mod pairing;
 pub mod session;
 mod storage;
 
+// Re-export `Topic` as it is used within KDF to identify which sessions a coin is running on.
+pub use relay_rpc::domain::Topic as WcTopic;
+
 use crate::connection_handler::{Handler, MAX_BACKOFF};
-use crate::session::rpc::propose::send_proposal_request;
+use crate::session::rpc::propose::send_session_proposal_request;
 use chain::{WcChainId, WcRequestMethods, SUPPORTED_PROTOCOL};
 use common::custom_futures::timeout::FutureTimerExt;
 use common::executor::abortable_queue::AbortableQueue;
@@ -28,8 +33,10 @@ use relay_rpc::auth::{ed25519_dalek::SigningKey, AuthToken};
 use relay_rpc::domain::{MessageId, Topic};
 use relay_rpc::rpc::params::session::{Namespace, ProposeNamespaces};
 use relay_rpc::rpc::params::session_request::SessionRequestRequest;
-use relay_rpc::rpc::params::{session_request::Request as SessionRequest, IrnMetadata, Metadata, Relay,
-                             RelayProtocolMetadata, RequestParams, ResponseParamsError, ResponseParamsSuccess};
+use relay_rpc::rpc::params::{
+    session_request::Request as SessionRequest, IrnMetadata, Metadata, Relay, RelayProtocolMetadata, RequestParams,
+    ResponseParamsError, ResponseParamsSuccess,
+};
 use relay_rpc::rpc::{ErrorResponse, Payload, Request, Response, SuccessfulResponse};
 use serde::de::DeserializeOwned;
 use session::rpc::delete::send_session_delete_request;
@@ -47,6 +54,13 @@ use wc_common::{decode_and_decrypt_type0, encrypt_and_encode, EnvelopeType, SymK
 
 const PUBLISH_TIMEOUT_SECS: f64 = 6.;
 const CONNECTION_TIMEOUT_S: f64 = 30.;
+
+/// The necessary data to establish a new WalletConnect connection to a newly
+/// established pairing by KDF (via [`WalletConnectCtxImpl::new_connection`]).
+pub struct NewConnection {
+    pub url: String,
+    pub pairing_topic: Topic,
+}
 
 /// Broadcast by the lifecycle task so every RPC can cheaply await connectivity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,7 +95,7 @@ pub trait WalletConnectOps {
     ) -> Result<Self::SendTxData, Self::Error>;
 
     /// Session topic used to activate this.
-    fn session_topic(&self) -> Result<&str, Self::Error>;
+    fn session_topic(&self) -> Result<&Topic, Self::Error>;
 }
 
 /// Implements the WalletConnect context, providing functionality for
@@ -106,7 +120,9 @@ pub struct WalletConnectCtxImpl {
 pub struct WalletConnectCtx(pub Arc<WalletConnectCtxImpl>);
 impl Deref for WalletConnectCtx {
     type Target = WalletConnectCtxImpl;
-    fn deref(&self) -> &Self::Target { &self.0 }
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl WalletConnectCtx {
@@ -231,8 +247,7 @@ impl WalletConnectCtxImpl {
                 if rx.changed().await.is_err() {
                     let last_state = *rx.borrow();
                     return MmError::err(WalletConnectError::InternalError(format!(
-                        "Connection task dropped, last state was: {:?}",
-                        last_state
+                        "Connection task dropped, last state was: {last_state:?}"
                     )));
                 }
             }
@@ -281,7 +296,7 @@ impl WalletConnectCtxImpl {
         &self,
         required_namespaces: serde_json::Value,
         optional_namespaces: Option<serde_json::Value>,
-    ) -> MmResult<String, WalletConnectError> {
+    ) -> MmResult<NewConnection, WalletConnectError> {
         self.await_connection().await?;
 
         let required_namespaces = serde_json::from_value(required_namespaces)?;
@@ -301,10 +316,18 @@ impl WalletConnectCtxImpl {
             .map_to_mm(|e| e.into())?;
 
         info!("[{topic}] Subscribed to topic");
+        // Note that the creation of pairing doesn't have to do anything with the session proposal but we choose
+        // to do them on one go.
+        // TODO: We probably want to separate creating the pairing (done above) and then using the pairing
+        //       to propose a session into two separate steps/functions. This aligns more with WalletConnect spec
+        //       here and is easier to follow (have a clear boundary between a pairing and sessions instantiated using it).
+        //       ref. https://specs.walletconnect.com/2.0/specs/clients/sign#context
+        send_session_proposal_request(self, &topic, required_namespaces, optional_namespaces).await?;
 
-        send_proposal_request(self, &topic, required_namespaces, optional_namespaces).await?;
-
-        Ok(url)
+        Ok(NewConnection {
+            url,
+            pairing_topic: topic,
+        })
     }
 
     /// Get symmetric key associated with a for `topic`.
@@ -381,11 +404,10 @@ impl WalletConnectCtxImpl {
         Ok(())
     }
 
-    pub fn encode<T: AsRef<[u8]>>(&self, session_topic: &str, data: T) -> String {
-        let session_topic = session_topic.into();
+    pub fn encode<T: AsRef<[u8]>>(&self, session_topic: &Topic, data: T) -> String {
         let algo = self
             .session_manager
-            .get_session(&session_topic)
+            .get_session(session_topic)
             .map(|session| session.encoding_algo.unwrap_or(EncodingAlgo::Hex))
             .unwrap_or(EncodingAlgo::Hex);
 
@@ -482,12 +504,12 @@ impl WalletConnectCtxImpl {
 
     /// Checks if the current session is connected to a Ledger device.
     /// NOTE: for COSMOS chains only.
-    pub fn is_ledger_connection(&self, session_topic: &str) -> bool {
-        let session_topic = session_topic.into();
+    pub fn is_ledger_connection(&self, session_topic: &Topic) -> bool {
         self.session_manager
-            .get_session(&session_topic)
+            .get_session(session_topic)
             .and_then(|session| session.session_properties)
             .and_then(|props| props.keys.as_ref().cloned())
+            // TODO: This is flaky. ref. https://github.com/KomodoPlatform/komodo-defi-framework/pull/2499#discussion_r2174531817
             .and_then(|keys| keys.first().cloned())
             .map(|key| key.is_nano_ledger)
             .unwrap_or(false)
@@ -495,10 +517,9 @@ impl WalletConnectCtxImpl {
 
     /// Checks if the current session is connected via Keplr wallet.
     /// NOTE: for COSMOS chains only.
-    pub fn is_keplr_connection(&self, session_topic: &str) -> bool {
-        let session_topic = session_topic.into();
+    pub fn is_keplr_connection(&self, session_topic: &Topic) -> bool {
         self.session_manager
-            .get_session(&session_topic)
+            .get_session(session_topic)
             .map(|session| session.controller.metadata.name == "Keplr")
             .unwrap_or_default()
     }
@@ -517,6 +538,8 @@ impl WalletConnectCtxImpl {
                     }
                 },
                 None => {
+                    // TODO: Please re-check the correctness of this logic. This doesn't seem to be part of the spec. And the link provided
+                    //       doesn't have anything to do with sessionProperties.
                     // https://specs.walletconnect.com/2.0/specs/clients/sign/namespaces#13-chains-might-be-omitted-if-the-caip-2-is-defined-in-the-index
                     if let Some(SessionProperties { keys: Some(keys) }) = &session.session_properties {
                         if keys.iter().any(|k| k.chain_id == chain_id.id) {
@@ -538,13 +561,12 @@ impl WalletConnectCtxImpl {
     /// Validate and send update active chain to WC if needed.
     pub async fn validate_update_active_chain_id(
         &self,
-        session_topic: &str,
+        session_topic: &Topic,
         chain_id: &WcChainId,
     ) -> MmResult<(), WalletConnectError> {
-        let session_topic = session_topic.into();
         let session =
             self.session_manager
-                .get_session(&session_topic)
+                .get_session(session_topic)
                 .ok_or(MmError::new(WalletConnectError::SessionError(
                     "No active WalletConnect session found".to_string(),
                 )))?;
@@ -598,13 +620,12 @@ impl WalletConnectCtxImpl {
     /// Get available account for a given chain ID.
     pub fn get_account_and_properties_for_chain_id(
         &self,
-        session_topic: &str,
+        session_topic: &Topic,
         chain_id: &WcChainId,
     ) -> MmResult<(String, Option<SessionProperties>), WalletConnectError> {
-        let session_topic = session_topic.into();
         let session =
             self.session_manager
-                .get_session(&session_topic)
+                .get_session(session_topic)
                 .ok_or(MmError::new(WalletConnectError::SessionError(
                     "No active WalletConnect session found".to_string(),
                 )))?;
@@ -626,7 +647,7 @@ impl WalletConnectCtxImpl {
     /// https://specs.walletconnect.com/2.0/specs/clients/sign/session-events#session_request
     pub async fn send_session_request_and_wait<R>(
         &self,
-        session_topic: &str,
+        session_topic: &Topic,
         chain_id: &WcChainId,
         method: WcRequestMethods,
         params: serde_json::Value,
@@ -634,8 +655,7 @@ impl WalletConnectCtxImpl {
     where
         R: DeserializeOwned,
     {
-        let session_topic = session_topic.into();
-        self.session_manager.validate_session_exists(&session_topic)?;
+        self.session_manager.validate_session_exists(session_topic)?;
 
         let request = SessionRequestRequest {
             chain_id: chain_id.to_string(),
@@ -646,7 +666,7 @@ impl WalletConnectCtxImpl {
             },
         };
         let (rx, ttl) = self
-            .publish_request(&session_topic, RequestParams::SessionRequest(request))
+            .publish_request(session_topic, RequestParams::SessionRequest(request))
             .await?;
 
         let response = rx

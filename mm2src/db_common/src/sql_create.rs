@@ -1,8 +1,10 @@
 use crate::sql_constraint::SqlConstraint;
 use crate::sql_value::{FromQuoted, SqlValue};
 use crate::sqlite::StringError;
-use common::{write_safe,
-             write_safe::fmt::{WriteSafe, WriteSafeJoin}};
+use common::{
+    write_safe,
+    write_safe::fmt::{WriteSafe, WriteSafeJoin},
+};
 use rusqlite::{Connection, Error as SqlError, Result as SqlResult};
 use std::fmt;
 
@@ -17,7 +19,7 @@ pub enum SqlType {
 impl fmt::Display for SqlType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SqlType::Varchar(len) => write!(f, "VARCHAR({})", len),
+            SqlType::Varchar(len) => write!(f, "VARCHAR({len})"),
             SqlType::Integer => write!(f, "INTEGER"),
             SqlType::Text => write!(f, "TEXT"),
             SqlType::Real => write!(f, "REAL"),
@@ -89,7 +91,7 @@ impl fmt::Display for SqlColumn {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} {}", self.name, self.column_type)?;
         if let Some(ref default) = self.default {
-            write!(f, " DEFAULT {}", default)?;
+            write!(f, " DEFAULT {default}")?;
         }
         if self.not_null {
             write!(f, " NOT NULL")?;

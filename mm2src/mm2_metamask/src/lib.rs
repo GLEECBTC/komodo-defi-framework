@@ -1,6 +1,9 @@
-#[cfg(target_arch = "wasm32")] mod eip_1193_provider;
-#[cfg(target_arch = "wasm32")] mod metamask;
-#[cfg(target_arch = "wasm32")] mod metamask_error;
+#[cfg(target_arch = "wasm32")]
+mod eip_1193_provider;
+#[cfg(target_arch = "wasm32")]
+mod metamask;
+#[cfg(target_arch = "wasm32")]
+mod metamask_error;
 
 #[cfg(target_arch = "wasm32")]
 pub use eip_1193_provider::Eip1193Provider;

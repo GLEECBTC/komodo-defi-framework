@@ -8,7 +8,9 @@ pub fn de_none_if_empty<'de, D: Deserializer<'de>>(des: D) -> Result<Option<Stri
     struct Visitor;
     impl de::Visitor<'_> for Visitor {
         type Value = Option<String>;
-        fn expecting(&self, fm: &mut fmt::Formatter) -> fmt::Result { fm.write_str("Optional string") }
+        fn expecting(&self, fm: &mut fmt::Formatter) -> fmt::Result {
+            fm.write_str("Optional string")
+        }
 
         fn visit_none<E>(self) -> Result<Option<String>, E>
         where

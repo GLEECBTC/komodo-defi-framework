@@ -26,7 +26,9 @@ pub struct AddressVisitor;
 impl Visitor<'_> for AddressVisitor {
     type Value = LegacyAddress;
 
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result { formatter.write_str("an address") }
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("an address")
+    }
 
     fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
     where
@@ -85,7 +87,9 @@ mod tests {
     }
 
     impl TestStruct {
-        fn new(address: LegacyAddress) -> Self { TestStruct { address } }
+        fn new(address: LegacyAddress) -> Self {
+            TestStruct { address }
+        }
     }
 
     #[test]

@@ -1,30 +1,34 @@
 use crate::docker_tests::docker_tests_common::GETH_RPC_URL;
-use crate::docker_tests::eth_docker_tests::{erc20_coin_with_random_privkey, erc20_contract_checksum,
-                                            eth_coin_with_random_privkey, watchers_swap_contract};
+use crate::docker_tests::eth_docker_tests::{
+    erc20_coin_with_random_privkey, erc20_contract_checksum, eth_coin_with_random_privkey, watchers_swap_contract,
+};
 use crate::integration_tests_common::*;
 use crate::{generate_utxo_coin_with_privkey, generate_utxo_coin_with_random_privkey, random_secp256k1_secret};
 use coins::coin_errors::ValidatePaymentError;
 use coins::eth::{checksum_address, EthCoin};
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::utxo::{dhash160, UtxoCommonOps};
-use coins::{ConfirmPaymentInput, DexFee, FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoinEnum, RefundPaymentArgs,
-            RewardTarget, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SwapOps,
-            SwapTxTypeWithSecretHash, TestCoin, ValidateWatcherSpendInput, WatcherOps, WatcherSpendType,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, EARLY_CONFIRMATION_ERR_LOG,
-            INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_PAYMENT_STATE_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
-            INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG,
-            OLD_TRANSACTION_ERR_LOG};
+use coins::{
+    ConfirmPaymentInput, DexFee, FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoinEnum, RefundPaymentArgs, RewardTarget,
+    SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash,
+    TestCoin, ValidateWatcherSpendInput, WatcherOps, WatcherSpendType, WatcherValidatePaymentInput,
+    WatcherValidateTakerFeeInput, EARLY_CONFIRMATION_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG,
+    INVALID_PAYMENT_STATE_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG,
+    INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG, OLD_TRANSACTION_ERR_LOG,
+};
 use common::{block_on, block_on_f01, now_sec, wait_until_sec};
 use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
-use mm2_main::lp_swap::{generate_secret, get_payment_locktime, MAKER_PAYMENT_SENT_LOG, MAKER_PAYMENT_SPEND_FOUND_LOG,
-                        MAKER_PAYMENT_SPEND_SENT_LOG, REFUND_TEST_FAILURE_LOG, TAKER_PAYMENT_REFUND_SENT_LOG,
-                        WATCHER_MESSAGE_SENT_LOG};
+use mm2_main::lp_swap::{
+    generate_secret, get_payment_locktime, MAKER_PAYMENT_SENT_LOG, MAKER_PAYMENT_SPEND_FOUND_LOG,
+    MAKER_PAYMENT_SPEND_SENT_LOG, REFUND_TEST_FAILURE_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, WATCHER_MESSAGE_SENT_LOG,
+};
 use mm2_number::BigDecimal;
 use mm2_number::MmNumber;
-use mm2_test_helpers::for_tests::{enable_eth_coin, erc20_dev_conf, eth_dev_conf, eth_jst_testnet_conf, mm_dump,
-                                  my_balance, my_swap_status, mycoin1_conf, mycoin_conf, start_swaps,
-                                  wait_for_swaps_finish_and_check_status, MarketMakerIt, Mm2TestConf,
-                                  DEFAULT_RPC_PASSWORD};
+use mm2_test_helpers::for_tests::{
+    enable_eth_coin, erc20_dev_conf, eth_dev_conf, eth_jst_testnet_conf, mm_dump, my_balance, my_swap_status,
+    mycoin1_conf, mycoin_conf, start_swaps, wait_for_swaps_finish_and_check_status, MarketMakerIt, Mm2TestConf,
+    DEFAULT_RPC_PASSWORD,
+};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::WatcherConf;
 use mocktopus::mocking::*;
@@ -103,7 +107,7 @@ fn start_swaps_and_get_balances(
         mycoin1_conf(1000)
     ]);
 
-    let mut alice_conf = Mm2TestConf::seednode(&format!("0x{}", alice_privkey), &coins);
+    let mut alice_conf = Mm2TestConf::seednode(&format!("0x{alice_privkey}"), &coins);
     if let Some(locktime) = custom_locktime {
         alice_conf.conf["payment_locktime"] = locktime.into();
     }
@@ -117,7 +121,7 @@ fn start_swaps_and_get_balances(
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
 
-    let mut bob_conf = Mm2TestConf::light_node(&format!("0x{}", bob_privkey), &coins, &[&mm_alice.ip.to_string()]);
+    let mut bob_conf = Mm2TestConf::light_node(&format!("0x{bob_privkey}"), &coins, &[&mm_alice.ip.to_string()]);
     if let Some(locktime) = custom_locktime {
         bob_conf.conf["payment_locktime"] = locktime.into();
     }
@@ -167,7 +171,7 @@ fn start_swaps_and_get_balances(
     };
 
     let mut watcher_conf = Mm2TestConf::watcher_light_node(
-        &format!("0x{}", watcher_privkey),
+        &format!("0x{watcher_privkey}"),
         &coins,
         &[&mm_alice.ip.to_string()],
         watcher_conf,
@@ -289,7 +293,7 @@ fn run_taker_node(
     custom_locktime: Option<u64>,
 ) -> (MarketMakerIt, Mm2TestConf) {
     let privkey = hex::encode(random_secp256k1_secret());
-    let mut conf = Mm2TestConf::light_node(&format!("0x{}", privkey), coins, seednodes);
+    let mut conf = Mm2TestConf::light_node(&format!("0x{privkey}"), coins, seednodes);
     if let Some(locktime) = custom_locktime {
         conf.conf["payment_locktime"] = locktime.into();
     }
@@ -337,9 +341,9 @@ fn run_maker_node(
 ) -> MarketMakerIt {
     let privkey = hex::encode(random_secp256k1_secret());
     let mut conf = if seednodes.is_empty() {
-        Mm2TestConf::seednode(&format!("0x{}", privkey), coins)
+        Mm2TestConf::seednode(&format!("0x{privkey}"), coins)
     } else {
-        Mm2TestConf::light_node(&format!("0x{}", privkey), coins, seednodes)
+        Mm2TestConf::light_node(&format!("0x{privkey}"), coins, seednodes)
     };
     if let Some(locktime) = custom_locktime {
         conf.conf["payment_locktime"] = locktime.into();
@@ -370,7 +374,7 @@ fn run_watcher_node(
     custom_locktime: Option<u64>,
 ) -> MarketMakerIt {
     let privkey = hex::encode(random_secp256k1_secret());
-    let mut conf = Mm2TestConf::watcher_light_node(&format!("0x{}", privkey), coins, seednodes, watcher_conf).conf;
+    let mut conf = Mm2TestConf::watcher_light_node(&format!("0x{privkey}"), coins, seednodes, watcher_conf).conf;
     if let Some(locktime) = custom_locktime {
         conf["payment_locktime"] = locktime.into();
     }
@@ -1144,27 +1148,35 @@ fn test_two_watchers_spend_maker_payment_eth_erc20() {
 
     let watcher1_passphrase =
         String::from("also shoot benefit prefer juice shell thank unfair canal monkey style afraid");
-    let watcher1_conf =
-        Mm2TestConf::watcher_light_node(&watcher1_passphrase, &coins, &[&mm_alice.ip.to_string()], WatcherConf {
+    let watcher1_conf = Mm2TestConf::watcher_light_node(
+        &watcher1_passphrase,
+        &coins,
+        &[&mm_alice.ip.to_string()],
+        WatcherConf {
             wait_taker_payment: 0.,
             wait_maker_payment_spend_factor: 0.,
             refund_start_factor: 1.5,
             search_interval: 1.0,
-        })
-        .conf;
+        },
+    )
+    .conf;
     let mut mm_watcher1 = MarketMakerIt::start(watcher1_conf, DEFAULT_RPC_PASSWORD.to_string(), None).unwrap();
     let (_watcher_dump_log, _watcher_dump_dashboard) = mm_dump(&mm_watcher1.log_path);
 
     let watcher2_passphrase =
         String::from("also shoot benefit shell thank prefer juice unfair canal monkey style afraid");
-    let watcher2_conf =
-        Mm2TestConf::watcher_light_node(&watcher2_passphrase, &coins, &[&mm_alice.ip.to_string()], WatcherConf {
+    let watcher2_conf = Mm2TestConf::watcher_light_node(
+        &watcher2_passphrase,
+        &coins,
+        &[&mm_alice.ip.to_string()],
+        WatcherConf {
             wait_taker_payment: 0.,
             wait_maker_payment_spend_factor: 0.,
             refund_start_factor: 1.5,
             search_interval: 1.0,
-        })
-        .conf;
+        },
+    )
+    .conf;
     let mut mm_watcher2 = MarketMakerIt::start(watcher2_conf, DEFAULT_RPC_PASSWORD.to_string(), None).unwrap();
     let (_watcher_dump_log, _watcher_dump_dashboard) = mm_dump(&mm_watcher1.log_path);
 
@@ -1562,7 +1574,7 @@ fn test_watcher_validate_taker_payment_utxo() {
             secret_hash: secret_hash.to_vec(),
             wait_until: timeout,
             confirmations: 1,
-            maker_coin: MmCoinEnum::UtxoCoin(maker_coin.clone()),
+            maker_coin: MmCoinEnum::UtxoCoinVariant(maker_coin.clone()),
         }));
     assert!(validate_taker_payment_res.is_ok());
 
@@ -1575,7 +1587,7 @@ fn test_watcher_validate_taker_payment_utxo() {
         secret_hash: secret_hash.to_vec(),
         wait_until: timeout,
         confirmations: 1,
-        maker_coin: MmCoinEnum::UtxoCoin(maker_coin.clone()),
+        maker_coin: MmCoinEnum::UtxoCoinVariant(maker_coin.clone()),
     }))
     .unwrap_err()
     .into_inner();
@@ -1599,7 +1611,7 @@ fn test_watcher_validate_taker_payment_utxo() {
         secret_hash: wrong_secret_hash.to_vec(),
         wait_until: timeout,
         confirmations: 1,
-        maker_coin: MmCoinEnum::UtxoCoin(maker_coin.clone()),
+        maker_coin: MmCoinEnum::UtxoCoinVariant(maker_coin.clone()),
     }))
     .unwrap_err()
     .into_inner();
@@ -1647,7 +1659,7 @@ fn test_watcher_validate_taker_payment_utxo() {
         secret_hash: wrong_secret_hash.to_vec(),
         wait_until: timeout,
         confirmations: 1,
-        maker_coin: MmCoinEnum::UtxoCoin(maker_coin.clone()),
+        maker_coin: MmCoinEnum::UtxoCoinVariant(maker_coin.clone()),
     }))
     .unwrap_err()
     .into_inner();
@@ -1682,7 +1694,7 @@ fn test_watcher_validate_taker_payment_utxo() {
         secret_hash: secret_hash.to_vec(),
         wait_until: timeout,
         confirmations: 1,
-        maker_coin: MmCoinEnum::UtxoCoin(maker_coin.clone()),
+        maker_coin: MmCoinEnum::UtxoCoinVariant(maker_coin.clone()),
     }))
     .unwrap_err()
     .into_inner();
@@ -1761,7 +1773,7 @@ fn test_watcher_validate_taker_payment_eth() {
             secret_hash: secret_hash.to_vec(),
             wait_until: timeout,
             confirmations: 1,
-            maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
+            maker_coin: MmCoinEnum::EthCoinVariant(taker_coin.clone()),
         },
     ));
     assert!(validate_taker_payment_res.is_ok());
@@ -1776,7 +1788,7 @@ fn test_watcher_validate_taker_payment_eth() {
             secret_hash: secret_hash.to_vec(),
             wait_until: timeout,
             confirmations: 1,
-            maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
+            maker_coin: MmCoinEnum::EthCoinVariant(taker_coin.clone()),
         }),
     )
     .unwrap_err()
@@ -1816,7 +1828,7 @@ fn test_watcher_validate_taker_payment_eth() {
             secret_hash: secret_hash.to_vec(),
             wait_until: timeout,
             confirmations: 1,
-            maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
+            maker_coin: MmCoinEnum::EthCoinVariant(taker_coin.clone()),
         }),
     )
     .unwrap_err()
@@ -1844,7 +1856,7 @@ fn test_watcher_validate_taker_payment_eth() {
             secret_hash: wrong_secret_hash.to_vec(),
             wait_until: timeout,
             confirmations: 1,
-            maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
+            maker_coin: MmCoinEnum::EthCoinVariant(taker_coin.clone()),
         }),
     )
     .unwrap_err()
@@ -1892,7 +1904,7 @@ fn test_watcher_validate_taker_payment_eth() {
         secret_hash: wrong_secret_hash.to_vec(),
         wait_until: timeout,
         confirmations: 1,
-        maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
+        maker_coin: MmCoinEnum::EthCoinVariant(taker_coin.clone()),
     }))
     .unwrap_err()
     .into_inner();
@@ -1916,7 +1928,7 @@ fn test_watcher_validate_taker_payment_eth() {
         secret_hash: secret_hash.to_vec(),
         wait_until: timeout,
         confirmations: 1,
-        maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
+        maker_coin: MmCoinEnum::EthCoinVariant(taker_coin.clone()),
     }))
     .unwrap_err()
     .into_inner();
@@ -1997,7 +2009,7 @@ fn test_watcher_validate_taker_payment_erc20() {
             secret_hash: secret_hash.to_vec(),
             wait_until: timeout,
             confirmations: 1,
-            maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
+            maker_coin: MmCoinEnum::EthCoinVariant(taker_coin.clone()),
         }));
     assert!(validate_taker_payment_res.is_ok());
 
@@ -2010,7 +2022,7 @@ fn test_watcher_validate_taker_payment_erc20() {
         secret_hash: secret_hash.to_vec(),
         wait_until: timeout,
         confirmations: 1,
-        maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
+        maker_coin: MmCoinEnum::EthCoinVariant(taker_coin.clone()),
     }))
     .unwrap_err()
     .into_inner();
@@ -2048,7 +2060,7 @@ fn test_watcher_validate_taker_payment_erc20() {
         secret_hash: secret_hash.to_vec(),
         wait_until: timeout,
         confirmations: 1,
-        maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
+        maker_coin: MmCoinEnum::EthCoinVariant(taker_coin.clone()),
     }))
     .unwrap_err()
     .into_inner();
@@ -2074,7 +2086,7 @@ fn test_watcher_validate_taker_payment_erc20() {
         secret_hash: wrong_secret_hash.to_vec(),
         wait_until: timeout,
         confirmations: 1,
-        maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
+        maker_coin: MmCoinEnum::EthCoinVariant(taker_coin.clone()),
     }))
     .unwrap_err()
     .into_inner();
@@ -2121,7 +2133,7 @@ fn test_watcher_validate_taker_payment_erc20() {
         secret_hash: wrong_secret_hash.to_vec(),
         wait_until: timeout,
         confirmations: 1,
-        maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
+        maker_coin: MmCoinEnum::EthCoinVariant(taker_coin.clone()),
     }))
     .unwrap_err()
     .into_inner();
@@ -2145,7 +2157,7 @@ fn test_watcher_validate_taker_payment_erc20() {
         secret_hash: secret_hash.to_vec(),
         wait_until: timeout,
         confirmations: 1,
-        maker_coin: MmCoinEnum::EthCoin(taker_coin.clone()),
+        maker_coin: MmCoinEnum::EthCoinVariant(taker_coin.clone()),
     }))
     .unwrap_err()
     .into_inner();
@@ -3228,15 +3240,20 @@ fn test_watcher_reward() {
     let (_ctx, utxo_coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
     let eth_coin = eth_coin_with_random_privkey(watchers_swap_contract());
 
-    let watcher_reward =
-        block_on(eth_coin.get_taker_watcher_reward(&MmCoinEnum::EthCoin(eth_coin.clone()), None, None, None, timeout))
-            .unwrap();
+    let watcher_reward = block_on(eth_coin.get_taker_watcher_reward(
+        &MmCoinEnum::EthCoinVariant(eth_coin.clone()),
+        None,
+        None,
+        None,
+        timeout,
+    ))
+    .unwrap();
     assert!(!watcher_reward.is_exact_amount);
     assert!(matches!(watcher_reward.reward_target, RewardTarget::Contract));
     assert!(!watcher_reward.send_contract_reward_on_spend);
 
     let watcher_reward = block_on(eth_coin.get_taker_watcher_reward(
-        &MmCoinEnum::EthCoin(eth_coin.clone()),
+        &MmCoinEnum::EthCoinVariant(eth_coin.clone()),
         None,
         None,
         Some(BigDecimal::one()),
@@ -3249,7 +3266,7 @@ fn test_watcher_reward() {
     assert_eq!(watcher_reward.amount, BigDecimal::one());
 
     let watcher_reward = block_on(eth_coin.get_taker_watcher_reward(
-        &MmCoinEnum::UtxoCoin(utxo_coin.clone()),
+        &MmCoinEnum::UtxoCoinVariant(utxo_coin.clone()),
         None,
         None,
         None,
@@ -3261,7 +3278,7 @@ fn test_watcher_reward() {
     assert!(!watcher_reward.send_contract_reward_on_spend);
 
     let watcher_reward =
-        block_on(eth_coin.get_maker_watcher_reward(&MmCoinEnum::EthCoin(eth_coin.clone()), None, timeout))
+        block_on(eth_coin.get_maker_watcher_reward(&MmCoinEnum::EthCoinVariant(eth_coin.clone()), None, timeout))
             .unwrap()
             .unwrap();
     assert!(!watcher_reward.is_exact_amount);
@@ -3269,7 +3286,7 @@ fn test_watcher_reward() {
     assert!(watcher_reward.send_contract_reward_on_spend);
 
     let watcher_reward = block_on(eth_coin.get_maker_watcher_reward(
-        &MmCoinEnum::EthCoin(eth_coin.clone()),
+        &MmCoinEnum::EthCoinVariant(eth_coin.clone()),
         Some(BigDecimal::one()),
         timeout,
     ))
@@ -3281,7 +3298,7 @@ fn test_watcher_reward() {
     assert_eq!(watcher_reward.amount, BigDecimal::one());
 
     let watcher_reward =
-        block_on(eth_coin.get_maker_watcher_reward(&MmCoinEnum::UtxoCoin(utxo_coin.clone()), None, timeout))
+        block_on(eth_coin.get_maker_watcher_reward(&MmCoinEnum::UtxoCoinVariant(utxo_coin.clone()), None, timeout))
             .unwrap()
             .unwrap();
     assert!(!watcher_reward.is_exact_amount);
@@ -3289,7 +3306,7 @@ fn test_watcher_reward() {
     assert!(!watcher_reward.send_contract_reward_on_spend);
 
     let watcher_reward = block_on(utxo_coin.get_taker_watcher_reward(
-        &MmCoinEnum::EthCoin(eth_coin),
+        &MmCoinEnum::EthCoinVariant(eth_coin),
         Some(BigDecimal::from_str("0.01").unwrap()),
         Some(BigDecimal::from_str("1").unwrap()),
         None,
@@ -3301,6 +3318,7 @@ fn test_watcher_reward() {
     assert!(!watcher_reward.send_contract_reward_on_spend);
 
     let watcher_reward =
-        block_on(utxo_coin.get_maker_watcher_reward(&MmCoinEnum::UtxoCoin(utxo_coin.clone()), None, timeout)).unwrap();
+        block_on(utxo_coin.get_maker_watcher_reward(&MmCoinEnum::UtxoCoinVariant(utxo_coin.clone()), None, timeout))
+            .unwrap();
     assert!(watcher_reward.is_none());
 }

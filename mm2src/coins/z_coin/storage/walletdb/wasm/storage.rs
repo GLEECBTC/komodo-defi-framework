@@ -1,6 +1,7 @@
-use crate::z_coin::storage::walletdb::wasm::tables::{WalletDbAccountsTable, WalletDbBlocksTable,
-                                                     WalletDbReceivedNotesTable, WalletDbSaplingWitnessesTable,
-                                                     WalletDbSentNotesTable, WalletDbTransactionsTable};
+use crate::z_coin::storage::walletdb::wasm::tables::{
+    WalletDbAccountsTable, WalletDbBlocksTable, WalletDbReceivedNotesTable, WalletDbSaplingWitnessesTable,
+    WalletDbSentNotesTable, WalletDbTransactionsTable,
+};
 use crate::z_coin::storage::wasm::{to_spendable_note, SpendableNoteConstructor};
 use crate::z_coin::storage::ZcoinStorageRes;
 use crate::z_coin::z_coin_errors::ZcoinStorageError;
@@ -10,8 +11,10 @@ use async_trait::async_trait;
 use common::log::info;
 use ff::PrimeField;
 use mm2_core::mm_ctx::MmArc;
-use mm2_db::indexed_db::{ConstructibleDb, DbIdentifier, DbInstance, DbLocked, IndexedDb, IndexedDbBuilder,
-                         InitDbResult, MultiIndex, SharedDb};
+use mm2_db::indexed_db::{
+    ConstructibleDb, DbIdentifier, DbInstance, DbLocked, IndexedDb, IndexedDbBuilder, InitDbResult, MultiIndex,
+    SharedDb,
+};
 use mm2_err_handle::prelude::*;
 use mm2_number::num_bigint::ToBigInt;
 use mm2_number::BigInt;
@@ -21,8 +24,9 @@ use std::convert::TryFrom;
 use std::ops::Deref;
 use zcash_client_backend::address::RecipientAddress;
 use zcash_client_backend::data_api::{PrunedBlock, ReceivedTransaction, SentTransaction};
-use zcash_client_backend::encoding::{decode_extended_full_viewing_key, decode_payment_address,
-                                     encode_extended_full_viewing_key, encode_payment_address};
+use zcash_client_backend::encoding::{
+    decode_extended_full_viewing_key, decode_payment_address, encode_extended_full_viewing_key, encode_payment_address,
+};
 use zcash_client_backend::wallet::{AccountId, SpendableNote, WalletTx};
 use zcash_client_backend::DecryptedOutput;
 use zcash_extras::{NoteId, ShieldedOutput, WalletRead, WalletWrite};
@@ -100,7 +104,9 @@ impl WalletDbShared {
 pub struct WalletDbInner(pub IndexedDb);
 
 impl WalletDbInner {
-    pub fn get_inner(&self) -> &IndexedDb { &self.0 }
+    pub fn get_inner(&self) -> &IndexedDb {
+        &self.0
+    }
 }
 
 #[async_trait]
@@ -1242,21 +1248,23 @@ impl WalletRead for WalletIndexedDb {
 
         let mut nullifiers = vec![];
         for (_, note) in maybe_notes {
-            let matching_tx = maybe_txs.iter().find(|(id_tx, _tx)| id_tx.to_bigint() == note.spent);
-
-            if let Some((_, tx)) = matching_tx {
-                if tx.block.is_some() {
-                    nullifiers.push((
-                        AccountId(
-                            note.account
-                                .to_u32()
-                                .ok_or_else(|| ZcoinStorageError::GetFromStorageError("Invalid amount".to_string()))?,
-                        ),
-                        Nullifier::from_slice(&note.nf.clone().ok_or_else(|| {
-                            ZcoinStorageError::GetFromStorageError("Error while putting tx_meta".to_string())
-                        })?)
-                        .unwrap(),
-                    ));
+            let maybe_spending_tx = maybe_txs.iter().find(|(id_tx, _tx)| id_tx.to_bigint() == note.spent);
+            let add_nullifier = match maybe_spending_tx {
+                Some((_, tx)) if tx.block.is_none() => true,
+                None => true,
+                _ => false,
+            };
+            if add_nullifier {
+                if let Some(ref nf_bytes) = note.nf {
+                    let account_id = AccountId(
+                        note.account
+                            .to_u32()
+                            .ok_or_else(|| ZcoinStorageError::GetFromStorageError("Invalid account id".to_string()))?,
+                    );
+                    let nf = Nullifier::from_slice(nf_bytes).map_err(|e| {
+                        ZcoinStorageError::GetFromStorageError(format!("Invalid nullifier bytes error: {}", e))
+                    })?;
+                    nullifiers.push((account_id, nf));
                 }
             }
         }
@@ -1311,7 +1319,8 @@ impl WalletRead for WalletIndexedDb {
             .cursor_builder()
             .only("ticker", &self.ticker)
             .map_mm_err()?
-            .bound("block", 0u32, u32::from(anchor_height + 1))
+            .only("block", u32::from(anchor_height))
+            .map_mm_err()?
             .open_cursor(WalletDbSaplingWitnessesTable::TICKER_BLOCK_INDEX)
             .await
             .map_mm_err()?
@@ -1604,7 +1613,9 @@ impl WalletRead for DataConnStmtCacheWasm {
         self.0.get_balance_at(account, anchor_height).await
     }
 
-    async fn get_memo(&self, id_note: Self::NoteRef) -> Result<Memo, Self::Error> { self.0.get_memo(id_note).await }
+    async fn get_memo(&self, id_note: Self::NoteRef) -> Result<Memo, Self::Error> {
+        self.0.get_memo(id_note).await
+    }
 
     async fn get_commitment_tree(
         &self,
@@ -1620,7 +1631,9 @@ impl WalletRead for DataConnStmtCacheWasm {
         self.0.get_witnesses(block_height).await
     }
 
-    async fn get_nullifiers(&self) -> Result<Vec<(AccountId, Nullifier)>, Self::Error> { self.0.get_nullifiers().await }
+    async fn get_nullifiers(&self) -> Result<Vec<(AccountId, Nullifier)>, Self::Error> {
+        self.0.get_nullifiers().await
+    }
 
     async fn get_spendable_notes(
         &self,

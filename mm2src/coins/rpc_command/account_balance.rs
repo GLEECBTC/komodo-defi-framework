@@ -63,13 +63,13 @@ pub async fn account_balance(
     req: HDAccountBalanceRequest,
 ) -> MmResult<HDAccountBalanceResponseEnum, HDAccountBalanceRpcError> {
     match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
-        MmCoinEnum::UtxoCoin(utxo) => Ok(HDAccountBalanceResponseEnum::Map(
+        MmCoinEnum::UtxoCoinVariant(utxo) => Ok(HDAccountBalanceResponseEnum::Map(
             utxo.account_balance_rpc(req.params).await?,
         )),
-        MmCoinEnum::QtumCoin(qtum) => Ok(HDAccountBalanceResponseEnum::Map(
+        MmCoinEnum::QtumCoinVariant(qtum) => Ok(HDAccountBalanceResponseEnum::Map(
             qtum.account_balance_rpc(req.params).await?,
         )),
-        MmCoinEnum::EthCoin(eth) => Ok(HDAccountBalanceResponseEnum::Map(
+        MmCoinEnum::EthCoinVariant(eth) => Ok(HDAccountBalanceResponseEnum::Map(
             eth.account_balance_rpc(req.params).await?,
         )),
         _ => MmError::err(HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet),

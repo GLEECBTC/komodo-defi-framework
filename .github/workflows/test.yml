@@ -25,8 +25,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
-          rustup default nightly-2025-01-03
+          rustup toolchain install stable --no-self-update --profile=minimal
+          rustup default stable
 
       - name: Install build deps
         uses: ./.github/actions/deps-install
@@ -53,8 +53,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
-          rustup default nightly-2025-01-03
+          rustup toolchain install stable --no-self-update --profile=minimal
+          rustup default stable
 
       - name: Install build deps
         uses: ./.github/actions/deps-install
@@ -81,8 +81,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
-          rustup default nightly-2025-01-03
+          rustup toolchain install stable --no-self-update --profile=minimal
+          rustup default stable
 
       - name: Install build deps
         uses: ./.github/actions/deps-install
@@ -109,8 +109,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
-          rustup default nightly-2025-01-03
+          rustup toolchain install stable --no-self-update --profile=minimal
+          rustup default stable
 
       - name: Install build deps
         uses: ./.github/actions/deps-install
@@ -122,7 +122,7 @@ jobs:
 
       - name: Test
         run: |
-          wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/0adeeabdd484ef40539d1275c6a765f5c530ea79/zcutil/fetch-params-alt.sh | bash
+          wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/635112d590618165a152dfa0f31e95a9be39a8f6/zcutil/fetch-params-alt.sh | bash
           cargo test --test 'mm2_tests_main' --no-fail-fast
 
   mac-x86-64-kdf-integration:
@@ -138,8 +138,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
-          rustup default nightly-2025-01-03
+          rustup toolchain install stable --no-self-update --profile=minimal
+          rustup default stable
 
       - name: Install build deps
         uses: ./.github/actions/deps-install
@@ -154,7 +154,7 @@ jobs:
 
       - name: Test
         run: |
-          wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/0adeeabdd484ef40539d1275c6a765f5c530ea79/zcutil/fetch-params-alt.sh | bash
+          wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/635112d590618165a152dfa0f31e95a9be39a8f6/zcutil/fetch-params-alt.sh | bash
           cargo test --test 'mm2_tests_main' --no-fail-fast
 
   win-x86-64-kdf-integration:
@@ -170,8 +170,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
-          rustup default nightly-2025-01-03
+          rustup toolchain install stable --no-self-update --profile=minimal
+          rustup default stable
 
       - name: Install build deps
         uses: ./.github/actions/deps-install
@@ -190,7 +190,7 @@ jobs:
 
       - name: Test
         run: |
-          Invoke-WebRequest -Uri https://raw.githubusercontent.com/KomodoPlatform/komodo/0adeeabdd484ef40539d1275c6a765f5c530ea79/zcutil/fetch-params-alt.bat -OutFile \cmd.bat && \cmd.bat
+          Invoke-WebRequest -Uri https://raw.githubusercontent.com/KomodoPlatform/komodo/635112d590618165a152dfa0f31e95a9be39a8f6/zcutil/fetch-params-alt.bat -OutFile \cmd.bat && \cmd.bat
           cargo test --test 'mm2_tests_main' --no-fail-fast
 
   docker-tests:
@@ -206,8 +206,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
-          rustup default nightly-2025-01-03
+          rustup toolchain install stable --no-self-update --profile=minimal
+          rustup default stable
 
       - name: Install build deps
         uses: ./.github/actions/deps-install
@@ -235,8 +235,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2025-01-03 --no-self-update --profile=minimal
-          rustup default nightly-2025-01-03
+          rustup toolchain install stable --no-self-update --profile=minimal
+          rustup default stable
           rustup target add wasm32-unknown-unknown
 
       - name: Install build deps

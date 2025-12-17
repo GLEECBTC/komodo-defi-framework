@@ -76,15 +76,21 @@ pub fn keccak256(input: &[u8]) -> H256 {
 
 /// Double Keccak-256
 #[inline]
-pub fn dkeccak256(input: &[u8]) -> H256 { keccak256(&*keccak256(input)) }
+pub fn dkeccak256(input: &[u8]) -> H256 {
+    keccak256(&*keccak256(input))
+}
 
 /// SHA-256 and RIPEMD160
 #[inline]
-pub fn dhash160(input: &[u8]) -> H160 { ripemd160(&*sha256(input)) }
+pub fn dhash160(input: &[u8]) -> H160 {
+    ripemd160(&*sha256(input))
+}
 
 /// Double SHA-256
 #[inline]
-pub fn dhash256(input: &[u8]) -> H256 { sha256(&*sha256(input)) }
+pub fn dhash256(input: &[u8]) -> H256 {
+    sha256(&*sha256(input))
+}
 
 /// SipHash-2-4
 #[inline]
@@ -96,7 +102,9 @@ pub fn siphash24(key0: u64, key1: u64, input: &[u8]) -> u64 {
 
 /// Double Groestl-512
 #[inline]
-pub fn dgroestl512(input: &[u8]) -> H512 { groestl512(&*groestl512(input)) }
+pub fn dgroestl512(input: &[u8]) -> H512 {
+    groestl512(&*groestl512(input))
+}
 
 /// Data checksum
 #[inline]
@@ -108,6 +116,20 @@ pub fn checksum(data: &[u8], sum_type: &ChecksumType) -> H32 {
         ChecksumType::KECCAK256 => result.copy_from_slice(&keccak256(data)[0..4]),
     }
     result
+}
+
+/// Hash message for signature using Bitcoin's message signing format.
+/// sha256(sha256(PREFIX_LENGTH + PREFIX + MESSAGE_LENGTH + MESSAGE))
+pub fn sign_message_hash(sign_message_prefix: &str, message: &str) -> [u8; 32] {
+    use serialization::{CompactInteger, Serializable, Stream};
+    let mut stream = Stream::new();
+    let prefix_len = CompactInteger::from(sign_message_prefix.len());
+    prefix_len.serialize(&mut stream);
+    stream.append_slice(sign_message_prefix.as_bytes());
+    let msg_len = CompactInteger::from(message.len());
+    msg_len.serialize(&mut stream);
+    stream.append_slice(message.as_bytes());
+    dhash256(&stream.out()).take()
 }
 
 #[cfg(test)]

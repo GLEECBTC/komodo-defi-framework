@@ -42,4 +42,6 @@ pub struct TronFeeParams {
 #[expect(dead_code)]
 // Helper function to convert TRX to SUN using U256 type
 // Returns None if multiplication would overflow
-fn trx_to_sun_u256(trx: u64) -> Option<U256> { trx.checked_mul(ONE_TRX).map(U256::from) }
+fn trx_to_sun_u256(trx: u64) -> Option<U256> {
+    trx.checked_mul(ONE_TRX).map(U256::from)
+}

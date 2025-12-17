@@ -4,21 +4,23 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use uuid::Uuid;
 
-#[cfg(target_arch = "wasm32")] use common::now_sec;
+#[cfg(target_arch = "wasm32")]
+use common::now_sec;
 #[cfg(not(target_arch = "wasm32"))]
 pub use native_lock::SwapLock;
-#[cfg(target_arch = "wasm32")] pub use wasm_lock::SwapLock;
+#[cfg(target_arch = "wasm32")]
+pub use wasm_lock::SwapLock;
 
 pub type SwapLockResult<T> = Result<T, MmError<SwapLockError>>;
 
 #[derive(Debug, Display)]
 pub enum SwapLockError {
-    #[display(fmt = "Error reading timestamp: {}", _0)]
+    #[display(fmt = "Error reading timestamp: {_0}")]
     ErrorReadingTimestamp(String),
-    #[display(fmt = "Error writing timestamp: {}", _0)]
+    #[display(fmt = "Error writing timestamp: {_0}")]
     ErrorWritingTimestamp(String),
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     InternalError(String),
 }
 
@@ -39,11 +41,11 @@ mod native_lock {
         fn from(e: FileLockError) -> Self {
             match e {
                 FileLockError::ErrorReadingTimestamp { path, error } => {
-                    SwapLockError::ErrorReadingTimestamp(format!("Path: {:?}, Error: {}", path, error))
+                    SwapLockError::ErrorReadingTimestamp(format!("Path: {path:?}, Error: {error}"))
                 },
                 FileLockError::ErrorWritingTimestamp { path, error }
                 | FileLockError::ErrorCreatingLockFile { path, error } => {
-                    SwapLockError::ErrorWritingTimestamp(format!("Path: {:?}, Error: {}", path, error))
+                    SwapLockError::ErrorWritingTimestamp(format!("Path: {path:?}, Error: {error}"))
                 },
             }
         }
@@ -57,19 +59,21 @@ mod native_lock {
     impl SwapLockOps for SwapLock {
         async fn lock(ctx: &MmArc, swap_uuid: Uuid, ttl_sec: f64) -> SwapLockResult<Option<SwapLock>> {
             let lock_path = if cfg!(feature = "new-db-arch") {
-                ctx.global_dir().join("swap_locks").join(format!("{}.lock", swap_uuid))
+                ctx.global_dir().join("swap_locks").join(format!("{swap_uuid}.lock"))
             } else {
                 ctx.global_dir()
                     .join("SWAPS")
                     .join("MY")
-                    .join(format!("{}.lock", swap_uuid))
+                    .join(format!("{swap_uuid}.lock"))
             };
             let file_lock = some_or_return_ok_none!(FileLock::lock(lock_path, ttl_sec).map_mm_err()?);
 
             Ok(Some(SwapLock { file_lock }))
         }
 
-        async fn touch(&self) -> SwapLockResult<()> { Ok(self.file_lock.touch().map_mm_err()?) }
+        async fn touch(&self) -> SwapLockResult<()> {
+            Ok(self.file_lock.touch().map_mm_err()?)
+        }
     }
 }
 
@@ -106,7 +110,9 @@ mod wasm_lock {
     }
 
     impl From<InitDbError> for SwapLockError {
-        fn from(e: InitDbError) -> Self { SwapLockError::InternalError(e.to_string()) }
+        fn from(e: InitDbError) -> Self {
+            SwapLockError::InternalError(e.to_string())
+        }
     }
 
     pub struct SwapLock {

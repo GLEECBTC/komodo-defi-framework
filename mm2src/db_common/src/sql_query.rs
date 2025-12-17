@@ -1,7 +1,9 @@
 use crate::sql_condition::SqlCondition;
 use crate::sql_value::{SqlValue, SqlValueToString};
-use crate::sqlite::{query_single_row, validate_ident, validate_table_name, OwnedSqlParam, OwnedSqlParams,
-                    SqlParamsBuilder, StringError, ToValidSqlIdent, ToValidSqlTable};
+use crate::sqlite::{
+    query_single_row, validate_ident, validate_table_name, OwnedSqlParam, OwnedSqlParams, SqlParamsBuilder,
+    StringError, ToValidSqlIdent, ToValidSqlTable,
+};
 use log::debug;
 use rusqlite::{params_from_iter, Connection, Error as SqlError, Result as SqlResult, Row};
 use sql_builder::SqlBuilder;
@@ -37,7 +39,7 @@ impl<'a> SqlQuery<'a> {
         validate_table_name(alias)?;
         Ok(SqlQuery {
             conn,
-            sql_builder: SqlBuilder::select_from(format!("{} AS {}", table, alias)),
+            sql_builder: SqlBuilder::select_from(format!("{table} AS {alias}")),
             params: SqlParamsBuilder::default(),
             ordering: Vec::default(),
         })
@@ -76,7 +78,7 @@ impl<'a> SqlQuery<'a> {
     #[inline]
     pub fn count_distinct<S: ToValidSqlIdent>(&mut self, field: S) -> SqlResult<&mut Self> {
         let field = field.to_valid_sql_ident()?;
-        self.sql_builder.count(format!("DISTINCT {}", field));
+        self.sql_builder.count(format!("DISTINCT {field}"));
         Ok(self)
     }
 
@@ -196,11 +198,15 @@ impl<'a> SqlQuery<'a> {
 
     /// Returns an SQL subquery that can be used in [`SqlQuery::select_from_subquery`].
     #[inline]
-    pub fn subquery(self) -> SqlSubquery<'a> { SqlSubquery(self) }
+    pub fn subquery(self) -> SqlSubquery<'a> {
+        SqlSubquery(self)
+    }
 
     /// Returns the reference to the specified SQL parameters.
     #[inline]
-    pub fn params(&self) -> &OwnedSqlParams { self.params.params() }
+    pub fn params(&self) -> &OwnedSqlParams {
+        self.params.params()
+    }
 
     /// # Usage
     ///
@@ -315,7 +321,7 @@ impl<'a> SqlQuery<'a> {
             .join(", ");
         // Query the number of the row with the specified `order_by` ordering.
         self.sql_builder
-            .field(format!("ROW_NUMBER() OVER (ORDER BY {}) AS {}", order_by, alias));
+            .field(format!("ROW_NUMBER() OVER (ORDER BY {order_by}) AS {alias}"));
         Ok(self)
     }
 
@@ -330,7 +336,7 @@ impl<'a> SqlQuery<'a> {
         validate_table_name(alias)?;
         Ok(SqlQuery {
             conn,
-            sql_builder: SqlBuilder::select_from(format!("({}) AS {}", union_sql, alias)),
+            sql_builder: SqlBuilder::select_from(format!("({union_sql}) AS {alias}")),
             params: SqlParamsBuilder::default(),
             ordering: Vec::default(),
         })
@@ -349,9 +355,13 @@ impl<'a> SqlQuery<'a> {
 /// - [`SqlQuery::or_where_in_quoted`]
 /// - [`SqlQuery::or_where_in_params`]
 impl SqlCondition for SqlQuery<'_> {
-    fn sql_builder(&mut self) -> &mut SqlBuilder { &mut self.sql_builder }
+    fn sql_builder(&mut self) -> &mut SqlBuilder {
+        &mut self.sql_builder
+    }
 
-    fn sql_params(&mut self) -> &mut SqlParamsBuilder { &mut self.params }
+    fn sql_params(&mut self) -> &mut SqlParamsBuilder {
+        &mut self.params
+    }
 }
 
 /// An instance of this structure is returned by [`SqlQuery::subquery`].
@@ -366,8 +376,8 @@ enum SqlOrdering {
 impl SqlOrdering {
     fn to_sql(&self) -> String {
         match self {
-            SqlOrdering::Asc(column) => format!("{} ASC", column),
-            SqlOrdering::Desc(column) => format!("{} DESC", column),
+            SqlOrdering::Asc(column) => format!("{column} ASC"),
+            SqlOrdering::Desc(column) => format!("{column} DESC"),
         }
     }
 }

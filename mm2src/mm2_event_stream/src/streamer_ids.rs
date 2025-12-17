@@ -6,6 +6,8 @@ const NETWORK: &str = "NETWORK";
 const HEARTBEAT: &str = "HEARTBEAT";
 const SWAP_STATUS: &str = "SWAP_STATUS";
 const ORDER_STATUS: &str = "ORDER_STATUS";
+#[cfg(not(any(target_arch = "wasm32", target_os = "windows")))]
+const SHUTDOWN_SIGNAL: &str = "SHUTDOWN_SIGNAL";
 
 const TASK_PREFIX: &str = "TASK:";
 const BALANCE_PREFIX: &str = "BALANCE:";
@@ -44,23 +46,27 @@ pub enum StreamerId {
     ForTesting {
         test_streamer: String,
     },
+    #[cfg(not(any(target_arch = "wasm32", target_os = "windows")))]
+    ShutdownSignal,
 }
 
 impl fmt::Display for StreamerId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            StreamerId::Network => write!(f, "{}", NETWORK),
-            StreamerId::Heartbeat => write!(f, "{}", HEARTBEAT),
-            StreamerId::SwapStatus => write!(f, "{}", SWAP_STATUS),
-            StreamerId::OrderStatus => write!(f, "{}", ORDER_STATUS),
-            StreamerId::Task { task_id } => write!(f, "{}{}", TASK_PREFIX, task_id),
-            StreamerId::Balance { coin } => write!(f, "{}{}", BALANCE_PREFIX, coin),
-            StreamerId::TxHistory { coin } => write!(f, "{}{}", TX_HISTORY_PREFIX, coin),
-            StreamerId::FeeEstimation { coin } => write!(f, "{}{}", FEE_ESTIMATION_PREFIX, coin),
-            StreamerId::DataNeeded { data_type } => write!(f, "{}{}", DATA_NEEDED_PREFIX, data_type),
-            StreamerId::OrderbookUpdate { topic } => write!(f, "{}{}", ORDERBOOK_UPDATE_PREFIX, topic),
+            StreamerId::Network => write!(f, "{NETWORK}"),
+            StreamerId::Heartbeat => write!(f, "{HEARTBEAT}"),
+            StreamerId::SwapStatus => write!(f, "{SWAP_STATUS}"),
+            StreamerId::OrderStatus => write!(f, "{ORDER_STATUS}"),
+            #[cfg(not(any(target_arch = "wasm32", target_os = "windows")))]
+            StreamerId::ShutdownSignal => write!(f, "{SHUTDOWN_SIGNAL}"),
+            StreamerId::Task { task_id } => write!(f, "{TASK_PREFIX}{task_id}"),
+            StreamerId::Balance { coin } => write!(f, "{BALANCE_PREFIX}{coin}"),
+            StreamerId::TxHistory { coin } => write!(f, "{TX_HISTORY_PREFIX}{coin}"),
+            StreamerId::FeeEstimation { coin } => write!(f, "{FEE_ESTIMATION_PREFIX}{coin}"),
+            StreamerId::DataNeeded { data_type } => write!(f, "{DATA_NEEDED_PREFIX}{data_type}"),
+            StreamerId::OrderbookUpdate { topic } => write!(f, "{ORDERBOOK_UPDATE_PREFIX}{topic}"),
             #[cfg(any(test, target_arch = "wasm32"))]
-            StreamerId::ForTesting { test_streamer } => write!(f, "{}{}", FOR_TESTING_PREFIX, test_streamer),
+            StreamerId::ForTesting { test_streamer } => write!(f, "{FOR_TESTING_PREFIX}{test_streamer}"),
         }
     }
 }
@@ -97,6 +103,8 @@ impl<'de> Deserialize<'de> for StreamerId {
                     HEARTBEAT => Ok(StreamerId::Heartbeat),
                     SWAP_STATUS => Ok(StreamerId::SwapStatus),
                     ORDER_STATUS => Ok(StreamerId::OrderStatus),
+                    #[cfg(not(any(target_arch = "wasm32", target_os = "windows")))]
+                    SHUTDOWN_SIGNAL => Ok(StreamerId::ShutdownSignal),
                     v if v.starts_with(TASK_PREFIX) => Ok(StreamerId::Task {
                         task_id: v[TASK_PREFIX.len()..].parse().map_err(de::Error::custom)?,
                     }),
@@ -119,7 +127,7 @@ impl<'de> Deserialize<'de> for StreamerId {
                     v if v.starts_with(FOR_TESTING_PREFIX) => Ok(StreamerId::ForTesting {
                         test_streamer: v[FOR_TESTING_PREFIX.len()..].to_string(),
                     }),
-                    _ => Err(de::Error::custom(format!("Invalid StreamerId: {}", value))),
+                    _ => Err(de::Error::custom(format!("Invalid StreamerId: {value}"))),
                 }
             }
         }

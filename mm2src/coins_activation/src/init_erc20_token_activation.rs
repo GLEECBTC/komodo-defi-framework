@@ -1,7 +1,9 @@
 use crate::context::CoinsActivationContext;
-use crate::init_token::{token_xpub_extractor_rpc_statuses, InitTokenActivationOps, InitTokenActivationResult,
-                        InitTokenAwaitingStatus, InitTokenError, InitTokenInProgressStatus, InitTokenTaskHandleShared,
-                        InitTokenTaskManagerShared, InitTokenUserAction};
+use crate::init_token::{
+    token_xpub_extractor_rpc_statuses, InitTokenActivationOps, InitTokenActivationResult, InitTokenAwaitingStatus,
+    InitTokenError, InitTokenInProgressStatus, InitTokenTaskHandleShared, InitTokenTaskManagerShared,
+    InitTokenUserAction,
+};
 use async_trait::async_trait;
 use coins::coin_balance::{EnableCoinBalanceError, EnableCoinBalanceOps};
 use coins::eth::v2_activation::{Erc20Protocol, EthTokenActivationError, InitErc20TokenActivationRequest};
@@ -25,22 +27,30 @@ pub type Erc20TokenTaskManagerShared = InitTokenTaskManagerShared<EthCoin>;
 #[derive(Clone, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum InitErc20Error {
-    #[display(fmt = "{}", _0)]
+    #[display(fmt = "{_0}")]
     HwError(HwRpcError),
-    #[display(fmt = "Initialization task has timed out {:?}", duration)]
-    TaskTimedOut { duration: Duration },
-    #[display(fmt = "Token {} is activated already", ticker)]
-    TokenIsAlreadyActivated { ticker: String },
-    #[display(fmt = "Error on  token {} creation: {}", ticker, error)]
-    TokenCreationError { ticker: String, error: String },
-    #[display(fmt = "Could not fetch balance: {}", _0)]
+    #[display(fmt = "Initialization task has timed out {duration:?}")]
+    TaskTimedOut {
+        duration: Duration,
+    },
+    #[display(fmt = "Token {ticker} is activated already")]
+    TokenIsAlreadyActivated {
+        ticker: String,
+    },
+    #[display(fmt = "Error on  token {ticker} creation: {error}")]
+    TokenCreationError {
+        ticker: String,
+        error: String,
+    },
+    #[display(fmt = "Could not fetch balance: {_0}")]
     CouldNotFetchBalance(String),
-    #[display(fmt = "Transport error: {}", _0)]
+    #[display(fmt = "Transport error: {_0}")]
     Transport(String),
-    #[display(fmt = "Internal error: {}", _0)]
+    #[display(fmt = "Internal error: {_0}")]
     Internal(String),
-    #[display(fmt = "Custom token error: {}", _0)]
+    #[display(fmt = "Custom token error: {_0}")]
     CustomTokenError(CustomTokenError),
+    PlatformCoinMismatch,
 }
 
 impl From<InitErc20Error> for InitTokenError {
@@ -58,6 +68,7 @@ impl From<InitErc20Error> for InitTokenError {
             InitErc20Error::Transport(transport) => InitTokenError::Transport(transport),
             InitErc20Error::Internal(internal) => InitTokenError::Internal(internal),
             InitErc20Error::CustomTokenError(error) => InitTokenError::CustomTokenError(error),
+            InitErc20Error::PlatformCoinMismatch => InitTokenError::PlatformCoinMismatch,
         }
     }
 }
@@ -73,6 +84,7 @@ impl From<EthTokenActivationError> for InitErc20Error {
             | EthTokenActivationError::InvalidPayload(_)
             | EthTokenActivationError::Transport(_) => InitErc20Error::Transport(e.to_string()),
             EthTokenActivationError::CustomTokenError(e) => InitErc20Error::CustomTokenError(e),
+            EthTokenActivationError::PlatformCoinMismatch => InitErc20Error::PlatformCoinMismatch,
         }
     }
 }
@@ -196,7 +208,7 @@ impl InitTokenActivationOps for EthCoin {
         Ok(InitTokenActivationResult {
             ticker,
             platform_coin: self.platform_ticker().to_owned(),
-            token_contract_address: format!("{:#02x}", token_contract_address),
+            token_contract_address: format!("{token_contract_address:#02x}"),
             current_block,
             required_confirmations: self.required_confirmations(),
             wallet_balance,

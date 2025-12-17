@@ -52,11 +52,17 @@ impl StreamerInfo {
         }
     }
 
-    fn add_client(&mut self, client_id: u64) { self.clients.insert(client_id); }
+    fn add_client(&mut self, client_id: u64) {
+        self.clients.insert(client_id);
+    }
 
-    fn remove_client(&mut self, client_id: &u64) { self.clients.remove(client_id); }
+    fn remove_client(&mut self, client_id: &u64) {
+        self.clients.remove(client_id);
+    }
 
-    fn is_down(&self) -> bool { self.shutdown.is_canceled() }
+    fn is_down(&self) -> bool {
+        self.shutdown.is_canceled()
+    }
 }
 
 #[derive(Debug)]
@@ -80,11 +86,17 @@ impl ClientInfo {
         }
     }
 
-    fn add_streamer(&mut self, streamer_id: StreamerId) { self.listening_to.insert(streamer_id); }
+    fn add_streamer(&mut self, streamer_id: StreamerId) {
+        self.listening_to.insert(streamer_id);
+    }
 
-    fn remove_streamer(&mut self, streamer_id: &StreamerId) { self.listening_to.remove(streamer_id); }
+    fn remove_streamer(&mut self, streamer_id: &StreamerId) {
+        self.listening_to.remove(streamer_id);
+    }
 
-    fn listens_to(&self, streamer_id: &StreamerId) -> bool { self.listening_to.contains(streamer_id) }
+    fn listens_to(&self, streamer_id: &StreamerId) -> bool {
+        self.listening_to.contains(streamer_id)
+    }
 
     fn send_event(&self, event: Arc<Event>) {
         // Only `try_send` here. If the channel is full (client is slow), the message
@@ -107,10 +119,14 @@ pub struct StreamingManager(Arc<RwLock<StreamingManagerInner>>);
 
 impl StreamingManager {
     /// Returns a read guard over the streaming manager.
-    fn read(&self) -> RwLockReadGuard<StreamingManagerInner> { self.0.read() }
+    fn read(&self) -> RwLockReadGuard<'_, StreamingManagerInner> {
+        self.0.read()
+    }
 
     /// Returns a write guard over the streaming manager.
-    fn write(&self) -> RwLockWriteGuard<StreamingManagerInner> { self.0.write() }
+    fn write(&self) -> RwLockWriteGuard<'_, StreamingManagerInner> {
+        self.0.write()
+    }
 
     /// Spawns and adds a new streamer `streamer` to the manager.
     pub async fn add(
@@ -344,12 +360,16 @@ pub struct ClientHandle {
 /// Deref the handle to the receiver inside for ease of use.
 impl Deref for ClientHandle {
     type Target = mpsc::Receiver<Arc<Event>>;
-    fn deref(&self) -> &Self::Target { &self.rx }
+    fn deref(&self) -> &Self::Target {
+        &self.rx
+    }
 }
 
 /// Also DerefMut since the receiver inside is mutated when consumed.
 impl DerefMut for ClientHandle {
-    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.rx }
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.rx
+    }
 }
 
 #[cfg(any(test, target_arch = "wasm32"))]
@@ -471,7 +491,7 @@ mod tests {
 
         // We should be hooked now. try to receive some events from the streamer.
         for i in 1..=3 {
-            let msg = format!("send{}", i);
+            let msg = format!("send{i}");
             manager.send(&streamer_id, msg.clone()).unwrap();
             // Wait for a little bit to make sure the streamer received the data we sent.
             Timer::sleep(0.1).await;

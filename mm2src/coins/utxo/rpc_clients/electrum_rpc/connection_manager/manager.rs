@@ -50,7 +50,7 @@ type ID = u32;
 pub enum ConnectionManagerErr {
     #[display(fmt = "Unknown server address")]
     UnknownAddress,
-    #[display(fmt = "Failed to connect to the server due to {:?}", _0)]
+    #[display(fmt = "Failed to connect to the server due to {_0:?}")]
     ConnectingError(ElectrumConnectionErr),
     #[display(fmt = "No client found, connection manager isn't initialized properly")]
     NoClient,
@@ -177,7 +177,9 @@ impl ConnectionManager {
     }
 
     /// Returns all the server addresses.
-    pub fn get_all_server_addresses(&self) -> Vec<String> { self.read_connections().keys().cloned().collect() }
+    pub fn get_all_server_addresses(&self) -> Vec<String> {
+        self.read_connections().keys().cloned().collect()
+    }
 
     /// Returns all the connections.
     pub fn get_all_connections(&self) -> Vec<Arc<ElectrumConnection>> {
@@ -219,7 +221,9 @@ impl ConnectionManager {
     }
 
     /// Returns a boolean `true` if the connection pool is empty, `false` otherwise.
-    pub fn is_connections_pool_empty(&self) -> bool { self.read_connections().is_empty() }
+    pub fn is_connections_pool_empty(&self) -> bool {
+        self.read_connections().is_empty()
+    }
 
     /// Subscribe the list of addresses to our active connections.
     ///
@@ -375,7 +379,7 @@ impl ConnectionManager {
         // The connections that we can consider (all connections - candidate connections).
         let all_candidate_connections: Vec<_> = all_connections
             .iter()
-            .filter(|&(_, conn_ctx)| (!maintained_connections.contains_key(&conn_ctx.id)))
+            .filter(|&(_, conn_ctx)| !maintained_connections.contains_key(&conn_ctx.id))
             .map(|(_, conn_ctx)| (conn_ctx.connection.clone(), conn_ctx.id))
             .collect();
         // The candidate connections from above, but further filtered by whether they are suspended or not.
@@ -456,15 +460,17 @@ impl ConnectionManager {
 // Abstractions over the accesses of the inner fields of the connection manager.
 impl ConnectionManager {
     #[inline]
-    pub fn config(&self) -> &ManagerConfig { &self.0.config }
+    pub fn config(&self) -> &ManagerConfig {
+        &self.0.config
+    }
 
     #[inline]
-    fn read_connections(&self) -> RwLockReadGuard<HashMap<String, ConnectionContext>> {
+    fn read_connections(&self) -> RwLockReadGuard<'_, HashMap<String, ConnectionContext>> {
         self.0.connections.read().unwrap()
     }
 
     #[inline]
-    fn write_connections(&self) -> RwLockWriteGuard<HashMap<String, ConnectionContext>> {
+    fn write_connections(&self) -> RwLockWriteGuard<'_, HashMap<String, ConnectionContext>> {
         self.0.connections.write().unwrap()
     }
 
@@ -476,7 +482,7 @@ impl ConnectionManager {
     }
 
     #[inline]
-    fn read_maintained_connections(&self) -> RwLockReadGuard<BTreeMap<ID, String>> {
+    fn read_maintained_connections(&self) -> RwLockReadGuard<'_, BTreeMap<ID, String>> {
         self.0.maintained_connections.read().unwrap()
     }
 
@@ -507,7 +513,9 @@ impl ConnectionManager {
     }
 
     #[inline]
-    fn notify_below_min_connected(&self) { self.0.below_min_connected_notifier.notify().ok(); }
+    fn notify_below_min_connected(&self) {
+        self.0.below_min_connected_notifier.notify().ok();
+    }
 
     #[inline]
     fn extract_below_min_connected_notifiee(&self) -> Option<Notifiee> {
@@ -515,7 +523,9 @@ impl ConnectionManager {
     }
 
     #[inline]
-    fn weak_client(&self) -> &RwLock<Option<Weak<ElectrumClientImpl>>> { &self.0.electrum_client }
+    fn weak_client(&self) -> &RwLock<Option<Weak<ElectrumClientImpl>>> {
+        &self.0.electrum_client
+    }
 
     #[inline]
     fn get_client(&self) -> Option<ElectrumClient> {

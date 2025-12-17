@@ -36,7 +36,7 @@ impl fmt::Display for NetworkPrefix {
             NetworkPrefix::SlpTest => "slptest",
             NetworkPrefix::Other(network) => network,
         };
-        write!(f, "{}", as_str)
+        write!(f, "{as_str}")
     }
 }
 
@@ -58,7 +58,9 @@ impl FromStr for NetworkPrefix {
 }
 
 impl From<&'static str> for NetworkPrefix {
-    fn from(s: &str) -> Self { s.parse().unwrap() }
+    fn from(s: &str) -> Self {
+        s.parse().unwrap()
+    }
 }
 
 impl NetworkPrefix {
@@ -203,11 +205,15 @@ impl CashAddress {
 impl FromStr for CashAddress {
     type Err = String;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> { CashAddress::decode(s) }
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        CashAddress::decode(s)
+    }
 }
 
 impl From<&'static str> for CashAddress {
-    fn from(s: &'static str) -> Self { s.parse().unwrap() }
+    fn from(s: &'static str) -> Self {
+        s.parse().unwrap()
+    }
 }
 
 fn split_address(addr: &str) -> Result<(NetworkPrefix, &str), String> {

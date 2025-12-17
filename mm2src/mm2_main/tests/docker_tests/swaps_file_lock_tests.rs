@@ -19,7 +19,7 @@ const FINISHED_TAKER_SWAP: &str = r#"{"type":"Taker","uuid":"5acb0e63-8b26-469e-
 fn swap_file_lock_prevents_double_swap_start_on_kick_start(swap_json: &str) {
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
     let addr_hash = addr_hash_for_privkey(bob_priv_key);
-    let db_folder = new_mm2_temp_folder_path(None).join("DB");
+    let db_folder = new_mm2_temp_folder_path(None, None).join("DB");
     let swaps_db_folder = db_folder.join(addr_hash).join("SWAPS").join("MY");
     std::fs::create_dir_all(&swaps_db_folder).unwrap();
     let swap_path = swaps_db_folder.join("5acb0e63-8b26-469e-81df-7dd9e4a9ad15.json");
@@ -134,15 +134,13 @@ fn test_swaps_should_kick_start_if_process_was_killed() {
     let uuid = buy["result"]["uuid"].as_str().unwrap().to_owned();
     block_on(mm_bob.wait_for_log(22., |log| {
         log.contains(&format!(
-            "Entering the maker_swap_loop MYCOIN/MYCOIN1 with uuid: {}",
-            uuid
+            "Entering the maker_swap_loop MYCOIN/MYCOIN1 with uuid: {uuid}"
         ))
     }))
     .unwrap();
     block_on(mm_alice.wait_for_log(22., |log| {
         log.contains(&format!(
-            "Entering the taker_swap_loop MYCOIN/MYCOIN1 with uuid: {}",
-            uuid
+            "Entering the taker_swap_loop MYCOIN/MYCOIN1 with uuid: {uuid}"
         ))
     }))
     .unwrap();
@@ -158,7 +156,7 @@ fn test_swaps_should_kick_start_if_process_was_killed() {
     log!("{:?}", block_on(enable_native(&mm_bob_dup, "MYCOIN", &[], None)));
     log!("{:?}", block_on(enable_native(&mm_bob_dup, "MYCOIN1", &[], None)));
 
-    block_on(mm_bob_dup.wait_for_log(50., |log| log.contains(&format!("Swap {} kick started.", uuid)))).unwrap();
+    block_on(mm_bob_dup.wait_for_log(50., |log| log.contains(&format!("Swap {uuid} kick started.")))).unwrap();
 
     // mm_alice using same DB dir that should kick start the swap
     alice_conf["dbdir"] = mm_alice.folder.join("DB").to_str().unwrap().into();
@@ -172,7 +170,7 @@ fn test_swaps_should_kick_start_if_process_was_killed() {
     log!("{:?}", block_on(enable_native(&mm_alice_dup, "MYCOIN", &[], None)));
     log!("{:?}", block_on(enable_native(&mm_alice_dup, "MYCOIN1", &[], None)));
 
-    block_on(mm_alice_dup.wait_for_log(50., |log| log.contains(&format!("Swap {} kick started.", uuid)))).unwrap();
+    block_on(mm_alice_dup.wait_for_log(50., |log| log.contains(&format!("Swap {uuid} kick started.")))).unwrap();
 }
 
 fn addr_hash_for_privkey(priv_key: Secp256k1Secret) -> String {
@@ -192,7 +190,7 @@ fn swap_should_not_kick_start_if_finished_during_waiting_for_file_lock(
 ) {
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
     let addr_hash = addr_hash_for_privkey(bob_priv_key);
-    let db_folder = new_mm2_temp_folder_path(None).join("DB");
+    let db_folder = new_mm2_temp_folder_path(None, None).join("DB");
     let swaps_db_folder = db_folder.join(addr_hash).join("SWAPS").join("MY");
     std::fs::create_dir_all(&swaps_db_folder).unwrap();
     let swap_path = swaps_db_folder.join("5acb0e63-8b26-469e-81df-7dd9e4a9ad15.json");

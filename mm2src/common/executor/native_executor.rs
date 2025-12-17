@@ -9,7 +9,9 @@ use std::time::Duration;
 ///
 /// The `spawn` function must be used carefully to avoid hanging pointers.
 /// Please consider using `AbortableQueue`, `AbortableSimpleMap` or `spawn_abortable` instead.
-pub fn spawn(future: impl Future03<Output = ()> + Send + 'static) { crate::wio::CORE.0.spawn(future); }
+pub fn spawn(future: impl Future03<Output = ()> + Send + 'static) {
+    crate::wio::CORE.0.spawn(future);
+}
 
 /// A future that completes at a given time.
 #[must_use]
@@ -34,7 +36,9 @@ impl Timer {
 impl Future03 for Timer {
     type Output = ();
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll03<Self::Output> { Pin::new(&mut self.delay).poll(cx) }
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll03<Self::Output> {
+        Pin::new(&mut self.delay).poll(cx)
+    }
 }
 
 #[cfg(test)]
@@ -50,7 +54,7 @@ mod tests {
         assert!(delta < 0.04, "{}", delta);
         crate::block_on(ti);
         let delta = now_float() - started;
-        println!("time delta is {}", delta);
+        println!("time delta is {delta}");
         assert!(delta > 0.2);
         assert!(delta < 0.4)
     }

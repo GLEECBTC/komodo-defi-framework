@@ -26,7 +26,7 @@ impl<Task: RpcTask> RpcTaskHandle<Task> {
             .or_mm_err(|| RpcTaskError::Internal("RpcTaskManager is not available".to_owned()))?;
         let lock = arc
             .lock()
-            .map_to_mm(|e| RpcTaskError::Internal(format!("RpcTaskManager is not available: {}", e)))?;
+            .map_to_mm(|e| RpcTaskError::Internal(format!("RpcTaskManager is not available: {e}")))?;
         f(lock)
     }
 

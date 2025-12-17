@@ -5,9 +5,11 @@ use mm2_main::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use mm2_number::{BigDecimal, BigRational, MmNumber};
 use mm2_rpc::data::legacy::{AggregatedOrderbookEntry, CoinInitResponse, OrderbookResponse};
 use mm2_test_helpers::electrums::doc_electrums;
-use mm2_test_helpers::for_tests::{enable_z_coin_light, get_passphrase, morty_conf, orderbook_v2, rick_conf, set_price,
-                                  zombie_conf, MarketMakerIt, Mm2TestConf, DOC_ELECTRUM_ADDRS, MARTY_ELECTRUM_ADDRS,
-                                  RICK, ZOMBIE_ELECTRUMS, ZOMBIE_LIGHTWALLETD_URLS, ZOMBIE_TICKER};
+use mm2_test_helpers::for_tests::{
+    enable_z_coin_light, get_passphrase, morty_conf, orderbook_v2, rick_conf, set_price, zombie_conf, MarketMakerIt,
+    Mm2TestConf, DOC_ELECTRUM_ADDRS, MARTY_ELECTRUM_ADDRS, RICK, ZOMBIE_ELECTRUMS, ZOMBIE_LIGHTWALLETD_URLS,
+    ZOMBIE_TICKER,
+};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::{GetPublicKeyResult, OrderbookV2Response, RpcV2Response, SetPriceResponse};
 use serde_json::{self as json, json, Value as Json};
@@ -382,7 +384,7 @@ fn alice_can_see_the_active_order_after_orderbook_sync_segwit() {
 
     block_on(
         mm_alice.wait_for_log((MIN_ORDER_KEEP_ALIVE_INTERVAL * 2) as f64, |log| {
-            log.contains(&format!("Inserting order OrderbookItem {{ pubkey: \"{}\"", bob_pubkey))
+            log.contains(&format!("Inserting order OrderbookItem {{ pubkey: \"{bob_pubkey}\""))
         }),
     )
     .unwrap();
@@ -793,7 +795,7 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
 
     block_on(
         mm_alice.wait_for_log((MIN_ORDER_KEEP_ALIVE_INTERVAL * 2) as f64, |log| {
-            log.contains(&format!("Inserting order OrderbookItem {{ pubkey: \"{}\"", bob_pubkey))
+            log.contains(&format!("Inserting order OrderbookItem {{ pubkey: \"{bob_pubkey}\""))
         }),
     )
     .unwrap();

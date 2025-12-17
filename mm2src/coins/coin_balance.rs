@@ -1,15 +1,19 @@
-use crate::hd_wallet::{DisplayAddress, HDAccountOps, HDAddressId, HDAddressOps, HDCoinAddress, HDCoinHDAccount,
-                       HDPathAccountToAddressId, HDWalletCoinOps, HDWalletOps, HDXPubExtractor,
-                       NewAccountCreationError, NewAddressDerivingError};
-use crate::{BalanceError, BalanceResult, CoinBalance, CoinBalanceMap, CoinWithDerivationMethod, DerivationMethod,
-            IguanaBalanceOps, MarketCoinOps};
+use crate::hd_wallet::{
+    DisplayAddress, HDAccountOps, HDAddressId, HDAddressOps, HDCoinAddress, HDCoinHDAccount, HDPathAccountToAddressId,
+    HDWalletCoinOps, HDWalletOps, HDXPubExtractor, NewAccountCreationError, NewAddressDerivingError,
+};
+use crate::{
+    BalanceError, BalanceResult, CoinBalance, CoinBalanceMap, CoinWithDerivationMethod, DerivationMethod,
+    IguanaBalanceOps, MarketCoinOps,
+};
 use async_trait::async_trait;
 use common::log::{debug, info};
 use crypto::{Bip44Chain, RpcDerivationPath};
 use derive_more::Display;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
-#[cfg(test)] use mocktopus::macros::*;
+#[cfg(test)]
+use mocktopus::macros::*;
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::{fmt, iter};
@@ -26,15 +30,21 @@ pub enum EnableCoinBalanceError {
 }
 
 impl From<NewAddressDerivingError> for EnableCoinBalanceError {
-    fn from(e: NewAddressDerivingError) -> Self { EnableCoinBalanceError::NewAddressDerivingError(e) }
+    fn from(e: NewAddressDerivingError) -> Self {
+        EnableCoinBalanceError::NewAddressDerivingError(e)
+    }
 }
 
 impl From<NewAccountCreationError> for EnableCoinBalanceError {
-    fn from(e: NewAccountCreationError) -> Self { EnableCoinBalanceError::NewAccountCreationError(e) }
+    fn from(e: NewAccountCreationError) -> Self {
+        EnableCoinBalanceError::NewAccountCreationError(e)
+    }
 }
 
 impl From<BalanceError> for EnableCoinBalanceError {
-    fn from(e: BalanceError) -> Self { EnableCoinBalanceError::BalanceError(e) }
+    fn from(e: BalanceError) -> Self {
+        EnableCoinBalanceError::BalanceError(e)
+    }
 }
 
 /// `BalanceObjectOps` should be implemented for a type that represents balance/s of a wallet.
@@ -413,8 +423,10 @@ pub enum AddressBalanceStatus<Balance> {
 
 pub mod common_impl {
     use super::*;
-    use crate::hd_wallet::{create_new_account, DisplayAddress, ExtractExtendedPubkey, HDAccountOps,
-                           HDAccountStorageOps, HDAddressOps, HDCoinExtendedPubkey, HDWalletOps};
+    use crate::hd_wallet::{
+        create_new_account, DisplayAddress, ExtractExtendedPubkey, HDAccountOps, HDAccountStorageOps, HDAddressOps,
+        HDCoinExtendedPubkey, HDWalletOps,
+    };
 
     pub(crate) async fn enable_hd_account<Coin>(
         coin: &Coin,
@@ -526,8 +538,7 @@ pub mod common_impl {
                     .await
                     .map_err(|e| {
                         EnableCoinBalanceError::NewAddressDerivingError(NewAddressDerivingError::Internal(format!(
-                            "Coin rejected the enabled address derived from the hardware wallet: {}",
-                            e
+                            "Coin rejected the enabled address derived from the hardware wallet: {e}"
                         )))
                     })?;
             }
@@ -579,8 +590,7 @@ pub mod common_impl {
                 .await
                 .map_err(|e| {
                     EnableCoinBalanceError::NewAddressDerivingError(NewAddressDerivingError::Internal(format!(
-                        "Coin rejected the enabled address derived from the hardware wallet: {}",
-                        e
+                        "Coin rejected the enabled address derived from the hardware wallet: {e}"
                     )))
                 })?;
         }

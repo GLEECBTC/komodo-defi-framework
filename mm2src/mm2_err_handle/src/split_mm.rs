@@ -25,5 +25,7 @@ where
     ///   Err("Not found", _trace) => return Ok(None),
     /// }
     /// ```
-    fn split_mm(self) -> Result<T, (E, MmErrorTrace)> { self.map_err(MmError::split) }
+    fn split_mm(self) -> Result<T, (E, MmErrorTrace)> {
+        self.map_err(MmError::split)
+    }
 }

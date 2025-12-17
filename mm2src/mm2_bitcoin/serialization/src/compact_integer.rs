@@ -44,7 +44,9 @@ pub fn parse_compact_int<T: AsRef<[u8]> + ?Sized>(buf: &T) -> Result<CompactInte
 
 impl CompactInteger {
     /// The underlying number as a usize
-    pub fn as_usize(&self) -> usize { self.0 as usize }
+    pub fn as_usize(&self) -> usize {
+        self.0 as usize
+    }
 
     /// Determine the length of the compact integer when serialized
     pub fn serialized_length(&self) -> usize {
@@ -74,39 +76,57 @@ impl CompactInteger {
 }
 
 impl fmt::Display for CompactInteger {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { self.0.fmt(f) }
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
 }
 
 impl From<CompactInteger> for usize {
-    fn from(i: CompactInteger) -> Self { i.0 as usize }
+    fn from(i: CompactInteger) -> Self {
+        i.0 as usize
+    }
 }
 
 impl From<CompactInteger> for u64 {
-    fn from(i: CompactInteger) -> Self { i.0 }
+    fn from(i: CompactInteger) -> Self {
+        i.0
+    }
 }
 
 impl From<u8> for CompactInteger {
-    fn from(i: u8) -> Self { CompactInteger(i as u64) }
+    fn from(i: u8) -> Self {
+        CompactInteger(i as u64)
+    }
 }
 
 impl From<u16> for CompactInteger {
-    fn from(i: u16) -> Self { CompactInteger(i as u64) }
+    fn from(i: u16) -> Self {
+        CompactInteger(i as u64)
+    }
 }
 
 impl From<u32> for CompactInteger {
-    fn from(i: u32) -> Self { CompactInteger(i as u64) }
+    fn from(i: u32) -> Self {
+        CompactInteger(i as u64)
+    }
 }
 
 impl From<usize> for CompactInteger {
-    fn from(i: usize) -> Self { CompactInteger(i as u64) }
+    fn from(i: usize) -> Self {
+        CompactInteger(i as u64)
+    }
 }
 
 impl From<u64> for CompactInteger {
-    fn from(i: u64) -> Self { CompactInteger(i) }
+    fn from(i: u64) -> Self {
+        CompactInteger(i)
+    }
 }
 
 impl AsRef<u64> for CompactInteger {
-    fn as_ref(&self) -> &u64 { &self.0 }
+    fn as_ref(&self) -> &u64 {
+        &self.0
+    }
 }
 
 impl Serializable for CompactInteger {

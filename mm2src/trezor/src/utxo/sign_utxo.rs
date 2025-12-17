@@ -100,7 +100,7 @@ impl<'a> TrezorSession<'a> {
                     self.send_extra_data(&unsigned, tx_request_details, prev_hash).await?
                 },
                 _ => {
-                    let error = format!("Unexpected tx request: {:?}, is_prev: {}", request_type, is_prev);
+                    let error = format!("Unexpected tx request: {request_type:?}, is_prev: {is_prev}");
                     return MmError::err(TrezorError::ProtocolError(error));
                 },
             };

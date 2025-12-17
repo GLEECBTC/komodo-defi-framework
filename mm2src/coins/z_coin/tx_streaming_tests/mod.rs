@@ -1,5 +1,7 @@
-#[cfg(not(target_arch = "wasm32"))] mod native;
-#[cfg(target_arch = "wasm32")] mod wasm;
+#[cfg(not(target_arch = "wasm32"))]
+mod native;
+#[cfg(target_arch = "wasm32")]
+mod wasm;
 
 use common::now_sec;
 use mm2_test_helpers::for_tests::{PIRATE_ELECTRUMS, PIRATE_LIGHTWALLETD_URLS};

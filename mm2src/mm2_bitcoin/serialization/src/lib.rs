@@ -13,6 +13,8 @@ pub use primitives::{bytes, compact, hash};
 
 pub use compact_integer::{parse_compact_int, CompactInteger};
 pub use list::List;
-pub use reader::{deserialize, deserialize_iterator, CoinVariant, Deserializable, Error, ReadIterator, Reader};
-pub use stream::{serialize, serialize_list, serialize_with_flags, serialized_list_size,
-                 serialized_list_size_with_flags, Serializable, Stream, SERIALIZE_TRANSACTION_WITNESS};
+pub use reader::{deserialize, deserialize_iterator, ChainVariant, Deserializable, Error, ReadIterator, Reader};
+pub use stream::{
+    serialize, serialize_list, serialize_with_flags, serialized_list_size, serialized_list_size_with_flags,
+    Serializable, Stream, SERIALIZE_TRANSACTION_WITNESS,
+};

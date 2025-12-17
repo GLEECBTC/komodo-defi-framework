@@ -1,13 +1,16 @@
 use async_trait::async_trait;
-use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbUpgrader, IndexedDb, IndexedDbBuilder, OnUpgradeResult,
-                         TableSignature};
+use mm2_db::indexed_db::{
+    DbIdentifier, DbInstance, DbUpgrader, IndexedDb, IndexedDbBuilder, OnUpgradeResult, TableSignature,
+};
 use std::ops::Deref;
 use uuid::Uuid;
 
-pub use mm2_db::indexed_db::{cursor_prelude, DbTransactionError, DbTransactionResult, InitDbError, InitDbResult,
-                             ItemId};
-pub use tables::{MyActiveMakerOrdersTable, MyActiveTakerOrdersTable, MyFilteringHistoryOrdersTable,
-                 MyHistoryOrdersTable};
+pub use mm2_db::indexed_db::{
+    cursor_prelude, DbTransactionError, DbTransactionResult, InitDbError, InitDbResult, ItemId,
+};
+pub use tables::{
+    MyActiveMakerOrdersTable, MyActiveTakerOrdersTable, MyFilteringHistoryOrdersTable, MyHistoryOrdersTable,
+};
 
 const DB_VERSION: u32 = 1;
 
@@ -35,7 +38,9 @@ impl DbInstance for OrdermatchDb {
 impl Deref for OrdermatchDb {
     type Target = IndexedDb;
 
-    fn deref(&self) -> &Self::Target { &self.inner }
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
 }
 
 pub mod tables {

@@ -11,7 +11,9 @@ pub struct OrderRequestsTracker {
 }
 
 impl Default for OrderRequestsTracker {
-    fn default() -> OrderRequestsTracker { OrderRequestsTracker::new(NonZeroUsize::new(5).unwrap()) }
+    fn default() -> OrderRequestsTracker {
+        OrderRequestsTracker::new(NonZeroUsize::new(5).unwrap())
+    }
 }
 
 impl OrderRequestsTracker {

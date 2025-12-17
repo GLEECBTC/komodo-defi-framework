@@ -16,7 +16,7 @@ use ethereum_types::{Address, Public, H160, H520, U256};
 use ethkey::{public_to_address, Message, Signature};
 use kdf_walletconnect::chain::{WcChainId, WcRequestMethods};
 use kdf_walletconnect::error::WalletConnectError;
-use kdf_walletconnect::{WalletConnectCtx, WalletConnectOps};
+use kdf_walletconnect::{WalletConnectCtx, WalletConnectOps, WcTopic};
 use mm2_err_handle::prelude::*;
 use secp256k1::recovery::{RecoverableSignature, RecoveryId};
 use secp256k1::{PublicKey, Secp256k1};
@@ -42,7 +42,9 @@ pub enum EthWalletConnectError {
 }
 
 impl From<WalletConnectError> for EthWalletConnectError {
-    fn from(value: WalletConnectError) -> Self { Self::WalletConnectError(value) }
+    fn from(value: WalletConnectError) -> Self {
+        Self::WalletConnectError(value)
+    }
 }
 
 /// Eth Params required for constructing WalletConnect transaction.
@@ -178,7 +180,7 @@ impl WalletConnectOps for EthCoin {
         Ok((signed_tx, tx_hex))
     }
 
-    fn session_topic(&self) -> Result<&str, Self::Error> {
+    fn session_topic(&self) -> Result<&WcTopic, Self::Error> {
         if let EthPrivKeyPolicy::WalletConnect { ref session_topic, .. } = &self.priv_key_policy {
             return Ok(session_topic);
         }
@@ -192,7 +194,7 @@ impl WalletConnectOps for EthCoin {
 
 pub async fn eth_request_wc_personal_sign(
     wc: &WalletConnectCtx,
-    session_topic: &str,
+    session_topic: &WcTopic,
     chain_id: u64,
 ) -> MmResult<(H520, Address), EthWalletConnectError> {
     let chain_id = WcChainId::new_eip155(chain_id.to_string());
@@ -209,7 +211,7 @@ pub async fn eth_request_wc_personal_sign(
         json!(&[&message_hex, &account_str])
     };
     let data = wc
-        .send_session_request_and_wait::<String>(session_topic, &chain_id, WcRequestMethods::PersonalSign, params)
+        .send_session_request_and_wait::<String>(session_topic, &chain_id, WcRequestMethods::EthPersonalSign, params)
         .await
         .map_mm_err()?;
 
@@ -278,10 +280,8 @@ pub(crate) async fn send_transaction_with_walletconnect(
         .chain_spec
         .chain_id()
         .ok_or(TransactionErr::Plain("Tron is not supported for this action!".into()))?;
-    let pay_for_gas_option = try_tx_s!(
-        coin.get_swap_pay_for_gas_option(coin.get_swap_transaction_fee_policy())
-            .await
-    );
+    let pay_for_gas_policy = try_tx_s!(coin.get_swap_gas_fee_policy().await);
+    let pay_for_gas_option = try_tx_s!(coin.get_swap_pay_for_gas_option(pay_for_gas_policy).await);
     let (max_fee_per_gas, max_priority_fee_per_gas) = pay_for_gas_option.get_fee_per_gas();
     let (nonce, _) = try_tx_s!(coin.clone().get_addr_nonce(my_address).compat().await);
 

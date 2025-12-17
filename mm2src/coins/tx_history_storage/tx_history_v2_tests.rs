@@ -18,7 +18,9 @@ lazy_static! {
     static ref BCH_TX_HISTORY_MAP: HashMap<String, TransactionDetails> = parse_tx_history_map();
 }
 
-fn parse_tx_history() -> Vec<TransactionDetails> { json::from_str(BCH_TX_HISTORY_STR).unwrap() }
+fn parse_tx_history() -> Vec<TransactionDetails> {
+    json::from_str(BCH_TX_HISTORY_STR).unwrap()
+}
 
 fn parse_tx_history_map() -> HashMap<String, TransactionDetails> {
     parse_tx_history()
@@ -27,9 +29,13 @@ fn parse_tx_history_map() -> HashMap<String, TransactionDetails> {
         .collect()
 }
 
-fn get_bch_tx_details(internal_id: &str) -> TransactionDetails { BCH_TX_HISTORY_MAP.get(internal_id).unwrap().clone() }
+fn get_bch_tx_details(internal_id: &str) -> TransactionDetails {
+    BCH_TX_HISTORY_MAP.get(internal_id).unwrap().clone()
+}
 
-fn wallet_id_for_test(test_name: &str) -> WalletId { WalletId::new(test_name.to_owned()) }
+fn wallet_id_for_test(test_name: &str) -> WalletId {
+    WalletId::new(test_name.to_owned())
+}
 
 #[track_caller]
 fn assert_get_history_result(actual: GetHistoryResult, expected_ids: Vec<BytesJson>, skipped: usize, total: usize) {
@@ -605,16 +611,24 @@ mod native_tests {
     }
 
     #[test]
-    fn test_add_transactions() { block_on(super::test_add_transactions_impl()); }
+    fn test_add_transactions() {
+        block_on(super::test_add_transactions_impl());
+    }
 
     #[test]
-    fn test_remove_transaction() { block_on(super::test_remove_transaction_impl()); }
+    fn test_remove_transaction() {
+        block_on(super::test_remove_transaction_impl());
+    }
 
     #[test]
-    fn test_get_transaction() { block_on(super::test_get_transaction_impl()); }
+    fn test_get_transaction() {
+        block_on(super::test_get_transaction_impl());
+    }
 
     #[test]
-    fn test_update_transaction() { block_on(super::test_update_transaction_impl()); }
+    fn test_update_transaction() {
+        block_on(super::test_update_transaction_impl());
+    }
 
     #[test]
     fn test_contains_and_get_unconfirmed_transaction() {
@@ -622,13 +636,19 @@ mod native_tests {
     }
 
     #[test]
-    fn test_has_transactions_with_hash() { block_on(super::test_has_transactions_with_hash_impl()); }
+    fn test_has_transactions_with_hash() {
+        block_on(super::test_has_transactions_with_hash_impl());
+    }
 
     #[test]
-    fn test_unique_tx_hashes_num() { block_on(super::test_unique_tx_hashes_num_impl()); }
+    fn test_unique_tx_hashes_num() {
+        block_on(super::test_unique_tx_hashes_num_impl());
+    }
 
     #[test]
-    fn test_add_and_get_tx_from_cache() { block_on(super::test_add_and_get_tx_from_cache_impl()); }
+    fn test_add_and_get_tx_from_cache() {
+        block_on(super::test_add_and_get_tx_from_cache_impl());
+    }
 
     #[test]
     fn test_get_raw_tx_bytes_on_add_transactions() {
@@ -636,13 +656,19 @@ mod native_tests {
     }
 
     #[test]
-    fn test_get_history_page_number() { block_on(super::test_get_history_page_number_impl()); }
+    fn test_get_history_page_number() {
+        block_on(super::test_get_history_page_number_impl());
+    }
 
     #[test]
-    fn test_get_history_from_id() { block_on(super::test_get_history_from_id_impl()); }
+    fn test_get_history_from_id() {
+        block_on(super::test_get_history_from_id_impl());
+    }
 
     #[test]
-    fn test_get_history_for_addresses() { block_on(super::test_get_history_for_addresses_impl()); }
+    fn test_get_history_for_addresses() {
+        block_on(super::test_get_history_for_addresses_impl());
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -675,16 +701,24 @@ mod wasm_tests {
     }
 
     #[wasm_bindgen_test]
-    async fn test_add_transactions() { super::test_add_transactions_impl().await; }
+    async fn test_add_transactions() {
+        super::test_add_transactions_impl().await;
+    }
 
     #[wasm_bindgen_test]
-    async fn test_remove_transaction() { super::test_remove_transaction_impl().await; }
+    async fn test_remove_transaction() {
+        super::test_remove_transaction_impl().await;
+    }
 
     #[wasm_bindgen_test]
-    async fn test_get_transaction() { super::test_get_transaction_impl().await; }
+    async fn test_get_transaction() {
+        super::test_get_transaction_impl().await;
+    }
 
     #[wasm_bindgen_test]
-    async fn test_update_transaction() { super::test_update_transaction_impl().await; }
+    async fn test_update_transaction() {
+        super::test_update_transaction_impl().await;
+    }
 
     #[wasm_bindgen_test]
     async fn test_contains_and_get_unconfirmed_transaction() {
@@ -692,13 +726,19 @@ mod wasm_tests {
     }
 
     #[wasm_bindgen_test]
-    async fn test_has_transactions_with_hash() { super::test_has_transactions_with_hash_impl().await; }
+    async fn test_has_transactions_with_hash() {
+        super::test_has_transactions_with_hash_impl().await;
+    }
 
     #[wasm_bindgen_test]
-    async fn test_unique_tx_hashes_num() { super::test_unique_tx_hashes_num_impl().await; }
+    async fn test_unique_tx_hashes_num() {
+        super::test_unique_tx_hashes_num_impl().await;
+    }
 
     #[wasm_bindgen_test]
-    async fn test_add_and_get_tx_from_cache() { super::test_add_and_get_tx_from_cache_impl().await; }
+    async fn test_add_and_get_tx_from_cache() {
+        super::test_add_and_get_tx_from_cache_impl().await;
+    }
 
     #[wasm_bindgen_test]
     async fn test_get_raw_tx_bytes_on_add_transactions() {
@@ -706,11 +746,17 @@ mod wasm_tests {
     }
 
     #[wasm_bindgen_test]
-    async fn test_get_history_page_number() { super::test_get_history_page_number_impl().await; }
+    async fn test_get_history_page_number() {
+        super::test_get_history_page_number_impl().await;
+    }
 
     #[wasm_bindgen_test]
-    async fn test_get_history_from_id() { super::test_get_history_from_id_impl().await; }
+    async fn test_get_history_from_id() {
+        super::test_get_history_from_id_impl().await;
+    }
 
     #[wasm_bindgen_test]
-    async fn test_get_history_for_addresses() { super::test_get_history_for_addresses_impl().await; }
+    async fn test_get_history_for_addresses() {
+        super::test_get_history_for_addresses_impl().await;
+    }
 }

@@ -123,7 +123,7 @@ pub async fn get_enabled_erc20_by_platform_and_contract(
     let coins = cctx.coins.lock().await;
 
     Ok(coins.values().find_map(|coin| match &coin.inner {
-        MmCoinEnum::EthCoin(eth_coin)
+        MmCoinEnum::EthCoinVariant(eth_coin)
             if eth_coin.platform_ticker() == platform
                 && eth_coin.erc20_token_address().as_ref() == Some(contract_address) =>
         {

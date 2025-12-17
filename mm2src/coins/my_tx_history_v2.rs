@@ -1,12 +1,16 @@
 use crate::hd_wallet::{AddressDerivingError, DisplayAddress, InvalidBip44ChainError};
-use crate::tendermint::{BCH_COIN_PROTOCOL_TYPE, BCH_TOKEN_PROTOCOL_TYPE, TENDERMINT_ASSET_PROTOCOL_TYPE,
-                        TENDERMINT_COIN_PROTOCOL_TYPE};
-use crate::tx_history_storage::{CreateTxHistoryStorageError, FilteringAddresses, GetTxHistoryFilters,
-                                TxHistoryStorageBuilder, WalletId};
+use crate::tendermint::{
+    BCH_COIN_PROTOCOL_TYPE, BCH_TOKEN_PROTOCOL_TYPE, TENDERMINT_ASSET_PROTOCOL_TYPE, TENDERMINT_COIN_PROTOCOL_TYPE,
+};
+use crate::tx_history_storage::{
+    CreateTxHistoryStorageError, FilteringAddresses, GetTxHistoryFilters, TxHistoryStorageBuilder, WalletId,
+};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::{coin_conf, lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HDPathAccountToAddressId,
-            HistorySyncState, MmCoin, MmCoinEnum, MyAddressError, Transaction, TransactionData, TransactionDetails,
-            TransactionType, TxFeeDetails, UtxoRpcError};
+use crate::{
+    coin_conf, lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HDPathAccountToAddressId, HistorySyncState,
+    MmCoin, MmCoinEnum, MyAddressError, Transaction, TransactionData, TransactionDetails, TransactionType,
+    TxFeeDetails, UtxoRpcError,
+};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::{calc_total_pages, ten, HttpStatusCode, PagingOptionsEnum, StatusCode};
@@ -27,7 +31,9 @@ pub enum RemoveTxResult {
 }
 
 impl RemoveTxResult {
-    pub fn tx_existed(&self) -> bool { matches!(self, RemoveTxResult::TxRemoved) }
+    pub fn tx_existed(&self) -> bool {
+        matches!(self, RemoveTxResult::TxRemoved)
+    }
 }
 
 pub struct GetHistoryResult {
@@ -168,9 +174,13 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
         }
     }
 
-    pub fn set_tx_fee(&mut self, tx_fee: Option<TxFeeDetails>) { self.tx_fee = tx_fee; }
+    pub fn set_tx_fee(&mut self, tx_fee: Option<TxFeeDetails>) {
+        self.tx_fee = tx_fee;
+    }
 
-    pub fn set_transaction_type(&mut self, tx_type: TransactionType) { self.transaction_type = tx_type; }
+    pub fn set_transaction_type(&mut self, tx_type: TransactionType) {
+        self.transaction_type = tx_type;
+    }
 
     pub fn transferred_to(&mut self, address: Addr, amount: &BigDecimal) {
         if self.my_addresses.contains(&address) {
@@ -222,6 +232,9 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
             | TransactionType::FeeForTokenTx
             | TransactionType::StandardTransfer
             | TransactionType::NftTransfer => tx_hash.clone(),
+            TransactionType::SiaV1Transaction | TransactionType::SiaV2Transaction | TransactionType::SiaMinerPayout => {
+                tx_hash.clone()
+            },
         };
 
         TransactionDetails {
@@ -307,7 +320,7 @@ pub enum MyTxHistoryErrorV2 {
 
 impl MyTxHistoryErrorV2 {
     pub fn with_expected_target(actual: MyTxHistoryTarget, expected: &str) -> MyTxHistoryErrorV2 {
-        MyTxHistoryErrorV2::InvalidTarget(format!("Expected {:?} target, found: {:?}", expected, actual))
+        MyTxHistoryErrorV2::InvalidTarget(format!("Expected {expected:?} target, found: {actual:?}"))
     }
 }
 
@@ -334,7 +347,7 @@ impl From<CoinFindError> for MyTxHistoryErrorV2 {
 
 impl<T: TxHistoryStorageError> From<T> for MyTxHistoryErrorV2 {
     fn from(err: T) -> Self {
-        let msg = format!("{:?}", err);
+        let msg = format!("{err:?}");
         MyTxHistoryErrorV2::StorageError(msg)
     }
 }
@@ -366,12 +379,14 @@ pub async fn my_tx_history_v2_rpc(
     request: MyTxHistoryRequestV2<BytesJson>,
 ) -> Result<MyTxHistoryResponseV2<MyTxHistoryDetails, BytesJson>, MmError<MyTxHistoryErrorV2>> {
     match lp_coinfind_or_err(&ctx, &request.coin).await.map_mm_err()? {
-        MmCoinEnum::Bch(bch) => my_tx_history_v2_impl(ctx, &bch, request).await,
-        MmCoinEnum::SlpToken(slp_token) => my_tx_history_v2_impl(ctx, &slp_token, request).await,
-        MmCoinEnum::UtxoCoin(utxo) => my_tx_history_v2_impl(ctx, &utxo, request).await,
-        MmCoinEnum::QtumCoin(qtum) => my_tx_history_v2_impl(ctx, &qtum, request).await,
-        MmCoinEnum::Tendermint(tendermint) => my_tx_history_v2_impl(ctx, &tendermint, request).await,
-        MmCoinEnum::TendermintToken(tendermint_token) => my_tx_history_v2_impl(ctx, &tendermint_token, request).await,
+        MmCoinEnum::BchVariant(bch) => my_tx_history_v2_impl(ctx, &bch, request).await,
+        MmCoinEnum::SlpTokenVariant(slp_token) => my_tx_history_v2_impl(ctx, &slp_token, request).await,
+        MmCoinEnum::UtxoCoinVariant(utxo) => my_tx_history_v2_impl(ctx, &utxo, request).await,
+        MmCoinEnum::QtumCoinVariant(qtum) => my_tx_history_v2_impl(ctx, &qtum, request).await,
+        MmCoinEnum::TendermintVariant(tendermint) => my_tx_history_v2_impl(ctx, &tendermint, request).await,
+        MmCoinEnum::TendermintTokenVariant(tendermint_token) => {
+            my_tx_history_v2_impl(ctx, &tendermint_token, request).await
+        },
         other => MmError::err(MyTxHistoryErrorV2::NotSupportedFor(other.ticker().to_owned())),
     }
 }
@@ -389,7 +404,7 @@ where
     let wallet_id = coin.history_wallet_id();
     let is_storage_init = tx_history_storage.is_initialized_for(&wallet_id).await.map_mm_err()?;
     if !is_storage_init {
-        let msg = format!("Storage is not initialized for {:?}", wallet_id);
+        let msg = format!("Storage is not initialized for {wallet_id:?}");
         return MmError::err(MyTxHistoryErrorV2::StorageIsNotInitialized(msg));
     }
     let current_block = coin
@@ -502,7 +517,7 @@ pub async fn z_coin_tx_history_rpc(
     request: MyTxHistoryRequestV2<i64>,
 ) -> Result<MyTxHistoryResponseV2<crate::z_coin::ZcoinTxDetails, i64>, MmError<MyTxHistoryErrorV2>> {
     match lp_coinfind_or_err(&ctx, &request.coin).await.map_mm_err()? {
-        MmCoinEnum::ZCoin(z_coin) => z_coin.tx_history(request).await,
+        MmCoinEnum::ZCoinVariant(z_coin) => z_coin.tx_history(request).await,
         other => MmError::err(MyTxHistoryErrorV2::NotSupportedFor(other.ticker().to_owned())),
     }
 }

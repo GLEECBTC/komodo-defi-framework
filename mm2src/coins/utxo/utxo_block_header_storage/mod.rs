@@ -1,8 +1,10 @@
-#[cfg(not(target_arch = "wasm32"))] mod sql_block_header_storage;
+#[cfg(not(target_arch = "wasm32"))]
+mod sql_block_header_storage;
 #[cfg(not(target_arch = "wasm32"))]
 pub use sql_block_header_storage::SqliteBlockHeadersStorage;
 
-#[cfg(target_arch = "wasm32")] mod wasm;
+#[cfg(target_arch = "wasm32")]
+mod wasm;
 #[cfg(target_arch = "wasm32")]
 pub use wasm::IDBBlockHeadersStorage;
 
@@ -12,6 +14,7 @@ use mm2_core::mm_ctx::MmArc;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 use mocktopus::macros::*;
 use primitives::hash::H256;
+use serialization::ChainVariant;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
@@ -21,12 +24,18 @@ pub struct BlockHeaderStorage {
 }
 
 impl Debug for BlockHeaderStorage {
-    fn fmt(&self, _f: &mut Formatter<'_>) -> std::fmt::Result { Ok(()) }
+    fn fmt(&self, _f: &mut Formatter<'_>) -> std::fmt::Result {
+        Ok(())
+    }
 }
 
 impl BlockHeaderStorage {
     #[cfg(all(not(test), not(target_arch = "wasm32")))]
-    pub(crate) fn new_from_ctx(ctx: MmArc, ticker: String) -> Result<Self, BlockHeaderStorageError> {
+    pub(crate) fn new_from_ctx(
+        ctx: MmArc,
+        ticker: String,
+        chain_variant: ChainVariant,
+    ) -> Result<Self, BlockHeaderStorageError> {
         #[cfg(not(feature = "new-db-arch"))]
         let maybe_sqlite_connection = ctx.sqlite_connection.get();
         #[cfg(feature = "new-db-arch")]
@@ -37,20 +46,29 @@ impl BlockHeaderStorage {
         Ok(BlockHeaderStorage {
             inner: Box::new(SqliteBlockHeadersStorage {
                 ticker,
+                chain_variant,
                 conn: sqlite_connection.clone(),
             }),
         })
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub(crate) fn new_from_ctx(ctx: MmArc, ticker: String) -> Result<Self, BlockHeaderStorageError> {
+    pub(crate) fn new_from_ctx(
+        ctx: MmArc,
+        ticker: String,
+        chain_variant: ChainVariant,
+    ) -> Result<Self, BlockHeaderStorageError> {
         Ok(BlockHeaderStorage {
-            inner: Box::new(IDBBlockHeadersStorage::new(&ctx, ticker)),
+            inner: Box::new(IDBBlockHeadersStorage::new(&ctx, ticker, chain_variant)),
         })
     }
 
     #[cfg(all(test, not(target_arch = "wasm32")))]
-    pub(crate) fn new_from_ctx(ctx: MmArc, ticker: String) -> Result<Self, BlockHeaderStorageError> {
+    pub(crate) fn new_from_ctx(
+        ctx: MmArc,
+        ticker: String,
+        chain_variant: ChainVariant,
+    ) -> Result<Self, BlockHeaderStorageError> {
         use db_common::sqlite::rusqlite::Connection;
         use std::sync::{Arc, Mutex};
 
@@ -61,18 +79,26 @@ impl BlockHeaderStorage {
             .unwrap_or_else(|| Arc::new(Mutex::new(Connection::open_in_memory().unwrap())));
 
         Ok(BlockHeaderStorage {
-            inner: Box::new(SqliteBlockHeadersStorage { ticker, conn }),
+            inner: Box::new(SqliteBlockHeadersStorage {
+                ticker,
+                chain_variant,
+                conn,
+            }),
         })
     }
 
     #[allow(dead_code)]
-    pub(crate) fn into_inner(self) -> Box<dyn BlockHeaderStorageOps> { self.inner }
+    pub(crate) fn into_inner(self) -> Box<dyn BlockHeaderStorageOps> {
+        self.inner
+    }
 }
 
 #[async_trait]
 #[cfg_attr(all(test, not(target_arch = "wasm32")), mockable)]
 impl BlockHeaderStorageOps for BlockHeaderStorage {
-    async fn init(&self) -> Result<(), BlockHeaderStorageError> { self.inner.init().await }
+    async fn init(&self) -> Result<(), BlockHeaderStorageError> {
+        self.inner.init().await
+    }
 
     async fn is_initialized_for(&self) -> Result<bool, BlockHeaderStorageError> {
         self.inner.is_initialized_for().await
@@ -116,7 +142,9 @@ impl BlockHeaderStorageOps for BlockHeaderStorage {
         self.inner.remove_headers_from_storage(from_height, to_height).await
     }
 
-    async fn is_table_empty(&self) -> Result<(), BlockHeaderStorageError> { self.inner.is_table_empty().await }
+    async fn is_table_empty(&self) -> Result<(), BlockHeaderStorageError> {
+        self.inner.is_table_empty().await
+    }
 }
 
 #[cfg(any(test, target_arch = "wasm32"))]
@@ -139,7 +167,7 @@ mod block_headers_storage_tests {
 
     pub(crate) async fn test_add_block_headers_impl(for_coin: &str) {
         let ctx = mm_ctx_with_custom_db();
-        let storage = BlockHeaderStorage::new_from_ctx(ctx, for_coin.to_string())
+        let storage = BlockHeaderStorage::new_from_ctx(ctx, for_coin.to_string(), ChainVariant::Standard)
             .unwrap()
             .into_inner();
         storage.init().await.unwrap();
@@ -153,7 +181,7 @@ mod block_headers_storage_tests {
 
     pub(crate) async fn test_get_block_header_impl(for_coin: &str) {
         let ctx = mm_ctx_with_custom_db();
-        let storage = BlockHeaderStorage::new_from_ctx(ctx, for_coin.to_string())
+        let storage = BlockHeaderStorage::new_from_ctx(ctx, for_coin.to_string(), ChainVariant::Standard)
             .unwrap()
             .into_inner();
         storage.init().await.unwrap();
@@ -178,7 +206,7 @@ mod block_headers_storage_tests {
 
     pub(crate) async fn test_get_last_block_header_with_non_max_bits_impl(for_coin: &str) {
         let ctx = mm_ctx_with_custom_db();
-        let storage = BlockHeaderStorage::new_from_ctx(ctx, for_coin.to_string())
+        let storage = BlockHeaderStorage::new_from_ctx(ctx, for_coin.to_string(), ChainVariant::Standard)
             .unwrap()
             .into_inner();
         storage.init().await.unwrap();
@@ -213,7 +241,7 @@ mod block_headers_storage_tests {
 
     pub(crate) async fn test_get_last_block_height_impl(for_coin: &str) {
         let ctx = mm_ctx_with_custom_db();
-        let storage = BlockHeaderStorage::new_from_ctx(ctx, for_coin.to_string())
+        let storage = BlockHeaderStorage::new_from_ctx(ctx, for_coin.to_string(), ChainVariant::Standard)
             .unwrap()
             .into_inner();
         storage.init().await.unwrap();
@@ -241,7 +269,7 @@ mod block_headers_storage_tests {
 
     pub(crate) async fn test_remove_headers_from_storage_impl(for_coin: &str) {
         let ctx = mm_ctx_with_custom_db();
-        let storage = BlockHeaderStorage::new_from_ctx(ctx, for_coin.to_string())
+        let storage = BlockHeaderStorage::new_from_ctx(ctx, for_coin.to_string(), ChainVariant::Standard)
             .unwrap()
             .into_inner();
         storage.init().await.unwrap();
@@ -295,7 +323,7 @@ mod native_tests {
     fn test_init_collection() {
         let for_coin = "init_collection";
         let ctx = mm_ctx_with_custom_db();
-        let storage = BlockHeaderStorage::new_from_ctx(ctx, for_coin.to_string())
+        let storage = BlockHeaderStorage::new_from_ctx(ctx, for_coin.to_string(), ChainVariant::Standard)
             .unwrap()
             .into_inner();
 
@@ -313,10 +341,14 @@ mod native_tests {
     const FOR_COIN_GET: &str = "get";
     const FOR_COIN_INSERT: &str = "insert";
     #[test]
-    fn test_add_block_headers() { block_on(test_add_block_headers_impl(FOR_COIN_INSERT)) }
+    fn test_add_block_headers() {
+        block_on(test_add_block_headers_impl(FOR_COIN_INSERT))
+    }
 
     #[test]
-    fn test_test_get_block_header() { block_on(test_get_block_header_impl(FOR_COIN_GET)) }
+    fn test_test_get_block_header() {
+        block_on(test_get_block_header_impl(FOR_COIN_GET))
+    }
 
     #[test]
     fn test_get_last_block_header_with_non_max_bits() {
@@ -324,10 +356,14 @@ mod native_tests {
     }
 
     #[test]
-    fn test_get_last_block_height() { block_on(test_get_last_block_height_impl(FOR_COIN_GET)) }
+    fn test_get_last_block_height() {
+        block_on(test_get_last_block_height_impl(FOR_COIN_GET))
+    }
 
     #[test]
-    fn test_remove_headers_from_storage() { block_on(test_remove_headers_from_storage_impl(FOR_COIN_GET)) }
+    fn test_remove_headers_from_storage() {
+        block_on(test_remove_headers_from_storage_impl(FOR_COIN_GET))
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -345,7 +381,7 @@ mod wasm_test {
     #[wasm_bindgen_test]
     async fn test_storage_init() {
         let ctx = mm_ctx_with_custom_db();
-        let storage = IDBBlockHeadersStorage::new(&ctx, "RICK".to_string());
+        let storage = IDBBlockHeadersStorage::new(&ctx, "RICK".to_string(), ChainVariant::RICK);
 
         register_wasm_log();
 
@@ -360,10 +396,14 @@ mod wasm_test {
     }
 
     #[wasm_bindgen_test]
-    async fn test_add_block_headers() { test_add_block_headers_impl(FOR_COIN).await }
+    async fn test_add_block_headers() {
+        test_add_block_headers_impl(FOR_COIN).await
+    }
 
     #[wasm_bindgen_test]
-    async fn test_test_get_block_header() { test_get_block_header_impl(FOR_COIN).await }
+    async fn test_test_get_block_header() {
+        test_get_block_header_impl(FOR_COIN).await
+    }
 
     #[wasm_bindgen_test]
     async fn test_get_last_block_header_with_non_max_bits() {
@@ -371,8 +411,12 @@ mod wasm_test {
     }
 
     #[wasm_bindgen_test]
-    async fn test_get_last_block_height() { test_get_last_block_height_impl(FOR_COIN).await }
+    async fn test_get_last_block_height() {
+        test_get_last_block_height_impl(FOR_COIN).await
+    }
 
     #[wasm_bindgen_test]
-    async fn test_remove_headers_from_storage() { test_remove_headers_from_storage_impl(FOR_COIN).await }
+    async fn test_remove_headers_from_storage() {
+        test_remove_headers_from_storage_impl(FOR_COIN).await
+    }
 }

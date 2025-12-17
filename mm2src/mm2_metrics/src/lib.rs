@@ -1,5 +1,7 @@
-#[macro_use] extern crate common;
-#[macro_use] extern crate serde_derive;
+#[macro_use]
+extern crate common;
+#[macro_use]
+extern crate serde_derive;
 
 #[macro_use]
 pub mod mm_metrics;
@@ -21,17 +23,17 @@ pub type MmMetricsResult<T> = Result<T, MmError<MmMetricsError>>;
 
 #[derive(Debug, Display)]
 pub enum MmMetricsError {
-    #[display(fmt = "Internal: {}", _0)]
+    #[display(fmt = "Internal: {_0}")]
     Internal(String),
     #[display(fmt = "Warning Prometheus: metrics system unavailable")]
     MetricsSystemUnavailable,
     #[display(fmt = "Warning Prometheus: authorization required")]
     PrometheusAuthorizationRequired,
-    #[display(fmt = "Warning Prometheus: invalid credentials: {}", _0)]
+    #[display(fmt = "Warning Prometheus: invalid credentials: {_0}")]
     PrometheusInvalidCredentials(String),
-    #[display(fmt = "Prometheus Server Error: {}", _0)]
+    #[display(fmt = "Prometheus Server Error: {_0}")]
     PrometheusServerError(String),
-    #[display(fmt = "Warning Prometheus: unexpected URI {}", _0)]
+    #[display(fmt = "Warning Prometheus: unexpected URI {_0}")]
     UnexpectedUri(String),
 }
 
@@ -54,26 +56,38 @@ pub trait MetricsOps {
 pub struct MetricsArc(pub(crate) Arc<Metrics>);
 
 impl Default for MetricsArc {
-    fn default() -> Self { Self(Arc::new(Metrics::default())) }
+    fn default() -> Self {
+        Self(Arc::new(Metrics::default()))
+    }
 }
 
 impl MetricsArc {
     // Create new instance of our metrics recorder set to default.
-    pub fn new() -> Self { Self(Default::default()) }
+    pub fn new() -> Self {
+        Self(Default::default())
+    }
 
     /// Try to obtain the `Metrics` from the weak pointer.
-    pub fn from_weak(weak: &MetricsWeak) -> Option<MetricsArc> { weak.0.upgrade().map(MetricsArc) }
+    pub fn from_weak(weak: &MetricsWeak) -> Option<MetricsArc> {
+        weak.0.upgrade().map(MetricsArc)
+    }
 
     /// Create a weak pointer from `MetricsWeak`.
-    pub fn weak(&self) -> MetricsWeak { MetricsWeak(Arc::downgrade(&self.0)) }
+    pub fn weak(&self) -> MetricsWeak {
+        MetricsWeak(Arc::downgrade(&self.0))
+    }
 }
 
 impl TryRecorder for MetricsArc {
-    fn try_recorder(&self) -> Option<Arc<MmRecorder>> { Some(Arc::clone(&self.0.recorder)) }
+    fn try_recorder(&self) -> Option<Arc<MmRecorder>> {
+        Some(Arc::clone(&self.0.recorder))
+    }
 }
 
 impl MetricsOps for MetricsArc {
-    fn init(&self) { self.0.init(); }
+    fn init(&self) {
+        self.0.init();
+    }
 
     fn init_with_dashboard<S>(&self, spawner: &S, log_state: LogWeak, interval: f64) -> MmMetricsResult<()>
     where
@@ -82,7 +96,9 @@ impl MetricsOps for MetricsArc {
         self.0.init_with_dashboard(spawner, log_state, interval)
     }
 
-    fn collect_json(&self) -> MmMetricsResult<crate::Json> { self.0.collect_json() }
+    fn collect_json(&self) -> MmMetricsResult<crate::Json> {
+        self.0.collect_json()
+    }
 }
 
 #[derive(Clone, Default)]
@@ -90,9 +106,13 @@ pub struct MetricsWeak(pub Weak<Metrics>);
 
 impl MetricsWeak {
     /// Create a default MmWeak without allocating any memory.
-    pub fn new() -> MetricsWeak { MetricsWeak::default() }
+    pub fn new() -> MetricsWeak {
+        MetricsWeak::default()
+    }
 
-    pub fn dropped(&self) -> bool { self.0.strong_count() == 0 }
+    pub fn dropped(&self) -> bool {
+        self.0.strong_count() == 0
+    }
 }
 
 impl TryRecorder for MetricsWeak {

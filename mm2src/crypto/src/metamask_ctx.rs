@@ -15,22 +15,30 @@ pub use mm2_metamask::{MetamaskError, MetamaskResult};
 pub struct MetamaskArc(Arc<MetamaskCtx>);
 
 impl MetamaskArc {
-    pub fn new(metamask_ctx: MetamaskCtx) -> MetamaskArc { MetamaskArc(Arc::new(metamask_ctx)) }
+    pub fn new(metamask_ctx: MetamaskCtx) -> MetamaskArc {
+        MetamaskArc(Arc::new(metamask_ctx))
+    }
 
-    pub fn downgrade(&self) -> MetamaskWeak { MetamaskWeak(Arc::downgrade(&self.0)) }
+    pub fn downgrade(&self) -> MetamaskWeak {
+        MetamaskWeak(Arc::downgrade(&self.0))
+    }
 }
 
 impl Deref for MetamaskArc {
     type Target = MetamaskCtx;
 
-    fn deref(&self) -> &Self::Target { &self.0 }
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 #[derive(Clone)]
 pub struct MetamaskWeak(Weak<MetamaskCtx>);
 
 impl MetamaskWeak {
-    pub fn upgrade(&self) -> Option<MetamaskArc> { self.0.upgrade().map(MetamaskArc) }
+    pub fn upgrade(&self) -> Option<MetamaskArc> {
+        self.0.upgrade().map(MetamaskArc)
+    }
 }
 
 pub struct MetamaskCtx {
@@ -85,13 +93,19 @@ impl MetamaskCtx {
     }
 
     #[inline]
-    pub fn eth_account(&self) -> Address { self.eth_account }
+    pub fn eth_account(&self) -> Address {
+        self.eth_account
+    }
 
     #[inline]
-    pub fn eth_account_str(&self) -> &str { &self.eth_account_str }
+    pub fn eth_account_str(&self) -> &str {
+        &self.eth_account_str
+    }
 
     #[inline]
-    pub fn eth_account_pubkey_uncompressed(&self) -> H520 { self.eth_account_pubkey }
+    pub fn eth_account_pubkey_uncompressed(&self) -> H520 {
+        self.eth_account_pubkey
+    }
 
     /// Checks if the `MetamaskCtx::eth_account` is still active.
     /// This is required to check before sending transactions.

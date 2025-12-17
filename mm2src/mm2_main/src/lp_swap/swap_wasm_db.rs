@@ -1,11 +1,13 @@
 use async_trait::async_trait;
-use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbUpgrader, IndexedDb, IndexedDbBuilder, OnUpgradeError,
-                         OnUpgradeResult, TableSignature};
+use mm2_db::indexed_db::{
+    DbIdentifier, DbInstance, DbUpgrader, IndexedDb, IndexedDbBuilder, OnUpgradeError, OnUpgradeResult, TableSignature,
+};
 use std::ops::Deref;
 use uuid::Uuid;
 
-pub use mm2_db::indexed_db::{cursor_prelude, DbTransactionError, DbTransactionResult, InitDbError, InitDbResult,
-                             ItemId};
+pub use mm2_db::indexed_db::{
+    cursor_prelude, DbTransactionError, DbTransactionResult, InitDbError, InitDbResult, ItemId,
+};
 pub use tables::{MySwapsFiltersTable, SavedSwapTable, SwapLockTable, SwapsMigrationTable};
 
 const DB_NAME: &str = "swap";
@@ -37,7 +39,9 @@ impl DbInstance for SwapDb {
 impl Deref for SwapDb {
     type Target = IndexedDb;
 
-    fn deref(&self) -> &Self::Target { &self.inner }
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
 }
 
 pub mod tables {

@@ -1,5 +1,4 @@
-#[cfg(feature = "enable-sia")]
-use coins::siacoin::SiaCoinActivationParams;
+use coins::siacoin::SiaCoinActivationRequest;
 use coins::utxo::bch::BchActivationRequest;
 use coins::utxo::UtxoActivationParams;
 use coins::z_coin::ZcoinActivationParams;
@@ -20,20 +19,27 @@ pub trait TxHistory {
 }
 
 impl TxHistory for UtxoActivationParams {
-    fn tx_history(&self) -> bool { self.tx_history }
+    fn tx_history(&self) -> bool {
+        self.tx_history
+    }
 }
 
 impl TxHistory for BchActivationRequest {
-    fn tx_history(&self) -> bool { self.utxo_params.tx_history }
+    fn tx_history(&self) -> bool {
+        self.utxo_params.tx_history
+    }
 }
 
-#[cfg(feature = "enable-sia")]
-impl TxHistory for SiaCoinActivationParams {
-    fn tx_history(&self) -> bool { self.tx_history }
+impl TxHistory for SiaCoinActivationRequest {
+    fn tx_history(&self) -> bool {
+        self.tx_history
+    }
 }
 
 impl TxHistory for ZcoinActivationParams {
-    fn tx_history(&self) -> bool { false }
+    fn tx_history(&self) -> bool {
+        false
+    }
 }
 
 pub trait GetAddressesBalances {
@@ -151,10 +157,14 @@ pub trait ActivationRequestInfo {
 }
 
 impl ActivationRequestInfo for UtxoActivationParams {
-    fn is_hw_policy(&self) -> bool { self.priv_key_policy.is_hw_policy() }
+    fn is_hw_policy(&self) -> bool {
+        self.priv_key_policy.is_hw_policy()
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl ActivationRequestInfo for ZcoinActivationParams {
-    fn is_hw_policy(&self) -> bool { false } // TODO: fix when device policy is added
+    fn is_hw_policy(&self) -> bool {
+        false
+    } // TODO: fix when device policy is added
 }

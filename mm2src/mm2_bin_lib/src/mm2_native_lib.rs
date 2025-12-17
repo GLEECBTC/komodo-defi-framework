@@ -144,7 +144,9 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
 /// 2 .. context, but no RPC yet.
 /// 3 .. RPC is up.
 #[no_mangle]
-pub extern "C" fn mm2_main_status() -> i8 { mm2_status() as i8 }
+pub extern "C" fn mm2_main_status() -> i8 {
+    mm2_status() as i8
+}
 
 /// Run a few hand-picked tests.
 ///

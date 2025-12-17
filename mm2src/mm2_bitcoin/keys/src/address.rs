@@ -12,8 +12,10 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::{fmt, hash::Hash};
 
-use {AddressHashEnum, AddressPrefix, CashAddrType, CashAddress, Error, LegacyAddress, NetworkAddressPrefixes,
-     SegwitAddress};
+use {
+    AddressHashEnum, AddressPrefix, CashAddrType, CashAddress, Error, LegacyAddress, NetworkAddressPrefixes,
+    SegwitAddress,
+};
 
 mod address_builder;
 pub use self::address_builder::{AddressBuilder, AddressBuilderOption};
@@ -70,11 +72,17 @@ pub enum AddressFormat {
 }
 
 impl AddressFormat {
-    pub fn is_segwit(&self) -> bool { matches!(*self, AddressFormat::Segwit) }
+    pub fn is_segwit(&self) -> bool {
+        matches!(*self, AddressFormat::Segwit)
+    }
 
-    pub fn is_cashaddress(&self) -> bool { matches!(*self, AddressFormat::CashAddress { .. }) }
+    pub fn is_cashaddress(&self) -> bool {
+        matches!(*self, AddressFormat::CashAddress { .. })
+    }
 
-    pub fn is_legacy(&self) -> bool { matches!(*self, AddressFormat::Standard) }
+    pub fn is_legacy(&self) -> bool {
+        matches!(*self, AddressFormat::Standard)
+    }
 }
 
 // Todo: add segwit checksum detection
@@ -141,13 +149,27 @@ impl Hash for Address {
 }
 
 impl Address {
-    pub fn prefix(&self) -> &AddressPrefix { &self.prefix }
-    pub fn hrp(&self) -> &Option<String> { &self.hrp }
-    pub fn pubkey(&self) -> &Option<Public> { &self.pubkey }
-    pub fn hash(&self) -> &AddressHashEnum { &self.hash }
-    pub fn checksum_type(&self) -> &ChecksumType { &self.checksum_type }
-    pub fn addr_format(&self) -> &AddressFormat { &self.addr_format }
-    pub fn script_type(&self) -> &AddressScriptType { &self.script_type }
+    pub fn prefix(&self) -> &AddressPrefix {
+        &self.prefix
+    }
+    pub fn hrp(&self) -> &Option<String> {
+        &self.hrp
+    }
+    pub fn pubkey(&self) -> &Option<Public> {
+        &self.pubkey
+    }
+    pub fn hash(&self) -> &AddressHashEnum {
+        &self.hash
+    }
+    pub fn checksum_type(&self) -> &ChecksumType {
+        &self.checksum_type
+    }
+    pub fn addr_format(&self) -> &AddressFormat {
+        &self.addr_format
+    }
+    pub fn script_type(&self) -> &AddressScriptType {
+        &self.script_type
+    }
 
     /// Returns true if output script type is pubkey hash (p2pkh or p2wpkh)
     pub fn is_pubkey_hash(&self) -> bool {
@@ -172,10 +194,13 @@ impl Address {
                 pub_addr_prefix,
                 p2sh_addr_prefix,
             } => self
-                .to_cashaddress(network, &NetworkAddressPrefixes {
-                    p2pkh: [*pub_addr_prefix].into(),
-                    p2sh: [*p2sh_addr_prefix].into(),
-                })
+                .to_cashaddress(
+                    network,
+                    &NetworkAddressPrefixes {
+                        p2pkh: [*pub_addr_prefix].into(),
+                        p2sh: [*p2sh_addr_prefix].into(),
+                    },
+                )
                 .and_then(|cashaddress| cashaddress.encode()),
         }
     }
@@ -304,10 +329,13 @@ impl fmt::Display for Address {
                 p2sh_addr_prefix,
             } => {
                 let cash_address = self
-                    .to_cashaddress(network, &NetworkAddressPrefixes {
-                        p2pkh: [*pub_addr_prefix].into(),
-                        p2sh: [*p2sh_addr_prefix].into(),
-                    })
+                    .to_cashaddress(
+                        network,
+                        &NetworkAddressPrefixes {
+                            p2pkh: [*pub_addr_prefix].into(),
+                            p2sh: [*p2sh_addr_prefix].into(),
+                        },
+                    )
                     .expect("A valid address");
                 cash_address.encode().expect("A valid address").fmt(f)
             },

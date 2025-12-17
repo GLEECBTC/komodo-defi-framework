@@ -1,7 +1,8 @@
 use crate::account::storage::{AccountStorage, AccountStorageError, AccountStorageResult};
-use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId,
-                     EnabledAccountType, HwPubkey, MAX_ACCOUNT_DESCRIPTION_LENGTH, MAX_ACCOUNT_NAME_LENGTH,
-                     MAX_TICKER_LENGTH};
+use crate::account::{
+    AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId,
+    EnabledAccountType, HwPubkey, MAX_ACCOUNT_DESCRIPTION_LENGTH, MAX_ACCOUNT_NAME_LENGTH, MAX_TICKER_LENGTH,
+};
 use async_trait::async_trait;
 use common::some_or_return_ok_none;
 use db_common::foreign_columns;
@@ -125,10 +126,10 @@ impl SqliteAccountStorage {
         })
     }
 
-    fn lock_conn_mutex(&self) -> AccountStorageResult<MutexGuard<Connection>> {
+    fn lock_conn_mutex(&self) -> AccountStorageResult<MutexGuard<'_, Connection>> {
         self.conn
             .lock()
-            .map_to_mm(|e| AccountStorageError::Internal(format!("Error locking sqlite connection: {}", e)))
+            .map_to_mm(|e| AccountStorageError::Internal(format!("Error locking sqlite connection: {e}")))
     }
 
     fn init_account_table(conn: &Connection) -> AccountStorageResult<()> {
@@ -144,11 +145,14 @@ impl SqliteAccountStorage {
                 SqlType::Varchar(MAX_ACCOUNT_DESCRIPTION_LENGTH),
             ))
             .column(SqlColumn::new(account_table::BALANCE_USD, SqlType::Varchar(BALANCE_MAX_LENGTH)).not_null())
-            .constraint(PrimaryKey::new(account_table::ACCOUNT_ID_PRIMARY_KEY, [
-                account_table::ACCOUNT_TYPE,
-                account_table::ACCOUNT_IDX,
-                account_table::DEVICE_PUBKEY,
-            ])?);
+            .constraint(PrimaryKey::new(
+                account_table::ACCOUNT_ID_PRIMARY_KEY,
+                [
+                    account_table::ACCOUNT_TYPE,
+                    account_table::ACCOUNT_IDX,
+                    account_table::DEVICE_PUBKEY,
+                ],
+            )?);
         create_sql.create().map_to_mm(AccountStorageError::from)
     }
 
@@ -167,20 +171,26 @@ impl SqliteAccountStorage {
             )
             .column(SqlColumn::new(account_coins_table::COIN, SqlType::Varchar(MAX_TICKER_LENGTH)).not_null())
             .constraint(
-                ForeignKey::new(foreign_key::ParentTable(account_table::TABLE_NAME), foreign_columns![
-                    account_coins_table::ACCOUNT_TYPE => account_table::ACCOUNT_TYPE,
-                    account_coins_table::ACCOUNT_IDX => account_table::ACCOUNT_IDX,
-                    account_coins_table::DEVICE_PUBKEY => account_table::DEVICE_PUBKEY
-                ])?
+                ForeignKey::new(
+                    foreign_key::ParentTable(account_table::TABLE_NAME),
+                    foreign_columns![
+                        account_coins_table::ACCOUNT_TYPE => account_table::ACCOUNT_TYPE,
+                        account_coins_table::ACCOUNT_IDX => account_table::ACCOUNT_IDX,
+                        account_coins_table::DEVICE_PUBKEY => account_table::DEVICE_PUBKEY
+                    ],
+                )?
                 // Delete all coins from `account_coins_table` if the corresponding `account_table` record has been deleted.
                 .on_event(foreign_key::Event::OnDelete, foreign_key::Action::Cascade),
             )
-            .constraint(Unique::new(account_coins_table::ACCOUNT_ID_COIN_CONSTRAINT, [
-                account_coins_table::ACCOUNT_TYPE,
-                account_coins_table::ACCOUNT_IDX,
-                account_coins_table::DEVICE_PUBKEY,
-                account_coins_table::COIN,
-            ])?);
+            .constraint(Unique::new(
+                account_coins_table::ACCOUNT_ID_COIN_CONSTRAINT,
+                [
+                    account_coins_table::ACCOUNT_TYPE,
+                    account_coins_table::ACCOUNT_IDX,
+                    account_coins_table::DEVICE_PUBKEY,
+                    account_coins_table::COIN,
+                ],
+            )?);
         create_sql.create().map_to_mm(AccountStorageError::from)
     }
 
@@ -199,11 +209,14 @@ impl SqliteAccountStorage {
                 .not_null(),
             )
             .constraint(
-                ForeignKey::new(foreign_key::ParentTable(account_table::TABLE_NAME), foreign_columns![
-                    enabled_account_table::ACCOUNT_TYPE => account_table::ACCOUNT_TYPE,
-                    enabled_account_table::ACCOUNT_IDX => account_table::ACCOUNT_IDX,
-                    enabled_account_table::DEVICE_PUBKEY => account_table::DEVICE_PUBKEY,
-                ])?
+                ForeignKey::new(
+                    foreign_key::ParentTable(account_table::TABLE_NAME),
+                    foreign_columns![
+                        enabled_account_table::ACCOUNT_TYPE => account_table::ACCOUNT_TYPE,
+                        enabled_account_table::ACCOUNT_IDX => account_table::ACCOUNT_IDX,
+                        enabled_account_table::DEVICE_PUBKEY => account_table::DEVICE_PUBKEY,
+                    ],
+                )?
                 // Delete an enabled account from `enabled_account_table` if the corresponding `account_table` record has been deleted.
                 .on_event(foreign_key::Event::OnDelete, foreign_key::Action::Cascade),
             );
@@ -459,7 +472,7 @@ impl AccountStorage for SqliteAccountStorage {
         })?;
         // The number of inserted accounts is expected to be '1'.
         if inserted != 1 {
-            let error = format!("Expected exactly '1' inserted account, found '{}'", inserted);
+            let error = format!("Expected exactly '1' inserted account, found '{inserted}'");
             return MmError::err(AccountStorageError::Internal(error));
         }
 
@@ -585,7 +598,9 @@ fn account_from_row(row: &Row<'_>) -> Result<AccountInfo, SqlError> {
     })
 }
 
-fn count_from_row(row: &Row<'_>) -> Result<i64, SqlError> { row.get(0) }
+fn count_from_row(row: &Row<'_>) -> Result<i64, SqlError> {
+    row.get(0)
+}
 
 fn bigdecimal_from_row(row: &Row<'_>, idx: usize) -> Result<BigDecimal, SqlError> {
     let decimal: String = row.get(idx)?;

@@ -21,12 +21,18 @@ impl P2PContext {
     }
 
     #[inline(always)]
-    pub fn keypair(&self) -> &Keypair { &self.keypair }
+    pub fn keypair(&self) -> &Keypair {
+        &self.keypair
+    }
 
     #[inline(always)]
-    pub fn peer_id(&self) -> PeerId { self.keypair.public().to_peer_id() }
+    pub fn peer_id(&self) -> PeerId {
+        self.keypair.public().to_peer_id()
+    }
 
-    pub fn store_to_mm_arc(self, ctx: &MmArc) { *ctx.p2p_ctx.lock().unwrap() = Some(Arc::new(self)) }
+    pub fn store_to_mm_arc(self, ctx: &MmArc) {
+        *ctx.p2p_ctx.lock().unwrap() = Some(Arc::new(self))
+    }
 
     pub fn fetch_from_mm_arc(ctx: &MmArc) -> Arc<Self> {
         ctx.p2p_ctx

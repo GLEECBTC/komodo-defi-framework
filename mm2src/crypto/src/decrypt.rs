@@ -12,17 +12,19 @@ type Aes256CbcDec = cbc::Decryptor<Aes256>;
 
 #[derive(Debug, Display, PartialEq)]
 pub enum DecryptionError {
-    #[display(fmt = "AES cipher error: {}", _0)]
+    #[display(fmt = "AES cipher error: {_0}")]
     AESCipherError(String),
-    #[display(fmt = "Error decoding string: {}", _0)]
+    #[display(fmt = "Error decoding string: {_0}")]
     DecodeError(String),
-    #[display(fmt = "HMAC error: {}", _0)]
+    #[display(fmt = "HMAC error: {_0}")]
     HMACError(String),
     Internal(String),
 }
 
 impl From<base64::DecodeError> for DecryptionError {
-    fn from(e: base64::DecodeError) -> Self { DecryptionError::DecodeError(e.to_string()) }
+    fn from(e: base64::DecodeError) -> Self {
+        DecryptionError::DecodeError(e.to_string())
+    }
 }
 
 /// Decrypts the provided encrypted data using AES-256-CBC decryption and HMAC for integrity check.

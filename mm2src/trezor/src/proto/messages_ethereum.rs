@@ -1,3 +1,5 @@
+// Generated protocol messages; many types are not instantiated in our build.
+#![allow(dead_code)]
 ///*
 /// Request: Ask device for Ethereum address corresponding to address_n path
 /// @start
@@ -6,7 +8,7 @@
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct EthereumGetAddress {
     /// BIP-32 path to derive the key from master node
-    #[prost(uint32, repeated, tag = "1")]
+    #[prost(uint32, repeated, packed = "false", tag = "1")]
     pub address_n: ::prost::alloc::vec::Vec<u32>,
     /// optionally show on display before sending the result
     #[prost(bool, optional, tag = "2")]
@@ -40,7 +42,7 @@ pub struct EthereumAddress {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct EthereumGetPublicKey {
     // BIP-32 path to derive the key from master node
-    #[prost(uint32, repeated, tag = "1")]
+    #[prost(uint32, repeated, packed = "false", tag = "1")]
     pub address_n: ::prost::alloc::vec::Vec<u32>, // repeated uint32 address_n = 1;
     // optionally show on display before sending the result
     #[prost(bool, optional, tag = "2")]
@@ -71,7 +73,7 @@ pub struct EthereumPublicKey {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct EthereumSignTx {
     /// BIP-32 path to derive the key from master node
-    #[prost(uint32, repeated, tag = "1")]
+    #[prost(uint32, repeated, packed = "false", tag = "1")]
     pub address_n: ::prost::alloc::vec::Vec<u32>,
     /// <=256 bit unsigned big endian
     #[prost(bytes = "vec", optional, tag = "2", default = "b\"\"")]
@@ -117,7 +119,7 @@ pub struct EthereumSignTx {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct EthereumSignTxEIP1559 {
     /// BIP-32 path to derive the key from master node
-    #[prost(uint32, repeated, tag = "1")]
+    #[prost(uint32, repeated, packed = "false", tag = "1")]
     pub address_n: ::prost::alloc::vec::Vec<u32>,
     /// <=256 bit unsigned big endian
     #[prost(bytes = "vec", required, tag = "2")]

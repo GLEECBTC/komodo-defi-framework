@@ -18,7 +18,9 @@ pub enum TrezorConnectionError {
 }
 
 impl From<CryptoCtxError> for TrezorConnectionError {
-    fn from(e: CryptoCtxError) -> Self { TrezorConnectionError::Internal(format!("'CryptoCtx' is not available: {e}")) }
+    fn from(e: CryptoCtxError) -> Self {
+        TrezorConnectionError::Internal(format!("'CryptoCtx' is not available: {e}"))
+    }
 }
 
 impl HttpStatusCode for TrezorConnectionError {

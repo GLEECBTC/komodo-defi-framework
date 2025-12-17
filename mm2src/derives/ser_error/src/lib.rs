@@ -6,9 +6,13 @@ pub const CONTENT: &str = "error_data";
 /// [`SerializeErrorType`] trait ensures that the each type implementing this trait serializes into
 /// `error_type: String` and `error_data: Option` fields only.
 pub trait SerializeErrorType: Serialize + __private::SerializeErrorTypeImpl {
-    fn tag() -> &'static str { TAG }
+    fn tag() -> &'static str {
+        TAG
+    }
 
-    fn content() -> &'static str { CONTENT }
+    fn content() -> &'static str {
+        CONTENT
+    }
 }
 
 /// Every type that implements [`__private::SerializeErrorTypeImpl`] also implements [`SerializeErrorType`].

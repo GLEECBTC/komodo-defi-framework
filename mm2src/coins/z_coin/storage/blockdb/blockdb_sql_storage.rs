@@ -1,5 +1,7 @@
-use crate::z_coin::storage::{scan_cached_block, validate_chain, BlockDbImpl, BlockProcessingMode, CompactBlockRow,
-                             LockedNotesStorage, ZcoinStorageRes};
+use crate::z_coin::storage::{
+    scan_cached_block, validate_chain, BlockDbImpl, BlockProcessingMode, CompactBlockRow, LockedNotesStorage,
+    ZcoinStorageRes,
+};
 use crate::z_coin::tx_history_events::ZCoinTxHistoryEventStreamer;
 use crate::z_coin::z_balance_streaming::ZCoinBalanceEventStreamer;
 use crate::z_coin::z_coin_errors::ZcoinStorageError;
@@ -41,13 +43,15 @@ impl From<ZcashClientError> for ZcoinStorageError {
 }
 
 impl From<ChainError<NoteId>> for ZcoinStorageError {
-    fn from(value: ChainError<NoteId>) -> Self { Self::SqliteError(ZcashClientError::from(value)) }
+    fn from(value: ChainError<NoteId>) -> Self {
+        Self::SqliteError(ZcashClientError::from(value))
+    }
 }
 
 impl BlockDbImpl {
     #[cfg(not(test))]
     pub async fn new(ctx: &MmArc, ticker: String) -> ZcoinStorageRes<Self> {
-        let path = ctx.global_dir().join(format!("{}_cache.db", ticker));
+        let path = ctx.global_dir().join(format!("{ticker}_cache.db"));
         async_blocking(move || {
             mm2_io::fs::create_parents(&path).map_err(|err| ZcoinStorageError::IoError(err.to_string()))?;
             let conn = Connection::open(path).map_to_mm(|err| ZcoinStorageError::DbError(err.to_string()))?;

@@ -16,7 +16,9 @@ pub enum GetPublicKeyError {
 }
 
 impl From<CryptoCtxError> for GetPublicKeyError {
-    fn from(_: CryptoCtxError) -> Self { GetPublicKeyError::Internal("public_key not available".to_string()) }
+    fn from(_: CryptoCtxError) -> Self {
+        GetPublicKeyError::Internal("public_key not available".to_string())
+    }
 }
 
 #[derive(Serialize)]

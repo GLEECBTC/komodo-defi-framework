@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright © 2023 Pampex LTD and TillyHK LTD                                *
+ * Copyright © 2025 Gleec Holding OÜ                                *
  *                                                                            *
  * See the CONTRIBUTOR-LICENSE-AGREEMENT, COPYING, LICENSE-COPYRIGHT-NOTICE   *
  * and DEVELOPER-CERTIFICATE-OF-ORIGIN files in the LEGAL directory in        *
@@ -18,7 +18,7 @@
 //  mm2.rs
 //  marketmaker
 //
-//  Copyright © 2023 Pampex LTD and TillyHK LTD. All rights reserved.
+//  Copyright © 2025 Gleec Holding OÜ. All rights reserved.
 //
 
 // `mockable` implementation uses these
@@ -32,14 +32,21 @@
 #![cfg_attr(target_arch = "wasm32", allow(dead_code))]
 #![cfg_attr(target_arch = "wasm32", allow(unused_imports))]
 
-#[macro_use] extern crate common;
-#[macro_use] extern crate gstuff;
-#[macro_use] extern crate serde_json;
-#[macro_use] extern crate serde_derive;
-#[macro_use] extern crate ser_error_derive;
-#[cfg(test)] extern crate mm2_test_helpers;
+#[macro_use]
+extern crate common;
+#[macro_use]
+extern crate gstuff;
+#[macro_use]
+extern crate serde_json;
+#[macro_use]
+extern crate serde_derive;
+#[macro_use]
+extern crate ser_error_derive;
+#[cfg(test)]
+extern crate mm2_test_helpers;
 
-#[cfg(not(target_arch = "wasm32"))] use common::block_on;
+#[cfg(not(target_arch = "wasm32"))]
+use common::block_on;
 use common::crash_reports::init_crash_reports;
 use common::executor::Timer;
 use common::log;
@@ -64,7 +71,8 @@ pub use self::lp_native_dex::init_hw;
 pub use self::lp_native_dex::lp_init;
 use mm2_err_handle::prelude::*;
 
-#[cfg(not(target_arch = "wasm32"))] pub mod database;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod database;
 
 pub mod heartbeat_event;
 pub mod lp_dispatcher;
@@ -77,8 +85,11 @@ pub mod lp_stats;
 pub mod lp_swap;
 pub mod lp_wallet;
 pub mod rpc;
+#[cfg(not(any(target_arch = "wasm32", target_os = "windows")))]
+pub mod shutdown_signal_event;
 mod swap_versioning;
-#[cfg(all(target_arch = "wasm32", test))] mod wasm_tests;
+#[cfg(all(target_arch = "wasm32", test))]
+mod wasm_tests;
 
 use clap::Parser;
 
@@ -120,7 +131,9 @@ pub struct LpMainParams {
 }
 
 impl LpMainParams {
-    pub fn with_conf(conf: Json) -> LpMainParams { LpMainParams { conf, filter: None } }
+    pub fn with_conf(conf: Json) -> LpMainParams {
+        LpMainParams { conf, filter: None }
+    }
 
     pub fn log_filter(mut self, filter: Option<LogLevel>) -> LpMainParams {
         self.filter = filter;
@@ -171,7 +184,7 @@ pub async fn lp_main(
         if !is_weak_password_accepted && cfg!(not(test)) {
             match password_policy(conf["rpc_password"].as_str().unwrap()) {
                 Ok(_) => {},
-                Err(err) => return Err(format!("{}", err)),
+                Err(err) => return Err(format!("{err}")),
             }
         }
     }
@@ -187,8 +200,8 @@ pub async fn lp_main(
         .into_mm_arc();
     ctx_cb(try_s!(ctx.ffi_handle()));
 
-    #[cfg(not(target_arch = "wasm32"))]
-    spawn_ctrl_c_handler(ctx.clone());
+    #[cfg(not(any(target_arch = "wasm32", target_os = "windows")))]
+    spawn_os_signal_handler(ctx.clone());
 
     try_s!(lp_init(ctx.clone(), version, datetime).await);
     Ok(ctx)
@@ -207,22 +220,47 @@ pub async fn lp_run(ctx: MmArc) {
     lp_swap::clear_running_swaps(&ctx);
 }
 
-/// Handles CTRL-C signals and shutdowns the KDF runtime gracefully.
+/// Handles various OS signals and shutdowns the KDF runtime gracefully.
 ///
 /// It's important to spawn this task as soon as `Ctx` is in the correct state.
-#[cfg(not(target_arch = "wasm32"))]
-fn spawn_ctrl_c_handler(ctx: MmArc) {
+#[cfg(not(any(target_arch = "wasm32", target_os = "windows")))]
+fn spawn_os_signal_handler(ctx: MmArc) {
     use crate::lp_dispatcher::{dispatch_lp_event, StopCtxEvent};
+    use futures::StreamExt;
 
     common::executor::spawn(async move {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("Couldn't listen for the CTRL-C signal.");
+        let signals_to_handle = [libc::SIGINT, libc::SIGTERM, libc::SIGQUIT];
+        let mut signals =
+            signal_hook_tokio::Signals::new(signals_to_handle).expect("Couldn't listen for the CTRL-C signal.");
 
-        log::info!("Wrapping things up and shutting down...");
+        let Some(signal) = signals.next().await else {
+            log::error!("Could not catch the OS signal.");
+            return;
+        };
 
-        dispatch_lp_event(ctx.clone(), StopCtxEvent.into()).await;
-        ctx.stop().await.expect("Couldn't stop the KDF runtime.");
+        let signal_name = match signal {
+            libc::SIGINT => "SIGINT".to_owned(),
+            libc::SIGTERM => "SIGTERM".to_owned(),
+            libc::SIGQUIT => "SIGQUIT".to_owned(),
+            _ => format!("UNKNOWN({signal})"),
+        };
+
+        // This fails if the streamer has no active listeners,
+        // but we can safely ignore any failure here.
+        if let Err(e) = ctx
+            .event_stream_manager
+            .send(&mm2_event_stream::StreamerId::ShutdownSignal, signal_name.clone())
+        {
+            log::debug!("Failed to send the SHUTDOWN_SIGNAL event: {e:?}");
+        }
+
+        if signals_to_handle.contains(&signal) {
+            log::info!("Received {signal_name} signal from the OS. Wrapping things up and shutting down...");
+            dispatch_lp_event(ctx.clone(), StopCtxEvent.into()).await;
+            ctx.stop().await.expect("Couldn't stop the KDF runtime.");
+        } else {
+            log::warn!("Received a signal ({signal}) from the OS that cannot be handled.");
+        }
     });
 }
 
@@ -302,7 +340,7 @@ pub fn get_mm2config(json_config: Option<&str>) -> Result<Json, String> {
 /// Runs LP_main with result of `get_mm2config()`.
 ///
 /// * `ctx_cb` - Invoked with the MM context handle,
-///              allowing the `run_lp_main` caller to communicate with MM.
+///   allowing the `run_lp_main` caller to communicate with MM.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn run_lp_main(
     first_arg: Option<&str>,

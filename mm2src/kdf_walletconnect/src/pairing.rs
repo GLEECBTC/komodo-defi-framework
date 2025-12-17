@@ -6,9 +6,10 @@ use mm2_err_handle::prelude::MmResult;
 use relay_rpc::domain::MessageId;
 use relay_rpc::rpc::params::pairing_ping::PairingPingRequest;
 use relay_rpc::rpc::params::{RelayProtocolMetadata, RequestParams};
-use relay_rpc::{domain::Topic,
-                rpc::params::{pairing_delete::PairingDeleteRequest, pairing_extend::PairingExtendRequest,
-                              ResponseParamsSuccess}};
+use relay_rpc::{
+    domain::Topic,
+    rpc::params::{pairing_delete::PairingDeleteRequest, pairing_extend::PairingExtendRequest, ResponseParamsSuccess},
+};
 
 pub(crate) async fn reply_pairing_ping_response(
     ctx: &WalletConnectCtxImpl,

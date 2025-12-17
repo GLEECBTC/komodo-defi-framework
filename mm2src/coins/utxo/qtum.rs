@@ -1,40 +1,47 @@
 use super::utxo_common::utxo_prepare_addresses_for_balance_stream_if_enabled;
 use super::*;
-use crate::coin_balance::{self, EnableCoinBalanceError, EnabledCoinBalanceParams, HDAccountBalance, HDAddressBalance,
-                          HDWalletBalance, HDWalletBalanceOps};
+use crate::coin_balance::{
+    self, EnableCoinBalanceError, EnabledCoinBalanceParams, HDAccountBalance, HDAddressBalance, HDWalletBalance,
+    HDWalletBalanceOps,
+};
 use crate::coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentResult};
-use crate::hd_wallet::{ExtractExtendedPubkey, HDAddressSelector, HDCoinAddress, HDCoinWithdrawOps, HDConfirmAddress,
-                       HDExtractPubkeyError, HDXPubExtractor, SettingEnabledAddressError, TrezorCoinError,
-                       WithdrawSenderAddress};
+use crate::hd_wallet::{
+    ExtractExtendedPubkey, HDAddressSelector, HDCoinAddress, HDCoinWithdrawOps, HDConfirmAddress, HDExtractPubkeyError,
+    HDXPubExtractor, SettingEnabledAddressError, TrezorCoinError, WithdrawSenderAddress,
+};
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxHistoryStorage};
 use crate::rpc_command::account_balance::{self, AccountBalanceParams, AccountBalanceRpcOps, HDAccountBalanceResponse};
-use crate::rpc_command::get_new_address::{self, GetNewAddressParams, GetNewAddressResponse, GetNewAddressRpcError,
-                                          GetNewAddressRpcOps};
+use crate::rpc_command::get_new_address::{
+    self, GetNewAddressParams, GetNewAddressResponse, GetNewAddressRpcError, GetNewAddressRpcOps,
+};
 use crate::rpc_command::hd_account_balance_rpc_error::HDAccountBalanceRpcError;
 use crate::rpc_command::init_account_balance::{self, InitAccountBalanceParams, InitAccountBalanceRpcOps};
-use crate::rpc_command::init_create_account::{self, CreateAccountRpcError, CreateAccountState, CreateNewAccountParams,
-                                              InitCreateAccountRpcOps};
-use crate::rpc_command::init_scan_for_new_addresses::{self, InitScanAddressesRpcOps, ScanAddressesParams,
-                                                      ScanAddressesResponse};
+use crate::rpc_command::init_create_account::{
+    self, CreateAccountRpcError, CreateAccountState, CreateNewAccountParams, InitCreateAccountRpcOps,
+};
+use crate::rpc_command::init_scan_for_new_addresses::{
+    self, InitScanAddressesRpcOps, ScanAddressesParams, ScanAddressesResponse,
+};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandleShared};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
-use crate::utxo::utxo_builder::{MergeUtxoArcOps, UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
-                                UtxoFieldsWithGlobalHDBuilder, UtxoFieldsWithHardwareWalletBuilder,
-                                UtxoFieldsWithIguanaSecretBuilder};
+use crate::utxo::utxo_builder::{MergeUtxoArcOps, UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps};
 use crate::utxo::utxo_hd_wallet::{UtxoHDAccount, UtxoHDAddress};
-use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
-                                      UtxoTxHistoryOps};
-use crate::{eth, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinBalanceMap, CoinWithDerivationMethod,
-            CoinWithPrivKeyPolicy, ConfirmPaymentInput, DelegationError, DelegationFut, DexFee,
-            GetWithdrawSenderAddress, IguanaBalanceOps, IguanaPrivKey, MmCoinEnum, NegotiateSwapContractAddrErr,
-            PrivKeyBuildPolicy, RawTransactionRequest, RawTransactionResult, RefundPaymentArgs,
-            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignRawTransactionRequest,
-            SignatureResult, SpendPaymentArgs, StakingInfosFut, SwapOps, TradePreimageValue, TransactionFut,
-            TransactionResult, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
-            ValidateWatcherSpendInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward,
-            WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WithdrawFut};
+use crate::utxo::utxo_tx_history_v2::{
+    UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams, UtxoTxHistoryOps,
+};
+use crate::{
+    eth, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinBalanceMap, CoinWithDerivationMethod,
+    CoinWithPrivKeyPolicy, ConfirmPaymentInput, DelegationError, DelegationFut, DexFee, GetWithdrawSenderAddress,
+    IguanaBalanceOps, IguanaPrivKey, MmCoinEnum, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy,
+    RawTransactionRequest, RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput,
+    SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignRawTransactionRequest, SignatureResult, SpendPaymentArgs,
+    StakingInfosFut, SwapOps, TradePreimageValue, TransactionFut, TransactionResult, TxMarshalingErr,
+    UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentError,
+    ValidatePaymentFut, ValidatePaymentInput, ValidateWatcherSpendInput, VerificationResult, WaitForHTLCTxSpendArgs,
+    WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+    WatcherValidateTakerFeeInput, WithdrawFut,
+};
+use bitcrypto::sign_message_hash;
 use common::executor::{AbortableSystem, AbortedError};
 use ethereum_types::H160;
 use futures::{FutureExt, TryFutureExt};
@@ -43,7 +50,6 @@ use mm2_metrics::MetricsArc;
 use mm2_number::MmNumber;
 use rpc::v1::types::H264 as H264Json;
 use serde::Serialize;
-use serialization::CoinVariant;
 use utxo_signer::UtxoSignerOps;
 
 #[derive(Debug, Display)]
@@ -53,7 +59,9 @@ pub enum Qrc20AddressError {
 }
 
 impl From<UnexpectedDerivationMethod> for Qrc20AddressError {
-    fn from(e: UnexpectedDerivationMethod) -> Self { Qrc20AddressError::UnexpectedDerivationMethod(e.to_string()) }
+    fn from(e: UnexpectedDerivationMethod) -> Self {
+        Qrc20AddressError::UnexpectedDerivationMethod(e.to_string())
+    }
 }
 
 impl From<ScriptHashTypeNotSupported> for Qrc20AddressError {
@@ -70,10 +78,13 @@ pub struct ScriptHashTypeNotSupported {
 }
 
 impl From<ScriptHashTypeNotSupported> for WithdrawError {
-    fn from(e: ScriptHashTypeNotSupported) -> Self { WithdrawError::InvalidAddress(e.to_string()) }
+    fn from(e: ScriptHashTypeNotSupported) -> Self {
+        WithdrawError::InvalidAddress(e.to_string())
+    }
 }
 
-#[path = "qtum_delegation.rs"] mod qtum_delegation;
+#[path = "qtum_delegation.rs"]
+mod qtum_delegation;
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "format")]
 pub enum QtumAddressFormat {
@@ -196,29 +207,35 @@ pub struct QtumCoinBuilder<'a> {
 
 #[async_trait]
 impl UtxoCoinBuilderCommonOps for QtumCoinBuilder<'_> {
-    fn ctx(&self) -> &MmArc { self.ctx }
+    fn ctx(&self) -> &MmArc {
+        self.ctx
+    }
 
-    fn conf(&self) -> &Json { self.conf }
+    fn conf(&self) -> &Json {
+        self.conf
+    }
 
-    fn activation_params(&self) -> &UtxoActivationParams { self.activation_params }
+    fn activation_params(&self) -> &UtxoActivationParams {
+        self.activation_params
+    }
 
-    fn ticker(&self) -> &str { self.ticker }
+    fn ticker(&self) -> &str {
+        self.ticker
+    }
 
-    fn check_utxo_maturity(&self) -> bool { self.activation_params().check_utxo_maturity.unwrap_or(true) }
+    fn check_utxo_maturity(&self) -> bool {
+        self.activation_params().check_utxo_maturity.unwrap_or(true)
+    }
 }
-
-impl UtxoFieldsWithIguanaSecretBuilder for QtumCoinBuilder<'_> {}
-
-impl UtxoFieldsWithGlobalHDBuilder for QtumCoinBuilder<'_> {}
-
-impl UtxoFieldsWithHardwareWalletBuilder for QtumCoinBuilder<'_> {}
 
 #[async_trait]
 impl UtxoCoinBuilder for QtumCoinBuilder<'_> {
     type ResultCoin = QtumCoin;
     type Error = UtxoCoinBuildError;
 
-    fn priv_key_policy(&self) -> PrivKeyBuildPolicy { self.priv_key_policy.clone() }
+    fn priv_key_policy(&self) -> PrivKeyBuildPolicy {
+        self.priv_key_policy.clone()
+    }
 
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
         let utxo = self.build_utxo_fields().await?;
@@ -255,15 +272,21 @@ pub struct QtumCoin {
 }
 
 impl AsRef<UtxoCoinFields> for QtumCoin {
-    fn as_ref(&self) -> &UtxoCoinFields { &self.utxo_arc }
+    fn as_ref(&self) -> &UtxoCoinFields {
+        &self.utxo_arc
+    }
 }
 
 impl From<UtxoArc> for QtumCoin {
-    fn from(coin: UtxoArc) -> QtumCoin { QtumCoin { utxo_arc: coin } }
+    fn from(coin: UtxoArc) -> QtumCoin {
+        QtumCoin { utxo_arc: coin }
+    }
 }
 
 impl From<QtumCoin> for UtxoArc {
-    fn from(coin: QtumCoin) -> Self { coin.utxo_arc }
+    fn from(coin: QtumCoin) -> Self {
+        coin.utxo_arc
+    }
 }
 
 pub async fn qtum_coin_with_policy(
@@ -273,6 +296,9 @@ pub async fn qtum_coin_with_policy(
     activation_params: &UtxoActivationParams,
     priv_key_policy: PrivKeyBuildPolicy,
 ) -> Result<QtumCoin, String> {
+    if conf["coin"].as_str() != Some(ticker) {
+        return ERR!("Failed to activate '{}': ticker does not match coins config", ticker);
+    }
     let coin = try_s!(
         QtumCoinBuilder::new(ctx, ticker, conf, activation_params, priv_key_policy)
             .build()
@@ -320,13 +346,17 @@ impl UtxoTxBroadcastOps for QtumCoin {
 #[async_trait]
 #[cfg_attr(test, mockable)]
 impl UtxoTxGenerationOps for QtumCoin {
-    async fn get_fee_rate(&self) -> UtxoRpcResult<ActualFeeRate> { utxo_common::get_fee_rate(&self.utxo_arc).await }
+    async fn get_fee_rate(&self) -> UtxoRpcResult<ActualFeeRate> {
+        utxo_common::get_fee_rate(&self.utxo_arc).await
+    }
 
     async fn calc_interest_if_required(&self, unsigned: &mut TransactionInputSigner) -> UtxoRpcResult<u64> {
         utxo_common::calc_interest_if_required(self, unsigned).await
     }
 
-    fn supports_interest(&self) -> bool { utxo_common::is_kmd(self) }
+    fn supports_interest(&self) -> bool {
+        utxo_common::is_kmd(self)
+    }
 }
 
 #[async_trait]
@@ -390,7 +420,9 @@ impl UtxoCommonOps for QtumCoin {
         utxo_common::addresses_from_script(self, script)
     }
 
-    fn denominate_satoshis(&self, satoshi: i64) -> f64 { utxo_common::denominate_satoshis(&self.utxo_arc, satoshi) }
+    fn denominate_satoshis(&self, satoshi: i64) -> f64 {
+        utxo_common::denominate_satoshis(&self.utxo_arc, satoshi)
+    }
 
     fn my_public_key(&self) -> Result<&Public, MmError<UnexpectedDerivationMethod>> {
         utxo_common::my_public_key(self.as_ref())
@@ -405,10 +437,12 @@ impl UtxoCommonOps for QtumCoin {
     }
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32> {
-        utxo_common::get_current_mtp(&self.utxo_arc, CoinVariant::Qtum).await
+        utxo_common::get_current_mtp(&self.utxo_arc).await
     }
 
-    fn is_unspent_mature(&self, output: &RpcTransaction) -> bool { self.is_qtum_unspent_mature(output) }
+    fn is_unspent_mature(&self, output: &RpcTransaction) -> bool {
+        self.is_qtum_unspent_mature(output)
+    }
 
     async fn calc_interest_of_tx(
         &self,
@@ -467,7 +501,9 @@ impl UtxoCommonOps for QtumCoin {
         utxo_common::p2sh_tx_locktime(self, &self.utxo_arc.conf.ticker, htlc_locktime).await
     }
 
-    fn addr_format(&self) -> &UtxoAddressFormat { utxo_common::addr_format(self) }
+    fn addr_format(&self) -> &UtxoAddressFormat {
+        utxo_common::addr_format(self)
+    }
 
     fn addr_format_for_standard_scripts(&self) -> UtxoAddressFormat {
         utxo_common::addr_format_for_standard_scripts(self)
@@ -560,8 +596,7 @@ impl SwapOps for QtumCoin {
             TransactionEnum::UtxoTx(tx) => tx.clone(),
             fee_tx => {
                 return MmError::err(ValidatePaymentError::InternalError(format!(
-                    "Invalid fee tx type. fee tx: {:?}",
-                    fee_tx
+                    "Invalid fee tx type. fee tx: {fee_tx:?}"
                 )))
             },
         };
@@ -661,7 +696,9 @@ impl SwapOps for QtumCoin {
         utxo_common::validate_other_pubkey(raw_pubkey)
     }
 
-    fn is_supported_by_watchers(&self) -> bool { true }
+    fn is_supported_by_watchers(&self) -> bool {
+        true
+    }
 }
 
 #[async_trait]
@@ -760,9 +797,13 @@ impl WatcherOps for QtumCoin {
 
 #[async_trait]
 impl MarketCoinOps for QtumCoin {
-    fn ticker(&self) -> &str { &self.utxo_arc.conf.ticker }
+    fn ticker(&self) -> &str {
+        &self.utxo_arc.conf.ticker
+    }
 
-    fn my_address(&self) -> MmResult<String, MyAddressError> { utxo_common::my_address(self) }
+    fn my_address(&self) -> MmResult<String, MyAddressError> {
+        utxo_common::my_address(self)
+    }
 
     fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
         let pubkey = Public::Compressed((*pubkey).into());
@@ -775,7 +816,8 @@ impl MarketCoinOps for QtumCoin {
     }
 
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
-        utxo_common::sign_message_hash(self.as_ref(), message)
+        let prefix = self.as_ref().conf.sign_message_prefix.as_ref()?;
+        Some(sign_message_hash(prefix, message))
     }
 
     fn sign_message(&self, message: &str, address: Option<HDAddressSelector>) -> SignatureResult<String> {
@@ -786,11 +828,17 @@ impl MarketCoinOps for QtumCoin {
         utxo_common::verify_message(self, signature_base64, message, address)
     }
 
-    fn my_balance(&self) -> BalanceFut<CoinBalance> { utxo_common::my_balance(self.clone()) }
+    fn my_balance(&self) -> BalanceFut<CoinBalance> {
+        utxo_common::my_balance(self.clone())
+    }
 
-    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { utxo_common::base_coin_balance(self) }
+    fn platform_coin_balance(&self) -> BalanceFut<BigDecimal> {
+        utxo_common::platform_coin_balance(self)
+    }
 
-    fn platform_ticker(&self) -> &str { self.ticker() }
+    fn platform_ticker(&self) -> &str {
+        self.ticker()
+    }
 
     #[inline(always)]
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
@@ -831,28 +879,42 @@ impl MarketCoinOps for QtumCoin {
         utxo_common::current_block(&self.utxo_arc)
     }
 
-    fn display_priv_key(&self) -> Result<String, String> { utxo_common::display_priv_key(&self.utxo_arc) }
+    fn display_priv_key(&self) -> Result<String, String> {
+        utxo_common::display_priv_key(&self.utxo_arc)
+    }
 
-    fn min_tx_amount(&self) -> BigDecimal { utxo_common::min_tx_amount(self.as_ref()) }
+    fn min_tx_amount(&self) -> BigDecimal {
+        utxo_common::min_tx_amount(self.as_ref())
+    }
 
-    fn min_trading_vol(&self) -> MmNumber { utxo_common::min_trading_vol(self.as_ref()) }
+    fn min_trading_vol(&self) -> MmNumber {
+        utxo_common::min_trading_vol(self.as_ref())
+    }
 
-    fn is_trezor(&self) -> bool { self.as_ref().priv_key_policy.is_trezor() }
+    fn is_trezor(&self) -> bool {
+        self.as_ref().priv_key_policy.is_trezor()
+    }
 
-    fn should_burn_dex_fee(&self) -> bool { utxo_common::should_burn_dex_fee() }
+    fn should_burn_dex_fee(&self) -> bool {
+        utxo_common::should_burn_dex_fee()
+    }
 }
 
 #[async_trait]
 impl MmCoin for QtumCoin {
-    fn is_asset_chain(&self) -> bool { utxo_common::is_asset_chain(&self.utxo_arc) }
+    fn is_asset_chain(&self) -> bool {
+        utxo_common::is_asset_chain(&self.utxo_arc)
+    }
 
-    fn spawner(&self) -> WeakSpawner { self.as_ref().abortable_system.weak_spawner() }
+    fn spawner(&self) -> WeakSpawner {
+        self.as_ref().abortable_system.weak_spawner()
+    }
 
-    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
+    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut<'_> {
         Box::new(utxo_common::get_raw_transaction(&self.utxo_arc, req).boxed().compat())
     }
 
-    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut {
+    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut<'_> {
         Box::new(
             utxo_common::get_tx_hex_by_hash(&self.utxo_arc, tx_hash)
                 .boxed()
@@ -864,14 +926,18 @@ impl MmCoin for QtumCoin {
         Box::new(utxo_common::withdraw(self.clone(), req).boxed().compat())
     }
 
-    fn decimals(&self) -> u8 { utxo_common::decimals(&self.utxo_arc) }
+    fn decimals(&self) -> u8 {
+        utxo_common::decimals(&self.utxo_arc)
+    }
 
     /// Check if the `to_address_format` is standard and if the `from` address is standard UTXO address.
     fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> {
         QtumBasedCoin::convert_to_address(self, from, to_address_format)
     }
 
-    fn validate_address(&self, address: &str) -> ValidateAddressResult { utxo_common::validate_address(self, address) }
+    fn validate_address(&self, address: &str) -> ValidateAddressResult {
+        utxo_common::validate_address(self, address)
+    }
 
     fn process_history_loop(&self, ctx: MmArc) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         Box::new(
@@ -882,7 +948,9 @@ impl MmCoin for QtumCoin {
         )
     }
 
-    fn history_sync_status(&self) -> HistorySyncState { utxo_common::history_sync_status(&self.utxo_arc) }
+    fn history_sync_status(&self) -> HistorySyncState {
+        utxo_common::history_sync_status(&self.utxo_arc)
+    }
 
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
         utxo_common::get_trade_fee(self.clone())
@@ -892,7 +960,6 @@ impl MmCoin for QtumCoin {
         &self,
         value: TradePreimageValue,
         stage: FeeApproxStage,
-        _include_refund_fee: bool, // refund fee is taken from swap output
     ) -> TradePreimageResult<TradeFee> {
         utxo_common::get_sender_trade_fee(self, value, stage).await
     }
@@ -909,9 +976,13 @@ impl MmCoin for QtumCoin {
         utxo_common::get_fee_to_send_taker_fee(self, dex_fee_amount, stage).await
     }
 
-    fn required_confirmations(&self) -> u64 { utxo_common::required_confirmations(&self.utxo_arc) }
+    fn required_confirmations(&self) -> u64 {
+        utxo_common::required_confirmations(&self.utxo_arc)
+    }
 
-    fn requires_notarization(&self) -> bool { utxo_common::requires_notarization(&self.utxo_arc) }
+    fn requires_notarization(&self) -> bool {
+        utxo_common::requires_notarization(&self.utxo_arc)
+    }
 
     fn set_required_confirmations(&self, confirmations: u64) {
         utxo_common::set_required_confirmations(&self.utxo_arc, confirmations)
@@ -921,11 +992,17 @@ impl MmCoin for QtumCoin {
         utxo_common::set_requires_notarization(&self.utxo_arc, requires_nota)
     }
 
-    fn swap_contract_address(&self) -> Option<BytesJson> { utxo_common::swap_contract_address() }
+    fn swap_contract_address(&self) -> Option<BytesJson> {
+        utxo_common::swap_contract_address()
+    }
 
-    fn fallback_swap_contract(&self) -> Option<BytesJson> { utxo_common::fallback_swap_contract() }
+    fn fallback_swap_contract(&self) -> Option<BytesJson> {
+        utxo_common::fallback_swap_contract()
+    }
 
-    fn mature_confirmations(&self) -> Option<u32> { Some(self.utxo_arc.conf.mature_confirmations) }
+    fn mature_confirmations(&self) -> Option<u32> {
+        Some(self.utxo_arc.conf.mature_confirmations)
+    }
 
     fn coin_protocol_info(&self, _amount_to_receive: Option<MmNumber>) -> Vec<u8> {
         utxo_common::coin_protocol_info(self)
@@ -941,7 +1018,9 @@ impl MmCoin for QtumCoin {
         utxo_common::is_coin_protocol_supported(self, info)
     }
 
-    fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.as_ref().abortable_system) }
+    fn on_disabled(&self) -> Result<(), AbortedError> {
+        AbortableSystem::abort_all(&self.as_ref().abortable_system)
+    }
 
     fn on_token_deactivated(&self, _ticker: &str) {}
 }
@@ -984,17 +1063,25 @@ impl UtxoSignerOps for QtumCoin {
             })
     }
 
-    fn fork_id(&self) -> u32 { self.utxo_arc.conf.fork_id }
+    fn fork_id(&self) -> u32 {
+        self.utxo_arc.conf.fork_id
+    }
 
-    fn branch_id(&self) -> u32 { self.utxo_arc.conf.consensus_branch_id }
+    fn branch_id(&self) -> u32 {
+        self.utxo_arc.conf.consensus_branch_id
+    }
 
-    fn tx_provider(&self) -> Self::TxGetter { self.utxo_arc.rpc_client.clone() }
+    fn tx_provider(&self) -> Self::TxGetter {
+        self.utxo_arc.rpc_client.clone()
+    }
 }
 
 impl CoinWithPrivKeyPolicy for QtumCoin {
     type KeyPair = KeyPair;
 
-    fn priv_key_policy(&self) -> &PrivKeyPolicy<Self::KeyPair> { &self.utxo_arc.priv_key_policy }
+    fn priv_key_policy(&self) -> &PrivKeyPolicy<Self::KeyPair> {
+        &self.utxo_arc.priv_key_policy
+    }
 }
 
 impl CoinWithDerivationMethod for QtumCoin {
@@ -1041,7 +1128,9 @@ impl HDWalletCoinOps for QtumCoin {
         utxo_common::address_from_extended_pubkey(self, extended_pubkey, derivation_path)
     }
 
-    fn trezor_coin(&self) -> MmResult<String, TrezorCoinError> { utxo_common::trezor_coin(self) }
+    fn trezor_coin(&self) -> MmResult<String, TrezorCoinError> {
+        utxo_common::trezor_coin(self)
+    }
 
     async fn received_enabled_address_from_hw_wallet(
         &self,
@@ -1202,7 +1291,9 @@ impl InitCreateAccountRpcOps for QtumCoin {
 
 #[async_trait]
 impl CoinWithTxHistoryV2 for QtumCoin {
-    fn history_wallet_id(&self) -> WalletId { utxo_common::utxo_tx_history_v2_common::history_wallet_id(self.as_ref()) }
+    fn history_wallet_id(&self) -> WalletId {
+        utxo_common::utxo_tx_history_v2_common::history_wallet_id(self.as_ref())
+    }
 
     async fn get_tx_history_filters(
         &self,
@@ -1264,7 +1355,9 @@ impl UtxoTxHistoryOps for QtumCoin {
 
 /// Parse contract address (H160) from string.
 /// Qtum Contract addresses have another checksum verification algorithm, because of this do not use [`eth::valid_addr_from_str`].
-pub fn contract_addr_from_str(addr: &str) -> Result<H160, String> { eth::addr_from_str(addr) }
+pub fn contract_addr_from_str(addr: &str) -> Result<H160, String> {
+    eth::addr_from_str(addr)
+}
 
 pub fn contract_addr_from_utxo_addr(address: Address) -> MmResult<H160, ScriptHashTypeNotSupported> {
     match address.hash() {
@@ -1277,5 +1370,5 @@ pub fn contract_addr_from_utxo_addr(address: Address) -> MmResult<H160, ScriptHa
 
 pub fn display_as_contract_address(address: Address) -> MmResult<String, ScriptHashTypeNotSupported> {
     let address = qtum::contract_addr_from_utxo_addr(address)?;
-    Ok(format!("{:#02x}", address))
+    Ok(format!("{address:#02x}"))
 }

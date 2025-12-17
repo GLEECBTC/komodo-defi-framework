@@ -1,3 +1,5 @@
+// Generated protocol messages; many types are not instantiated in our build.
+#![allow(dead_code)]
 ///*
 /// Ethereum network definition. Used to (de)serialize the definition.
 /// Must be signed by vendor signatures and could be found on the trezor web site

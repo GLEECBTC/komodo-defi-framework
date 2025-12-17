@@ -77,7 +77,9 @@ impl Transport for Eip1193Provider {
 }
 
 impl fmt::Debug for Eip1193Provider {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "Eip1193Provider") }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Eip1193Provider")
+    }
 }
 
 async fn send_command_recv_response<Ok>(

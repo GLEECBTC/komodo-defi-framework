@@ -14,13 +14,13 @@ type GetChannelDetailsResult<T> = Result<T, MmError<GetChannelDetailsError>>;
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum GetChannelDetailsError {
-    #[display(fmt = "Lightning network is not supported for {}", _0)]
+    #[display(fmt = "Lightning network is not supported for {_0}")]
     UnsupportedCoin(String),
-    #[display(fmt = "No such coin {}", _0)]
+    #[display(fmt = "No such coin {_0}")]
     NoSuchCoin(String),
-    #[display(fmt = "Channel with uuid: {} is not found", _0)]
+    #[display(fmt = "Channel with uuid: {_0} is not found")]
     NoSuchChannel(Uuid),
-    #[display(fmt = "DB error {}", _0)]
+    #[display(fmt = "DB error {_0}")]
     DbError(String),
 }
 
@@ -43,7 +43,9 @@ impl From<CoinFindError> for GetChannelDetailsError {
 }
 
 impl From<SqlError> for GetChannelDetailsError {
-    fn from(err: SqlError) -> GetChannelDetailsError { GetChannelDetailsError::DbError(err.to_string()) }
+    fn from(err: SqlError) -> GetChannelDetailsError {
+        GetChannelDetailsError::DbError(err.to_string())
+    }
 }
 
 #[derive(Deserialize)]
@@ -64,7 +66,7 @@ pub async fn get_channel_details(
     req: GetChannelDetailsRequest,
 ) -> GetChannelDetailsResult<GetChannelDetailsResponse> {
     let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
-        MmCoinEnum::LightningCoin(c) => c,
+        MmCoinEnum::LightningCoinVariant(c) => c,
         e => return MmError::err(GetChannelDetailsError::UnsupportedCoin(e.ticker().to_string())),
     };
 

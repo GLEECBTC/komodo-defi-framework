@@ -3,8 +3,9 @@ use crate::sign_params::{OutputDestination, SendingOutputInfo, SpendingInputInfo
 use crate::{TxProvider, UtxoSignTxError, UtxoSignTxResult};
 use chain::{Transaction as UtxoTx, TransactionOutput};
 use common::log::debug;
-use crypto::trezor::utxo::{PrevTx, PrevTxInput, PrevTxOutput, TrezorInputScriptType, TxOutput, TxSignResult,
-                           UnsignedTxInput, UnsignedUtxoTx};
+use crypto::trezor::utxo::{
+    PrevTx, PrevTxInput, PrevTxOutput, TrezorInputScriptType, TxOutput, TxSignResult, UnsignedTxInput, UnsignedUtxoTx,
+};
 use crypto::trezor::TrezorSession;
 use keys::bytes::Bytes;
 use mm2_err_handle::prelude::*;
@@ -207,8 +208,12 @@ impl<TxP: TxProvider + Send + Sync> TrezorTxSigner<'_, TxP> {
     }
 
     /// https://github.com/trezor/trezor-utxo-lib/blob/trezor/src/transaction.js#L405
-    fn is_overwinter_compatible(&self) -> bool { self.is_zcash_type() && self.params.unsigned_tx.version > 3 }
+    fn is_overwinter_compatible(&self) -> bool {
+        self.is_zcash_type() && self.params.unsigned_tx.version > 3
+    }
 
     /// https://github.com/trezor/trezor-utxo-lib/blob/trezor/src/coins.js#L55
-    fn is_zcash_type(&self) -> bool { matches!(self.trezor_coin.as_str(), "Komodo" | "Zcash" | "Zcash Testnet") }
+    fn is_zcash_type(&self) -> bool {
+        matches!(self.trezor_coin.as_str(), "Komodo" | "Zcash" | "Zcash Testnet")
+    }
 }

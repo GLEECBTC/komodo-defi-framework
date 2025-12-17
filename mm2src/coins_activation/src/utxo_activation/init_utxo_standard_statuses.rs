@@ -22,5 +22,7 @@ pub enum UtxoStandardInProgressStatus {
 }
 
 impl InitStandaloneCoinInitialStatus for UtxoStandardInProgressStatus {
-    fn initial_status() -> Self { UtxoStandardInProgressStatus::ActivatingCoin }
+    fn initial_status() -> Self {
+        UtxoStandardInProgressStatus::ActivatingCoin
+    }
 }

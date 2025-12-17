@@ -8,8 +8,10 @@ use relay_rpc::domain::Topic;
 
 use crate::{error::WalletConnectError, session::Session};
 
-#[cfg(target_arch = "wasm32")] pub(crate) mod indexed_db;
-#[cfg(not(target_arch = "wasm32"))] pub(crate) mod sqlite;
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod indexed_db;
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) mod sqlite;
 
 #[async_trait]
 pub(crate) trait WalletConnectStorageOps {
@@ -35,7 +37,9 @@ pub(crate) struct SessionStorageDb(DB);
 
 impl Deref for SessionStorageDb {
     type Target = DB;
-    fn deref(&self) -> &Self::Target { &self.0 }
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl SessionStorageDb {
@@ -56,9 +60,11 @@ pub(crate) mod session_storage_tests {
     use mm2_test_helpers::for_tests::mm_ctx_with_custom_async_db;
     use relay_rpc::{domain::SubscriptionId, rpc::params::Metadata};
 
-    use crate::{session::key::SessionKey,
-                session::{Session, SessionType},
-                WalletConnectCtx};
+    use crate::{
+        session::key::SessionKey,
+        session::{Session, SessionType},
+        WalletConnectCtx,
+    };
 
     use super::WalletConnectStorageOps;
 

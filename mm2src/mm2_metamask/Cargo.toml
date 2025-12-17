@@ -10,11 +10,11 @@ derive_more.workspace = true
 futures = { workspace = true }
 itertools.workspace = true
 js-sys.workspace = true
-jsonrpc-core.workspace = true 
+jsonrpc-core.workspace = true
 lazy_static.workspace = true
 mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_eth = { path = "../mm2_eth" }
-parking_lot = { workspace = true, features = ["nightly"] }
+parking_lot = { workspace = true }
 serde.workspace = true
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 serde_derive.workspace = true

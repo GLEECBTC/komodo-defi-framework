@@ -20,7 +20,7 @@ pub fn impl_serializable(ast: &syn::DeriveInput) -> quote::Tokens {
 
     let name = &ast.ident;
 
-    let dummy_const = syn::Ident::new(format!("_IMPL_SERIALIZABLE_FOR_{}", name));
+    let dummy_const = syn::Ident::new(format!("_IMPL_SERIALIZABLE_FOR_{name}"));
     let impl_block = quote! {
         impl serialization::Serializable for #name {
             fn serialize(&self, stream: &mut serialization::Stream) {
@@ -42,7 +42,9 @@ pub fn impl_serializable(ast: &syn::DeriveInput) -> quote::Tokens {
     }
 }
 
-fn serialize_field_size_map(tuple: (usize, &syn::Field)) -> quote::Tokens { serialize_field_size(tuple.0, tuple.1) }
+fn serialize_field_size_map(tuple: (usize, &syn::Field)) -> quote::Tokens {
+    serialize_field_size(tuple.0, tuple.1)
+}
 
 fn serialize_field_size(index: usize, field: &syn::Field) -> quote::Tokens {
     let ident = match field.ident {
@@ -50,7 +52,7 @@ fn serialize_field_size(index: usize, field: &syn::Field) -> quote::Tokens {
         None => index.to_string(),
     };
 
-    let id = syn::Ident::new(format!("self.{}", ident));
+    let id = syn::Ident::new(format!("self.{ident}"));
 
     match field.ty {
         syn::Ty::Path(_, ref path) => {
@@ -65,7 +67,9 @@ fn serialize_field_size(index: usize, field: &syn::Field) -> quote::Tokens {
     }
 }
 
-fn serialize_field_map(tuple: (usize, &syn::Field)) -> quote::Tokens { serialize_field(tuple.0, tuple.1) }
+fn serialize_field_map(tuple: (usize, &syn::Field)) -> quote::Tokens {
+    serialize_field(tuple.0, tuple.1)
+}
 
 fn serialize_field(index: usize, field: &syn::Field) -> quote::Tokens {
     let ident = match field.ident {
@@ -73,7 +77,7 @@ fn serialize_field(index: usize, field: &syn::Field) -> quote::Tokens {
         None => index.to_string(),
     };
 
-    let id = syn::Ident::new(format!("self.{}", ident));
+    let id = syn::Ident::new(format!("self.{ident}"));
 
     match field.ty {
         syn::Ty::Path(_, ref path) => {
