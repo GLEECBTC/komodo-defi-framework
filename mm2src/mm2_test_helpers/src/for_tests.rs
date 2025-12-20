@@ -263,6 +263,18 @@ pub const ETH_SEPOLIA_TOKEN_CONTRACT: &str = "0x09d0d71FBC00D7CCF9CFf132f5E6825C
 
 pub const BCHD_TESTNET_URLS: &[&str] = &["https://bchd-testnet.greyh.at:18335"];
 
+/// TRON Nile testnet RPC nodes.
+/// Nile is recommended over Shasta for more flexibility with RPC providers.
+pub const TRON_NILE_NODES: &[&str] = &["https://nile.trongrid.io"];
+
+/// TRON Shasta testnet RPC nodes (fallback option).
+pub const TRON_SHASTA_NODES: &[&str] = &["https://api.shasta.trongrid.io"];
+
+/// Known TRON testnet address that is always "activated" (zero address equivalent).
+/// This is the TRON network foundation address on testnet that has activity.
+/// T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb is the genesis address.
+pub const TRON_TESTNET_KNOWN_ADDRESS: &str = "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb";
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum TypedRpcResponse<T> {

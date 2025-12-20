@@ -7,6 +7,7 @@ edition = "2018"
 zhtlc-native-tests = []
 default = []
 run-docker-tests = []
+tron-network-tests = []
 for-tests = ["dep:mocktopus"]
 new-db-arch = ["mm2_core/new-db-arch"]
 
@@ -135,6 +136,19 @@ blake2b_simd.workspace = true
 ff.workspace = true
 futures-util.workspace = true
 jubjub.workspace = true
+# TODO: Removing this causes `wasm-pack` to fail when starting a web session.
+# Consider PR to futures-ticker to add wasm-bindgen feature, or check if our libp2p fork
+# (KomodoPlatform/rust-libp2p k-0.52.12) can be updated - upstream libp2p now uses web-time.
+#
+# Why needed: Forces `wasm-bindgen` feature on transitive `instant` dep.
+# - futures-ticker: Uses `#[cfg(target_family = "wasm")] use instant::Instant;` without features
+# - libp2p-core (our fork): Also depends on instant
+# Without wasm-bindgen: `instant` declares `extern "C" { fn now() -> f64; }` which generates
+# `(import "env" "now" ...)` in WASM. wasm-bindgen's JS glue handles `wbg` imports but passes
+# `env` imports through. In browser ESM, this becomes `import { now } from "env"` - a bare
+# specifier that browsers reject: "TypeError: The specifier 'env' was a bare specifier..."
+# With wasm-bindgen: `instant` uses js-sys `performance.now()` which works in browsers.
+instant = { version = "0.1.12", features = ["wasm-bindgen"] }
 js-sys.workspace = true
 mm2_db = { path = "../mm2_db" }
 mm2_metamask = { path = "../mm2_metamask" }

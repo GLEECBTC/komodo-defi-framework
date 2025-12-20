@@ -5,7 +5,6 @@
 use super::web3_transport::FeeHistoryResult;
 use super::{web3_transport::Web3Transport, EthCoin};
 use crate::eth::tron::TronAddress;
-use common::log::warn;
 use common::{custom_futures::timeout::FutureTimerExt, log::debug};
 use serde_json::Value;
 use std::time::Duration;
@@ -159,14 +158,14 @@ impl EthCoin {
 
     /// Get balance of given address
     pub(crate) async fn balance(&self, address: Address, block: Option<BlockNumber>) -> Result<U256, web3::Error> {
-        if self.is_tron() {
-            // TODO use Tron client
-            let sun = U256::zero();
-            warn!(
-                "Using stub implementation for Tron address_balance for {:?}, returning {sun} SUN",
-                TronAddress::from(&address),
-            );
-            return Ok(sun);
+        // TODO: When abstracting the chain backend, TRON will have its own TronApiError type
+        // and routing will happen at a higher level with unified return types.
+        if let Some(ref tron_api) = self.0.tron_api_client {
+            let tron_addr = TronAddress::from(&address);
+            return tron_api
+                .get_account_balance_sun(&tron_addr)
+                .await
+                .map_err(|e| web3::Error::Transport(web3::error::TransportError::Message(e.to_string())));
         }
         let address = helpers::serialize(&address);
         let block = helpers::serialize(&block.unwrap_or(BlockNumber::Latest));

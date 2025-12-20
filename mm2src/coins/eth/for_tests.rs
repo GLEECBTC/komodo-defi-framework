@@ -96,6 +96,7 @@ pub(crate) fn eth_coin_from_keypair(
         contract_supports_watchers: false,
         ticker,
         web3_instances: AsyncMutex::new(web3_instances),
+        tron_api_client: None,
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
         swap_gas_fee_policy: Mutex::new(swap_gas_fee_policy),

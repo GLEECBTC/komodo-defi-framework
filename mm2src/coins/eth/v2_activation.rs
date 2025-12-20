@@ -16,7 +16,7 @@ use crate::EthMetamaskPolicy;
 
 use common::executor::AbortedError;
 use compatible_time::Instant;
-use crypto::{trezor::TrezorError, Bip32Error, CryptoCtxError, HwError};
+use crypto::{trezor::TrezorError, Bip32Error, CryptoCtx, CryptoCtxError, HwError};
 use enum_derives::EnumFromTrait;
 use ethereum_types::H264;
 use kdf_walletconnect::error::WalletConnectError;
@@ -541,6 +541,7 @@ impl EthCoin {
             decimals,
             ticker,
             web3_instances: AsyncMutex::new(self.web3_instances.lock().await.clone()),
+            tron_api_client: self.tron_api_client.clone(),
             history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
             swap_gas_fee_policy: Mutex::new(swap_gas_fee_policy),
             max_eth_tx_type,
@@ -637,6 +638,7 @@ impl EthCoin {
             fallback_swap_contract: self.fallback_swap_contract,
             contract_supports_watchers: self.contract_supports_watchers,
             web3_instances: AsyncMutex::new(self.web3_instances.lock().await.clone()),
+            tron_api_client: self.tron_api_client.clone(),
             decimals: self.decimals,
             history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
             swap_gas_fee_policy: Mutex::new(swap_gas_fee_policy),
@@ -758,28 +760,54 @@ pub async fn eth_coin_from_conf_and_request_v2(
     )
     .await?;
 
-    // TODO support for tron specific instances instead of web3
-    let web3_instances = match (req.rpc_mode, &priv_key_policy) {
-        (EthRpcMode::Default, EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. })
-        | (EthRpcMode::Default, EthPrivKeyPolicy::Trezor)
-        | (EthRpcMode::Default, EthPrivKeyPolicy::WalletConnect { .. }) => {
-            build_web3_instances(ctx, ticker.to_string(), req.nodes.clone()).await?
+    // Build chain-specific RPC clients
+    let (web3_instances, tron_api_client) = match (&chain_spec, req.rpc_mode, &priv_key_policy) {
+        // EVM: Standard RPC with software/hardware/external wallets
+        (
+            ChainSpec::Evm { .. },
+            EthRpcMode::Default,
+            EthPrivKeyPolicy::Iguana(_)
+            | EthPrivKeyPolicy::HDWallet { .. }
+            | EthPrivKeyPolicy::Trezor
+            | EthPrivKeyPolicy::WalletConnect { .. },
+        ) => {
+            let web3 = build_web3_instances(ctx, ticker.to_string(), req.nodes.clone()).await?;
+            (web3, None)
         },
+
+        // EVM + Metamask (WASM only): Both rpc_mode and policy must be Metamask
         #[cfg(target_arch = "wasm32")]
-        (EthRpcMode::Metamask, EthPrivKeyPolicy::Metamask(_)) => {
-            // Metamask doesn't support native Tron
+        (ChainSpec::Evm { .. }, EthRpcMode::Metamask, EthPrivKeyPolicy::Metamask(_)) => {
             let chain_id = chain_spec.chain_id().ok_or(EthActivationV2Error::UnsupportedChain {
                 chain: chain_spec.kind().to_string(),
                 feature: "Metamask".to_string(),
             })?;
-            build_metamask_transport(ctx, ticker.to_string(), chain_id).await?
+            let web3 = build_metamask_transport(ctx, ticker.to_string(), chain_id).await?;
+            (web3, None)
         },
+
+        // EVM + Metamask mismatch (WASM only): policy and rpc_mode must match
         #[cfg(target_arch = "wasm32")]
-        (EthRpcMode::Default, EthPrivKeyPolicy::Metamask(_)) | (EthRpcMode::Metamask, _) => {
-            let error = r#"priv_key_policy="Metamask" and rpc_mode="Metamask" should be used both"#.to_string();
+        (ChainSpec::Evm { .. }, EthRpcMode::Default, EthPrivKeyPolicy::Metamask(_))
+        | (ChainSpec::Evm { .. }, EthRpcMode::Metamask, _) => {
             return MmError::err(EthActivationV2Error::ActivationFailed {
                 ticker: ticker.to_string(),
-                error,
+                error: "priv_key_policy and rpc_mode must both be Metamask, or neither".to_string(),
+            });
+        },
+
+        // TRON: Uses dedicated TRON API, no Web3
+        (ChainSpec::Tron { .. }, EthRpcMode::Default, _) => {
+            let tron_pool = build_tron_api_client(ctx, req.nodes.clone()).await?;
+            (Vec::new(), Some(tron_pool))
+        },
+
+        // TRON + Metamask (WASM only): Not supported
+        #[cfg(target_arch = "wasm32")]
+        (ChainSpec::Tron { .. }, EthRpcMode::Metamask, _) => {
+            return MmError::err(EthActivationV2Error::UnsupportedChain {
+                chain: "TRON".to_string(),
+                feature: "Metamask".to_string(),
             });
         },
     };
@@ -833,6 +861,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         decimals,
         ticker: ticker.to_string(),
         web3_instances: AsyncMutex::new(web3_instances),
+        tron_api_client,
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         swap_gas_fee_policy: Mutex::new(swap_gas_fee_policy),
         max_eth_tx_type,
@@ -1018,6 +1047,51 @@ async fn build_web3_instances(
     }
 
     Ok(web3_instances)
+}
+
+/// Build TRON RPC pool from provided nodes.
+async fn build_tron_api_client(
+    ctx: &MmArc,
+    mut nodes: Vec<EthNode>,
+) -> MmResult<tron::TronApiClient, EthActivationV2Error> {
+    if nodes.is_empty() {
+        return MmError::err(EthActivationV2Error::AtLeastOneNodeRequired);
+    }
+
+    let mut rng = small_rng();
+    nodes.as_mut_slice().shuffle(&mut rng);
+    drop_mutability!(nodes);
+
+    // Get keypair for proxy signing from P2P context
+    let proxy_sign_keypair = Some(Arc::new(P2PContext::fetch_from_mm_arc(ctx).keypair().clone()));
+
+    let mut clients = Vec::with_capacity(nodes.len());
+    for node in nodes {
+        let uri: Uri = node
+            .url
+            .parse()
+            .map_err(|_| EthActivationV2Error::InvalidPayload(format!("{} could not be parsed as URI", node.url)))?;
+
+        // TRON only supports HTTP endpoints
+        match uri.scheme_str() {
+            Some("http") | Some("https") => {},
+            _ => {
+                return MmError::err(EthActivationV2Error::InvalidPayload(format!(
+                    "Invalid TRON node address '{}'. Only HTTP(S) is supported for TRON",
+                    node.url
+                )));
+            },
+        }
+
+        let tron_node = tron::TronHttpNode {
+            uri,
+            komodo_proxy: node.komodo_proxy,
+        };
+
+        clients.push(tron::TronHttpClient::new(tron_node, proxy_sign_keypair.clone()));
+    }
+
+    Ok(tron::TronApiClient::new(clients))
 }
 
 fn create_transport(

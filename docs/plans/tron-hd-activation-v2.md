@@ -95,19 +95,19 @@ mm2src/coins/eth/
 ├── tron/
 │   ├── mod.rs          # existing: re-export address + add rpc
 │   ├── address.rs      # existing: TronAddress type
-│   └── rpc.rs          # NEW: TRON HTTP RPC client
+│   └── api.rs          # NEW: TRON HTTP RPC client
 └── eth_rpc.rs (existing; EVM-only)
 ```
 
 **Key decision (validated by RepoPrompt review)**: **Delay directory restructure**.
 - Do NOT create `chain/evm.rs` or move files in the first iteration.
-- Add new modules (`chain_backend.rs`, `tron/rpc.rs`) alongside existing files.
+- Add new modules (`chain_backend.rs`, `tron/api.rs`) alongside existing files.
 - Keep `eth_rpc.rs` where it is - `EvmBackend` will wrap it, not replace it.
 - This minimizes blast radius and keeps EVM paths unchanged.
 
 **Incremental migration path**:
 1. Add `chain_backend.rs` with `ChainBackend` enum
-2. Add `tron/rpc.rs` for TRON HTTP client
+2. Add `tron/api.rs` for TRON HTTP client
 3. Wire `EthCoinImpl` to use `ChainBackend`
 4. Later (out of scope): consider moving to `chain/` directory structure
 
@@ -586,7 +586,7 @@ Existing ETH patterns:
 ### 12.2 Unit tests for TRON codec + RPC client
 
 - `tron/address.rs`: roundtrip conversions (eth raw ↔ tron base58/hex)
-- `chain/tron/rpc.rs`: mock HTTP responses (rotation, timeouts, parsing)
+- `chain/tron/api.rs`: mock HTTP responses (rotation, timeouts, parsing)
 
 (Exact test harness choice can mirror existing network-mocking conventions in the repo.)
 
@@ -594,12 +594,14 @@ Existing ETH patterns:
 
 ## 13) Phased Rollout Summary (implementation order)
 
-### Phase 1 — Make TRX activation possible (wallet-only)
+### Phase 1 — Make TRX activation possible (wallet-only) ✅ COMPLETE
 
-1. Add chain-aware activation validation:
-   - TRX: require zero swap contract; forbid `swap_v2` contracts
-   - `wallet_only`: relax swap contract requirements
-2. Build TRON backend in `eth_coin_from_conf_and_request_v2()` (don't build web3 for TRX)
+1. ✅ Add chain-aware activation validation:
+   - ✅ `wallet_only`: relax swap contract requirements (commit `f0a24e467d`)
+   - Made `swap_contract_address` optional in `EthActivationV2Request`
+   - Added `resolve_swap_contracts()` to consolidate all swap contract validation
+   - Wallet-only coins can activate without swap contracts
+2. ⏳ Build TRON backend in `eth_coin_from_conf_and_request_v2()` (don't build web3 for TRX) — deferred to Phase 2
 
 ### Phase 2 — Remove stubs (HD + balances)
 
@@ -795,3 +797,73 @@ This plan was validated through:
 - TRC20 support (`TriggerSmartContract`, TRC20 balance, token activation)
 - TRON signing / withdraw
 - Swap support and contract validation for TRON
+
+---
+
+## 17) Tech Debt: HTTP Transport Extraction
+
+### 17.1 Problem
+
+`TronHttpClient::send_request()` in `mm2src/coins/eth/tron/api.rs` duplicates patterns from EVM's `HttpTransport` in `mm2src/coins/eth/web3_transport/http_transport.rs`:
+
+| Component | TRON Lines | EVM Lines | Duplication |
+|-----------|------------|-----------|-------------|
+| Native proxy signing | 96-113 | 120-134 | Identical pattern |
+| Native timeout wrapper | 115-132 | 136-157 | Same `Timer::sleep` + `select` |
+| WASM proxy signing | 150-163 | 198-213 | Identical pattern |
+| FetchRequest builder | 143-148 | 248-254 | Same CORS + JSON headers |
+
+### 17.2 What Should Be Extracted
+
+**Generic utilities** (not TRON-specific):
+- URI join helper (`base.trim_end_matches('/') + "/" + path.trim_start_matches('/')`)
+- Proxy signing helper (shared pattern for native + WASM)
+- Timeout wrapper pattern (native only)
+
+**Keep in `rpc.rs`** (TRON-specific):
+- TronGrid "200 OK but error payload" guard (lines 63-77)
+- TRON endpoint methods (`get_now_block_number`, `get_account`, etc.)
+- `TronRpcPool` node rotation logic
+
+### 17.3 Recommended Extraction (Phase 4 or later)
+
+**Option A: Minimal (coins-local)**
+
+Create `mm2src/coins/eth/tron/http_transport.rs` with:
+- `fn join_uri(base: &str, path: &str) -> String`
+- `fn sign_proxy_request(keypair: &Keypair, uri: &Uri, body_len: usize) -> Result<String, String>`
+
+**Option B: Broader (cross-crate, future)**
+
+Create `mm2src/coins/http/signed_json_transport.rs` with a generic `SignedJsonHttpTransport` that:
+- Handles POST JSON requests (native + WASM)
+- Integrates proxy signing
+- Provides timeout wrapper
+- Returns raw bytes (callers do their own response parsing)
+
+Could be reused by: TRON RPC, Tendermint HTTP clients, potentially EVM (as inner layer).
+
+### 17.4 Phase Mapping
+
+This is **Phase 4 prep work** or a separate tech debt task. Current duplication is acceptable because:
+1. TRON's transport is simpler (no JSON-RPC framing, no event handlers)
+2. EVM has extra responsibilities (request ID, event handlers)
+3. Both work correctly today
+
+### 17.5 Testing: Use `cross_test!` for Pure Logic Tests
+
+Pure logic tests (URI join, error parsing) should use `cross_test!` macro to run on both native and WASM:
+
+```rust
+// In mm2src/coins/eth/tron/api.rs tests module
+cross_test!(test_uri_join_avoids_double_slash, {
+    let base = "https://api.trongrid.io/";
+    let path = "/wallet/getaccount";
+    // ... assertions
+});
+```
+
+**Network integration tests** should remain native-only with `#[ignore]`:
+- Rate limiting on public nodes
+- CORS restrictions in browser
+- No env var gating needed - `#[ignore]` is sufficient

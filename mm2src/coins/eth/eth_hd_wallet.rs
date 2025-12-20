@@ -71,7 +71,14 @@ impl HDAddressBalanceScanner for EthCoin {
     type Address = Address;
 
     async fn is_address_used(&self, address: &Self::Address) -> BalanceResult<bool> {
-        // Count calculates the number of transactions sent from the address whether it's for ERC20 or ETH.
+        // TRON: Use the dedicated TRON API client for address usage checks.
+        // TRON accounts are "used" if they exist on-chain (have balance, create_time, or permissions).
+        if let Some(ref tron_api) = self.0.tron_api_client {
+            let tron_addr = tron::TronAddress::from(address);
+            return tron_api.is_address_used(&tron_addr).await.map_mm_err();
+        }
+
+        // EVM path: Count calculates the number of transactions sent from the address whether it's for ERC20 or ETH.
         // If the count is greater than 0, then the address is used.
         // If the count is 0, then we check for the balance of the address to make sure there was no received transactions.
         let count = self.transaction_count(*address, None).await?;
@@ -160,6 +167,14 @@ impl HDWalletBalanceOps for EthCoin {
 
         let mut balances = CoinBalanceMap::new();
         balances.insert(self.ticker().to_string(), coin_balance);
+
+        // TODO: TRC20 token support - when implementing TRC20 tokens, replace this guard with
+        // a TRON-specific token balance function using the TRON API (/wallet/triggersmartcontract).
+        // Currently, get_tokens_balance_list_for_address() uses EVM eth_call which won't work for TRON.
+        if self.0.tron_api_client.is_some() {
+            return Ok(balances);
+        }
+
         let token_balances = self.get_tokens_balance_list_for_address(*address).await?;
         balances.extend(token_balances);
         Ok(balances)

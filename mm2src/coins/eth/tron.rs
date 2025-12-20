@@ -1,10 +1,22 @@
-//! Minimal Tron placeholders for EthCoin integration.
-//! These types will be expanded with full TRON logic in later steps.
+//! TRON blockchain support for EthCoin integration.
+//!
+//! TRON uses a 21-byte address format (0x41 prefix + 20 bytes) displayed as Base58Check.
+//! Native currency is TRX with 6 decimals (1 TRX = 1,000,000 SUN).
 
 mod address;
+pub mod api;
+
+/// Integration tests using real TRON testnet (Nile).
+/// These tests require network access and are gated behind the `tron-network-tests` feature.
+/// Run with: `cargo test -p coins --features tron-network-tests --lib tron_nile`
+#[cfg(all(test, feature = "tron-network-tests"))]
+mod api_integration_tests;
+
 pub use address::Address as TronAddress;
+pub use api::{TronApiClient, TronHttpClient, TronHttpNode};
 
 use ethereum_types::U256;
+use serde::{Deserialize, Serialize};
 
 pub const TRX_DECIMALS: u8 = 6;
 const ONE_TRX: u64 = 1_000_000; // 1 TRX = 1,000,000 SUN
@@ -15,27 +27,6 @@ pub enum Network {
     Mainnet,
     Shasta,
     Nile,
-    // TODO: Add more networks as needed.
-}
-
-/// Draft TRON clients structure.
-#[derive(Clone, Debug)]
-pub struct TronClients {
-    pub clients: Vec<TronClient>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct TronClient {
-    pub endpoint: String,
-    pub network: Network,
-    #[serde(default)]
-    pub komodo_proxy: bool, // should be true for any net which requires api key
-}
-
-/// Placeholder for TRON fee params.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct TronFeeParams {
-    // TODO: Add TRON-specific fields in future steps.
 }
 
 /// Convert TRX to SUN using U256 type.

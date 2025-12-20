@@ -208,12 +208,8 @@ mod wasm_test {
     async fn test_valid_chain_state() {
         // init blocks_db
         let ctx = mm_ctx_with_custom_db();
-        let locked_notes_db = LockedNotesStorage::new(ctx.clone(), MY_ADDRESS.to_string())
-            .await
-            .unwrap();
-        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new())
-            .await
-            .unwrap();
+        let locked_notes_db = LockedNotesStorage::new(&ctx, MY_ADDRESS.to_string()).await.unwrap();
+        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string()).await.unwrap();
 
         // init walletdb.
         let walletdb = wallet_db_from_zcoin_builder_for_test(&ctx, TICKER).await;
@@ -336,12 +332,8 @@ mod wasm_test {
     async fn invalid_chain_cache_disconnected() {
         // init blocks_db
         let ctx = mm_ctx_with_custom_db();
-        let locked_notes_db = LockedNotesStorage::new(ctx.clone(), MY_ADDRESS.to_string())
-            .await
-            .unwrap();
-        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new())
-            .await
-            .unwrap();
+        let locked_notes_db = LockedNotesStorage::new(&ctx, MY_ADDRESS.to_string()).await.unwrap();
+        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string()).await.unwrap();
 
         // init walletdb.
         let walletdb = wallet_db_from_zcoin_builder_for_test(&ctx, TICKER).await;
@@ -436,12 +428,8 @@ mod wasm_test {
     async fn test_invalid_chain_reorg() {
         // init blocks_db
         let ctx = mm_ctx_with_custom_db();
-        let locked_notes_db = LockedNotesStorage::new(ctx.clone(), MY_ADDRESS.to_string())
-            .await
-            .unwrap();
-        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new())
-            .await
-            .unwrap();
+        let locked_notes_db = LockedNotesStorage::new(&ctx, MY_ADDRESS.to_string()).await.unwrap();
+        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string()).await.unwrap();
 
         // init walletdb.
         let walletdb = wallet_db_from_zcoin_builder_for_test(&ctx, TICKER).await;
@@ -536,12 +524,8 @@ mod wasm_test {
     async fn test_data_db_rewinding() {
         // init blocks_db
         let ctx = mm_ctx_with_custom_db();
-        let locked_notes_db = LockedNotesStorage::new(ctx.clone(), MY_ADDRESS.to_string())
-            .await
-            .unwrap();
-        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new())
-            .await
-            .unwrap();
+        let locked_notes_db = LockedNotesStorage::new(&ctx, MY_ADDRESS.to_string()).await.unwrap();
+        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string()).await.unwrap();
 
         // init walletdb.
         let walletdb = wallet_db_from_zcoin_builder_for_test(&ctx, TICKER).await;
@@ -617,12 +601,8 @@ mod wasm_test {
     async fn test_scan_cached_blocks_requires_sequential_blocks() {
         // init blocks_db
         let ctx = mm_ctx_with_custom_db();
-        let locked_notes_db = LockedNotesStorage::new(ctx.clone(), MY_ADDRESS.to_string())
-            .await
-            .unwrap();
-        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new())
-            .await
-            .unwrap();
+        let locked_notes_db = LockedNotesStorage::new(&ctx, MY_ADDRESS.to_string()).await.unwrap();
+        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string()).await.unwrap();
 
         // init walletdb.
         let walletdb = wallet_db_from_zcoin_builder_for_test(&ctx, TICKER).await;
@@ -706,12 +686,8 @@ mod wasm_test {
     async fn test_scan_cached_blokcs_finds_received_notes() {
         // init blocks_db
         let ctx = mm_ctx_with_custom_db();
-        let locked_notes_db = LockedNotesStorage::new(ctx.clone(), MY_ADDRESS.to_string())
-            .await
-            .unwrap();
-        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new())
-            .await
-            .unwrap();
+        let locked_notes_db = LockedNotesStorage::new(&ctx, MY_ADDRESS.to_string()).await.unwrap();
+        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string()).await.unwrap();
 
         // init walletdb.
         let walletdb = wallet_db_from_zcoin_builder_for_test(&ctx, TICKER).await;
@@ -774,12 +750,8 @@ mod wasm_test {
     async fn test_scan_cached_blocks_finds_change_notes() {
         // init blocks_db
         let ctx = mm_ctx_with_custom_db();
-        let locked_notes_db = LockedNotesStorage::new(ctx.clone(), MY_ADDRESS.to_string())
-            .await
-            .unwrap();
-        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new())
-            .await
-            .unwrap();
+        let locked_notes_db = LockedNotesStorage::new(&ctx, MY_ADDRESS.to_string()).await.unwrap();
+        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string()).await.unwrap();
 
         // init walletdb.
         let walletdb = wallet_db_from_zcoin_builder_for_test(&ctx, TICKER).await;
@@ -857,8 +829,8 @@ mod wasm_test {
     //    async fn create_to_address_fails_on_unverified_notes() {
     //        // init blocks_db
     //        let ctx = mm_ctx_with_custom_db();
-    //        let locked_notes_db = LockedNotesStorage::new(ctx.clone(), MY_ADDRESS.to_string()).await.unwrap();
-    //        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new()).await.unwrap();
+    //        let locked_notes_db = LockedNotesStorage::new(&ctx, MY_ADDRESS.to_string()).await.unwrap();
+    //        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string()).await.unwrap();
     //
     //        // init walletdb.
     //        let mut walletdb = wallet_db_from_zcoin_builder_for_test(&ctx, TICKER).await;
@@ -1127,8 +1099,8 @@ mod wasm_test {
     //
     //        // init blocks_db
     //        let ctx = mm_ctx_with_custom_db();
-    //        let locked_notes_db = LockedNotesStorage::new(ctx.clone(), MY_ADDRESS.to_string()).await.unwrap();
-    //        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new()).await.unwrap();
+    //        let locked_notes_db = LockedNotesStorage::new(&ctx, MY_ADDRESS.to_string()).await.unwrap();
+    //        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string()).await.unwrap();
     //
     //        // init walletdb.
     //        let mut walletdb = wallet_db_from_zcoin_builder_for_test(&ctx, TICKER).await;

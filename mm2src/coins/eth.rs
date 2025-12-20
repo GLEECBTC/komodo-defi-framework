@@ -943,6 +943,8 @@ pub struct EthCoinImpl {
     fallback_swap_contract: Option<Address>,
     contract_supports_watchers: bool,
     web3_instances: AsyncMutex<Vec<Web3Instance>>,
+    /// TRON HTTP RPC client pool (only set for TRON chains).
+    pub(crate) tron_api_client: Option<tron::TronApiClient>,
     decimals: u8,
     history_sync_state: Mutex<HistorySyncState>,
     required_confirmations: AtomicU64,
@@ -2796,12 +2798,11 @@ impl MarketCoinOps for EthCoin {
         let coin = self.clone();
 
         let fut = async move {
-            if coin.is_tron() {
-                // TODO: Implement a TRON client
-                // Temporary TRON stub until full client support is available
-                let stub = 1u64;
-                warn!("Called `EthCoin::current_block()` for TRON; returning stub value {stub} until TRON client is implemented");
-                return Ok(stub);
+            if let Some(ref tron_api) = coin.0.tron_api_client {
+                return tron_api
+                    .get_now_block_number()
+                    .await
+                    .map_err(|e| ERRL!("TRON current_block failed: {}", e));
             }
             coin.block_number()
                 .await
@@ -6857,6 +6858,8 @@ pub async fn eth_coin_from_conf_and_request(
         decimals,
         ticker: ticker.into(),
         web3_instances: AsyncMutex::new(web3_instances),
+        // TRON is not supported for v1 activation
+        tron_api_client: None,
         history_sync_state: Mutex::new(initial_history_state),
         swap_gas_fee_policy: Mutex::new(swap_gas_fee_policy),
         max_eth_tx_type,
@@ -7803,6 +7806,7 @@ impl EthCoin {
             fallback_swap_contract: self.fallback_swap_contract,
             contract_supports_watchers: self.contract_supports_watchers,
             web3_instances: AsyncMutex::new(self.web3_instances.lock().await.clone()),
+            tron_api_client: self.tron_api_client.clone(),
             decimals: self.decimals,
             history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
             required_confirmations: AtomicU64::new(

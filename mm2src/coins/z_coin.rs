@@ -1013,8 +1013,10 @@ impl UtxoCoinBuilder for ZCoinBuilder<'_> {
             )
             .await
             .map_mm_err()?,
-            #[cfg(test)]
+            #[cfg(all(test, not(target_arch = "wasm32")))]
             ZcoinRpcMode::UnitTests => z_unit_tests::create_test_sync_connector(&self).await,
+            #[cfg(all(test, target_arch = "wasm32"))]
+            ZcoinRpcMode::UnitTests => unreachable!("UnitTests mode is not supported on WASM"),
         };
 
         let z_fields = Arc::new(ZCoinFields {
@@ -1127,7 +1129,7 @@ impl<'a> ZCoinBuilder<'a> {
             Some(file_path) => PathBuf::from(file_path),
         };
 
-        #[cfg(test)]
+        #[cfg(all(test, not(target_arch = "wasm32")))]
         z_unit_tests::download_parameters_for_tests(&params_dir).await;
 
         async_blocking(move || {
