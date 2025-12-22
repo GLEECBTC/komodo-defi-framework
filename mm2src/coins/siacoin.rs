@@ -2375,7 +2375,7 @@ mod wasm_tests {
             "#).unwrap();
 
         // Use the helper which handles getting the basis (chain tip) automatically
-        let resp = client.broadcast_transaction(&tx).await.unwrap();
+        client.broadcast_transaction(&tx).await.unwrap();
     }
 
     #[wasm_bindgen_test]

@@ -75,7 +75,6 @@ mod wasm_test {
     use mm2_event_stream::StreamingManager;
     use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
     use protobuf::Message;
-    use std::path::PathBuf;
     use wasm_bindgen_test::*;
     use zcash_client_backend::wallet::{AccountId, OvkPolicy};
     use zcash_extras::fake_compact_block;

@@ -637,6 +637,17 @@ pub enum Web3RpcError {
     NoSuchCoin { coin: String },
 }
 
+impl Web3RpcError {
+    /// Returns `true` if the error is transient and the request may succeed
+    /// on a different node (network failures, timeouts).
+    ///
+    /// Returns `false` for permanent errors where retrying would produce
+    /// the same result (invalid responses, API errors like "contract doesn't exist").
+    pub fn is_retryable(&self) -> bool {
+        matches!(self, Web3RpcError::Transport(_) | Web3RpcError::Timeout(_))
+    }
+}
+
 impl From<web3::Error> for Web3RpcError {
     fn from(e: web3::Error) -> Self {
         let error_str = e.to_string();
@@ -948,7 +959,6 @@ pub struct EthCoinImpl {
     decimals: u8,
     history_sync_state: Mutex<HistorySyncState>,
     required_confirmations: AtomicU64,
-    #[cfg_attr(feature = "run-docker-tests", allow(dead_code))]
     swap_gas_fee_policy: Mutex<SwapGasFeePolicy>,
     max_eth_tx_type: Option<u64>,
     gas_price_adjust: Option<GasPriceAdjust>,
@@ -7604,7 +7614,10 @@ impl Eip1559Ops for EthCoin {
 
     #[cfg(any(test, feature = "run-docker-tests"))]
     async fn get_swap_gas_fee_policy(&self) -> CoinFindResult<SwapGasFeePolicy> {
-        Ok(SwapGasFeePolicy::default())
+        // In tests, return the actual stored policy to allow direct field access tests
+        let platform_coin = self.platform_coin().await?;
+        let policy = platform_coin.swap_gas_fee_policy.lock().unwrap().clone();
+        Ok(policy)
     }
 
     /// Store gas fee policy for swaps in the platform_coin, for any token
@@ -7616,7 +7629,9 @@ impl Eip1559Ops for EthCoin {
     }
 
     #[cfg(any(test, feature = "run-docker-tests"))]
-    async fn set_swap_gas_fee_policy(&self, _swap_txfee_policy: SwapGasFeePolicy) -> CoinFindResult<()> {
+    async fn set_swap_gas_fee_policy(&self, swap_txfee_policy: SwapGasFeePolicy) -> CoinFindResult<()> {
+        let platform_coin = self.platform_coin().await?;
+        *platform_coin.swap_gas_fee_policy.lock().unwrap() = swap_txfee_policy;
         Ok(())
     }
 }
