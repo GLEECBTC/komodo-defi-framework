@@ -1,10 +1,15 @@
 //! This module serves as an abstraction layer for Ethereum RPCs.
 //! Unlike the built-in functions in web3, this module dynamically
 //! rotates through all transports in case of failures.
+//!
+//! # TODO: RPC Pool Trait Refactoring
+//!
+//! The `try_rpc_send` pattern here is duplicated in TRON's `try_clients` (`tron/api.rs`).
+//! Both should implement a common `RpcPool` trait with associated types for Client and Error.
+//! See `docs/plans/chain-rpc-client-refactor.md` for the full refactoring plan.
 
 use super::web3_transport::FeeHistoryResult;
 use super::{web3_transport::Web3Transport, EthCoin};
-use crate::eth::tron::TronAddress;
 use common::{custom_futures::timeout::FutureTimerExt, log::debug};
 use serde_json::Value;
 use std::time::Duration;
@@ -156,17 +161,8 @@ impl EthCoin {
             .and_then(|t| serde_json::from_value(t).map_err(Into::into))
     }
 
-    /// Get balance of given address
+    /// Get balance of given address.
     pub(crate) async fn balance(&self, address: Address, block: Option<BlockNumber>) -> Result<U256, web3::Error> {
-        // TODO: When abstracting the chain backend, TRON will have its own TronApiError type
-        // and routing will happen at a higher level with unified return types.
-        if let Some(ref tron_api) = self.0.tron_api_client {
-            let tron_addr = TronAddress::from(&address);
-            return tron_api
-                .get_account_balance_sun(&tron_addr)
-                .await
-                .map_err(|e| web3::Error::Transport(web3::error::TransportError::Message(e.to_string())));
-        }
         let address = helpers::serialize(&address);
         let block = helpers::serialize(&block.unwrap_or(BlockNumber::Latest));
 

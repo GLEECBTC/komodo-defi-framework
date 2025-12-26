@@ -71,32 +71,44 @@ impl HDAddressBalanceScanner for EthCoin {
     type Address = Address;
 
     async fn is_address_used(&self, address: &Self::Address) -> BalanceResult<bool> {
-        // TRON: Use the dedicated TRON API client for address usage checks.
-        // TRON accounts are "used" if they exist on-chain (have balance, create_time, or permissions).
-        if let Some(ref tron_api) = self.0.tron_api_client {
-            let tron_addr = tron::TronAddress::from(address);
-            return tron_api.is_address_used(&tron_addr).await.map_mm_err();
-        }
+        // TODO: Once EVM is migrated to ChainRpcClient, this can use a unified
+        // `rpc_client.is_address_used_basic(address)` call without chain_spec matching.
+        // See docs/plans/chain-rpc-client-refactor.md Section 17.
+        match &self.0.chain_spec {
+            ChainSpec::Tron { .. } => {
+                // TRON accounts are "used" if they exist on-chain (have balance, create_time, or permissions).
+                let tron_client = self.0.tron_rpc().ok_or_else(|| {
+                    BalanceError::Internal("TRON chain_spec but no TRON rpc_client".to_string())
+                })?;
+                let tron_addr = tron::TronAddress::from(address);
+                tron_client
+                    .is_address_used_basic(tron_addr)
+                    .await
+                    .map_err(|e| mm2_err_handle::mm_error::MmError::new(BalanceError::Transport(e.into_inner().to_string())))
+            },
+            ChainSpec::Evm { .. } => {
+                // EVM path: Count calculates the number of transactions sent from the address whether it's for ERC20 or ETH.
+                // If the count is greater than 0, then the address is used.
+                // If the count is 0, then we check for the balance of the address to make sure there was no received transactions.
+                let count = self.transaction_count(*address, None).await?;
+                if count > U256::zero() {
+                    return Ok(true);
+                }
 
-        // EVM path: Count calculates the number of transactions sent from the address whether it's for ERC20 or ETH.
-        // If the count is greater than 0, then the address is used.
-        // If the count is 0, then we check for the balance of the address to make sure there was no received transactions.
-        let count = self.transaction_count(*address, None).await?;
-        if count > U256::zero() {
-            return Ok(true);
-        }
+                // We check for platform balance only first to reduce the number of requests to the node.
+                // If this is a token added using init_token, then we check for this token balance only, and
+                // we don't check for platform balance or other tokens that was added before.
+                let platform_balance = self.address_balance(*address).compat().await?;
+                if !platform_balance.is_zero() {
+                    return Ok(true);
+                }
 
-        // We check for platform balance only first to reduce the number of requests to the node.
-        // If this is a token added using init_token, then we check for this token balance only, and
-        // we don't check for platform balance or other tokens that was added before.
-        let platform_balance = self.address_balance(*address).compat().await?;
-        if !platform_balance.is_zero() {
-            return Ok(true);
+                // This is done concurrently which increases the cost of the requests to the node.
+                // But it's better than doing it sequentially to reduce the time.
+                let token_balance_map = self.get_tokens_balance_list_for_address(*address).await?;
+                Ok(token_balance_map.values().any(|balance| !balance.get_total().is_zero()))
+            },
         }
-
-        // This is done concurrently which increases the cost of the requests to the node. but it's better than doing it sequentially to reduce the time.
-        let token_balance_map = self.get_tokens_balance_list_for_address(*address).await?;
-        Ok(token_balance_map.values().any(|balance| !balance.get_total().is_zero()))
     }
 }
 
@@ -168,10 +180,10 @@ impl HDWalletBalanceOps for EthCoin {
         let mut balances = CoinBalanceMap::new();
         balances.insert(self.ticker().to_string(), coin_balance);
 
-        // TODO: TRC20 token support - when implementing TRC20 tokens, replace this guard with
-        // a TRON-specific token balance function using the TRON API (/wallet/triggersmartcontract).
+        // TODO: TRC20 token support - when implementing TRC20 tokens, add a TRON-specific
+        // token balance function using the TRON API (/wallet/triggerconstantcontract).
         // Currently, get_tokens_balance_list_for_address() uses EVM eth_call which won't work for TRON.
-        if self.0.tron_api_client.is_some() {
+        if matches!(&self.0.chain_spec, ChainSpec::Tron { .. }) {
             return Ok(balances);
         }
 

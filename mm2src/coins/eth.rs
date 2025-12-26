@@ -191,11 +191,16 @@ use fee_estimation::eip1559::{
 
 pub mod erc20;
 use erc20::get_token_decimals;
+
 pub(crate) mod eth_swap_v2;
 use eth_swap_v2::{extract_id_from_tx_data, EthPaymentType, PaymentMethod, SpendTxSearchParams};
 
 pub mod eth_utils;
+
 pub mod tron;
+
+pub mod chain_rpc;
+use self::chain_rpc::ChainRpcOps;
 
 /// Default timeout to wait for eth rpc request to complete
 pub(crate) const ETH_RPC_REQUEST_TIMEOUT_S: Duration = Duration::from_secs(30);
@@ -954,8 +959,8 @@ pub struct EthCoinImpl {
     fallback_swap_contract: Option<Address>,
     contract_supports_watchers: bool,
     web3_instances: AsyncMutex<Vec<Web3Instance>>,
-    /// TRON HTTP RPC client pool (only set for TRON chains).
-    pub(crate) tron_api_client: Option<tron::TronApiClient>,
+    /// Chain-specific RPC client (TRON API for TRON chains, EVM RPC for future).
+    pub(crate) rpc_client: Option<chain_rpc::ChainRpcClient>,
     decimals: u8,
     history_sync_state: Mutex<HistorySyncState>,
     required_confirmations: AtomicU64,
@@ -1044,6 +1049,23 @@ macro_rules! tx_type_from_pay_for_gas_option {
 }
 
 impl EthCoinImpl {
+    // TODO: Post-MVP (Phase 4) - This accessor pattern will evolve:
+    // 1. When `ChainRpcClient::Evm` is implemented, add `evm_rpc() -> Option<&EvmRpcClient>`
+    // 2. Eventually unify via `ChainRpcClient` implementing `ChainRpcOps` directly with
+    //    dispatch enums (`ChainAddress`, `ChainBalance`), eliminating variant-specific accessors.
+    // See `docs/plans/chain-rpc-client-refactor.md` for the full migration path.
+
+    /// Returns a reference to the TRON API client if this coin is a TRON chain.
+    ///
+    /// Use this instead of pattern-matching on `rpc_client` to avoid spreading
+    /// chain-specific branching across the codebase.
+    pub fn tron_rpc(&self) -> Option<&tron::TronApiClient> {
+        match &self.rpc_client {
+            Some(chain_rpc::ChainRpcClient::Tron(tron)) => Some(tron),
+            _ => None,
+        }
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     fn eth_traces_path(&self, ctx: &MmArc, my_address: Address) -> PathBuf {
         ctx.address_dir(&my_address.display_address())
@@ -2607,10 +2629,17 @@ impl MarketCoinOps for EthCoin {
     }
 
     fn platform_coin_balance(&self) -> BalanceFut<BigDecimal> {
-        Box::new(
-            self.eth_balance()
-                .and_then(move |result| u256_to_big_decimal(result, ETH_DECIMALS).map_mm_err()),
-        )
+        match (&self.coin_type, &self.0.chain_spec) {
+            (EthCoinType::Eth, _) => Box::new(self.my_balance().map(|b| b.spendable)),
+            (EthCoinType::Erc20 { .. } | EthCoinType::Nft { .. }, ChainSpec::Evm { .. }) => Box::new(
+                self.eth_balance()
+                    .and_then(|result| u256_to_big_decimal(result, ETH_DECIMALS).map_mm_err()),
+            ),
+            (_, ChainSpec::Tron { .. }) => {
+                let fut = async { MmError::err(BalanceError::Internal("TRC20 tokens not supported yet!".into())) };
+                Box::new(fut.boxed().compat())
+            },
+        }
     }
 
     fn platform_ticker(&self) -> &str {
@@ -2808,11 +2837,12 @@ impl MarketCoinOps for EthCoin {
         let coin = self.clone();
 
         let fut = async move {
-            if let Some(ref tron_api) = coin.0.tron_api_client {
-                return tron_api
-                    .get_now_block_number()
+            // Use the accessor to avoid spreading chain-specific branching.
+            if let Some(tron_client) = coin.0.tron_rpc() {
+                return tron_client
+                    .current_block()
                     .await
-                    .map_err(|e| ERRL!("TRON current_block failed: {}", e));
+                    .map_err(|e| ERRL!("TRON current_block failed: {}", e.into_inner()));
             }
             coin.block_number()
                 .await
@@ -4757,28 +4787,47 @@ impl EthCoin {
     }
 
     fn address_balance(&self, address: Address) -> BalanceFut<U256> {
+        // TODO: Once EVM is migrated to ChainRpcClient, this can use a unified
+        // `rpc_client.balance_native(address)` call without chain_spec matching.
+        // See docs/plans/chain-rpc-client-refactor.md Section 17.
         let coin = self.clone();
         let fut = async move {
-            match coin.coin_type {
-                EthCoinType::Eth => Ok(coin.balance(address, Some(BlockNumber::Latest)).await?),
-                EthCoinType::Erc20 { ref token_addr, .. } => {
-                    let function = ERC20_CONTRACT.function("balanceOf")?;
-                    let data = function.encode_input(&[Token::Address(address)])?;
+            match &coin.0.chain_spec {
+                ChainSpec::Tron { .. } => {
+                    // TRON: use ChainRpcOps via tron_rpc()
+                    let tron_client = coin.0.tron_rpc().ok_or_else(|| {
+                        BalanceError::Internal("TRON chain_spec but no TRON rpc_client".to_string())
+                    })?;
+                    let tron_addr = tron::TronAddress::from(&address);
+                    tron_client
+                        .balance_native(tron_addr)
+                        .await
+                        .map_err(|e| BalanceError::Transport(e.into_inner().to_string()).into())
+                },
+                ChainSpec::Evm { .. } => {
+                    // EVM: dispatch based on coin_type
+                    match coin.coin_type {
+                        EthCoinType::Eth => Ok(coin.balance(address, Some(BlockNumber::Latest)).await?),
+                        EthCoinType::Erc20 { ref token_addr, .. } => {
+                            let function = ERC20_CONTRACT.function("balanceOf")?;
+                            let data = function.encode_input(&[Token::Address(address)])?;
 
-                    let res = coin
-                        .call_request(address, *token_addr, None, Some(data.into()), BlockNumber::Latest)
-                        .await?;
-                    let decoded = function.decode_output(&res.0)?;
-                    match decoded[0] {
-                        Token::Uint(number) => Ok(number),
-                        _ => {
-                            let error = format!("Expected U256 as balanceOf result but got {decoded:?}");
-                            MmError::err(BalanceError::InvalidResponse(error))
+                            let res = coin
+                                .call_request(address, *token_addr, None, Some(data.into()), BlockNumber::Latest)
+                                .await?;
+                            let decoded = function.decode_output(&res.0)?;
+                            match decoded[0] {
+                                Token::Uint(number) => Ok(number),
+                                _ => {
+                                    let error = format!("Expected U256 as balanceOf result but got {decoded:?}");
+                                    MmError::err(BalanceError::InvalidResponse(error))
+                                },
+                            }
+                        },
+                        EthCoinType::Nft { .. } => {
+                            MmError::err(BalanceError::Internal("Nft protocol is not supported yet!".to_string()))
                         },
                     }
-                },
-                EthCoinType::Nft { .. } => {
-                    MmError::err(BalanceError::Internal("Nft protocol is not supported yet!".to_string()))
                 },
             }
         };
@@ -6868,8 +6917,8 @@ pub async fn eth_coin_from_conf_and_request(
         decimals,
         ticker: ticker.into(),
         web3_instances: AsyncMutex::new(web3_instances),
-        // TRON is not supported for v1 activation
-        tron_api_client: None,
+        // Chain-specific RPC client (TRON) not supported for v1 activation
+        rpc_client: None,
         history_sync_state: Mutex::new(initial_history_state),
         swap_gas_fee_policy: Mutex::new(swap_gas_fee_policy),
         max_eth_tx_type,
@@ -7821,7 +7870,7 @@ impl EthCoin {
             fallback_swap_contract: self.fallback_swap_contract,
             contract_supports_watchers: self.contract_supports_watchers,
             web3_instances: AsyncMutex::new(self.web3_instances.lock().await.clone()),
-            tron_api_client: self.tron_api_client.clone(),
+            rpc_client: self.rpc_client.clone(),
             decimals: self.decimals,
             history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
             required_confirmations: AtomicU64::new(

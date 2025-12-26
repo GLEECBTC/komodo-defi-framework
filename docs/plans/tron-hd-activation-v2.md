@@ -10,6 +10,53 @@
 
 ---
 
+## Implementation Status (Updated 2025-12-25)
+
+### Completed ✅
+| Item | Location | Notes |
+|------|----------|-------|
+| TRON RPC client (`TronApiClient`) | `mm2src/coins/eth/tron/api.rs` | HTTP client with native + WASM support, node rotation, error parsing |
+| TRON RPC wrapper (`TronRpcClient`) | `mm2src/coins/eth/chain_rpc/tron_rpc.rs` | Implements `ChainRpcOps` for TRON |
+| `ChainRpcOps` trait | `mm2src/coins/eth/chain_rpc.rs` | `current_block()`, `balance_native()`, `is_address_used_basic()` |
+| TRX stubs removed | `mm2src/coins/eth.rs`, `eth_rpc.rs` | `current_block()` and `balance()` use TRON RPC via `rpc_client` |
+| Wallet-only activation | `mm2src/coins/eth/v2_activation.rs` | TRX skips swap contract validation |
+| Token/NFT rejection | `mm2src/coins_activation/src/eth_with_token_activation.rs` | TRON rejects ERC20/NFT requests early |
+| HD scanning | `mm2src/coins/eth/eth_hd_wallet.rs` | Uses `ChainRpcOps::is_address_used_basic()` for TRON |
+| Platform balance fix | `mm2src/coins/eth.rs` | `platform_coin_balance()` is chain-aware |
+| TRON address type | `mm2src/coins/eth/tron/address.rs` | `TronAddress` with Base58Check encode/decode |
+| Integration tests | `mm2src/coins/eth/tron/api_integration_tests.rs` | Tests for Nile testnet (gated behind feature) |
+
+### In Progress 🔄
+| Item | Notes |
+|------|-------|
+| TRON address formatting (PR-3) | HD activation still returns `0x...` instead of `T...`; `my_address()` returns `0x...` |
+
+### Not Started 📋
+| Item | Notes |
+|------|-------|
+| TRX activation test helpers | Need `enable_trx_with_tokens` helper in `mm2_test_helpers` |
+| `address_by_coin_conf_and_pubkey_str` for TRX | Currently errors for `CoinProtocol::TRX` |
+
+### Post-MVP Architecture (See `chain-rpc-client-refactor.md`)
+
+After MVP ships, the following architectural improvements are planned:
+
+| PR | Purpose | Description |
+|----|---------|-------------|
+| **PR-4.5** | ChainBackend Composition | Unify `chain_spec` + `rpc_client` into single `ChainBackend` enum; eliminates redundancy |
+| **PR-5-9** | EVM RPC Refactor | Move `web3_instances` into `EvmRpcClient`, broadcast sessions, receipt finality |
+| **PR-X** | ChainCoin Typed Model | Make invalid chain×asset combinations unrepresentable at the type level |
+
+**Key concepts:**
+- **Two orthogonal dimensions**: Chain (Evm/Tron) × Asset (Native/Token/Nft)
+- **ChainBackend**: Single source of truth for chain identity + RPC
+- **ChainCoin (future)**: Nested enum where chain variants contain only valid assets for that chain
+- **AssetKind rename**: `EthCoinType::Eth` → `AssetKind::Native` (deferred, mechanical)
+
+See `docs/plans/chain-rpc-client-refactor.md` sections 19-20 for full architectural details.
+
+---
+
 ## 0) Goals / Non‑Goals
 
 ### Goals (this plan)
@@ -33,6 +80,125 @@
 - TRC20 activation (tokens on TRON)
 - TRON transaction signing, withdraw, swaps, watchers
 - TRON fee estimation (bandwidth/energy), swap-contract deployment, any trading support
+
+---
+
+## 0.1 TRX Activation MVP (Priority) — Scope, Guardrails, and File Touch List
+
+### Why "MVP first"
+We want **TRX wallet-only activation with correct HD + address formatting** shipped *before* investing in the broader
+`ChainRpcClient` / `EvmRpcClient` refactor. The MVP must:
+- Deliver working TRX activation through the **existing ETH activation routes** (`enable_eth_with_tokens` + `task::enable_eth::*`)
+- Fix correctness gaps (addresses, balances, current block, HD "is used")
+- Avoid "half-refactors" that increase blast radius or make the later refactor harder
+
+> **Post‑MVP** work (e.g. moving `web3_instances` into `EvmRpcClient`, broadcast session abstraction, receipt finality policies)
+> is still planned and documented (see `chain-rpc-client-refactor.md`), but is explicitly *not required* to ship TRX activation.
+
+---
+
+### MVP Definition (what "done" means)
+
+#### MVP deliverables (must-have)
+1. **Activation succeeds via existing routes**:
+   - request/response: `enable_eth_with_tokens`
+   - task-based: `task::enable_eth::{init,status,user_action,cancel}`
+   - **No new dispatcher methods**.
+
+2. **TRX addresses are correct everywhere activation/HD touches**:
+   - HD activation returns `T...` (Base58Check) addresses
+   - `my_address()` for TRX returns `T...`
+   - No `0x...` user-facing formatting for TRX
+
+3. **Remove TRX "stubs" for activation/HD correctness** (no "fake 0" data):
+   - TRX `current_block()` uses TRON RPC (`/wallet/getnowblock`)
+   - TRX `balance()` uses TRON RPC (`/wallet/getaccount`)
+   - HD scanning uses TRON "address used" detection (via account existence / metadata)
+
+4. **Wallet-only semantics are enforced for TRX activation**:
+   - TRX activation must not require swap contracts
+   - TRX activation must not run EVM swap-contract validation paths
+   - TRON tokens/NFT activation requests are rejected (TRC20, NFTs out of scope)
+
+5. **Refactor-friendly implementation**:
+   - No new `coin.is_tron()` usage introduced
+   - No `rpc_client.is_some()` used as a chain detector
+   - Keep changes incremental, but keep chain branching localized and explicit
+
+#### Explicit non-goals for MVP (deferred)
+- TRC20 activation and balances
+- TRON tx signing / withdraw / swaps / watchers
+- TRON fee estimation (bandwidth/energy)
+- Implementing `ChainTxOps` / broadcast sessions / receipt finality logic
+- Moving `web3_instances` out of `EthCoinImpl` (that is **post‑MVP refactor** work)
+- Directory restructures (new folders/moves)
+
+---
+
+### MVP Guardrails (do these to avoid making the later refactor harder)
+
+1. **Never detect TRON by `Option` presence**
+   - Do **not** write: `if self.rpc_client.is_some() { /* TRON */ }`
+   - Do **not** write: `if let Some(client) = rpc_client { /* TRON */ }`
+   - Instead, explicitly match the variant:
+     - `match self.rpc_client { Some(ChainRpcClient::Tron(_)) => ..., _ => ... }`
+   - Or match `ChainSpec` where appropriate:
+     - `match self.chain_spec { ChainSpec::Tron{..} => ..., ChainSpec::Evm{..} => ... }`
+
+   This prevents the "`rpc_client.is_some()` trap" documented in `chain-rpc-client-refactor.md`
+   when `ChainRpcClient::Evm` is introduced.
+
+2. **Avoid spreading chain conditionals**
+   - It is OK for MVP to use `match ChainSpec` in a small number of high‑level call sites,
+     but do not scatter "TRON special cases" across unrelated modules.
+   - Prefer to consolidate: address formatting + HD scanning + balance/current_block.
+
+3. **Keep internal address bytes stable**
+   - Continue using `ethereum_types::Address` internally as the raw 20-byte address.
+   - TRON formatting/parsing is only a codec layer.
+
+4. **Do not introduce transaction pipeline abstractions in MVP**
+   - MVP should not add `ChainTxOps`, `BroadcastSessionOps`, "prepare_broadcast", etc.
+   - Those belong to the `ChainRpcClient` refactor plan.
+
+---
+
+### MVP: Expected Code Changes (files + dependencies)
+
+> The list below is the **expected blast radius for MVP**. Post‑MVP refactor files remain documented elsewhere and should not
+> be pulled into MVP unless they are required for the guardrails above.
+
+#### Core files expected to change (MVP)
+| Area | Files | Why | Key dependencies / notes |
+|---|---|---|---|
+| Activation builder | `mm2src/coins/eth/v2_activation.rs` | Build TRON RPC backend for TRX; enforce wallet-only TRON rules; avoid building EVM web3 for TRON | depends on `mm2_net` HTTP patterns, `url`, `serde_json`, existing `EthActivationV2Request` |
+| Activation pipeline (platform+tokens) | `mm2src/coins_activation/src/eth_with_token_activation.rs` | Reject token/NFT requests for TRON early; ensure `enable_eth_with_tokens` stays the only route | keep request schema stable; depends on `CoinProtocol` → `ChainSpec` mapping |
+| TRON RPC client (HTTP) | `mm2src/coins/eth/tron/api.rs` | Implement/solidify `get_now_block_number`, `get_account`, and error parsing; ensure WASM + native paths | uses `mm2_net::transport::slurp_req` (native) and `mm2_net::wasm::http::FetchRequest` (wasm); proxy signing via `proxy_signature`, `mm2_p2p::Keypair` |
+| TRON RPC wrapper | `mm2src/coins/eth/chain_rpc/tron_rpc.rs` | Provide `ChainRpcOps` for TRON (current_block, balance_native, is_address_used_basic) | depends on `TronApiClient`, `TronAddress`, `MmError<Web3RpcError>` conversion conventions |
+| Chain RPC enum boundary (minimal) | `mm2src/coins/eth/chain_rpc.rs` | Ensure variant matching is explicit; avoid `is_some()` chain detection patterns | MVP should keep API minimal; no EVM client added in MVP |
+| Replace stubs: block + balance | `mm2src/coins/eth.rs`, `mm2src/coins/eth/eth_rpc.rs` | TRX current_block and balance must use TRON RPC (no stub values) | keep EVM behavior unchanged |
+| HD wallet scanning + balances | `mm2src/coins/eth/eth_hd_wallet.rs` | TRX "is address used" + known balance must route to TRON backend and not query EVM token logic | must remain compatible with `coin_balance::HDAddressBalanceScanner` |
+| TRON address conversions | `mm2src/coins/eth/tron/address.rs` | Add missing conversions (e.g. TRON → raw 20-byte), Base58 formatting, parse helpers | depends on `bs58`, existing constants/prefix rules |
+| User-facing address formatting | `mm2src/coins/eth.rs`, `mm2src/coins/eth/eth_hd_wallet.rs` | Ensure `my_address()` and HD activation outputs `T...` for TRX | implement via a small wrapper type (recommended) or localized codec |
+
+#### Additional "edge" file that may need MVP edits
+| File | Why |
+|---|---|
+| `mm2src/coins/lp_coins.rs` | `address_by_coin_conf_and_pubkey_str()` currently errors for `CoinProtocol::TRX`. Fixing this removes a consistency gap and prevents future "TRX address cannot be derived" issues. |
+
+#### Dependencies (expected to be used, not necessarily modified)
+- HTTP + WASM compat: `mm2src/mm2_net/src/transport.rs`, `mm2src/mm2_net/src/native_http.rs`, `mm2src/mm2_net/src/wasm/http.rs`
+- Proxy signing: `mm2src/proxy_signature/src/lib.rs`
+- EVM transport patterns for reference parity: `mm2src/coins/eth/web3_transport/http_transport.rs`
+
+---
+
+### MVP ↔ Post‑MVP Boundary (what stays clean for later refactor)
+- MVP may add/adjust **TRON-only RPC client code**, but must not restructure EVM code.
+- MVP should **not** attempt to unify EVM + TRON call paths beyond:
+  - explicit variant matching (no `is_some()` traps),
+  - chain-aware address formatting (TRX `T...`).
+- After MVP ships, proceed with the `chain-rpc-client-refactor.md` PR stack (EVM client + broadcast sessions + finality).
 
 ---
 
@@ -115,13 +281,37 @@ mm2src/coins/eth/
 
 ## 4) Core Abstractions (the "backend layer")
 
-### 4.1 `ChainKind` (small, copyable)
-Location: `mm2src/coins/eth/chain/mod.rs` (new)
+### 4.1 Use Existing `ChainSpec`
+Location: `mm2src/coins/eth.rs` (already exists)
+
+Use the existing `ChainSpec` enum for chain identity/config:
 
 ```rust
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ChainKind { Evm, Tron }
+pub enum ChainSpec {
+    Evm { chain_id: u64 },
+    Tron { network: tron::Network },
+}
 ```
+
+**Only introduce `ChainFamily` if needed** for HD display wrapper where `chain_id` shouldn't affect equality:
+
+```rust
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ChainFamily { Evm, Tron }
+
+impl From<&ChainSpec> for ChainFamily {
+    fn from(spec: &ChainSpec) -> Self {
+        match spec {
+            ChainSpec::Evm { .. } => ChainFamily::Evm,
+            ChainSpec::Tron { .. } => ChainFamily::Tron,
+        }
+    }
+}
+```
+
+**When to use which:**
+- `ChainSpec` - activation validation, rpc construction, feature gating (most cases)
+- `ChainFamily` - address formatting, HD display wrapper (where chain_id shouldn't matter)
 
 ### 4.2 `ChainAddressCodec`
 
@@ -147,25 +337,57 @@ pub trait ChainAddressCodec {
 
 ### 4.3 `ChainRpcOps` (only what activation/HD needs)
 
+> **Related**: See `docs/plans/chain-rpc-client-refactor.md` for the complete ChainRpcClient architecture including transaction abstraction.
+
 Purpose: remove TRX stubs and support HD gap-limit scanning.
+
+**Design decision**: Use associated types for maximum flexibility. No `&EthCoin` parameter - implementors own their state.
 
 ```rust
 #[async_trait]
-pub trait ChainRpcOps: Send + Sync {
-    async fn current_block(&self) -> Result<u64, String>;
+pub trait ChainRpcOps: Send + Sync + std::fmt::Debug {
+    type Error;
+    type Address;
+    type Balance;
 
-    /// Balance in smallest unit: wei for EVM, SUN for TRON.
-    async fn balance(&self, addr: ethereum_types::Address) -> Result<ethereum_types::U256, String>;
+    /// Get the current block number.
+    async fn current_block(&self) -> Result<u64, Self::Error>;
 
-    /// "Used address" predicate for HD gap limit scanning.
-    async fn is_address_used(&self, addr: ethereum_types::Address) -> Result<bool, String>;
+    /// Get native token balance in smallest unit.
+    async fn balance_native(&self, address: Self::Address) -> Result<Self::Balance, Self::Error>;
+
+    /// Basic address usage check for HD wallet gap-limit scanning.
+    /// Does NOT check token balances - that's done at HD scanner level.
+    async fn is_address_used_basic(&self, address: Self::Address) -> Result<bool, Self::Error>;
 }
 ```
 
-- EVM implementation (existing behavior):
-  - `is_address_used` = `tx_count > 0 OR balance != 0 OR any-token-balance != 0`
-- TRON implementation:
-  - `is_address_used` = `getaccount.exists_meaningfully()` (see §6).
+**Additional traits** (defined in `chain-rpc-client-refactor.md`):
+- `ChainTxOps` - Transaction pipeline abstraction (`prepare_broadcast` returns a session)
+- `BroadcastSessionOps` - Consume-on-use broadcast with captured nodes and chain-specific `TxContext`
+
+**TRON implementation** (`TronRpcClient` in `chain_rpc/tron_rpc.rs`):
+- `type Error = MmError<TronRpcError>`
+- `type Address = TronAddress`
+- `type Balance = U256`
+- Delegates to `TronApiClient`
+
+**EVM implementation** (`EvmRpcClient` in `chain_rpc/evm_rpc.rs`):
+- `type Error = MmError<EvmRpcError>`
+- `type Address = ethereum_types::Address`
+- `type Balance = U256`
+- Owns `web3_instances` and `RpcLoopSpawner`
+
+**File structure**:
+- Trait definitions: `mm2src/coins/eth/chain_rpc.rs`
+- TRON impl: `mm2src/coins/eth/chain_rpc/tron_rpc.rs`
+- EVM impl: `mm2src/coins/eth/chain_rpc/evm_rpc.rs`
+- Broadcast traits: `mm2src/coins/eth/chain_rpc/broadcast.rs`
+
+**Enum dispatch** (`ChainRpcClient`):
+- Uses explicit `match` dispatch (not `Deref<Target = dyn ChainRpcOps>`)
+- Converts backend-specific errors to unified `ChainRpcError` at enum boundary
+- Located in `chain_rpc.rs`
 
 ### 4.4 `ChainActivationRules`
 
@@ -185,65 +407,69 @@ pub trait ChainActivationRules {
 
 This avoids scattering "TRON rejects swap contracts" checks across activation.
 
-### 4.5 `ChainBackend` enum (centralizes branching)
+### 4.5 `ChainRpcClient` enum (centralizes RPC dispatch)
 
-This is the key step to eliminate `EthCoin::is_tron()` as a boundary.
+> **Related**: See `docs/plans/chain-rpc-client-refactor.md` for the complete design including transaction abstraction and broadcast sessions.
 
-**Key decision (validated by RepoPrompt review)**: **Use enum first, not trait objects**.
+This is the key step to eliminate `EthCoin::is_tron()` as a boundary for RPC operations.
+
+**Key decisions**:
+- Use explicit `match` dispatch (not `Deref<Target = dyn ChainRpcOps>`)
+- Each backend implements `ChainRpcOps` and `ChainTxOps` traits with its own associated types
+- Dispatch enums for unified API: `ChainAddress`, `ChainSignedTx`, `ChainBroadcastSession`, `ChainTxContext`
+- Enum converts backend errors to unified `ChainRpcError` at boundary
+- Modern `#[async_trait]` (not legacy `futures01::Future`)
 
 ```rust
-/// Location: mm2src/coins/eth/chain_backend.rs
-pub enum ChainBackend {
-    Evm(EvmBackend),
-    Tron(TronBackend),
+/// Location: mm2src/coins/eth/chain_rpc.rs
+
+/// Dispatch enums for unified API
+pub enum ChainAddress { Evm(Address), Tron(TronAddress) }
+pub enum ChainSignedTx { Evm(Bytes), Tron(SignedTronTx) }
+pub enum ChainBroadcastSession { Evm(EvmBroadcastSession), Tron(TronBroadcastSession) }
+pub enum ChainTxContext { Evm(EvmTxContext), Tron(TronTxContext) }
+
+/// Unified error for enum dispatch boundary.
+#[derive(Clone, Debug, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum ChainRpcError {
+    #[display(fmt = "EVM RPC error: {}", _0)]
+    Evm(EvmRpcError),
+    #[display(fmt = "TRON RPC error: {}", _0)]
+    Tron(TronRpcError),
+    #[display(fmt = "Wrong chain: expected {}, got {}", expected, got)]
+    WrongChain { expected: &'static str, got: &'static str },
+    #[display(fmt = "Not implemented: {}", _0)]
+    NotImplemented(String),
 }
 
-impl ChainBackend {
-    pub fn kind(&self) -> ChainKind {
-        match self {
-            Self::Evm(_) => ChainKind::Evm,
-            Self::Tron(_) => ChainKind::Tron,
-        }
-    }
+pub type ChainRpcResult<T> = Result<T, MmError<ChainRpcError>>;
 
-    pub fn format_address(&self, raw: &ethereum_types::Address) -> String {
-        match self {
-            Self::Evm(b) => b.format_address(raw),
-            Self::Tron(b) => b.format_address(raw),
-        }
-    }
-
-    pub async fn current_block(&self) -> Result<u64, String> {
-        match self {
-            Self::Evm(b) => b.current_block().await,
-            Self::Tron(b) => b.current_block().await,
-        }
-    }
-
-    pub async fn balance(&self, addr: &ethereum_types::Address) -> Result<U256, String> {
-        match self {
-            Self::Evm(b) => b.balance(addr).await,
-            Self::Tron(b) => b.balance(addr).await,
-        }
-    }
-
-    pub async fn is_address_used(&self, addr: &ethereum_types::Address) -> Result<bool, String> {
-        match self {
-            Self::Evm(b) => b.is_address_used(addr).await,
-            Self::Tron(b) => b.is_address_used(addr).await,
-        }
-    }
+/// Runtime dispatch enum for chain RPC operations.
+#[derive(Clone, Debug)]
+pub enum ChainRpcClient {
+    Evm(EvmRpcClient),
+    Tron(TronRpcClient),
 }
+
+impl ChainRpcClient {
+    pub fn is_tron(&self) -> bool { matches!(self, ChainRpcClient::Tron(_)) }
+    pub fn is_evm(&self) -> bool { matches!(self, ChainRpcClient::Evm(_)) }
+}
+
+/// ChainRpcClient implements both ChainRpcOps and ChainTxOps with:
+/// - type Address = ChainAddress
+/// - type BroadcastSession = ChainBroadcastSession
+/// - type TxId = H256 (both chains use 32-byte hashes)
 ```
 
-**Why enum over trait objects**:
-- Avoids object-safety constraints
-- Single choke point for all chain branching
-- Simpler lifetime management
-- Match exhaustiveness catches missing implementations at compile time
-- Can add trait objects later if extensibility is needed
+**Why explicit match over Deref**:
+- Async through `Deref<Target = dyn Trait>` is awkward
+- Explicit dispatch is clearer and allows converting errors at boundary
+- Better async ergonomics with `#[async_trait]`
+- Each backend keeps its native error type until enum boundary
 
-**Note**: This still uses `match` internally, but only inside `chain_backend.rs`. Call sites just call `coin.chain_backend.balance(...)` without any branching.
+**Note**: Call sites use `coin.rpc_client.is_tron()` for type checks, or access `as_tron()` for TRON-specific operations.
 
 ---
 
@@ -592,35 +818,65 @@ Existing ETH patterns:
 
 ---
 
-## 13) Phased Rollout Summary (implementation order)
+## 13) MVP‑First Rollout Summary (implementation order)
 
-### Phase 1 — Make TRX activation possible (wallet-only) ✅ COMPLETE
+### MVP Milestone (ship first): **TRX wallet‑only activation + HD correctness**
+This milestone is intentionally scoped to:
+- TRX activation works through **existing ETH activation routes**
+- TRX addresses are **correct (`T...`)**
+- TRX `current_block` + `balance` + HD "is used" checks are **real** (no stubs)
+- Implementation stays **refactor-friendly** (no `rpc_client.is_some()` traps; no new `is_tron()` usage)
 
-1. ✅ Add chain-aware activation validation:
-   - ✅ `wallet_only`: relax swap contract requirements (commit `f0a24e467d`)
-   - Made `swap_contract_address` optional in `EthActivationV2Request`
-   - Added `resolve_swap_contracts()` to consolidate all swap contract validation
-   - Wallet-only coins can activate without swap contracts
-2. ⏳ Build TRON backend in `eth_coin_from_conf_and_request_v2()` (don't build web3 for TRX) — deferred to Phase 2
+> **Not in MVP:** moving `web3_instances`, adding `EvmRpcClient`, adding broadcast sessions, finality policies, or any tx pipeline work.
+> Those remain in `chain-rpc-client-refactor.md` as post‑MVP steps.
 
-### Phase 2 — Remove stubs (HD + balances)
+#### MVP Step 0 — Guardrail cleanup (must be done early)
+- Replace `rpc_client.is_some()` chain detection patterns with explicit enum/chain matching in:
+  - `mm2src/coins/eth.rs`
+  - `mm2src/coins/eth/eth_rpc.rs`
+  - `mm2src/coins/eth/eth_hd_wallet.rs`
+- This is a **small, mechanical** change but critical to prevent future EVM breakage when `ChainRpcClient::Evm` is added.
 
-1. Implement TRON HTTP RPC client:
-   - `current_block`, `get_account`, `balance`, `is_address_used`
-2. Wire `current_block()` and `balance()` through backend (no `is_tron` checks)
+#### MVP Step 1 — TRON activation gating (wallet-only semantics)
+- Enforce TRON wallet-only activation rules:
+  - swap contracts not required
+  - reject token/NFT requests for TRON
+  - disallow MetaMask/WC modes for TRON (until explicitly supported)
+- Expected touch points:
+  - `mm2src/coins/eth/v2_activation.rs`
+  - `mm2src/coins_activation/src/eth_with_token_activation.rs`
 
-### Phase 3 — Fix address formatting everywhere
+#### MVP Step 2 — Remove TRX stubs with TRON HTTP RPC
+- Ensure TRON HTTP RPC client exists and is used:
+  - `current_block` uses `/wallet/getnowblock`
+  - `balance_native` uses `/wallet/getaccount`
+  - HD "is used" uses account existence/metadata predicate
+- Expected touch points:
+  - `mm2src/coins/eth/tron/api.rs`
+  - `mm2src/coins/eth/chain_rpc/tron_rpc.rs`
+  - `mm2src/coins/eth.rs` (`current_block`)
+  - `mm2src/coins/eth/eth_rpc.rs` (`balance`)
 
-1. Add `TronAddress::to_eth_address()`
-2. Add `ChainDisplayAddress` for HD wallet output
-3. Make `my_address()` + `address_from_str()` chain-aware via backend codec
-4. Implement TRX branch in `address_by_coin_conf_and_pubkey_str()`
+#### MVP Step 3 — Address correctness (TRX = `T...`) in HD + non-HD paths
+- Implement chain-aware formatting without global trait changes:
+  - Use a wrapper (e.g. `ChainDisplayAddress`) for HD flows
+  - Use chain-aware formatting for `my_address()`
+- Expected touch points:
+  - `mm2src/coins/eth/eth_hd_wallet.rs`
+  - `mm2src/coins/eth.rs`
+  - `mm2src/coins/eth/tron/address.rs`
+  - (optional but recommended) `mm2src/coins/lp_coins.rs` pubkey→address helper for TRX
 
-### Phase 4 — Consolidate chain branching into backend
+---
 
-1. Introduce `ChainBackend` enum and traits (`ChainRpcOps`, `ChainAddressCodec`, `ChainActivationRules`)
-2. Update remaining call sites to backend
-3. Remove `EthCoin::is_tron()`
+### Post‑MVP (do not block MVP): ChainRpcClient Refactor + EVM backend extraction
+After MVP ships, proceed with the `ChainRpcClient` refactor plan (see `docs/plans/chain-rpc-client-refactor.md`), including:
+- Move `web3_instances` into `EvmRpcClient`
+- Add chain-agnostic dispatch enums (`ChainAddress`, etc.)
+- Add transaction pipeline abstractions (`BroadcastSessionOps`, `ChainTxOps`)
+- Add broadcast reliability policies + receipt/finality waiting
+
+This work is explicitly separated so MVP can land quickly without introducing cross‑cutting refactors.
 
 ---
 
@@ -867,3 +1123,54 @@ cross_test!(test_uri_join_avoids_double_slash, {
 - Rate limiting on public nodes
 - CORS restrictions in browser
 - No env var gating needed - `#[ignore]` is sufficient
+
+---
+
+## 18) Architecture Decision: Why EthCoin Cannot Be Generic
+
+### The Ideal Design
+
+Ideally, `EthCoin<B: ChainRpcOps>` would allow compile-time static dispatch:
+```rust
+struct EthCoin<B: ChainRpcOps> {
+    rpc_client: B,
+    // ...
+}
+```
+
+This would give: compile-time enforcement, no runtime dispatch overhead, type-safe backend access.
+
+### Why This Is Currently Not Feasible
+
+**Problem: `MmCoinEnum` stores concrete types**
+
+`MmCoinEnum` in `mm2src/coins/lp_coins.rs` is a non-generic enum:
+```rust
+pub enum MmCoinEnum {
+    EthCoinVariant(EthCoin),  // Concrete, not generic
+    // ...
+}
+```
+
+If `EthCoin` became `EthCoin<B>`, we would need to:
+1. Split the enum variant into `EthEvmVariant(EthCoin<EvmRpcClient>)` and `EthTronVariant(EthCoin<TronRpcClient>)`
+2. Update 50+ match sites that pattern match on `EthCoinVariant`
+3. Update all `From<EthCoin>` implementations
+4. Propagate generics through token activation
+
+### Current Approach: Runtime Enum Dispatch
+
+For Phase 2, we use `ChainRpcClient` enum with explicit match:
+- Trait with associated types defines the interface
+- Each backend implements trait with its own types
+- Enum provides runtime dispatch with error conversion at boundary
+- Can be refactored later when `MmCoinEnum` is restructured
+
+### Future: MmCoinEnum Refactor
+
+When `MmCoinEnum` is refactored (has TODO about `enum_dispatch`), consider:
+1. Split `EthCoinVariant` into `EvmCoinVariant` and `TronCoinVariant`
+2. Make both implement common traits
+3. Generic `EthCoin<B>` becomes viable
+
+This is documented here so the constraint is known during future refactoring.

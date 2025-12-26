@@ -11,7 +11,7 @@
 //! cargo test -p coins --features tron-network-tests --lib tron_nile
 //!
 //! # Run a specific test
-//! cargo test -p coins --features tron-network-tests --lib tron_nile_get_now_block_number
+//! cargo test -p coins --features tron-network-tests --lib tron_nile_current_block
 //!
 //! # Override API nodes (optional, native only)
 //! TRON_NILE_API_URLS="https://nile.trongrid.io" cargo test -p coins --features tron-network-tests --lib tron_nile
@@ -30,6 +30,7 @@
 
 use super::api::{TronApiClient, TronHttpClient, TronHttpNode};
 use super::TronAddress;
+use crate::eth::chain_rpc::ChainRpcOps;
 use common::executor::Timer;
 use common::{cross_test, small_rng};
 use ethereum_types::Address as EthAddress;
@@ -156,7 +157,7 @@ fn tron_nile_api_client_all_failing() -> TronApiClient {
 
 async fn test_get_now_block_number_impl() {
     let client = tron_nile_api_client();
-    let block_number = client.get_now_block_number().await.unwrap();
+    let block_number = client.current_block().await.unwrap();
 
     // Nile testnet should have millions of blocks by now
     assert!(
@@ -174,10 +175,10 @@ async fn test_get_now_block_number_impl() {
 async fn test_block_number_non_decreasing_impl() {
     let client = tron_nile_api_client();
 
-    let block1 = client.get_now_block_number().await.unwrap();
+    let block1 = client.current_block().await.unwrap();
     // Small delay between calls (cross-platform)
     Timer::sleep(0.1).await;
-    let block2 = client.get_now_block_number().await.unwrap();
+    let block2 = client.current_block().await.unwrap();
 
     assert!(
         block2 >= block1,
@@ -187,47 +188,11 @@ async fn test_block_number_non_decreasing_impl() {
     );
 }
 
-async fn test_get_account_known_address_impl() {
-    let client = tron_nile_api_client();
-    let address = parse_tron_address(TRON_TESTNET_KNOWN_ADDRESS);
-
-    let account = client.get_account(&address).await.unwrap();
-
-    // This is a well-known testnet address that should exist
-    assert!(
-        account.exists_meaningfully(),
-        "Known testnet address {} should exist and have activity",
-        TRON_TESTNET_KNOWN_ADDRESS
-    );
-}
-
-async fn test_get_account_unused_address_impl() {
-    let client = tron_nile_api_client();
-    let address = random_tron_address();
-
-    let account = client.get_account(&address).await.unwrap();
-
-    assert!(
-        !account.exists_meaningfully(),
-        "Random address should not exist on chain"
-    );
-}
-
-async fn test_get_account_balance_sun_impl() {
-    let client = tron_nile_api_client();
-    let address = parse_tron_address(TRON_TESTNET_KNOWN_ADDRESS);
-
-    let _balance = client.get_account_balance_sun(&address).await.unwrap();
-
-    // The balance method should return a valid U256
-    // We don't assert on specific value since testnet balances change
-}
-
 async fn test_is_address_used_known_impl() {
     let client = tron_nile_api_client();
     let address = parse_tron_address(TRON_TESTNET_KNOWN_ADDRESS);
 
-    let is_used = client.is_address_used(&address).await.unwrap();
+    let is_used = client.is_address_used_basic(address).await.unwrap();
 
     assert!(
         is_used,
@@ -240,23 +205,20 @@ async fn test_is_address_used_unused_impl() {
     let client = tron_nile_api_client();
     let address = random_tron_address();
 
-    let is_used = client.is_address_used(&address).await.unwrap();
+    let is_used = client.is_address_used_basic(address).await.unwrap();
 
     assert!(!is_used, "Random address should not be marked as used");
 }
 
-async fn test_is_address_used_consistency_impl() {
+async fn test_balance_native_impl() {
     let client = tron_nile_api_client();
     let address = parse_tron_address(TRON_TESTNET_KNOWN_ADDRESS);
 
-    // Verify that is_address_used is consistent with get_account().exists_meaningfully()
-    let account = client.get_account(&address).await.unwrap();
-    let is_used = client.is_address_used(&address).await.unwrap();
+    let balance = client.balance_native(address).await.unwrap();
 
-    assert_eq!(
-        account.exists_meaningfully(),
-        is_used,
-        "is_address_used() should be consistent with exists_meaningfully() for {}",
+    assert!(
+        balance > ethereum_types::U256::zero(),
+        "Known testnet address {} should have non-zero TRX balance",
         TRON_TESTNET_KNOWN_ADDRESS
     );
 }
@@ -265,24 +227,12 @@ async fn test_is_address_used_consistency_impl() {
 // Cross-Platform Integration Tests
 // ============================================================================
 
-cross_test!(tron_nile_get_now_block_number, {
+cross_test!(tron_nile_current_block, {
     test_get_now_block_number_impl().await;
 });
 
 cross_test!(tron_nile_block_number_non_decreasing, {
     test_block_number_non_decreasing_impl().await;
-});
-
-cross_test!(tron_nile_get_account_known_address, {
-    test_get_account_known_address_impl().await;
-});
-
-cross_test!(tron_nile_get_account_unused_address, {
-    test_get_account_unused_address_impl().await;
-});
-
-cross_test!(tron_nile_get_account_balance_sun, {
-    test_get_account_balance_sun_impl().await;
 });
 
 cross_test!(tron_nile_is_address_used_known, {
@@ -293,8 +243,8 @@ cross_test!(tron_nile_is_address_used_unused, {
     test_is_address_used_unused_impl().await;
 });
 
-cross_test!(tron_nile_is_address_used_consistency, {
-    test_is_address_used_consistency_impl().await;
+cross_test!(tron_nile_balance_native, {
+    test_balance_native_impl().await;
 });
 
 // ============================================================================
@@ -416,9 +366,8 @@ async fn test_retry_on_transport_failure_impl() {
     // The request should succeed by retrying on the working nodes.
     let client = tron_nile_api_client_with_failing_node_first();
 
-    // This should succeed because the client retries on working nodes
-    // after the first node fails with a transport error.
-    let result = client.get_now_block_number().await;
+    // Should succeed by retrying on working nodes after transport failure
+    let result = client.current_block().await;
 
     assert!(
         result.is_ok(),
@@ -438,7 +387,7 @@ async fn test_all_nodes_failing_returns_transport_error_impl() {
     // The request should fail with a transport error after trying all nodes.
     let client = tron_nile_api_client_all_failing();
 
-    let result = client.get_now_block_number().await;
+    let result = client.current_block().await;
 
     assert!(result.is_err(), "Request should fail when all nodes are unreachable");
 

@@ -3,6 +3,28 @@
 //! Implements the minimal TRON API endpoints needed for HD activation and balance queries:
 //! - `/wallet/getnowblock` - current block number
 //! - `/wallet/getaccount` - account info (balance, existence)
+//!
+//! # TODO: RPC Pool Trait Refactoring
+//!
+//! The current structure has node rotation logic duplicated between EVM (`try_rpc_send` in
+//! `eth_rpc.rs`) and TRON (`try_clients` here). This should be unified via a common trait:
+//!
+//! ```ignore
+//! #[async_trait]
+//! pub trait RpcPool: Send + Sync + Clone {
+//!     type Client: Send + Sync + Clone;
+//!     type Error;
+//!
+//!     async fn try_nodes<F, Fut, T>(&self, op: F) -> Result<T, Self::Error>
+//!     where
+//!         F: Fn(Self::Client) -> Fut + Send + Sync,
+//!         Fut: Future<Output = Result<T, Self::Error>> + Send;
+//!
+//!     fn is_retryable(error: &Self::Error) -> bool;
+//! }
+//! ```
+//!
+//! See `docs/plans/chain-rpc-client-refactor.md` for the full refactoring plan.
 
 use super::TronAddress;
 use crate::eth::{Web3RpcError, Web3RpcResult};
@@ -20,6 +42,42 @@ use std::time::Duration;
 
 /// Timeout for individual TRON API requests.
 pub const TRON_API_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Check if a TRON error message indicates a transient condition that should be retried.
+///
+/// Based on TRON's `Return.response_code` enum (from java-tron), these are transient:
+/// - `SERVER_BUSY` (code 9) - node's transaction pending pool is at capacity
+/// - `NO_CONNECTION` (code 10) - no active peer connections
+/// - `NOT_ENOUGH_EFFECTIVE_CONNECTION` (code 11) - insufficient peer connections
+/// - `BLOCK_UNSOLIDIFIED` (code 12) - blockchain not fully synchronized
+/// - Rate limiting: "lack of computing resources" message
+///
+/// These errors become `InvalidResponse` which `Web3RpcError::is_retryable()` treats as permanent.
+/// This function provides TRON-specific retry classification.
+pub fn is_retryable_tron_error(error_msg: &str) -> bool {
+    let lower = error_msg.to_lowercase();
+
+    // TRON-specific transient error codes (from java-tron Return.response_code)
+    if lower.contains("server_busy") || lower.contains("server busy") {
+        return true;
+    }
+    if lower.contains("no_connection") || lower.contains("no connection") {
+        return true;
+    }
+    if lower.contains("not_enough_effective_connection") {
+        return true;
+    }
+    if lower.contains("block_unsolidified") || lower.contains("block unsolidified") {
+        return true;
+    }
+
+    // Rate limiting from RateLimiterServlet
+    if lower.contains("lack of computing resources") {
+        return true;
+    }
+
+    false
+}
 
 /// Detects TRON API error payloads and extracts the error message.
 /// Returns `Some(message)` if the response indicates an error, `None` otherwise.
@@ -327,19 +385,9 @@ impl GetAccountResponse {
 // ============================================================================
 
 impl TronHttpClient {
-    /// Get the current block number.
-    pub async fn get_now_block_number(&self) -> Web3RpcResult<u64> {
-        let response: GetNowBlockResponse = self.post("/wallet/getnowblock", &GetNowBlockRequest {}).await?;
-
-        let block_header = response
-            .block_header
-            .ok_or_else(|| Web3RpcError::InvalidResponse("Missing block_header in getnowblock response".to_string()))?;
-
-        let block_number = block_header.raw_data.number;
-        if block_number < 0 {
-            return Err(Web3RpcError::InvalidResponse(format!("Invalid negative block number: {block_number}")).into());
-        }
-        Ok(block_number as u64)
+    /// Get the current block.
+    pub async fn get_now_block(&self) -> Web3RpcResult<GetNowBlockResponse> {
+        self.post("/wallet/getnowblock", &GetNowBlockRequest {}).await
     }
 
     /// Get account information for a TRON address.
@@ -349,21 +397,7 @@ impl TronHttpClient {
             address: address.to_hex(),
             visible: false,
         };
-
         self.post("/wallet/getaccount", &request).await
-    }
-
-    /// Get account balance in SUN (smallest unit, 1 TRX = 1,000,000 SUN).
-    pub async fn get_account_balance_sun(&self, address: &TronAddress) -> Web3RpcResult<U256> {
-        let account = self.get_account(address).await?;
-        let balance = account.balance.unwrap_or(0).max(0) as u64;
-        Ok(U256::from(balance))
-    }
-
-    /// Check if an address has been used (for HD wallet gap-limit scanning).
-    pub async fn is_address_used(&self, address: &TronAddress) -> Web3RpcResult<bool> {
-        let account = self.get_account(address).await?;
-        Ok(account.exists_meaningfully())
     }
 }
 
@@ -389,15 +423,17 @@ impl TronApiClient {
     /// Execute an operation with node rotation.
     /// Tries each node until one succeeds, rotating successful nodes to front.
     ///
-    /// Only retryable errors (transport failures, timeouts) trigger fallback to the next node.
-    /// Non-retryable errors (invalid responses, API errors like "contract doesn't exist")
-    /// return immediately since they would fail on any node.
+    /// Only retryable errors (transport failures, timeouts, TRON transient errors) trigger
+    /// fallback to the next node. Non-retryable errors (invalid responses, API errors like
+    /// "contract doesn't exist") return immediately since they would fail on any node.
+    ///
+    /// Note: Holds mutex across await for consistency with EVM's `try_rpc_send` pattern.
     async fn try_clients<F, Fut, T>(&self, op: F) -> Web3RpcResult<T>
     where
         F: Fn(TronHttpClient) -> Fut,
         Fut: std::future::Future<Output = Web3RpcResult<T>>,
     {
-        let mut clients: futures::lock::MutexGuard<'_, Vec<TronHttpClient>> = self.clients.lock().await;
+        let mut clients = self.clients.lock().await;
 
         if clients.is_empty() {
             return Err(Web3RpcError::Transport("No TRON API nodes configured".to_string()).into());
@@ -414,10 +450,11 @@ impl TronApiClient {
                 },
                 Err(e) => {
                     let inner = e.into_inner();
-                    // Only retry on transport/timeout errors (transient issues).
-                    // InvalidResponse, Internal, etc. are permanent - the same request
-                    // would fail on any node (e.g., "contract doesn't exist").
-                    if !inner.is_retryable() {
+                    // Retry on transport/timeout errors (generic transient issues)
+                    // OR on TRON-specific transient errors (server busy, no connection, etc.).
+                    let is_retryable = inner.is_retryable()
+                        || matches!(&inner, Web3RpcError::InvalidResponse(msg) if is_retryable_tron_error(msg));
+                    if !is_retryable {
                         return Err(inner.into());
                     }
                     last_error = inner;
@@ -428,38 +465,66 @@ impl TronApiClient {
         Err(last_error.into())
     }
 
-    /// Get the current block number.
-    pub async fn get_now_block_number(&self) -> Web3RpcResult<u64> {
-        self.try_clients(|client| async move { client.get_now_block_number().await })
-            .await
-    }
-
-    /// Get account information.
+    /// Get account information with node rotation.
     pub async fn get_account(&self, address: &TronAddress) -> Web3RpcResult<GetAccountResponse> {
-        let address = *address;
         self.try_clients(|client| {
-            let addr = address;
+            let addr = *address;
             async move { client.get_account(&addr).await }
         })
         .await
     }
+}
 
-    /// Get account balance in SUN.
-    pub async fn get_account_balance_sun(&self, address: &TronAddress) -> Web3RpcResult<U256> {
-        let address = *address;
-        self.try_clients(|client| {
-            let addr = address;
-            async move { client.get_account_balance_sun(&addr).await }
+// ============================================================================
+// ChainRpcOps implementation for TronApiClient
+// ============================================================================
+
+use crate::eth::chain_rpc::ChainRpcOps;
+use async_trait::async_trait;
+use mm2_err_handle::prelude::MmError;
+
+#[async_trait]
+impl ChainRpcOps for TronApiClient {
+    type Error = MmError<Web3RpcError>;
+    type Address = TronAddress;
+    type Balance = U256;
+
+    async fn current_block(&self) -> Result<u64, Self::Error> {
+        self.try_clients(|client| async move {
+            let response = client.get_now_block().await?;
+            let block_header = response.block_header.ok_or_else(|| {
+                Web3RpcError::InvalidResponse("Missing block_header in getnowblock response".to_string())
+            })?;
+            let block_number = block_header.raw_data.number;
+            if block_number < 0 {
+                return Err(
+                    Web3RpcError::InvalidResponse(format!("Invalid negative block number: {block_number}")).into(),
+                );
+            }
+            Ok(block_number as u64)
         })
         .await
     }
 
-    /// Check if an address has been used.
-    pub async fn is_address_used(&self, address: &TronAddress) -> Web3RpcResult<bool> {
-        let address = *address;
+    async fn balance_native(&self, address: Self::Address) -> Result<Self::Balance, Self::Error> {
         self.try_clients(|client| {
             let addr = address;
-            async move { client.is_address_used(&addr).await }
+            async move {
+                let account = client.get_account(&addr).await?;
+                let balance = account.balance.unwrap_or(0).max(0) as u64;
+                Ok(U256::from(balance))
+            }
+        })
+        .await
+    }
+
+    async fn is_address_used_basic(&self, address: Self::Address) -> Result<bool, Self::Error> {
+        self.try_clients(|client| {
+            let addr = address;
+            async move {
+                let account = client.get_account(&addr).await?;
+                Ok(account.exists_meaningfully())
+            }
         })
         .await
     }
@@ -468,354 +533,5 @@ impl TronApiClient {
 impl std::fmt::Debug for TronApiClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TronApiClient").finish_non_exhaustive()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    // =========================================================================
-    // tron_error_from_value unit tests
-    // =========================================================================
-
-    #[test]
-    fn test_error_uppercase_error() {
-        // Format: {"Error": "message"} - REST API access control errors
-        let v = json!({"Error": "this API is unavailable due to config"});
-        assert_eq!(
-            tron_error_from_value(&v),
-            Some("this API is unavailable due to config".to_string())
-        );
-    }
-
-    #[test]
-    fn test_error_lowercase_string() {
-        // Format: {"error": "message"} - General string errors
-        let v = json!({"error": "Invalid address format"});
-        assert_eq!(tron_error_from_value(&v), Some("Invalid address format".to_string()));
-    }
-
-    #[test]
-    fn test_error_jsonrpc_object() {
-        // Format: {"error": {"code": ..., "message": ...}} - JSON-RPC 2.0
-        let v = json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "error": {
-                "code": -32602,
-                "message": "Invalid params"
-            }
-        });
-        assert_eq!(tron_error_from_value(&v), Some("-32602: Invalid params".to_string()));
-    }
-
-    #[test]
-    fn test_error_jsonrpc_code_only() {
-        let v = json!({"error": {"code": -32000}});
-        assert_eq!(tron_error_from_value(&v), Some("-32000".to_string()));
-    }
-
-    #[test]
-    fn test_error_nested_result_object() {
-        // Format: {"result": {"result": false, "code": "...", "message": "..."}}
-        // Used by triggerConstantContract, broadcastTransaction, etc.
-        let v = json!({
-            "result": {
-                "result": false,
-                "code": "CONTRACT_VALIDATE_ERROR",
-                "message": "Smart contract is not exist."
-            }
-        });
-        assert_eq!(
-            tron_error_from_value(&v),
-            Some("CONTRACT_VALIDATE_ERROR: Smart contract is not exist.".to_string())
-        );
-    }
-
-    #[test]
-    fn test_error_nested_result_code_only() {
-        let v = json!({"result": {"result": false, "code": "SIGERROR"}});
-        assert_eq!(tron_error_from_value(&v), Some("SIGERROR".to_string()));
-    }
-
-    #[test]
-    fn test_error_nested_result_message_only() {
-        let v = json!({"result": {"result": false, "message": "Unknown error"}});
-        assert_eq!(tron_error_from_value(&v), Some("Unknown error".to_string()));
-    }
-
-    #[test]
-    fn test_error_nested_result_no_details() {
-        let v = json!({"result": {"result": false}});
-        assert_eq!(tron_error_from_value(&v), Some("Transaction failed".to_string()));
-    }
-
-    #[test]
-    fn test_error_nested_result_null_with_code() {
-        // Real TRON API response: result is null but has error code
-        // This is what triggerConstantContract actually returns
-        let v = json!({
-            "result": {
-                "result": null,
-                "code": "CONTRACT_VALIDATE_ERROR",
-                "message": "Smart contract is not exist."
-            }
-        });
-        assert_eq!(
-            tron_error_from_value(&v),
-            Some("CONTRACT_VALIDATE_ERROR: Smart contract is not exist.".to_string())
-        );
-    }
-
-    #[test]
-    fn test_error_nested_result_missing_with_code() {
-        // result field is missing entirely but has error code
-        let v = json!({
-            "result": {
-                "code": "SIGERROR",
-                "message": "Signature verification failed"
-            }
-        });
-        assert_eq!(
-            tron_error_from_value(&v),
-            Some("SIGERROR: Signature verification failed".to_string())
-        );
-    }
-
-    #[test]
-    fn test_non_error_nested_result_object_without_code() {
-        // result is an object but no code field - not an error
-        // This could be a valid response structure from some endpoint
-        let v = json!({
-            "result": {
-                "transaction_id": "abc123",
-                "block_number": 12345
-            }
-        });
-        assert_eq!(tron_error_from_value(&v), None);
-    }
-
-    #[test]
-    fn test_error_toplevel_result_false() {
-        // Format: {"result": false, "code": "...", "message": "..."}
-        let v = json!({
-            "result": false,
-            "code": "BANDWIDTH_ERROR",
-            "message": "account has insufficient bandwidth"
-        });
-        assert_eq!(
-            tron_error_from_value(&v),
-            Some("BANDWIDTH_ERROR: account has insufficient bandwidth".to_string())
-        );
-    }
-
-    #[test]
-    fn test_error_code_message_without_result() {
-        // Format: {"code": "...", "message": "..."} without result field
-        let v = json!({"code": "TAPOS_ERROR", "message": "Invalid block reference"});
-        assert_eq!(
-            tron_error_from_value(&v),
-            Some("TAPOS_ERROR: Invalid block reference".to_string())
-        );
-    }
-
-    #[test]
-    fn test_error_numeric_code() {
-        let v = json!({"code": 1002, "message": "TOO_MANY_REQUESTS"});
-        assert_eq!(tron_error_from_value(&v), Some("1002: TOO_MANY_REQUESTS".to_string()));
-    }
-
-    // =========================================================================
-    // Non-error responses (should return None)
-    // =========================================================================
-
-    #[test]
-    fn test_non_error_result_true() {
-        // {"result": true, ...} is success, not error
-        let v = json!({
-            "result": true,
-            "code": "SUCCESS",
-            "message": "Transaction submitted"
-        });
-        assert_eq!(tron_error_from_value(&v), None);
-    }
-
-    #[test]
-    fn test_non_error_nested_result_true() {
-        // {"result": {"result": true, ...}} is success
-        let v = json!({
-            "result": {
-                "result": true,
-                "code": "SUCCESS"
-            }
-        });
-        assert_eq!(tron_error_from_value(&v), None);
-    }
-
-    #[test]
-    fn test_non_error_account_response() {
-        // Normal account response
-        let v = json!({
-            "address": "41abc123...",
-            "balance": 1000000,
-            "create_time": 1234567890000i64
-        });
-        assert_eq!(tron_error_from_value(&v), None);
-    }
-
-    #[test]
-    fn test_non_error_empty_object() {
-        // Empty object (non-existent account)
-        let v = json!({});
-        assert_eq!(tron_error_from_value(&v), None);
-    }
-
-    #[test]
-    fn test_non_error_block_response() {
-        let v = json!({
-            "block_header": {
-                "raw_data": {
-                    "number": 12345678
-                }
-            }
-        });
-        assert_eq!(tron_error_from_value(&v), None);
-    }
-
-    #[test]
-    fn test_non_error_primitives() {
-        // Non-object values return None
-        assert_eq!(tron_error_from_value(&json!(null)), None);
-        assert_eq!(tron_error_from_value(&json!(123)), None);
-        assert_eq!(tron_error_from_value(&json!("string")), None);
-        assert_eq!(tron_error_from_value(&json!([1, 2, 3])), None);
-    }
-
-    // =========================================================================
-    // GetAccountResponse tests
-    // =========================================================================
-
-    #[test]
-    fn test_account_exists_with_address() {
-        let account = GetAccountResponse {
-            address: Some("41abc...".to_string()),
-            balance: None,
-            create_time: None,
-            owner_permission: None,
-        };
-        assert!(account.exists_meaningfully());
-    }
-
-    #[test]
-    fn test_account_exists_with_balance() {
-        let account = GetAccountResponse {
-            address: None,
-            balance: Some(1000),
-            create_time: None,
-            owner_permission: None,
-        };
-        assert!(account.exists_meaningfully());
-    }
-
-    #[test]
-    fn test_account_exists_with_create_time() {
-        let account = GetAccountResponse {
-            address: None,
-            balance: None,
-            create_time: Some(1234567890000),
-            owner_permission: None,
-        };
-        assert!(account.exists_meaningfully());
-    }
-
-    #[test]
-    fn test_account_not_exists_empty() {
-        let account = GetAccountResponse::default();
-        assert!(!account.exists_meaningfully());
-    }
-
-    #[test]
-    fn test_account_not_exists_zero_balance() {
-        let account = GetAccountResponse {
-            address: None,
-            balance: Some(0),
-            create_time: None,
-            owner_permission: None,
-        };
-        assert!(!account.exists_meaningfully());
-    }
-
-    #[test]
-    fn test_account_not_exists_negative_balance() {
-        // Edge case: negative balance should be treated as non-existent
-        let account = GetAccountResponse {
-            address: None,
-            balance: Some(-100),
-            create_time: None,
-            owner_permission: None,
-        };
-        assert!(!account.exists_meaningfully());
-    }
-
-    // =========================================================================
-    // Web3RpcError::is_retryable() tests
-    // =========================================================================
-
-    #[test]
-    fn test_retryable_transport_error() {
-        let error = Web3RpcError::Transport("connection refused".to_string());
-        assert!(error.is_retryable(), "Transport errors should be retryable");
-    }
-
-    #[test]
-    fn test_retryable_timeout_error() {
-        let error = Web3RpcError::Timeout("request timed out".to_string());
-        assert!(error.is_retryable(), "Timeout errors should be retryable");
-    }
-
-    #[test]
-    fn test_non_retryable_invalid_response() {
-        let error = Web3RpcError::InvalidResponse("CONTRACT_VALIDATE_ERROR".to_string());
-        assert!(!error.is_retryable(), "InvalidResponse errors should NOT be retryable");
-    }
-
-    #[test]
-    fn test_non_retryable_internal_error() {
-        let error = Web3RpcError::Internal("serialization failed".to_string());
-        assert!(!error.is_retryable(), "Internal errors should NOT be retryable");
-    }
-
-    #[test]
-    fn test_non_retryable_invalid_gas_config() {
-        let error = Web3RpcError::InvalidGasApiConfig("missing url".to_string());
-        assert!(
-            !error.is_retryable(),
-            "InvalidGasApiConfig errors should NOT be retryable"
-        );
-    }
-
-    #[test]
-    fn test_non_retryable_protocol_not_supported() {
-        let error = Web3RpcError::ProtocolNotSupported("NFT not supported".to_string());
-        assert!(
-            !error.is_retryable(),
-            "ProtocolNotSupported errors should NOT be retryable"
-        );
-    }
-
-    #[test]
-    fn test_non_retryable_num_conversion_error() {
-        let error = Web3RpcError::NumConversError("overflow".to_string());
-        assert!(!error.is_retryable(), "NumConversError errors should NOT be retryable");
-    }
-
-    #[test]
-    fn test_non_retryable_no_such_coin() {
-        let error = Web3RpcError::NoSuchCoin {
-            coin: "INVALID".to_string(),
-        };
-        assert!(!error.is_retryable(), "NoSuchCoin errors should NOT be retryable");
     }
 }

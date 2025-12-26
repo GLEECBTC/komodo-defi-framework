@@ -541,7 +541,7 @@ impl EthCoin {
             decimals,
             ticker,
             web3_instances: AsyncMutex::new(self.web3_instances.lock().await.clone()),
-            tron_api_client: self.tron_api_client.clone(),
+            rpc_client: self.rpc_client.clone(),
             history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
             swap_gas_fee_policy: Mutex::new(swap_gas_fee_policy),
             max_eth_tx_type,
@@ -638,7 +638,7 @@ impl EthCoin {
             fallback_swap_contract: self.fallback_swap_contract,
             contract_supports_watchers: self.contract_supports_watchers,
             web3_instances: AsyncMutex::new(self.web3_instances.lock().await.clone()),
-            tron_api_client: self.tron_api_client.clone(),
+            rpc_client: self.rpc_client.clone(),
             decimals: self.decimals,
             history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
             swap_gas_fee_policy: Mutex::new(swap_gas_fee_policy),
@@ -761,7 +761,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
     .await?;
 
     // Build chain-specific RPC clients
-    let (web3_instances, tron_api_client) = match (&chain_spec, req.rpc_mode, &priv_key_policy) {
+    let (web3_instances, rpc_client) = match (&chain_spec, req.rpc_mode, &priv_key_policy) {
         // EVM: Standard RPC with software/hardware/external wallets
         (
             ChainSpec::Evm { .. },
@@ -796,10 +796,10 @@ pub async fn eth_coin_from_conf_and_request_v2(
             });
         },
 
-        // TRON: Uses dedicated TRON API, no Web3
+        // TRON: Uses dedicated TRON API via ChainRpcClient, no Web3
         (ChainSpec::Tron { .. }, EthRpcMode::Default, _) => {
-            let tron_pool = build_tron_api_client(ctx, req.nodes.clone()).await?;
-            (Vec::new(), Some(tron_pool))
+            let tron_api = build_tron_api_client(ctx, req.nodes.clone()).await?;
+            (Vec::new(), Some(chain_rpc::ChainRpcClient::Tron(tron_api)))
         },
 
         // TRON + Metamask (WASM only): Not supported
@@ -861,7 +861,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         decimals,
         ticker: ticker.to_string(),
         web3_instances: AsyncMutex::new(web3_instances),
-        tron_api_client,
+        rpc_client,
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         swap_gas_fee_policy: Mutex::new(swap_gas_fee_policy),
         max_eth_tx_type,
