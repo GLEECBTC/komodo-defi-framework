@@ -62,7 +62,7 @@ pub(crate) fn eth_coin_from_keypair(
         EthCoinType::Erc20 { ref platform, .. } => platform.to_string(),
         EthCoinType::Nft { ref platform } => platform.to_string(),
     };
-    let my_address = key_pair.address();
+    let my_address = ChainTaggedAddress::new(key_pair.address(), ChainFamily::Evm);
     let coin_conf = coin_conf(&ctx, &ticker);
     let max_eth_tx_type = get_conf_param_or_from_plaform_coin(&ctx, &coin_conf, &coin_type, MAX_ETH_TX_TYPE_SUPPORTED)
         .expect("valid max_eth_tx_type config");

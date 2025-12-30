@@ -5972,8 +5972,13 @@ pub fn address_by_coin_conf_and_pubkey_str(
         CoinProtocol::ERC20 { .. } | CoinProtocol::ETH { .. } | CoinProtocol::NFT { .. } => {
             eth::addr_from_pubkey_str(pubkey)
         },
-        // Todo: implement TRX address generation
-        CoinProtocol::TRX { .. } => ERR!("TRX address generation is not implemented yet"),
+        CoinProtocol::TRX { .. } => {
+            let pubkey_hex = pubkey.strip_prefix("0x").unwrap_or(pubkey);
+            let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| ERRL!("{}", e))?;
+            let raw_addr = eth::addr_from_raw_pubkey(&pubkey_bytes)?;
+            let tron_addr = eth::tron::TronAddress::from(raw_addr);
+            Ok(tron_addr.to_base58())
+        },
         CoinProtocol::UTXO { .. } | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
             utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format)
         },

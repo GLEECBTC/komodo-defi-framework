@@ -346,7 +346,7 @@ pub fn eth_coin_with_random_privkey_using_urls(swap_contract_address: Address, u
     .unwrap();
 
     let my_address = match eth_coin.derivation_method() {
-        DerivationMethod::SingleAddress(addr) => *addr,
+        DerivationMethod::SingleAddress(addr) => addr.inner(),
         _ => panic!("Expected single address"),
     };
 
@@ -385,7 +385,7 @@ pub fn erc20_coin_with_random_privkey(swap_contract_address: Address) -> EthCoin
     .unwrap();
 
     let my_address = match erc20_coin.derivation_method() {
-        DerivationMethod::SingleAddress(addr) => *addr,
+        DerivationMethod::SingleAddress(addr) => addr.inner(),
         _ => panic!("Expected single address"),
     };
 
@@ -570,7 +570,9 @@ pub fn fill_eth_erc20_with_private_key(priv_key: Secp256k1Secret) {
         PrivKeyBuildPolicy::IguanaPrivKey(priv_key),
     ))
     .unwrap();
-    let my_address = block_on(eth_coin.derivation_method().single_addr_or_err()).unwrap();
+    let my_address = block_on(eth_coin.derivation_method().single_addr_or_err())
+        .unwrap()
+        .inner();
 
     // 100 ETH
     fill_eth(my_address, U256::from(10).pow(U256::from(20)));
@@ -1058,7 +1060,7 @@ fn send_and_spend_erc1155_maker_payment() {
 fn test_nonce_several_urls() {
     // Use one working and one failing URL.
     let coin = eth_coin_with_random_privkey_using_urls(swap_contract(), &[GETH_RPC_URL, "http://127.0.0.1:0"]);
-    let my_address = block_on(coin.derivation_method().single_addr_or_err()).unwrap();
+    let my_address = block_on(coin.derivation_method().single_addr_or_err()).unwrap().inner();
     let (old_nonce, _) = block_on_f01(coin.clone().get_addr_nonce(my_address)).unwrap();
 
     // Send a payment to increase the nonce.
@@ -1073,7 +1075,7 @@ fn test_nonce_lock() {
     use futures::future::join_all;
 
     let coin = eth_coin_with_random_privkey(swap_contract());
-    let my_address = block_on(coin.derivation_method().single_addr_or_err()).unwrap();
+    let my_address = block_on(coin.derivation_method().single_addr_or_err()).unwrap().inner();
     let futures = (0..5).map(|_| coin.send_to_address(my_address, 200000000.into()).compat());
     let results = block_on(join_all(futures));
 
@@ -1135,7 +1137,9 @@ fn test_nonce_erc20_lock() {
     ))
     .unwrap();
 
-    let my_address = block_on(eth_coin.derivation_method().single_addr_or_err()).unwrap();
+    let my_address = block_on(eth_coin.derivation_method().single_addr_or_err())
+        .unwrap()
+        .inner();
 
     let futures = vec![
         eth_coin.send_to_address(my_address, 100.into()).compat(),

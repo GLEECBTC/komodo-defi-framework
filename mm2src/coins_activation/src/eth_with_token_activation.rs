@@ -402,6 +402,7 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
 
         match self.derivation_method() {
             DerivationMethod::SingleAddress(my_address) => {
+                let my_address_formatted = my_address.display_address();
                 let pubkey = self.get_public_key().await.map_mm_err()?;
                 let mut eth_address_info = CoinAddressInfo {
                     derivation_method: self.derivation_method().to_response().await.map_mm_err()?,
@@ -425,8 +426,8 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
                     return Ok(EthWithTokensActivationResult::Iguana(
                         IguanaEthWithTokensActivationResult {
                             current_block,
-                            eth_addresses_infos: HashMap::from([(my_address.display_address(), eth_address_info)]),
-                            erc20_addresses_infos: HashMap::from([(my_address.display_address(), erc20_address_info)]),
+                            eth_addresses_infos: HashMap::from([(my_address_formatted.clone(), eth_address_info)]),
+                            erc20_addresses_infos: HashMap::from([(my_address_formatted, erc20_address_info)]),
                             nfts_infos: nfts_map,
                         },
                     ));
@@ -450,8 +451,8 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
                 Ok(EthWithTokensActivationResult::Iguana(
                     IguanaEthWithTokensActivationResult {
                         current_block,
-                        eth_addresses_infos: HashMap::from([(my_address.display_address(), eth_address_info)]),
-                        erc20_addresses_infos: HashMap::from([(my_address.display_address(), erc20_address_info)]),
+                        eth_addresses_infos: HashMap::from([(my_address_formatted.clone(), eth_address_info)]),
+                        erc20_addresses_infos: HashMap::from([(my_address_formatted, erc20_address_info)]),
                         nfts_infos: nfts_map,
                     },
                 ))

@@ -1,14 +1,14 @@
 use super::{
-    checksum_address, u256_from_big_decimal, u256_to_big_decimal, ChainSpec, EthCoinType, EthDerivationMethod,
-    EthPrivKeyPolicy, Public, WithdrawError, WithdrawRequest, WithdrawResult, ERC20_CONTRACT, H160, H256,
+    u256_from_big_decimal, u256_to_big_decimal, ChainSpec, ChainTaggedAddress, EthCoinType, EthDerivationMethod,
+    EthPrivKeyPolicy, Public, WithdrawError, WithdrawRequest, WithdrawResult, ERC20_CONTRACT, H256,
 };
 use crate::eth::wallet_connect::WcEthTxParams;
 use crate::eth::{
     calc_total_fee, get_eth_gas_details_from_withdraw_fee, tx_builder_with_pay_for_gas_option,
-    tx_type_from_pay_for_gas_option, Action, Address, EthTxFeeDetails, KeyPair, PayForGasOption, SignedEthTx,
+    tx_type_from_pay_for_gas_option, Action, EthTxFeeDetails, KeyPair, PayForGasOption, SignedEthTx,
     TransactionWrapper, UnSignedEthTxBuilder, ETH_RPC_REQUEST_TIMEOUT_S,
 };
-use crate::hd_wallet::{HDAddressSelector, HDCoinWithdrawOps, HDWalletOps, WithdrawSenderAddress};
+use crate::hd_wallet::{DisplayAddress, HDAddressSelector, HDCoinWithdrawOps, HDWalletOps, WithdrawSenderAddress};
 use crate::rpc_command::init_withdraw::{WithdrawInProgressStatus, WithdrawTaskHandleShared};
 use crate::{
     BytesJson, CoinWithDerivationMethod, EthCoin, GetWithdrawSenderAddress, PrivKeyPolicy, TransactionData,
@@ -61,8 +61,9 @@ where
         unsigned_tx: &TransactionWrapper,
     ) -> Result<SignedEthTx, MmError<WithdrawError>>;
 
-    /// Transforms the `from` parameter of the withdrawal request into an address.
-    async fn get_from_address(&self, req: &WithdrawRequest) -> Result<H160, MmError<WithdrawError>> {
+    /// - This returns `ChainTaggedAddress` so user-facing formatting is always chain-aware (EVM checksum vs TRON base58).
+    /// - Convert to raw with `.inner()` when performing RPC calls / tx building.
+    async fn get_from_address(&self, req: &WithdrawRequest) -> Result<ChainTaggedAddress, MmError<WithdrawError>> {
         let coin = self.coin();
         match req.from {
             Some(_) => Ok(coin.get_withdraw_sender_address(req).await.map_mm_err()?.address),
@@ -224,14 +225,14 @@ where
         let ticker = coin.deref().ticker.clone();
         let req = self.request().clone();
 
-        let to_addr = coin
+        let to_tagged = coin
             .address_from_str(&req.to)
             .map_to_mm(WithdrawError::InvalidAddress)?;
-        let my_address = self.get_from_address(&req).await?;
+        let from_tagged = self.get_from_address(&req).await?;
 
         self.on_generating_transaction()?;
 
-        let my_balance = coin.address_balance(my_address).compat().await.map_mm_err()?;
+        let my_balance = coin.address_balance(from_tagged).compat().await.map_mm_err()?;
         let my_balance_dec = u256_to_big_decimal(my_balance, coin.decimals).map_mm_err()?;
 
         let (mut wei_amount, dec_amount) = if req.max {
@@ -248,10 +249,10 @@ where
             });
         };
         let (mut eth_value, data, call_addr, fee_coin) = match &coin.coin_type {
-            EthCoinType::Eth => (wei_amount, vec![], to_addr, ticker.as_str()),
+            EthCoinType::Eth => (wei_amount, vec![], to_tagged.inner(), ticker.as_str()),
             EthCoinType::Erc20 { platform, token_addr } => {
                 let function = ERC20_CONTRACT.function("transfer")?;
-                let data = function.encode_input(&[Token::Address(to_addr), Token::Uint(wei_amount)])?;
+                let data = function.encode_input(&[Token::Address(to_tagged.inner()), Token::Uint(wei_amount)])?;
                 (0.into(), data, *token_addr, platform.as_str())
             },
             EthCoinType::Nft { .. } => {
@@ -268,7 +269,7 @@ where
             req.fee.clone(),
             eth_value,
             data.clone().into(),
-            my_address,
+            from_tagged.inner(),
             call_addr,
             req.max,
         )
@@ -292,11 +293,11 @@ where
 
         let (tx_hash, tx_hex) = match coin.priv_key_policy {
             EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. } | EthPrivKeyPolicy::Trezor => {
-                let address_lock = coin.get_address_lock(my_address).await;
+                let address_lock = coin.get_address_lock(from_tagged.inner()).await;
                 let _nonce_lock = address_lock.lock().await;
                 let (nonce, _) = coin
                     .clone()
-                    .get_addr_nonce(my_address)
+                    .get_addr_nonce(from_tagged.inner())
                     .compat()
                     .timeout(ETH_RPC_REQUEST_TIMEOUT_S)
                     .await?
@@ -319,8 +320,8 @@ where
                 let gas_price = pay_for_gas_option.get_gas_price();
                 let (max_fee_per_gas, max_priority_fee_per_gas) = pay_for_gas_option.get_fee_per_gas();
                 let tx_to_send = TransactionRequest {
-                    from: my_address,
-                    to: Some(to_addr),
+                    from: from_tagged.inner(),
+                    to: Some(to_tagged.inner()),
                     gas: Some(gas),
                     gas_price,
                     max_fee_per_gas,
@@ -346,7 +347,7 @@ where
                 // TODO: we should get _nonce_lock here (when WalletConnect is supported for swaps)
                 let (nonce, _) = coin
                     .clone()
-                    .get_addr_nonce(my_address)
+                    .get_addr_nonce(from_tagged.inner())
                     .compat()
                     .timeout(ETH_RPC_REQUEST_TIMEOUT_S)
                     .await?
@@ -355,7 +356,7 @@ where
                     gas,
                     nonce,
                     data: &data,
-                    my_address,
+                    my_address: from_tagged.inner(),
                     action: Action::Call(call_addr),
                     value: eth_value,
                     gas_price,
@@ -386,7 +387,7 @@ where
 
         let amount_decimal = u256_to_big_decimal(wei_amount, coin.decimals).map_mm_err()?;
         let mut spent_by_me = amount_decimal.clone();
-        let received_by_me = if to_addr == my_address {
+        let received_by_me = if to_tagged.inner() == from_tagged.inner() {
             amount_decimal.clone()
         } else {
             0.into()
@@ -396,8 +397,8 @@ where
             spent_by_me += &fee_details.total_fee;
         }
         Ok(TransactionDetails {
-            to: vec![checksum_address(&format!("{to_addr:#02x}"))],
-            from: vec![checksum_address(&format!("{my_address:#02x}"))],
+            to: vec![to_tagged.display_address()],
+            from: vec![from_tagged.display_address()],
             total_amount: amount_decimal,
             my_balance_change: &received_by_me - &spent_by_me,
             spent_by_me,
@@ -546,7 +547,7 @@ impl StandardEthWithdraw {
 
 #[async_trait]
 impl GetWithdrawSenderAddress for EthCoin {
-    type Address = Address;
+    type Address = ChainTaggedAddress;
     type Pubkey = Public;
 
     async fn get_withdraw_sender_address(
@@ -560,14 +561,12 @@ impl GetWithdrawSenderAddress for EthCoin {
 async fn eth_get_withdraw_from_address(
     coin: &EthCoin,
     req: &WithdrawRequest,
-) -> MmResult<WithdrawSenderAddress<Address, Public>, WithdrawError> {
+) -> MmResult<WithdrawSenderAddress<ChainTaggedAddress, Public>, WithdrawError> {
     match coin.derivation_method() {
         EthDerivationMethod::SingleAddress(my_address) => eth_get_withdraw_iguana_sender(coin, req, my_address),
         EthDerivationMethod::HDWallet(hd_wallet) => {
             let from = req.from.clone().or_mm_err(|| WithdrawError::FromAddressNotFound)?;
-            coin.get_withdraw_hd_sender(hd_wallet, &from)
-                .await
-                .mm_err(WithdrawError::from)
+            coin.get_withdraw_hd_sender(hd_wallet, &from).await.map_mm_err()
         },
     }
 }
@@ -576,8 +575,8 @@ async fn eth_get_withdraw_from_address(
 fn eth_get_withdraw_iguana_sender(
     coin: &EthCoin,
     req: &WithdrawRequest,
-    my_address: &Address,
-) -> MmResult<WithdrawSenderAddress<Address, Public>, WithdrawError> {
+    my_address: &ChainTaggedAddress,
+) -> MmResult<WithdrawSenderAddress<ChainTaggedAddress, Public>, WithdrawError> {
     if req.from.is_some() {
         let error = "'from' is not supported if the coin is initialized with an Iguana private key";
         return MmError::err(WithdrawError::UnexpectedFromAddress(error.to_owned()));

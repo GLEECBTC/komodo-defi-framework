@@ -95,7 +95,9 @@ impl EthCoin {
                 })?;
                 let signed_tx = signed_tx_from_web3_tx(tx_from_rpc.clone())
                     .map_err(|err| ValidatePaymentError::WrongPaymentTx(format!("Could not parse tx: {:?}", err)))?;
-                validate_from_to_addresses(&signed_tx, maker_address, *token_address).map_mm_err()?;
+                let maker_address_tagged = self.tag_address(maker_address);
+                let token_address_tagged = self.tag_address(*token_address);
+                validate_from_to_addresses(&signed_tx, maker_address_tagged, token_address_tagged).map_mm_err()?;
 
                 let (decoded, bytes_index) = get_decoded_tx_data_and_bytes_index(contract_type, &tx_from_rpc.input.0)?;
 

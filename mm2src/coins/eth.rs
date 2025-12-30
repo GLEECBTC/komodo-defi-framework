@@ -173,12 +173,15 @@ pub mod wallet_connect;
 mod web3_transport;
 use web3_transport::{http_transport::HttpTransportNode, Web3Transport};
 
+pub mod chain_address;
+pub use chain_address::ChainTaggedAddress;
+
 pub mod eth_hd_wallet;
-use eth_hd_wallet::EthHDWallet;
+pub use eth_hd_wallet::EthHDWallet;
 
 #[path = "eth/v2_activation.rs"]
 pub mod v2_activation;
-use v2_activation::{build_address_and_priv_key_policy, EthActivationV2Error};
+use v2_activation::{build_address_and_priv_key_policy_evm_legacy, EthActivationV2Error};
 
 mod eth_withdraw;
 use eth_withdraw::{EthWithdraw, InitEthWithdraw, StandardEthWithdraw};
@@ -581,7 +584,7 @@ lazy_static! {
     pub static ref NFT_MAKER_SWAP_V2: Contract = Contract::load(NFT_MAKER_SWAP_V2_ABI.as_bytes()).unwrap();
 }
 
-pub type EthDerivationMethod = DerivationMethod<Address, EthHDWallet>;
+pub type EthDerivationMethod = DerivationMethod<ChainTaggedAddress, EthHDWallet>;
 pub type Web3RpcFut<T> = Box<dyn Future<Item = T, Error = MmError<Web3RpcError>> + Send>;
 pub type Web3RpcResult<T> = Result<T, MmError<Web3RpcError>>;
 type EthPrivKeyPolicy = PrivKeyPolicy<KeyPair>;
@@ -856,6 +859,39 @@ pub enum ChainSpec {
     Tron { network: tron::Network },
 }
 
+/// Lightweight chain discriminator for formatting decisions.
+/// Derived from ChainSpec but intentionally drops chain-specific details.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ChainFamily {
+    Evm,
+    Tron,
+}
+
+impl From<&ChainSpec> for ChainFamily {
+    fn from(spec: &ChainSpec) -> Self {
+        match spec {
+            ChainSpec::Evm { .. } => ChainFamily::Evm,
+            ChainSpec::Tron { .. } => ChainFamily::Tron,
+        }
+    }
+}
+
+impl ChainFamily {
+    /// Canonical address formatter. This is the SINGLE source of truth for formatting.
+    ///
+    /// - `Evm` → EIP-55 mixed-case checksum format (`0xAbCd...`)
+    /// - `Tron` → Base58Check format (`T...`)
+    ///
+    /// All other formatting methods (`ChainTaggedAddress::display_address`,
+    /// `EthCoin::format_raw_address`) MUST delegate to this method.
+    pub fn format(self, raw: Address) -> String {
+        match self {
+            ChainFamily::Evm => checksum_address(&raw.addr_to_string()),
+            ChainFamily::Tron => tron::TronAddress::from(raw).to_base58(),
+        }
+    }
+}
+
 impl ChainSpec {
     pub fn chain_id(&self) -> Option<u64> {
         match self {
@@ -1066,9 +1102,13 @@ impl EthCoinImpl {
         }
     }
 
+    // NOTE: These trace/event persistence methods use EVM-specific address formatting.
+    // For TRON support, transaction history will likely be implemented via ChainRpcClient
+    // or a dedicated trait abstraction rather than modifying these methods.
     #[cfg(not(target_arch = "wasm32"))]
     fn eth_traces_path(&self, ctx: &MmArc, my_address: Address) -> PathBuf {
-        ctx.address_dir(&my_address.display_address())
+        // EVM-only path function - uses Evm formatting explicitly
+        ctx.address_dir(&ChainFamily::Evm.format(my_address))
             .join("TRANSACTIONS")
             .join(format!("{}_{:#02x}_trace.json", self.ticker, my_address))
     }
@@ -1109,7 +1149,8 @@ impl EthCoinImpl {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn erc20_events_path(&self, ctx: &MmArc, my_address: Address) -> PathBuf {
-        ctx.address_dir(&my_address.display_address())
+        // EVM-only path function - uses Evm formatting explicitly
+        ctx.address_dir(&ChainFamily::Evm.format(my_address))
             .join("TRANSACTIONS")
             .join(format!("{}_{:#02x}_events.json", self.ticker, my_address))
     }
@@ -1167,9 +1208,15 @@ impl EthCoinImpl {
         sha256(&input).to_vec()
     }
 
-    /// Try to parse address from string.
-    pub fn address_from_str(&self, address: &str) -> Result<Address, String> {
-        Ok(try_s!(valid_addr_from_str(address)))
+    /// Parses an address string using the coin's chain context.
+    ///
+    /// - **EVM**: Accepts `0x...` with EIP-55 checksum validation
+    /// - **TRON**: Accepts Base58 (`T...`) or hex (`41...` / `0x41...`)
+    ///
+    /// Delegates to `ChainTaggedAddress::from_str_with_family`.
+    pub fn address_from_str(&self, address: &str) -> Result<ChainTaggedAddress, String> {
+        let family = ChainFamily::from(&self.chain_spec);
+        ChainTaggedAddress::from_str_with_family(address, family)
     }
 
     pub fn erc20_token_address(&self) -> Option<Address> {
@@ -1260,7 +1307,8 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
         });
     }
 
-    let my_address = eth_coin.derivation_method.single_addr_or_err().await.map_mm_err()?;
+    let my_address_tagged = eth_coin.derivation_method.single_addr_or_err().await.map_mm_err()?;
+    let my_address = my_address_tagged.inner();
     let (eth_value, data, call_addr, fee_coin) = match eth_coin.coin_type {
         EthCoinType::Eth => {
             let function = ERC1155_CONTRACT.function("safeTransferFrom")?;
@@ -1338,7 +1386,7 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
     Ok(TransactionNftDetails {
         tx_hex: BytesJson::from(signed_bytes.to_vec()), // TODO: should we return tx_hex 0x-prefixed (everywhere)?
         tx_hash: format!("{:02x}", signed.tx_hash_as_bytes()), // TODO: add 0x hash (use unified hash format for eth wherever it is returned)
-        from: vec![my_address.display_address()],
+        from: vec![my_address_tagged.display_address()],
         to: vec![withdraw_type.to],
         contract_type: ContractType::Erc1155,
         token_address: withdraw_type.token_address,
@@ -1355,6 +1403,8 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
 
 /// `withdraw_erc721` function returns details of `ERC-721` transaction including tx hex,
 /// which should be sent to`send_raw_transaction` RPC to broadcast the transaction.
+// Todo: NFT support for TRON (TRC-721) is out of MVP scope. When implementing,
+// address formatting for `token_owner` in error messages will need chain-aware handling.
 pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> WithdrawNftResult {
     let coin = lp_coinfind_or_err(&ctx, withdraw_type.chain.to_ticker())
         .await
@@ -1364,15 +1414,15 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
 
     let token_id_str = &withdraw_type.token_id.to_string();
     let token_owner = eth_coin.erc721_owner(token_addr, token_id_str).await.map_mm_err()?;
-    let my_address = eth_coin.derivation_method.single_addr_or_err().await.map_mm_err()?;
-    if token_owner != my_address {
+    let my_address_tagged = eth_coin.derivation_method.single_addr_or_err().await.map_mm_err()?;
+    if token_owner != my_address_tagged.inner() {
         return MmError::err(WithdrawError::MyAddressNotNftOwner {
-            my_address: my_address.display_address(),
-            token_owner: token_owner.display_address(),
+            my_address: my_address_tagged.display_address(),
+            token_owner: eth_coin.format_raw_address(token_owner),
         });
     }
 
-    let my_address = eth_coin.derivation_method.single_addr_or_err().await.map_mm_err()?;
+    let my_address = my_address_tagged.inner();
     let (eth_value, data, call_addr, fee_coin) = match eth_coin.coin_type {
         EthCoinType::Eth => {
             let function = ERC721_CONTRACT.function("safeTransferFrom")?;
@@ -1447,7 +1497,7 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
     Ok(TransactionNftDetails {
         tx_hex: BytesJson::from(signed_bytes.to_vec()),
         tx_hash: format!("{:02x}", signed.tx_hash_as_bytes()), // TODO: add 0x hash (use unified hash format for eth wherever it is returned)
-        from: vec![my_address.display_address()],
+        from: vec![my_address_tagged.display_address()],
         to: vec![withdraw_type.to],
         contract_type: ContractType::Erc721,
         token_address: withdraw_type.token_address,
@@ -1985,7 +2035,7 @@ impl WatcherOps for EthCoin {
                 )));
             }
 
-            let my_address = selfi.derivation_method.single_addr_or_err().await.map_mm_err()?;
+            let my_address = selfi.derivation_method.single_addr_or_err().await.map_mm_err()?.inner();
             let sender_input = get_function_input_data(&decoded, function, 4)
                 .map_to_mm(ValidatePaymentError::TxDeserializationError)
                 .map_mm_err()?;
@@ -2516,7 +2566,7 @@ impl MarketCoinOps for EthCoin {
 
     fn my_address(&self) -> MmResult<String, MyAddressError> {
         match self.derivation_method() {
-            DerivationMethod::SingleAddress(my_address) => Ok(my_address.display_address()),
+            DerivationMethod::SingleAddress(ref my_address) => Ok(my_address.display_address()),
             DerivationMethod::HDWallet(_) => MmError::err(MyAddressError::UnexpectedDerivationMethod(
                 "'my_address' is deprecated for HD wallets".to_string(),
             )),
@@ -2525,7 +2575,7 @@ impl MarketCoinOps for EthCoin {
 
     fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
         let addr = addr_from_raw_pubkey(&pubkey.0).map_err(AddressFromPubkeyError::InternalError)?;
-        Ok(addr.display_address())
+        Ok(self.format_raw_address(addr))
     }
 
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
@@ -2577,6 +2627,13 @@ impl MarketCoinOps for EthCoin {
     }
 
     fn sign_message(&self, message: &str, address: Option<HDAddressSelector>) -> SignatureResult<String> {
+        // TRON message signing uses a different format and is not yet implemented
+        if matches!(self.chain_spec, ChainSpec::Tron { .. }) {
+            return MmError::err(SignatureError::InternalError(
+                "Message signing is not yet implemented for TRON".to_string(),
+            ));
+        }
+
         let message_hash = self.sign_message_hash(message).ok_or(SignatureError::PrefixNotFound)?;
 
         let secret = if let Some(address) = address {
@@ -2604,15 +2661,27 @@ impl MarketCoinOps for EthCoin {
         Ok(format!("0x{signature}"))
     }
 
+    // TODO: TRON message verification uses a different signing format (TIP-191 or similar).
+    // When implementing TRON message verification:
+    // 1. Add a TRON-specific verify function (e.g., `verify_tron_message`)
+    // 2. Create a wrapper that dispatches based on chain_spec
+    // 3. Update this function to use the wrapper with ChainTaggedAddress
     fn verify_message(&self, signature: &str, message: &str, address: &str) -> VerificationResult<bool> {
+        // TRON message verification is not yet implemented
+        if matches!(self.chain_spec, ChainSpec::Tron { .. }) {
+            return MmError::err(VerificationError::InternalError(
+                "Message verification is not yet implemented for TRON".to_string(),
+            ));
+        }
+
         let message_hash = self
             .sign_message_hash(message)
             .ok_or(VerificationError::PrefixNotFound)?;
-        let address = self
+        let tagged_address = self
             .address_from_str(address)
             .map_err(VerificationError::AddressDecodingError)?;
         let signature = Signature::from_str(signature.strip_prefix("0x").unwrap_or(signature))?;
-        let is_verified = verify_address(&address, &signature, &H256::from(message_hash))?;
+        let is_verified = verify_address(&tagged_address.inner(), &signature, &H256::from(message_hash))?;
         Ok(is_verified)
     }
 
@@ -2987,7 +3056,7 @@ async fn sign_and_send_transaction_with_metamask(
         coin.get_swap_pay_for_gas_option(try_tx_s!(coin.get_swap_gas_fee_policy().await))
             .await
     );
-    let my_address = try_tx_s!(coin.derivation_method.single_addr_or_err().await);
+    let my_address = try_tx_s!(coin.derivation_method.single_addr_or_err().await).inner();
     let gas_price = pay_for_gas_option.get_gas_price();
     let (max_fee_per_gas, max_priority_fee_per_gas) = pay_for_gas_option.get_fee_per_gas();
     let tx_to_send = TransactionRequest {
@@ -3046,7 +3115,8 @@ async fn sign_raw_eth_tx(coin: &EthCoin, args: &SignEthTransactionParams) -> Raw
                 .derivation_method
                 .single_addr_or_err()
                 .await
-                .mm_err(|e| RawTransactionError::InternalError(e.to_string()))?;
+                .mm_err(|e| RawTransactionError::InternalError(e.to_string()))?
+                .inner();
             let address_lock = coin.get_address_lock(my_address).await;
             let _nonce_lock = address_lock.lock().await;
             let pay_for_gas_option = coin
@@ -3085,7 +3155,8 @@ async fn sign_raw_eth_tx(coin: &EthCoin, args: &SignEthTransactionParams) -> Raw
                 .derivation_method
                 .single_addr_or_err()
                 .await
-                .mm_err(|e| RawTransactionError::InternalError(e.to_string()))?;
+                .mm_err(|e| RawTransactionError::InternalError(e.to_string()))?
+                .inner();
             let address_lock = coin.get_address_lock(my_address).await;
             let _nonce_lock = address_lock.lock().await;
             let pay_for_gas_option = coin
@@ -3193,6 +3264,33 @@ impl RpcCommonOps for EthCoin {
 }
 
 impl EthCoin {
+    #[inline]
+    pub fn tag_address(&self, raw: Address) -> ChainTaggedAddress {
+        let family = ChainFamily::from(&self.0.chain_spec);
+        ChainTaggedAddress::new(raw, family)
+    }
+
+    /// Formats a raw `ethereum_types::Address` for user-facing output based on this coin's chain.
+    ///
+    /// Use this when you have a raw address from external sources (RPC responses, logs,
+    /// contract calls, `ownerOf` queries, etc.) that needs chain-aware formatting.
+    ///
+    /// - **EVM chains**: Returns EIP-55 mixed-case checksum format (`0xAbCd...`)
+    /// - **TRON**: Returns Base58Check format (`T...`)
+    ///
+    /// # When to use this vs `ChainTaggedAddress::display_address()`
+    ///
+    /// - Use `format_raw_address` for external/RPC-sourced addresses (no chain context attached)
+    /// - Use `ChainTaggedAddress::display_address()` for wallet-owned addresses from HD derivation
+    ///
+    /// See `eth_hd_wallet.rs` for the complete address formatting policy.
+    /// Formats a raw address using the coin's chain context.
+    ///
+    /// Delegates to the canonical `ChainFamily::format` method.
+    pub fn format_raw_address(&self, raw: Address) -> String {
+        ChainFamily::from(&self.0.chain_spec).format(raw)
+    }
+
     pub(crate) async fn web3(&self) -> Result<Web3<Web3Transport>, Web3RpcError> {
         self.get_live_client().await.map(|t| t.0)
     }
@@ -3281,7 +3379,7 @@ impl EthCoin {
         let delta = U64::from(1000);
 
         let my_address = match self.derivation_method.single_addr_or_err().await {
-            Ok(addr) => addr,
+            Ok(addr) => addr.inner(),
             Err(e) => {
                 ctx.log.log(
                     "",
@@ -3596,8 +3694,8 @@ impl EthCoin {
                     spent_by_me,
                     received_by_me,
                     total_amount,
-                    to: vec![call_data.to.display_address()],
-                    from: vec![call_data.from.display_address()],
+                    to: vec![self.format_raw_address(call_data.to)],
+                    from: vec![self.format_raw_address(call_data.from)],
                     coin: self.ticker.clone(),
                     fee_details: fee_details.map(|d| d.into()),
                     block_height: trace.block_number,
@@ -3648,7 +3746,7 @@ impl EthCoin {
         let delta = U64::from(10000);
 
         let my_address = match self.derivation_method.single_addr_or_err().await {
-            Ok(addr) => addr,
+            Ok(addr) => addr.inner(),
             Err(e) => {
                 ctx.log.log(
                     "",
@@ -3969,8 +4067,8 @@ impl EthCoin {
                     spent_by_me,
                     received_by_me,
                     total_amount,
-                    to: vec![to_addr.display_address()],
-                    from: vec![from_addr.display_address()],
+                    to: vec![self.format_raw_address(to_addr)],
+                    from: vec![self.format_raw_address(from_addr)],
                     coin: self.ticker.clone(),
                     fee_details: fee_details.map(|d| d.into()),
                     block_height: block_number.as_u64(),
@@ -4071,7 +4169,8 @@ impl EthCoin {
                         .derivation_method
                         .single_addr_or_err()
                         .await
-                        .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
+                        .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?
+                        .inner();
 
                     sign_and_send_transaction_with_keypair(&coin, key_pair, address, value, action, data, final_gas)
                         .await
@@ -4086,7 +4185,8 @@ impl EthCoin {
                         .derivation_method
                         .single_addr_or_err()
                         .await
-                        .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
+                        .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?
+                        .inner();
 
                     send_transaction_with_walletconnect(coin, &wc, address, value, action, &data, final_gas).await
                 },
@@ -4544,7 +4644,7 @@ impl EthCoin {
     ) -> Result<SignedEthTx, TransactionErr> {
         let tx: UnverifiedTransactionWrapper = try_tx_s!(rlp::decode(args.other_payment_tx));
         let payment = try_tx_s!(SignedEthTx::new(tx));
-        let my_address = try_tx_s!(self.derivation_method.single_addr_or_err().await);
+        let my_address = try_tx_s!(self.derivation_method.single_addr_or_err().await).inner();
         let swap_contract_address = try_tx_s!(args.swap_contract_address.try_to_address());
 
         let function_name = get_function_name("receiverSpend", args.watcher_reward);
@@ -4668,7 +4768,7 @@ impl EthCoin {
     ) -> Result<SignedEthTx, TransactionErr> {
         let tx: UnverifiedTransactionWrapper = try_tx_s!(rlp::decode(args.payment_tx));
         let payment = try_tx_s!(SignedEthTx::new(tx));
-        let my_address = try_tx_s!(self.derivation_method.single_addr_or_err().await);
+        let my_address = try_tx_s!(self.derivation_method.single_addr_or_err().await).inner();
         let swap_contract_address = try_tx_s!(args.swap_contract_address.try_to_address());
 
         let function_name = get_function_name("senderRefund", args.watcher_reward);
@@ -4786,48 +4886,53 @@ impl EthCoin {
         }
     }
 
-    fn address_balance(&self, address: Address) -> BalanceFut<U256> {
-        // TODO: Once EVM is migrated to ChainRpcClient, this can use a unified
-        // `rpc_client.balance_native(address)` call without chain_spec matching.
-        // See docs/plans/chain-rpc-client-refactor.md Section 17.
+    fn address_balance(&self, address: ChainTaggedAddress) -> BalanceFut<U256> {
         let coin = self.clone();
         let fut = async move {
-            match &coin.0.chain_spec {
-                ChainSpec::Tron { .. } => {
-                    // TRON: use ChainRpcOps via tron_rpc()
-                    let tron_client = coin.0.tron_rpc().ok_or_else(|| {
-                        BalanceError::Internal("TRON chain_spec but no TRON rpc_client".to_string())
-                    })?;
-                    let tron_addr = tron::TronAddress::from(&address);
+            // Route by coin's chain spec, not by address.family()
+            let coin_family = ChainFamily::from(&coin.0.chain_spec);
+
+            // Strict mismatch check - address must be tagged for the same chain
+            if address.family() != coin_family {
+                return MmError::err(BalanceError::Internal(format!(
+                    "Address family mismatch: address is {:?} but coin is {:?}",
+                    address.family(),
+                    coin_family
+                )));
+            }
+
+            let raw = address.inner();
+            match coin_family {
+                ChainFamily::Tron => {
+                    let tron_client = coin
+                        .0
+                        .tron_rpc()
+                        .ok_or_else(|| BalanceError::Internal("TRON chain but no TRON rpc_client".to_string()))?;
                     tron_client
-                        .balance_native(tron_addr)
+                        .balance_native(tron::TronAddress::from(raw))
                         .await
                         .map_err(|e| BalanceError::Transport(e.into_inner().to_string()).into())
                 },
-                ChainSpec::Evm { .. } => {
-                    // EVM: dispatch based on coin_type
-                    match coin.coin_type {
-                        EthCoinType::Eth => Ok(coin.balance(address, Some(BlockNumber::Latest)).await?),
-                        EthCoinType::Erc20 { ref token_addr, .. } => {
-                            let function = ERC20_CONTRACT.function("balanceOf")?;
-                            let data = function.encode_input(&[Token::Address(address)])?;
-
-                            let res = coin
-                                .call_request(address, *token_addr, None, Some(data.into()), BlockNumber::Latest)
-                                .await?;
-                            let decoded = function.decode_output(&res.0)?;
-                            match decoded[0] {
-                                Token::Uint(number) => Ok(number),
-                                _ => {
-                                    let error = format!("Expected U256 as balanceOf result but got {decoded:?}");
-                                    MmError::err(BalanceError::InvalidResponse(error))
-                                },
-                            }
-                        },
-                        EthCoinType::Nft { .. } => {
-                            MmError::err(BalanceError::Internal("Nft protocol is not supported yet!".to_string()))
-                        },
-                    }
+                ChainFamily::Evm => match coin.coin_type {
+                    EthCoinType::Eth => Ok(coin.balance(raw, Some(BlockNumber::Latest)).await?),
+                    EthCoinType::Erc20 { ref token_addr, .. } => {
+                        let function = ERC20_CONTRACT.function("balanceOf")?;
+                        let data = function.encode_input(&[Token::Address(raw)])?;
+                        let res = coin
+                            .call_request(raw, *token_addr, None, Some(data.into()), BlockNumber::Latest)
+                            .await?;
+                        let decoded = function.decode_output(&res.0)?;
+                        match decoded[0] {
+                            Token::Uint(number) => Ok(number),
+                            _ => {
+                                let error = format!("Expected U256 as balanceOf result but got {decoded:?}");
+                                MmError::err(BalanceError::InvalidResponse(error))
+                            },
+                        }
+                    },
+                    EthCoinType::Nft { .. } => {
+                        MmError::err(BalanceError::Internal("Nft protocol is not supported yet!".to_string()))
+                    },
                 },
             }
         };
@@ -4868,7 +4973,7 @@ impl EthCoin {
     }
 
     pub async fn get_tokens_balance_list(&self) -> Result<CoinBalanceMap, MmError<BalanceError>> {
-        let my_address = self.derivation_method.single_addr_or_err().await.map_mm_err()?;
+        let my_address = self.derivation_method.single_addr_or_err().await.map_mm_err()?.inner();
         self.get_tokens_balance_list_for_address(my_address).await
     }
 
@@ -4893,11 +4998,6 @@ impl EthCoin {
         }
     }
 
-    async fn get_token_balance(&self, token_address: Address) -> Result<U256, MmError<BalanceError>> {
-        let my_address = self.derivation_method.single_addr_or_err().await.map_mm_err()?;
-        self.get_token_balance_for_address(my_address, token_address).await
-    }
-
     async fn erc1155_balance(&self, token_addr: Address, token_id: &str) -> MmResult<BigUint, BalanceError> {
         let wallet_amount_uint = match self.coin_type {
             EthCoinType::Eth | EthCoinType::Nft { .. } => {
@@ -4905,7 +5005,7 @@ impl EthCoin {
                 let token_id_u256 = U256::from_dec_str(token_id)
                     .map_to_mm(|e| NumConversError::new(format!("{e:?}")))
                     .map_mm_err()?;
-                let my_address = self.derivation_method.single_addr_or_err().await.map_mm_err()?;
+                let my_address = self.derivation_method.single_addr_or_err().await.map_mm_err()?.inner();
                 let data = function.encode_input(&[Token::Address(my_address), Token::Uint(token_id_u256)])?;
                 let result = self
                     .call_request(my_address, token_addr, None, Some(data.into()), BlockNumber::Latest)
@@ -4939,7 +5039,7 @@ impl EthCoin {
                     .map_to_mm(|e| NumConversError::new(format!("{e:?}")))
                     .map_mm_err()?;
                 let data = function.encode_input(&[Token::Uint(token_id_u256)])?;
-                let my_address = self.derivation_method.single_addr_or_err().await.map_mm_err()?;
+                let my_address = self.derivation_method.single_addr_or_err().await.map_mm_err()?.inner();
                 let result = self
                     .call_request(my_address, token_addr, None, Some(data.into()), BlockNumber::Latest)
                     .await?;
@@ -4988,7 +5088,7 @@ impl EthCoin {
         value: U256,
     ) -> Web3RpcResult<U256> {
         let coin = self.clone();
-        let my_address = coin.derivation_method.single_addr_or_err().await.map_mm_err()?;
+        let my_address = coin.derivation_method.single_addr_or_err().await.map_mm_err()?.inner();
         let fee_policy_for_estimate =
             get_swap_fee_policy_for_estimate(self.get_swap_gas_fee_policy().await.map_mm_err()?);
         let pay_for_gas_option = coin
@@ -5034,7 +5134,7 @@ impl EthCoin {
     fn eth_balance(&self) -> BalanceFut<U256> {
         let coin = self.clone();
         let fut = async move {
-            let my_address = coin.derivation_method.single_addr_or_err().await.map_mm_err()?;
+            let my_address = coin.derivation_method.single_addr_or_err().await.map_mm_err()?.inner();
             coin.balance(my_address, Some(BlockNumber::Latest))
                 .await
                 .map_to_mm(BalanceError::from)
@@ -5072,7 +5172,7 @@ impl EthCoin {
                 )),
                 EthCoinType::Erc20 { ref token_addr, .. } => {
                     let function = ERC20_CONTRACT.function("allowance")?;
-                    let my_address = coin.derivation_method.single_addr_or_err().await.map_mm_err()?;
+                    let my_address = coin.derivation_method.single_addr_or_err().await.map_mm_err()?.inner();
                     let data = function.encode_input(&[Token::Address(my_address), Token::Address(spender)])?;
 
                     let res = coin
@@ -5249,7 +5349,7 @@ impl EthCoin {
                 )));
             }
 
-            let my_address = selfi.derivation_method.single_addr_or_err().await.map_mm_err()?;
+            let my_address = selfi.derivation_method.single_addr_or_err().await.map_mm_err()?.inner();
             match &selfi.coin_type {
                 EthCoinType::Eth => {
                     let mut expected_value = trade_amount;
@@ -5503,7 +5603,8 @@ impl EthCoin {
                 .derivation_method
                 .single_addr_or_err()
                 .await
-                .map_err(|e| ERRL!("{}", e))?;
+                .map_err(|e| ERRL!("{}", e))?
+                .inner();
             coin.call_request(
                 my_address,
                 swap_contract_address,
@@ -6205,7 +6306,7 @@ impl MmCoin for EthCoin {
                     // estimate gas for the `approve` contract call
 
                     // Pass a dummy spender. Let's use `my_address`.
-                    let spender = self.derivation_method.single_addr_or_err().await.map_mm_err()?;
+                    let spender = self.derivation_method.single_addr_or_err().await.map_mm_err()?.inner();
                     let approve_function = ERC20_CONTRACT.function("approve")?;
                     let approve_data = approve_function.encode_input(&[Token::Address(spender), Token::Uint(value)])?;
                     let approve_gas_limit = self
@@ -6293,7 +6394,7 @@ impl MmCoin for EthCoin {
         // pass the dummy params
         let to_addr = addr_from_raw_pubkey(&DEX_FEE_ADDR_RAW_PUBKEY)
             .expect("addr_from_raw_pubkey should never fail with DEX_FEE_ADDR_RAW_PUBKEY");
-        let my_address = self.derivation_method.single_addr_or_err().await.map_mm_err()?;
+        let my_address = self.derivation_method.single_addr_or_err().await.map_mm_err()?.inner();
         let (eth_value, data, call_addr, fee_coin) = match &self.coin_type {
             EthCoinType::Eth => (dex_fee_amount, Vec::new(), &to_addr, &self.ticker),
             EthCoinType::Erc20 { platform, token_addr } => {
@@ -6760,7 +6861,7 @@ pub async fn eth_coin_from_conf_and_request(
     let mut rng = small_rng();
     urls.as_mut_slice().shuffle(&mut rng);
 
-    let swap_contract_address: Address = try_s!(json::from_value(req["swap_contract_address"].clone()));
+    let swap_contract_address = try_s!(json::from_value(req["swap_contract_address"].clone()));
     if swap_contract_address == Address::default() {
         return ERR!("swap_contract_address can't be zero address");
     }
@@ -6776,8 +6877,29 @@ pub async fn eth_coin_from_conf_and_request(
         req["path_to_address"].clone()
     ))
     .unwrap_or_default();
+
+    let chain_id: u64 = match &protocol {
+        CoinProtocol::ETH { chain_id } => *chain_id,
+        CoinProtocol::ERC20 { platform, .. } | CoinProtocol::NFT { platform } => {
+            get_chain_id_from_platform(ctx, ticker, platform)?
+        },
+        CoinProtocol::TRX { .. } => {
+            return ERR!("TRON/TRX requires V2 activation with ChainSpec::Tron. Legacy V1 activation is EVM-only.");
+        },
+        _ => return ERR!("Expect ETH, ERC20 or NFT protocol"),
+    };
+
     let (key_pair, derivation_method) = try_s!(
-        build_address_and_priv_key_policy(ctx, ticker, conf, priv_key_policy, &path_to_address, None, None).await
+        build_address_and_priv_key_policy_evm_legacy(
+            ctx,
+            ticker,
+            conf,
+            priv_key_policy,
+            &path_to_address,
+            None,
+            chain_id
+        )
+        .await
     );
 
     let mut web3_instances = vec![];
@@ -6828,8 +6950,8 @@ pub async fn eth_coin_from_conf_and_request(
         return ERR!("Failed to get client version for all urls");
     }
 
-    let (coin_type, decimals, chain_id) = match protocol {
-        CoinProtocol::ETH { chain_id } => (EthCoinType::Eth, ETH_DECIMALS, chain_id),
+    let (coin_type, decimals) = match protocol {
+        CoinProtocol::ETH { .. } => (EthCoinType::Eth, ETH_DECIMALS),
         CoinProtocol::ERC20 {
             platform,
             contract_address,
@@ -6848,12 +6970,11 @@ pub async fn eth_coin_from_conf_and_request(
                 ),
                 Some(d) => d as u8,
             };
-            let chain_id = get_chain_id_from_platform(ctx, ticker, &platform)?;
-            (EthCoinType::Erc20 { platform, token_addr }, decimals, chain_id)
+            (EthCoinType::Erc20 { platform, token_addr }, decimals)
         },
-        CoinProtocol::NFT { platform } => {
-            let chain_id = get_chain_id_from_platform(ctx, ticker, &platform)?;
-            (EthCoinType::Nft { platform }, ETH_DECIMALS, chain_id)
+        CoinProtocol::NFT { platform } => (EthCoinType::Nft { platform }, ETH_DECIMALS),
+        CoinProtocol::TRX { .. } => {
+            return ERR!("TRON/TRX requires V2 activation with ChainSpec::Tron. Legacy V1 activation is EVM-only.");
         },
         _ => return ERR!("Expect ETH, ERC20 or NFT protocol"),
     };
@@ -7060,10 +7181,30 @@ pub async fn get_eth_address(
     }
     .into();
 
-    let (_, derivation_method) =
-        build_address_and_priv_key_policy(ctx, ticker, conf, priv_key_policy, path_to_address, None, None)
-            .await
-            .map_mm_err()?;
+    let protocol: CoinProtocol = json::from_value(conf["protocol"].clone())
+        .map_err(|e| MmError::new(GetEthAddressError::Internal(format!("Error parsing protocol: {}", e))))?;
+
+    let chain_id: u64 = match protocol {
+        CoinProtocol::ETH { chain_id } => chain_id,
+        other => {
+            return MmError::err(GetEthAddressError::Internal(format!(
+                "get_eth_address is for ETH protocol coins only, got protocol: {:?}",
+                other
+            )));
+        },
+    };
+
+    let (_, derivation_method) = build_address_and_priv_key_policy_evm_legacy(
+        ctx,
+        ticker,
+        conf,
+        priv_key_policy,
+        path_to_address,
+        None,
+        chain_id,
+    )
+    .await
+    .map_mm_err()?;
     let my_address = derivation_method.single_addr_or_err().await.map_mm_err()?;
 
     Ok(MyWalletAddress {
@@ -7401,13 +7542,14 @@ impl ParseCoinAssocTypes for EthCoin {
 
     async fn my_addr(&self) -> Self::Address {
         match self.derivation_method() {
-            DerivationMethod::SingleAddress(addr) => *addr,
+            DerivationMethod::SingleAddress(addr) => addr.inner(),
             // Todo: Expect should not fail but we need to handle it properly
             DerivationMethod::HDWallet(hd_wallet) => hd_wallet
                 .get_enabled_address()
                 .await
                 .expect("Getting enabled address should not fail!")
-                .address(),
+                .address()
+                .inner(),
         }
     }
 

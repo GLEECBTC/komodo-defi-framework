@@ -10,7 +10,7 @@
 
 ---
 
-## Implementation Status (Updated 2025-12-25)
+## Implementation Status (Updated 2025-12-30)
 
 ### Completed ✅
 | Item | Location | Notes |
@@ -25,17 +25,18 @@
 | Platform balance fix | `mm2src/coins/eth.rs` | `platform_coin_balance()` is chain-aware |
 | TRON address type | `mm2src/coins/eth/tron/address.rs` | `TronAddress` with Base58Check encode/decode |
 | Integration tests | `mm2src/coins/eth/tron/api_integration_tests.rs` | Tests for Nile testnet (gated behind feature) |
+| TRON address formatting | `mm2src/coins/eth/chain_address.rs` | `ChainTaggedAddress` wraps address with `ChainFamily`; HD and `my_address()` return `T...` for TRX |
+| `address_by_coin_conf_and_pubkey_str` for TRX | `mm2src/coins/lp_coins.rs:5975-5982` | Returns Base58 format via `TronAddress.to_base58()` |
 
 ### In Progress 🔄
 | Item | Notes |
 |------|-------|
-| TRON address formatting (PR-3) | HD activation still returns `0x...` instead of `T...`; `my_address()` returns `0x...` |
+| Chain-aware address parsing (Section 7.4) | `ChainTaggedAddress::from_str_with_family()` exists but `valid_addr_from_str()` is still EVM-only; not blocking MVP |
 
 ### Not Started 📋
 | Item | Notes |
 |------|-------|
 | TRX activation test helpers | Need `enable_trx_with_tokens` helper in `mm2_test_helpers` |
-| `address_by_coin_conf_and_pubkey_str` for TRX | Currently errors for `CoinProtocol::TRX` |
 
 ### Post-MVP Architecture (See `chain-rpc-client-refactor.md`)
 

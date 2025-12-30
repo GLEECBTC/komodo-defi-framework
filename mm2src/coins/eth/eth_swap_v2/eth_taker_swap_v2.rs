@@ -166,8 +166,9 @@ impl EthCoin {
         let swap_id = self.etomic_swap_id_v2(args.payment_time_lock, args.maker_secret_hash);
 
         let tx = args.funding_tx;
-        let taker_address = public_to_address(args.taker_pub);
-        validate_from_to_addresses(tx, taker_address, taker_swap_v2_contract).map_mm_err()?;
+        let taker_address = self.tag_address(public_to_address(args.taker_pub));
+        let contract_tagged = self.tag_address(taker_swap_v2_contract);
+        validate_from_to_addresses(tx, taker_address, contract_tagged).map_mm_err()?;
 
         let validation_args = {
             let dex_fee = u256_from_big_decimal(&args.dex_fee.fee_amount().into(), self.decimals).map_mm_err()?;

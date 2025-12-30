@@ -38,7 +38,7 @@
 use async_trait::async_trait;
 use ethereum_types::U256;
 
-use super::tron::TronApiClient;
+use super::tron::{TronAddress, TronApiClient};
 use super::Web3RpcError;
 
 // ----------------------------------------------------------------------------
@@ -124,10 +124,7 @@ impl ChainRpcClient {
     /// Get native token balance for an address.
     ///
     /// For TRON addresses, use `TronAddress`. For EVM, use `ethereum_types::Address`.
-    pub async fn balance_native_tron(
-        &self,
-        address: &super::tron::TronAddress,
-    ) -> Result<U256, ChainRpcError> {
+    pub async fn balance_native_tron(&self, address: &TronAddress) -> Result<U256, ChainRpcError> {
         match self {
             ChainRpcClient::Tron(client) => client
                 .balance_native(*address)
@@ -141,10 +138,7 @@ impl ChainRpcClient {
     }
 
     /// Check if a TRON address has been used on-chain.
-    pub async fn is_address_used_tron(
-        &self,
-        address: &super::tron::TronAddress,
-    ) -> Result<bool, ChainRpcError> {
+    pub async fn is_address_used_tron(&self, address: &TronAddress) -> Result<bool, ChainRpcError> {
         match self {
             ChainRpcClient::Tron(client) => client
                 .is_address_used_basic(*address)
@@ -181,10 +175,7 @@ pub enum ChainRpcError {
 
     /// Wrong chain type for the requested operation.
     #[display(fmt = "Wrong chain: expected {}, got {}", expected, got)]
-    WrongChain {
-        expected: &'static str,
-        got: &'static str,
-    },
+    WrongChain { expected: &'static str, got: &'static str },
 }
 
 // NOTE: Intentionally no `impl From<MmError<Web3RpcError>> for ChainRpcError`.

@@ -1,3 +1,4 @@
+use crate::eth::chain_address::ChainTaggedAddress;
 use crate::eth::{decode_contract_call, signed_tx_from_web3_tx, EthCoin, EthCoinType, Transaction, TransactionErr};
 use crate::hd_wallet::DisplayAddress;
 use crate::{FindPaymentSpendError, MarketCoinOps};
@@ -178,26 +179,34 @@ impl EthCoin {
     }
 }
 
+/// Validates that a signed transaction has the expected from and to addresses.
+///
+/// Uses `ChainTaggedAddress` to ensure chain-aware formatting in error messages
+/// (EVM checksum for EVM chains, Base58 for TRON).
 pub(crate) fn validate_from_to_addresses(
     signed_tx: &SignedEthTx,
-    expected_from: Address,
-    expected_to: Address,
+    expected_from: ChainTaggedAddress,
+    expected_to: ChainTaggedAddress,
 ) -> Result<(), MmError<ValidatePaymentV2Err>> {
-    if signed_tx.sender() != expected_from {
+    let family = expected_from.family();
+    let actual_from = signed_tx.sender();
+
+    if actual_from != expected_from.inner() {
         return MmError::err(ValidatePaymentV2Err::WrongPaymentTx(format!(
-            "Payment tx {signed_tx:?} was sent from wrong address, expected {}",
-            expected_from.display_address()
+            "Payment tx {signed_tx:?} was sent from wrong address, expected {}, got {}",
+            expected_from.display_address(),
+            family.format(actual_from)
         )));
     }
 
     // (in NFT case) as NFT owner calls "safeTransferFrom" directly, then in Transaction 'to' field we expect token_address
     match signed_tx.unsigned().action() {
-        Action::Call(to) => {
-            if *to != expected_to {
+        Action::Call(actual_to) => {
+            if *actual_to != expected_to.inner() {
                 return MmError::err(ValidatePaymentV2Err::WrongPaymentTx(format!(
                     "Payment tx was sent to wrong address, expected {}, got {}",
                     expected_to.display_address(),
-                    to.display_address()
+                    family.format(*actual_to)
                 )));
             }
         },

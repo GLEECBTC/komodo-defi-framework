@@ -1,3 +1,4 @@
+use super::chain_address::ChainTaggedAddress;
 use super::*;
 use crate::coin_balance::HDAddressBalanceScanner;
 use crate::hd_wallet::{
@@ -6,19 +7,11 @@ use crate::hd_wallet::{
 use async_trait::async_trait;
 use bip32::DerivationPath;
 use crypto::Secp256k1ExtendedPublicKey;
-use ethereum_types::{Address, Public};
+use ethereum_types::Public;
 
-pub type EthHDAddress = HDAddress<Address, Public>;
+pub type EthHDAddress = HDAddress<ChainTaggedAddress, Public>;
 pub type EthHDAccount = HDAccount<EthHDAddress, Secp256k1ExtendedPublicKey>;
 pub type EthHDWallet = HDWallet<EthHDAccount>;
-
-impl DisplayAddress for Address {
-    /// converts `Address` to mixed-case checksum form.
-    #[inline]
-    fn display_address(&self) -> String {
-        checksum_address(&self.addr_to_string())
-    }
-}
 
 #[async_trait]
 impl ExtractExtendedPubkey for EthCoin {
@@ -46,9 +39,11 @@ impl HDWalletCoinOps for EthCoin {
         derivation_path: DerivationPath,
     ) -> EthHDAddress {
         let pubkey = pubkey_from_extended(extended_pubkey);
-        let address = public_to_address(&pubkey);
+        let raw = public_to_address(&pubkey);
+        let family = ChainFamily::from(&self.0.chain_spec);
+
         EthHDAddress {
-            address,
+            address: ChainTaggedAddress::new(raw, family),
             pubkey,
             derivation_path,
         }
@@ -68,29 +63,30 @@ impl HDCoinWithdrawOps for EthCoin {}
 #[async_trait]
 #[cfg_attr(test, mockable)]
 impl HDAddressBalanceScanner for EthCoin {
-    type Address = Address;
+    type Address = ChainTaggedAddress;
 
     async fn is_address_used(&self, address: &Self::Address) -> BalanceResult<bool> {
         // TODO: Once EVM is migrated to ChainRpcClient, this can use a unified
         // `rpc_client.is_address_used_basic(address)` call without chain_spec matching.
         // See docs/plans/chain-rpc-client-refactor.md Section 17.
+        let raw = address.inner();
         match &self.0.chain_spec {
             ChainSpec::Tron { .. } => {
                 // TRON accounts are "used" if they exist on-chain (have balance, create_time, or permissions).
-                let tron_client = self.0.tron_rpc().ok_or_else(|| {
-                    BalanceError::Internal("TRON chain_spec but no TRON rpc_client".to_string())
-                })?;
-                let tron_addr = tron::TronAddress::from(address);
-                tron_client
-                    .is_address_used_basic(tron_addr)
-                    .await
-                    .map_err(|e| mm2_err_handle::mm_error::MmError::new(BalanceError::Transport(e.into_inner().to_string())))
+                let tron_client = self
+                    .0
+                    .tron_rpc()
+                    .ok_or_else(|| BalanceError::Internal("TRON chain_spec but no TRON rpc_client".to_string()))?;
+                let tron_addr = tron::TronAddress::from(raw);
+                tron_client.is_address_used_basic(tron_addr).await.map_err(|e| {
+                    mm2_err_handle::mm_error::MmError::new(BalanceError::Transport(e.into_inner().to_string()))
+                })
             },
             ChainSpec::Evm { .. } => {
                 // EVM path: Count calculates the number of transactions sent from the address whether it's for ERC20 or ETH.
                 // If the count is greater than 0, then the address is used.
                 // If the count is 0, then we check for the balance of the address to make sure there was no received transactions.
-                let count = self.transaction_count(*address, None).await?;
+                let count = self.transaction_count(raw, None).await?;
                 if count > U256::zero() {
                     return Ok(true);
                 }
@@ -105,7 +101,7 @@ impl HDAddressBalanceScanner for EthCoin {
 
                 // This is done concurrently which increases the cost of the requests to the node.
                 // But it's better than doing it sequentially to reduce the time.
-                let token_balance_map = self.get_tokens_balance_list_for_address(*address).await?;
+                let token_balance_map = self.get_tokens_balance_list_for_address(raw).await?;
                 Ok(token_balance_map.values().any(|balance| !balance.get_total().is_zero()))
             },
         }
@@ -165,7 +161,7 @@ impl HDWalletBalanceOps for EthCoin {
             .await
     }
 
-    async fn known_address_balance(&self, address: &Address) -> BalanceResult<Self::BalanceObject> {
+    async fn known_address_balance(&self, address: &ChainTaggedAddress) -> BalanceResult<Self::BalanceObject> {
         let balance = self
             .address_balance(*address)
             .and_then(move |result| u256_to_big_decimal(result, self.decimals()).map_mm_err())
@@ -187,15 +183,15 @@ impl HDWalletBalanceOps for EthCoin {
             return Ok(balances);
         }
 
-        let token_balances = self.get_tokens_balance_list_for_address(*address).await?;
+        let token_balances = self.get_tokens_balance_list_for_address(address.inner()).await?;
         balances.extend(token_balances);
         Ok(balances)
     }
 
     async fn known_addresses_balances(
         &self,
-        addresses: Vec<Address>,
-    ) -> BalanceResult<Vec<(Address, Self::BalanceObject)>> {
+        addresses: Vec<ChainTaggedAddress>,
+    ) -> BalanceResult<Vec<(ChainTaggedAddress, Self::BalanceObject)>> {
         let mut balance_futs = Vec::new();
         for address in addresses {
             let fut = async move {

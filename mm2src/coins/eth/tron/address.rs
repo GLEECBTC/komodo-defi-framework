@@ -15,7 +15,7 @@ pub const ADDRESS_BASE58_LEN: usize = 34;
 /// TRON mainnet or testnet address (21 bytes, 0x41 prefix + 20-bytes).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Address {
-    pub inner: [u8; ADDRESS_BYTES_LEN],
+    inner: [u8; ADDRESS_BYTES_LEN],
 }
 
 impl Address {
@@ -84,6 +84,18 @@ impl Address {
     /// Return the 21 bytes (0x41 + 20).
     pub fn as_bytes(&self) -> &[u8] {
         &self.inner
+    }
+
+    /// Extracts the 20-byte EVM address from this TRON address.
+    ///
+    /// TRON addresses are 21 bytes: a 0x41 prefix followed by a 20-byte EVM address.
+    /// This method returns the 20-byte portion as an `ethereum_types::Address`.
+    ///
+    /// # Safety
+    /// This is safe because `self.inner` is a fixed-size `[u8; 21]` array,
+    /// guaranteed at compile-time, so slicing `[1..21]` cannot panic.
+    pub fn to_evm_address(&self) -> EthAddress {
+        EthAddress::from_slice(&self.inner[1..21])
     }
 
     /// Construct TRON address from raw 20-byte Ethereum address bytes
@@ -187,6 +199,11 @@ mod test {
         assert_eq!(addr1, addr2);
         assert_eq!(addr1.to_hex(), hex);
         assert_eq!(addr2.to_base58(), base58);
+
+        // Test with 0x prefix
+        let hex_0x = "0x418840e6c55b9ada326d211d818c34a994aeced808";
+        let addr3 = Address::from_str(hex_0x).unwrap();
+        assert_eq!(addr3, addr1);
     }
 
     #[test]

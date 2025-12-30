@@ -470,7 +470,7 @@ impl EthCoin {
                     return MmError::err(EthTokenActivationError::CustomTokenError(
                         CustomTokenError::TokenWithSameContractAlreadyActivated {
                             ticker: token.ticker().to_string(),
-                            contract_address: protocol.token_addr.display_address(),
+                            contract_address: self.format_raw_address(protocol.token_addr),
                         },
                     ));
                 },
@@ -608,7 +608,7 @@ impl EthCoin {
             None
         };
 
-        let nft_infos = get_nfts_for_activation(&chain, &my_address, original_url, proxy_sign)
+        let nft_infos = get_nfts_for_activation(&chain, &my_address.inner(), original_url, proxy_sign)
             .await
             .map_mm_err()?;
         let coin_type = EthCoinType::Nft {
@@ -756,7 +756,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         priv_key_build_policy,
         &req.path_to_address,
         req.gap_limit,
-        Some(&chain_spec),
+        &chain_spec,
     )
     .await?;
 
@@ -892,13 +892,15 @@ pub(crate) async fn build_address_and_priv_key_policy(
     priv_key_build_policy: EthPrivKeyBuildPolicy,
     path_to_address: &HDPathAccountToAddressId,
     gap_limit: Option<u32>,
-    chain_spec: Option<&ChainSpec>,
+    chain_spec: &ChainSpec,
 ) -> MmResult<(EthPrivKeyPolicy, EthDerivationMethod), EthActivationV2Error> {
+    let family = ChainFamily::from(chain_spec);
+
     match priv_key_build_policy {
         EthPrivKeyBuildPolicy::IguanaPrivKey(iguana) => {
             let key_pair = KeyPair::from_secret_slice(iguana.as_slice())
                 .map_to_mm(|e| EthActivationV2Error::InternalError(e.to_string()))?;
-            let address = key_pair.address();
+            let address = ChainTaggedAddress::new(key_pair.address(), family);
             let derivation_method = DerivationMethod::SingleAddress(address);
             Ok((EthPrivKeyPolicy::Iguana(key_pair), derivation_method))
         },
@@ -976,9 +978,10 @@ pub(crate) async fn build_address_and_priv_key_policy(
         },
         #[cfg(target_arch = "wasm32")]
         EthPrivKeyBuildPolicy::Metamask(metamask_ctx) => {
-            let address = *metamask_ctx.check_active_eth_account().await.map_mm_err()?;
+            let raw_address = *metamask_ctx.check_active_eth_account().await.map_mm_err()?;
             let public_key_uncompressed = metamask_ctx.eth_account_pubkey_uncompressed();
             let public_key = compress_public_key(public_key_uncompressed)?;
+            let address = ChainTaggedAddress::new(raw_address, family);
             Ok((
                 EthPrivKeyPolicy::Metamask(EthMetamaskPolicy {
                     public_key,
@@ -991,15 +994,15 @@ pub(crate) async fn build_address_and_priv_key_policy(
             let wc = WalletConnectCtx::from_ctx(ctx).map_err(|e| {
                 EthActivationV2Error::WalletConnectError(format!("Failed to get WalletConnect context: {e}"))
             })?;
-            let chain_spec = chain_spec.ok_or(EthActivationV2Error::ChainIdNotSet)?;
             let chain_id = chain_spec.chain_id().ok_or(EthActivationV2Error::UnsupportedChain {
                 chain: chain_spec.kind().to_string(),
                 feature: "WalletConnect".to_string(),
             })?;
-            let (public_key_uncompressed, address) = eth_request_wc_personal_sign(&wc, &session_topic, chain_id)
+            let (public_key_uncompressed, raw_address) = eth_request_wc_personal_sign(&wc, &session_topic, chain_id)
                 .await
                 .mm_err(|err| EthActivationV2Error::WalletConnectError(err.to_string()))?;
             let public_key = compress_public_key(public_key_uncompressed)?;
+            let address = ChainTaggedAddress::new(raw_address, family);
             Ok((
                 EthPrivKeyPolicy::WalletConnect {
                     public_key,
@@ -1010,6 +1013,45 @@ pub(crate) async fn build_address_and_priv_key_policy(
             ))
         },
     }
+}
+
+/// Legacy EVM-only wrapper for `build_address_and_priv_key_policy`.
+///
+/// This function is ONLY for legacy V1 activation paths that exclusively support EVM chains.
+/// It uses `ChainFamily::Evm` for address formatting.
+///
+/// # When NOT to Use
+/// - V2 activation - use `build_address_and_priv_key_policy` with explicit `&ChainSpec`
+/// - TRON activation - MUST use V2 activation with `ChainSpec::Tron`
+/// - WalletConnect - MUST use V2 activation with explicit chain_id
+pub(crate) async fn build_address_and_priv_key_policy_evm_legacy(
+    ctx: &MmArc,
+    ticker: &str,
+    conf: &Json,
+    priv_key_build_policy: EthPrivKeyBuildPolicy,
+    path_to_address: &HDPathAccountToAddressId,
+    gap_limit: Option<u32>,
+    chain_id: u64,
+) -> MmResult<(EthPrivKeyPolicy, EthDerivationMethod), EthActivationV2Error> {
+    if matches!(priv_key_build_policy, EthPrivKeyBuildPolicy::WalletConnect { .. }) {
+        return MmError::err(EthActivationV2Error::PrivKeyPolicyNotAllowed(
+            PrivKeyPolicyNotAllowed::UnsupportedMethod(
+                "WalletConnect requires V2 activation with explicit chain_id".to_string(),
+            ),
+        ));
+    }
+
+    let legacy_evm_chain_spec = ChainSpec::Evm { chain_id };
+    build_address_and_priv_key_policy(
+        ctx,
+        ticker,
+        conf,
+        priv_key_build_policy,
+        path_to_address,
+        gap_limit,
+        &legacy_evm_chain_spec,
+    )
+    .await
 }
 
 async fn build_web3_instances(
