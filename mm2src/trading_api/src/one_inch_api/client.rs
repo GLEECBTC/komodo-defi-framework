@@ -23,6 +23,8 @@ use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use mocktopus::macros::*;
 
 const ONE_INCH_AGGREGATION_ROUTER_CONTRACT_V6_0: &str = "0x111111125421ca6dc452d289314280a0f8842a65";
+/// Special contract address used by 1inch to represent native ETH in their API. This is a widely adopted
+/// convention in the Ethereum ecosystem, to reference the native blockchain currency (ETH) in smart contracts and APIs using this address.
 const ONE_INCH_ETH_SPECIAL_CONTRACT: &str = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 
 #[cfg(test)]
