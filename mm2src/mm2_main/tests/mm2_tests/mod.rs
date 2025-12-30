@@ -5,6 +5,8 @@ mod lightning_tests;
 mod lp_bot_tests;
 mod mm2_tests_inner;
 mod orderbook_sync_tests;
+#[cfg(feature = "tron-network-tests")]
+mod tron_tests;
 mod z_coin_tests;
 
 mod solana_tests;
