@@ -1,4 +1,4 @@
-use super::errors::ApiClientError;
+use super::errors::OneInchError;
 use crate::one_inch_api::errors::NativeError;
 use common::{log, StatusCode};
 #[cfg(feature = "test-ext-api")]
@@ -23,6 +23,8 @@ use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use mocktopus::macros::*;
 
 const ONE_INCH_AGGREGATION_ROUTER_CONTRACT_V6_0: &str = "0x111111125421ca6dc452d289314280a0f8842a65";
+/// Special contract address used by 1inch to represent native ETH in their API. This is a widely adopted
+/// convention in the Ethereum ecosystem, to reference the native blockchain currency (ETH) in smart contracts and APIs using this address.
 const ONE_INCH_ETH_SPECIAL_CONTRACT: &str = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 
 #[cfg(test)]
@@ -80,7 +82,7 @@ impl UrlBuilder {
     }
 
     #[allow(clippy::result_large_err)]
-    pub fn build(&self) -> MmResult<Url, ApiClientError> {
+    pub fn build(&self) -> MmResult<Url, OneInchError> {
         let url = self.base_url.join(self.endpoint)?;
         let url = if let Some(chain_id) = self.chain_id {
             url.join(&format!("{chain_id}/"))?
@@ -132,7 +134,7 @@ impl SwapUrlBuilder {
         ctx: &MmArc,
         chain_id: u64,
         method: SwapApiMethods,
-    ) -> MmResult<UrlBuilder, ApiClientError> {
+    ) -> MmResult<UrlBuilder, OneInchError> {
         Ok(UrlBuilder::new(
             ApiClient::base_url(ctx)?,
             Some(chain_id),
@@ -161,7 +163,7 @@ impl PortfolioUrlBuilder {
     const PORTFOLIO_PRICES_ENDPOINT_V1_0: &str = "portfolio/integrations/prices/v1/";
 
     #[allow(clippy::result_large_err)]
-    pub fn create_api_url_builder(ctx: &MmArc, method: PortfolioApiMethods) -> MmResult<UrlBuilder, ApiClientError> {
+    pub fn create_api_url_builder(ctx: &MmArc, method: PortfolioApiMethods) -> MmResult<UrlBuilder, OneInchError> {
         Ok(UrlBuilder::new(
             ApiClient::base_url(ctx)?,
             None,
@@ -179,11 +181,11 @@ pub struct ApiClient;
 impl ApiClient {
     #[allow(unused_variables)]
     #[allow(clippy::result_large_err)]
-    fn base_url(ctx: &MmArc) -> MmResult<Url, ApiClientError> {
+    fn base_url(ctx: &MmArc) -> MmResult<Url, OneInchError> {
         #[cfg(not(test))]
         let url_cfg = ctx.conf["1inch_api"]
             .as_str()
-            .ok_or(ApiClientError::InvalidParam("No API config param".to_owned()))?;
+            .ok_or(OneInchError::InvalidParam("No API config param".to_owned()))?;
 
         #[cfg(test)]
         let url_cfg = ONE_INCH_API_TEST_URL;
@@ -193,7 +195,7 @@ impl ApiClient {
 
     pub const fn eth_special_contract() -> &'static str {
         ONE_INCH_ETH_SPECIAL_CONTRACT
-    }
+    } // TODO: must use the 1inch call, not a const (on zk chain it's not const)
 
     pub const fn classic_swap_contract() -> &'static str {
         ONE_INCH_AGGREGATION_ROUTER_CONTRACT_V6_0
@@ -212,7 +214,7 @@ impl ApiClient {
         ]
     }
 
-    pub async fn call_api<T>(api_url: Url) -> MmResult<T, ApiClientError>
+    pub async fn call_api<T>(api_url: Url) -> MmResult<T, OneInchError>
     where
         T: DeserializeOwned,
     {
@@ -222,18 +224,21 @@ impl ApiClient {
         log::debug!("1inch call url={api_url}");
         let (status_code, _, body) = slurp_url_with_headers(api_url.as_str(), ApiClient::get_headers())
             .await
-            .mm_err(ApiClientError::TransportError)?;
-        log::debug!("1inch response body={}", String::from_utf8_lossy(&body));
+            .mm_err(OneInchError::TransportError)?;
+        log::debug!(
+            "1inch response body={}",
+            String::from_utf8_lossy(&body[..std::cmp::min(128, body.len())])
+        );
         // TODO: handle text body errors like 'The limit of requests per second has been exceeded'
-        let body = serde_json::from_slice(&body).map_to_mm(|err| ApiClientError::ParseBodyError {
+        let body = serde_json::from_slice(&body).map_to_mm(|err| OneInchError::ParseBodyError {
             error_msg: err.to_string(),
         })?;
         if status_code != StatusCode::OK {
             let error = NativeError::new(status_code, body);
-            return Err(MmError::new(ApiClientError::from_native_error(error)));
+            return Err(MmError::new(OneInchError::from_native_error(error)));
         }
         serde_json::from_value(body).map_err(|err| {
-            ApiClientError::ParseBodyError {
+            OneInchError::ParseBodyError {
                 error_msg: err.to_string(),
             }
             .into()

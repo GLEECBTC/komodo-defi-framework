@@ -333,6 +333,8 @@ pub type ValidateTakerFundingSpendPreimageResult = MmResult<(), ValidateTakerFun
 pub type ValidateTakerPaymentSpendPreimageResult = MmResult<(), ValidateTakerPaymentSpendPreimageError>;
 
 pub type IguanaPrivKey = Secp256k1Secret;
+/// Coin ticker symbol as defined in KDF's coins configuration.
+/// This is the unique identifier for a coin/token within the KDF ecosystem.
 pub type Ticker = String;
 
 // Constants for logs used in tests

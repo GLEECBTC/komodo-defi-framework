@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Debug, Display, Serialize, EnumFromStringify)]
-pub enum ApiClientError {
+pub enum OneInchError {
     #[from_stringify("url::ParseError")]
     InvalidParam(String),
     #[display(fmt = "Parameter {param} out of bounds, value: {value}, min: {min} max: {max}")]
@@ -88,10 +88,10 @@ impl NativeError {
     }
 }
 
-impl ApiClientError {
+impl OneInchError {
     /// Convert from native API errors to lib errors
     /// Look for known API errors. If none found return as general API error
-    pub(crate) fn from_native_error(api_error: NativeError) -> ApiClientError {
+    pub(crate) fn from_native_error(api_error: NativeError) -> OneInchError {
         match api_error {
             NativeError::HttpError400(error_400) => {
                 if let Some(meta) = error_400.meta {
@@ -104,7 +104,7 @@ impl ApiClientError {
                             Default::default()
                         };
                         let allowance = U256::from_dec_str(&meta_allowance.meta_value).unwrap_or_default();
-                        return ApiClientError::AllowanceNotEnough {
+                        return OneInchError::AllowanceNotEnough {
                             error_msg: error_400.error,
                             status_code: error_400.status_code,
                             description: error_400.description.unwrap_or_default(),
@@ -113,18 +113,18 @@ impl ApiClientError {
                         };
                     }
                 }
-                ApiClientError::GeneralApiError {
+                OneInchError::GeneralApiError {
                     error_msg: error_400.error,
                     status_code: error_400.status_code,
                     description: error_400.description.unwrap_or_default(),
                 }
             },
-            NativeError::HttpError { error_msg, status_code } => ApiClientError::GeneralApiError {
+            NativeError::HttpError { error_msg, status_code } => OneInchError::GeneralApiError {
                 error_msg,
                 status_code,
                 description: Default::default(),
             },
-            NativeError::ParseError { error_msg } => ApiClientError::ParseBodyError { error_msg },
+            NativeError::ParseError { error_msg } => OneInchError::ParseBodyError { error_msg },
         }
     }
 }

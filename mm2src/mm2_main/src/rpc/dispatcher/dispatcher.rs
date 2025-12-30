@@ -16,13 +16,13 @@ use crate::lp_swap::swap_v2_rpcs::{active_swaps_rpc, my_recent_swaps_rpc, my_swa
 use crate::lp_swap::{get_locked_amount_rpc, max_maker_vol, recreate_swap_data, trade_preimage_rpc};
 use crate::lp_wallet::{change_mnemonic_password, delete_wallet_rpc, get_mnemonic_rpc, get_wallet_names_rpc};
 use crate::rpc::lp_commands::db_id::get_shared_db_id;
-use crate::rpc::lp_commands::lr_swap::{
-    lr_execute_routed_trade_rpc, lr_find_best_quote_rpc, lr_get_quotes_for_tokens_rpc,
-};
-use crate::rpc::lp_commands::one_inch::rpcs::{
+use crate::rpc::lp_commands::ext_api::{
     one_inch_v6_0_classic_swap_contract_rpc, one_inch_v6_0_classic_swap_create_rpc,
     one_inch_v6_0_classic_swap_liquidity_sources_rpc, one_inch_v6_0_classic_swap_quote_rpc,
     one_inch_v6_0_classic_swap_tokens_rpc,
+};
+use crate::rpc::lp_commands::lr_swap_api::{
+    lr_execute_routed_trade_rpc, lr_find_best_quote_rpc, lr_get_quotes_for_tokens_rpc,
 };
 use crate::rpc::lp_commands::pubkey::*;
 use crate::rpc::lp_commands::tokens::get_token_info;

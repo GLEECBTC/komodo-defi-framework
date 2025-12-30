@@ -2607,6 +2607,7 @@ impl AtomicSwap for TakerSwap {
     }
 }
 
+#[derive(Clone)]
 pub struct TakerSwapPreparedParams {
     pub(super) dex_fee: MmNumber,
     pub(super) fee_to_send_dex_fee: TradeFee,

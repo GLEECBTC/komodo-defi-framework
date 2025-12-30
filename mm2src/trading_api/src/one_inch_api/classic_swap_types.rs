@@ -1,17 +1,17 @@
 //! Structs to call 1inch classic swap api
 
 use super::client::QueryParams;
-use super::errors::ApiClientError;
+use super::errors::OneInchError;
 use common::{def_with_opt_param, push_if_some};
 use ethereum_types::Address;
-use mm2_err_handle::mm_error::{MmError, MmResult};
+use mm2_err_handle::mm_error::MmResult;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use url::Url;
 
 const ONE_INCH_MAX_SLIPPAGE: f32 = 50.0;
 const ONE_INCH_MAX_FEE_SHARE: f32 = 3.0;
-const ONE_INCH_MAX_GAS: u128 = 11500000;
+const ONE_INCH_MAX_GAS: u64 = 11500000;
 const ONE_INCH_MAX_PARTS: u32 = 100;
 const ONE_INCH_MAX_MAIN_ROUTE_PARTS: u32 = 50;
 const ONE_INCH_MAX_COMPLEXITY_LEVEL: u32 = 3;
@@ -21,11 +21,12 @@ const ONE_INCH_DOMAIN: &str = "1inch.io";
 
 /// API params builder for swap quote
 #[derive(Default)]
-pub struct ClassicSwapQuoteParams {
+pub struct ClassicSwapQuoteCallBuilder {
     /// Source token address
     src: String,
     /// Destination token address
     dst: String,
+    /// Source amount, decimal in coin units
     amount: String,
     // Optional fields
     fee: Option<f32>,
@@ -34,14 +35,14 @@ pub struct ClassicSwapQuoteParams {
     complexity_level: Option<u32>,
     parts: Option<u32>,
     main_route_parts: Option<u32>,
-    gas_limit: Option<u128>,
+    gas_limit: Option<u64>, // originally in 1inch was u128 but we made it u64 as serde does not support u128
     include_tokens_info: Option<bool>,
     include_protocols: Option<bool>,
     include_gas: Option<bool>,
     connector_tokens: Option<String>,
 }
 
-impl ClassicSwapQuoteParams {
+impl ClassicSwapQuoteCallBuilder {
     pub fn new(src: String, dst: String, amount: String) -> Self {
         Self {
             src,
@@ -57,14 +58,14 @@ impl ClassicSwapQuoteParams {
     def_with_opt_param!(complexity_level, u32);
     def_with_opt_param!(parts, u32);
     def_with_opt_param!(main_route_parts, u32);
-    def_with_opt_param!(gas_limit, u128);
+    def_with_opt_param!(gas_limit, u64);
     def_with_opt_param!(include_tokens_info, bool);
     def_with_opt_param!(include_protocols, bool);
     def_with_opt_param!(include_gas, bool);
     def_with_opt_param!(connector_tokens, String);
 
     #[allow(clippy::result_large_err)]
-    pub fn build_query_params(&self) -> MmResult<QueryParams, ApiClientError> {
+    pub fn build_query_params(&self) -> MmResult<QueryParams, OneInchError> {
         self.validate_params()?;
 
         let mut params = vec![
@@ -89,7 +90,7 @@ impl ClassicSwapQuoteParams {
 
     /// Validate params by 1inch rules (to avoid extra requests)
     #[allow(clippy::result_large_err)]
-    fn validate_params(&self) -> MmResult<(), ApiClientError> {
+    fn validate_params(&self) -> MmResult<(), OneInchError> {
         validate_fee(&self.fee)?;
         validate_complexity_level(&self.complexity_level)?;
         validate_gas_limit(&self.gas_limit)?;
@@ -100,21 +101,21 @@ impl ClassicSwapQuoteParams {
 }
 
 /// API params builder to create a tx for swap
-#[derive(Default)]
-pub struct ClassicSwapCreateParams {
-    src: String,
-    dst: String,
-    amount: String,
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct ClassicSwapCreateCallBuilder {
+    pub src: String,
+    pub dst: String,
+    /// Amount in token smallest units
+    pub amount: String,
     from: String,
     slippage: f32,
-    // Optional fields
     fee: Option<f32>,
     protocols: Option<String>,
     gas_price: Option<String>,
     complexity_level: Option<u32>,
     parts: Option<u32>,
     main_route_parts: Option<u32>,
-    gas_limit: Option<u128>,
+    gas_limit: Option<u64>, // originally in 1inch was u128 but we made it u64 as serde does not support u128
     include_tokens_info: Option<bool>,
     include_protocols: Option<bool>,
     include_gas: Option<bool>,
@@ -129,7 +130,7 @@ pub struct ClassicSwapCreateParams {
     use_permit2: Option<bool>,
 }
 
-impl ClassicSwapCreateParams {
+impl ClassicSwapCreateCallBuilder {
     pub fn new(src: String, dst: String, amount: String, from: String, slippage: f32) -> Self {
         Self {
             src,
@@ -147,7 +148,7 @@ impl ClassicSwapCreateParams {
     def_with_opt_param!(complexity_level, u32);
     def_with_opt_param!(parts, u32);
     def_with_opt_param!(main_route_parts, u32);
-    def_with_opt_param!(gas_limit, u128);
+    def_with_opt_param!(gas_limit, u64);
     def_with_opt_param!(include_tokens_info, bool);
     def_with_opt_param!(include_protocols, bool);
     def_with_opt_param!(include_gas, bool);
@@ -162,7 +163,7 @@ impl ClassicSwapCreateParams {
     def_with_opt_param!(use_permit2, bool);
 
     #[allow(clippy::result_large_err)]
-    pub fn build_query_params(&self) -> MmResult<QueryParams, ApiClientError> {
+    pub fn build_query_params(&self) -> MmResult<QueryParams, OneInchError> {
         self.validate_params()?;
 
         let mut params = vec![
@@ -198,7 +199,7 @@ impl ClassicSwapCreateParams {
 
     /// Validate params by 1inch rules (to avoid extra requests)
     #[allow(clippy::result_large_err)]
-    fn validate_params(&self) -> MmResult<(), ApiClientError> {
+    fn validate_params(&self) -> MmResult<(), OneInchError> {
         validate_slippage(self.slippage)?;
         validate_fee(&self.fee)?;
         validate_complexity_level(&self.complexity_level)?;
@@ -218,9 +219,18 @@ pub struct TokenInfo {
     pub eip2612: bool,
     #[serde(rename = "isFoT", default)]
     pub is_fot: bool,
-    #[serde(rename = "logoURI", with = "serde_one_inch_link")]
-    pub logo_uri: String,
+    #[serde(
+        rename = "logoURI",
+        default,
+        deserialize_with = "serde_one_inch_link::deserialize_opt_string"
+    )] // Note: needed to use 'default' with 'deserialize_with' to allow optional 'logoURI'
+    pub logo_uri: Option<String>,
     pub tags: Vec<String>,
+    /// Token name as it is defined in the coins file.
+    /// This is used to show route tokens in the GUI, like they are in the coin file.
+    /// However, route tokens can be missed in the coins file and therefore cannot be filled.
+    /// In this case GUI may use LrTokenInfo::Address or LrTokenInfo::Symbol
+    pub symbol_kdf: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -236,7 +246,7 @@ pub struct ProtocolInfo {
 /// Returned data from an API call to get quote or create swap
 #[derive(Clone, Deserialize, Debug)]
 pub struct ClassicSwapData {
-    /// dst token amount to receive, in api is a decimal number as string
+    /// dst token amount to receive, integer number as string (1inch API format)
     #[serde(rename = "dstAmount")]
     pub dst_amount: String,
     #[serde(rename = "srcToken")]
@@ -247,7 +257,8 @@ pub struct ClassicSwapData {
     /// Returned from create swap call
     pub tx: Option<TxFields>,
     /// Returned from quote call
-    pub gas: Option<u128>,
+    /// NOTE: in the 1inch API this field is u128 but this type is not supported by serde. u64 should be enough
+    pub gas: Option<u64>,
 }
 
 #[derive(Clone, Deserialize, Debug)]
@@ -255,23 +266,23 @@ pub struct TxFields {
     pub from: Address,
     pub to: Address,
     pub data: String,
-    /// tx value, in api is a decimal number as string
+    /// tx value, integer number as string, in smallest units (1inch API format)
     pub value: String,
-    /// gas price, in api is a decimal number as string
+    /// gas price, integer number as string, in wei (1inch API format)
     #[serde(rename = "gasPrice")]
     pub gas_price: String,
-    /// gas limit, in api is a decimal number
-    pub gas: u128,
+    /// gas limit
+    pub gas: u64,
 }
 
 #[derive(Deserialize, Serialize)]
 pub struct ProtocolImage {
     pub id: String,
     pub title: String,
-    #[serde(with = "serde_one_inch_link")]
-    pub img: String,
-    #[serde(with = "serde_one_inch_link")]
-    pub img_color: String,
+    #[serde(deserialize_with = "serde_one_inch_link::deserialize_opt_string")]
+    pub img: Option<String>,
+    #[serde(deserialize_with = "serde_one_inch_link::deserialize_opt_string")]
+    pub img_color: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -286,30 +297,22 @@ pub struct TokensResponse {
 
 mod serde_one_inch_link {
     use super::validate_one_inch_link;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use serde::{Deserialize, Deserializer};
 
-    /// Just forward to the normal serializer
-    pub(super) fn serialize<S>(s: &String, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        s.serialize(serializer)
-    }
-
-    /// Deserialise String with checking links
-    pub(super) fn deserialize<'a, D>(deserializer: D) -> Result<String, D::Error>
+    /// Deserialise Option<String> with checking links
+    pub(super) fn deserialize_opt_string<'a, D>(deserializer: D) -> Result<Option<String>, D::Error>
     where
         D: Deserializer<'a>,
     {
-        <String as Deserialize>::deserialize(deserializer)
-            .map(|value| validate_one_inch_link(&value).unwrap_or_default())
+        <Option<String> as Deserialize>::deserialize(deserializer)
+            .map(|opt_value| opt_value.map(|value| validate_one_inch_link(&value).unwrap_or_default()))
     }
 }
 
 #[allow(clippy::result_large_err)]
-fn validate_slippage(slippage: f32) -> MmResult<(), ApiClientError> {
+fn validate_slippage(slippage: f32) -> MmResult<(), OneInchError> {
     if !(0.0..=ONE_INCH_MAX_SLIPPAGE).contains(&slippage) {
-        return Err(ApiClientError::OutOfBounds {
+        return Err(OneInchError::OutOfBounds {
             param: "slippage".to_owned(),
             value: slippage.to_string(),
             min: 0.0.to_string(),
@@ -321,10 +324,10 @@ fn validate_slippage(slippage: f32) -> MmResult<(), ApiClientError> {
 }
 
 #[allow(clippy::result_large_err)]
-fn validate_fee(fee: &Option<f32>) -> MmResult<(), ApiClientError> {
+fn validate_fee(fee: &Option<f32>) -> MmResult<(), OneInchError> {
     if let Some(fee) = fee {
         if !(0.0..=ONE_INCH_MAX_FEE_SHARE).contains(fee) {
-            return Err(ApiClientError::OutOfBounds {
+            return Err(OneInchError::OutOfBounds {
                 param: "fee".to_owned(),
                 value: fee.to_string(),
                 min: 0.0.to_string(),
@@ -337,10 +340,10 @@ fn validate_fee(fee: &Option<f32>) -> MmResult<(), ApiClientError> {
 }
 
 #[allow(clippy::result_large_err)]
-fn validate_gas_limit(gas_limit: &Option<u128>) -> MmResult<(), ApiClientError> {
+fn validate_gas_limit(gas_limit: &Option<u64>) -> MmResult<(), OneInchError> {
     if let Some(gas_limit) = gas_limit {
         if gas_limit > &ONE_INCH_MAX_GAS {
-            return Err(ApiClientError::OutOfBounds {
+            return Err(OneInchError::OutOfBounds {
                 param: "gas_limit".to_owned(),
                 value: gas_limit.to_string(),
                 min: 0.to_string(),
@@ -353,10 +356,10 @@ fn validate_gas_limit(gas_limit: &Option<u128>) -> MmResult<(), ApiClientError> 
 }
 
 #[allow(clippy::result_large_err)]
-fn validate_parts(parts: &Option<u32>) -> MmResult<(), ApiClientError> {
+fn validate_parts(parts: &Option<u32>) -> MmResult<(), OneInchError> {
     if let Some(parts) = parts {
         if parts > &ONE_INCH_MAX_PARTS {
-            return Err(ApiClientError::OutOfBounds {
+            return Err(OneInchError::OutOfBounds {
                 param: "parts".to_owned(),
                 value: parts.to_string(),
                 min: 0.to_string(),
@@ -369,10 +372,10 @@ fn validate_parts(parts: &Option<u32>) -> MmResult<(), ApiClientError> {
 }
 
 #[allow(clippy::result_large_err)]
-fn validate_main_route_parts(main_route_parts: &Option<u32>) -> MmResult<(), ApiClientError> {
+fn validate_main_route_parts(main_route_parts: &Option<u32>) -> MmResult<(), OneInchError> {
     if let Some(main_route_parts) = main_route_parts {
         if main_route_parts > &ONE_INCH_MAX_MAIN_ROUTE_PARTS {
-            return Err(ApiClientError::OutOfBounds {
+            return Err(OneInchError::OutOfBounds {
                 param: "main route parts".to_owned(),
                 value: main_route_parts.to_string(),
                 min: 0.to_string(),
@@ -385,10 +388,10 @@ fn validate_main_route_parts(main_route_parts: &Option<u32>) -> MmResult<(), Api
 }
 
 #[allow(clippy::result_large_err)]
-fn validate_complexity_level(complexity_level: &Option<u32>) -> MmResult<(), ApiClientError> {
+fn validate_complexity_level(complexity_level: &Option<u32>) -> MmResult<(), OneInchError> {
     if let Some(complexity_level) = complexity_level {
         if complexity_level > &ONE_INCH_MAX_COMPLEXITY_LEVEL {
-            return Err(ApiClientError::OutOfBounds {
+            return Err(OneInchError::OutOfBounds {
                 param: "complexity level".to_owned(),
                 value: complexity_level.to_string(),
                 min: 0.to_string(),
@@ -401,9 +404,8 @@ fn validate_complexity_level(complexity_level: &Option<u32>) -> MmResult<(), Api
 }
 
 /// Check if url is valid and is a subdomain of 1inch domain (simple anti-phishing check)
-#[allow(clippy::result_large_err)]
-fn validate_one_inch_link(s: &str) -> MmResult<String, ApiClientError> {
-    let url = Url::parse(s).map_err(|_err| ApiClientError::ParseBodyError {
+fn validate_one_inch_link(s: &str) -> Result<String, OneInchError> {
+    let url = Url::parse(s).map_err(|_err| OneInchError::ParseBodyError {
         error_msg: BAD_URL_IN_RESPONSE_ERROR.to_owned(),
     })?;
     if let Some(host) = url.host() {
@@ -411,7 +413,7 @@ fn validate_one_inch_link(s: &str) -> MmResult<String, ApiClientError> {
             return Ok(s.to_owned());
         }
     }
-    MmError::err(ApiClientError::ParseBodyError {
+    Err(OneInchError::ParseBodyError {
         error_msg: BAD_URL_IN_RESPONSE_ERROR.to_owned(),
     })
 }
@@ -419,6 +421,7 @@ fn validate_one_inch_link(s: &str) -> MmResult<String, ApiClientError> {
 #[test]
 fn test_validate_one_inch_link() {
     assert!(validate_one_inch_link("https://cdn.1inch.io/liquidity-sources-logo/wmatic_color.png").is_ok());
+    assert!(validate_one_inch_link("https://CDN.1INCH.IO/liquidity-sources-logo/wmatic_color.png").is_ok());
     assert!(validate_one_inch_link("https://example.org/somepath/somefile.png").is_err());
     assert!(validate_one_inch_link("https://inch.io/somepath/somefile.png").is_err());
     assert!(validate_one_inch_link("127.0.0.1").is_err());

@@ -1,7 +1,7 @@
 //! Structs to call 1inch portfolio api
 
 use super::client::QueryParams;
-use super::errors::ApiClientError;
+use super::errors::OneInchError;
 use common::{def_with_opt_param, push_if_some};
 use mm2_err_handle::mm_error::MmResult;
 use mm2_number::BigDecimal;
@@ -63,7 +63,7 @@ impl CrossPriceParams {
     def_with_opt_param!(limit, u32);
 
     #[allow(clippy::result_large_err)]
-    pub fn build_query_params(&self) -> MmResult<QueryParams, ApiClientError> {
+    pub fn build_query_params(&self) -> MmResult<QueryParams, OneInchError> {
         let mut params = vec![
             ("chain_id", self.chain_id.to_string()),
             ("token0_address", self.token0_address.clone()),

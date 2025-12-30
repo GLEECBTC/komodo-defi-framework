@@ -18,6 +18,11 @@ Core application crate: RPC dispatcher, atomic swap engines, order matching, str
 src/
 ├── mm2.rs                # Library entry point
 ├── lp_native_dex.rs      # Application lifecycle (lp_main, lp_run)
+├── lr_swap/              # Liquidity routing core logic
+│   ├── lr_swap.rs        # Types: LrSwapParams, AtomicSwapParams
+│   ├── lr_errors.rs      # LrSwapError definitions
+│   ├── lr_helpers.rs     # Utilities for 1inch coin lookup
+│   └── lr_quote.rs       # Best swap path algorithm
 ├── rpc/
 │   ├── dispatcher/       # RPC routing
 │   │   ├── dispatcher.rs # Main v2 dispatcher
@@ -25,7 +30,7 @@ src/
 │   ├── lp_commands/      # Handler implementations
 │   │   ├── pubkey.rs, tokens.rs, trezor.rs, db_id.rs, legacy.rs
 │   │   ├── one_inch.rs, one_inch/  # 1inch integration
-│   │   └── lr_swap.rs, lr_swap/    # Liquidity routing
+│   │   └── lr_swap_api.rs, lr_swap_api/  # Liquidity routing RPCs
 │   ├── streaming_activations/  # SSE handlers
 │   │   ├── balance.rs, orderbook.rs, swaps.rs, orders.rs
 │   │   ├── heartbeat.rs, network.rs, shutdown_signal.rs
@@ -121,6 +126,16 @@ Use `RpcTaskManager` for task lifecycle management.
 - **Timelocks**: Maker locktime > taker locktime (prevents race conditions)
 - **Secret flow**: Maker generates secret → Taker reveals via spend
 - **State persistence**: Swaps survive restarts via DB checkpointing
+
+## Liquidity Routing (LR)
+
+Enables taker swaps between tokens that don't have direct orderbook liquidity by routing through intermediate tokens via DEX aggregators.
+
+- **LR_0**: DEX swap before atomic swap (convert user's token → token to send to maker)
+- **LR_1**: DEX swap after atomic swap (convert received token from maker → user's desired token)
+- Currently implemented for 1inch (EVM chains)
+- Maker-side LR support planned for future
+- `lr_quote.rs`: Finds best swap path by comparing total prices across candidates
 
 ## Swap Watcher
 

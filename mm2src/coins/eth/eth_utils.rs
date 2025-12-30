@@ -166,7 +166,6 @@ pub fn wei_from_coins_mm_number(mm_number: &MmNumber, decimals: u8) -> NumConver
 }
 
 #[inline]
-#[allow(unused)]
 pub fn wei_to_coins_mm_number(u256: U256, decimals: u8) -> NumConversResult<MmNumber> {
     Ok(MmNumber::from(u256_to_big_decimal(u256, decimals)?))
 }

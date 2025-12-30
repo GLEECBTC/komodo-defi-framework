@@ -121,7 +121,7 @@ fn display_u256_with_point() {
 }
 
 #[test]
-fn test_wei_from_big_decimal() {
+fn test_u256_from_big_decimal() {
     let amount = "0.000001".parse().unwrap();
     let wei = u256_from_big_decimal(&amount, 18).unwrap();
     let expected_wei: U256 = 1000000000000u64.into();

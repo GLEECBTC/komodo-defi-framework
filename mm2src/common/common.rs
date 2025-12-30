@@ -1313,7 +1313,7 @@ macro_rules! push_if_some {
 macro_rules! def_with_opt_param {
     ($var: ident, $var_type: ty) => {
         $crate::paste! {
-            pub fn [<with_ $var>](&mut self, $var: Option<$var_type>) -> &mut Self {
+            pub fn [<with_ $var>](mut self, $var: Option<$var_type>) -> Self {
                 self.$var = $var;
                 self
             }
