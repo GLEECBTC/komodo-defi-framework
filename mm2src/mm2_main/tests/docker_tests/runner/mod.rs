@@ -16,7 +16,7 @@ use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
 // =============================================================================
 
 #[cfg(any(
-    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-swaps",
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers",
     feature = "docker-tests-qrc20",
@@ -122,7 +122,7 @@ impl DockerTestRunner {
         }
 
         #[cfg(any(
-            feature = "docker-tests-swaps-utxo",
+            feature = "docker-tests-swaps",
             feature = "docker-tests-ordermatch",
             feature = "docker-tests-watchers",
             feature = "docker-tests-qrc20",
@@ -197,7 +197,7 @@ fn required_images() -> Vec<&'static str> {
     let mut images = Vec::new();
 
     #[cfg(any(
-        feature = "docker-tests-swaps-utxo",
+        feature = "docker-tests-swaps",
         feature = "docker-tests-ordermatch",
         feature = "docker-tests-watchers",
         feature = "docker-tests-qrc20",

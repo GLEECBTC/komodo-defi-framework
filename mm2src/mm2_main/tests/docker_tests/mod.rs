@@ -48,25 +48,25 @@ mod eth_inner_tests;
 // Swap protocol v2 tests - UTXO-only TPU protocol
 // Tests: MakerSwapStateMachine, TakerSwapStateMachine, trading protocol upgrade
 // Chains: UTXO-MYCOIN, UTXO-MYCOIN1
-#[cfg(feature = "docker-tests-swaps-utxo")]
+#[cfg(feature = "docker-tests-swaps")]
 mod swap_proto_v2_tests;
 
 // UTXO Swaps V1 tests - UTXO-only swap mechanics (extracted from docker_tests_inner)
 // Tests: swap spend/refund, trade preimage, max taker/maker vol, locked amounts, UTXO merge
 // Chains: UTXO-MYCOIN, UTXO-MYCOIN1
-#[cfg(feature = "docker-tests-swaps-utxo")]
+#[cfg(feature = "docker-tests-swaps")]
 mod utxo_swaps_v1_tests;
 
 // Swap confirmation settings sync tests - UTXO-only
 // Tests: confirmation requirements, settings synchronization between maker/taker
 // Chains: UTXO-MYCOIN, UTXO-MYCOIN1
-#[cfg(feature = "docker-tests-swaps-utxo")]
+#[cfg(feature = "docker-tests-swaps")]
 mod swaps_confs_settings_sync_tests;
 
 // Swap file lock tests - UTXO-only infrastructure
 // Tests: concurrent swap file locking, race condition prevention
 // Chains: UTXO-MYCOIN, UTXO-MYCOIN1
-#[cfg(feature = "docker-tests-swaps-utxo")]
+#[cfg(feature = "docker-tests-swaps")]
 mod swaps_file_lock_tests;
 
 // ============================================================================

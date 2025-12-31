@@ -31,14 +31,14 @@ use testcontainers::{core::WaitFor, RunnableImage};
 use tokio::sync::Mutex as AsyncMutex;
 
 // rmd160_from_priv imports (only for ordermatch/swaps-utxo)
-#[cfg(any(feature = "docker-tests-ordermatch", feature = "docker-tests-swaps-utxo"))]
+#[cfg(any(feature = "docker-tests-ordermatch", feature = "docker-tests-swaps"))]
 use bitcrypto::dhash160;
-#[cfg(any(feature = "docker-tests-ordermatch", feature = "docker-tests-swaps-utxo"))]
+#[cfg(any(feature = "docker-tests-ordermatch", feature = "docker-tests-swaps"))]
 use primitives::hash::H160;
 
 // random_secp256k1_secret import (only for features using generate_utxo_coin_with_random_privkey)
 #[cfg(any(
-    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-swaps",
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers"
 ))]
@@ -84,11 +84,11 @@ pub const UTXO_ASSET_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/gleec/testblockcha
 // =============================================================================
 
 /// Ticker of MYCOIN dockerized blockchain.
-#[cfg(feature = "docker-tests-swaps-utxo")]
+#[cfg(feature = "docker-tests-swaps")]
 pub const MYCOIN: &str = "MYCOIN";
 
 /// Ticker of MYCOIN1 dockerized blockchain.
-#[cfg(feature = "docker-tests-swaps-utxo")]
+#[cfg(feature = "docker-tests-swaps")]
 pub const MYCOIN1: &str = "MYCOIN1";
 
 // =============================================================================
@@ -175,7 +175,7 @@ pub fn utxo_asset_docker_node(ticker: &'static str, port: u16) -> DockerNode {
 // =============================================================================
 
 /// Compute RIPEMD160(SHA256(pubkey)) from a private key.
-#[cfg(any(feature = "docker-tests-ordermatch", feature = "docker-tests-swaps-utxo"))]
+#[cfg(any(feature = "docker-tests-ordermatch", feature = "docker-tests-swaps"))]
 pub fn rmd160_from_priv(privkey: Secp256k1Secret) -> H160 {
     use secp256k1::{PublicKey, Secp256k1, SecretKey};
     let secret = SecretKey::from_slice(privkey.as_slice()).unwrap();
@@ -185,7 +185,7 @@ pub fn rmd160_from_priv(privkey: Secp256k1Secret) -> H160 {
 
 /// Import an address to the coin's wallet.
 #[cfg(any(
-    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-swaps",
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers",
     feature = "docker-tests-qrc20",
@@ -213,7 +213,7 @@ where
 
 /// Build asset `UtxoStandardCoin` from ticker and privkey without filling the balance.
 #[cfg(any(
-    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-swaps",
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers",
     feature = "docker-tests-qrc20",
@@ -231,7 +231,7 @@ pub fn utxo_coin_from_privkey(ticker: &str, priv_key: Secp256k1Secret) -> (MmArc
 
 /// Create a UTXO coin for the given privkey and fill its address with the specified balance.
 #[cfg(any(
-    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-swaps",
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers",
     feature = "docker-tests-integration"
@@ -260,7 +260,7 @@ pub async fn fund_privkey_utxo(ticker: &str, balance: BigDecimal, priv_key: &Sec
 
 /// Generate random privkey, create a UTXO coin and fill its address with the specified balance.
 #[cfg(any(
-    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-swaps",
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers"
 ))]
@@ -278,7 +278,7 @@ pub fn generate_utxo_coin_with_random_privkey(
 
 /// Fill address with the specified amount (synchronous wrapper).
 #[cfg(any(
-    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-swaps",
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers",
     feature = "docker-tests-qrc20",

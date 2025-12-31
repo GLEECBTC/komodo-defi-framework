@@ -10,7 +10,7 @@
 //!
 //! - ETH: `docker-tests-eth`, `docker-tests-ordermatch`
 //! - QRC20: `docker-tests-qrc20`
-//! - UTXO: `docker-tests-swaps-utxo`, `docker-tests-ordermatch`, `docker-tests-watchers`, `docker-tests-qrc20`, `docker-tests-sia`, `docker-tests-slp`
+//! - UTXO: `docker-tests-swaps`, `docker-tests-ordermatch`, `docker-tests-watchers`, `docker-tests-qrc20`, `docker-tests-sia`, `docker-tests-slp`
 //! - SLP: `docker-tests-slp`
 
 use common::block_on;
@@ -26,7 +26,7 @@ use crypto::Secp256k1Secret;
 
 // random_secp256k1_secret - used by non-SLP swap paths
 #[cfg(any(
-    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-swaps",
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-qrc20",
     feature = "docker-tests-eth",
@@ -36,7 +36,7 @@ use super::env::random_secp256k1_secret;
 
 // SET_BURN_PUBKEY_TO_ALICE - used by trade_base_rel
 #[cfg(any(
-    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-swaps",
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-qrc20",
     feature = "docker-tests-slp",
@@ -48,7 +48,7 @@ use super::env::SET_BURN_PUBKEY_TO_ALICE;
 /// Timeout in seconds for wallet funding operations during test setup.
 #[cfg(any(
     feature = "docker-tests-qrc20",
-    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-swaps",
     feature = "docker-tests-sia"
 ))]
 const WALLET_FUNDING_TIMEOUT_SEC: u64 = 30;
@@ -74,17 +74,17 @@ use mm2_test_helpers::for_tests::enable_native as enable_native_qrc20;
 
 // UTXO imports (non-QRC20 paths)
 #[cfg(all(
-    any(feature = "docker-tests-swaps-utxo", feature = "docker-tests-sia"),
+    any(feature = "docker-tests-swaps", feature = "docker-tests-sia"),
     not(feature = "docker-tests-qrc20")
 ))]
 use super::utxo::{fill_address, utxo_coin_from_privkey};
 #[cfg(all(
-    any(feature = "docker-tests-swaps-utxo", feature = "docker-tests-sia"),
+    any(feature = "docker-tests-swaps", feature = "docker-tests-sia"),
     not(feature = "docker-tests-qrc20")
 ))]
 use coins::MarketCoinOps;
 #[cfg(all(
-    any(feature = "docker-tests-swaps-utxo", feature = "docker-tests-sia"),
+    any(feature = "docker-tests-swaps", feature = "docker-tests-sia"),
     not(feature = "docker-tests-qrc20")
 ))]
 use mm2_test_helpers::for_tests::enable_native;
@@ -117,7 +117,7 @@ use mm2_test_helpers::for_tests::{enable_native as enable_native_slp, enable_nat
 /// Different coin pairs require different feature flags:
 /// - ETH/ERC20DEV: `docker-tests-eth` or `docker-tests-ordermatch`
 /// - QTUM/QICK/QORTY: `docker-tests-qrc20`
-/// - MYCOIN/MYCOIN1: `docker-tests-swaps-utxo`, `docker-tests-ordermatch`, `docker-tests-watchers`, `docker-tests-qrc20`, `docker-tests-sia`
+/// - MYCOIN/MYCOIN1: `docker-tests-swaps`, `docker-tests-ordermatch`, `docker-tests-watchers`, `docker-tests-qrc20`, `docker-tests-sia`
 /// - FORSLP/ADEXSLP: `docker-tests-slp`
 pub fn trade_base_rel((base, rel): (&str, &str)) {
     /// Generate a wallet with the random private key and fill the wallet with funds.
@@ -148,7 +148,7 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
             },
             #[cfg(all(
                 any(
-                    feature = "docker-tests-swaps-utxo",
+                    feature = "docker-tests-swaps",
                     feature = "docker-tests-ordermatch",
                     feature = "docker-tests-sia"
                 ),
@@ -173,7 +173,7 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
                 "Unsupported ticker: {}. Check that the required feature flag is enabled. \
                  ETH/ERC20DEV: docker-tests-eth or docker-tests-ordermatch. \
                  QTUM/QICK/QORTY/MYCOIN: docker-tests-qrc20. \
-                 MYCOIN/MYCOIN1: docker-tests-swaps-utxo, docker-tests-ordermatch, docker-tests-watchers, docker-tests-sia. \
+                 MYCOIN/MYCOIN1: docker-tests-swaps, docker-tests-ordermatch, docker-tests-watchers, docker-tests-sia. \
                  FORSLP/ADEXSLP: docker-tests-slp.",
                 ticker
             ),
@@ -227,7 +227,7 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
 
     #[cfg(all(
         any(
-            feature = "docker-tests-swaps-utxo",
+            feature = "docker-tests-swaps",
             feature = "docker-tests-ordermatch",
             feature = "docker-tests-sia"
         ),
@@ -307,7 +307,7 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
 
     #[cfg(all(
         any(
-            feature = "docker-tests-swaps-utxo",
+            feature = "docker-tests-swaps",
             feature = "docker-tests-ordermatch",
             feature = "docker-tests-sia"
         ),
@@ -363,7 +363,7 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
 
     #[cfg(all(
         any(
-            feature = "docker-tests-swaps-utxo",
+            feature = "docker-tests-swaps",
             feature = "docker-tests-ordermatch",
             feature = "docker-tests-sia"
         ),

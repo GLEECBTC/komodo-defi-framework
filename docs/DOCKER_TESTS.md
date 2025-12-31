@@ -29,7 +29,7 @@ Tests are split by feature flag. Use the flag for the suite you want:
 | `docker-tests-qrc20` | Qtum/QRC20 |
 | `docker-tests-tendermint` | Cosmos/IBC |
 | `docker-tests-zcoin` | ZCoin/Zombie |
-| `docker-tests-swaps-utxo` | UTXO swap protocol |
+| `docker-tests-swaps` | Swap protocol |
 | `docker-tests-ordermatch` | Ordermatching |
 | `docker-tests-watchers` | Watcher nodes |
 | `docker-tests-integration` | Cross-chain swaps |

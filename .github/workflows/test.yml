@@ -186,7 +186,7 @@ jobs:
 
           # UTXO swap protocol tests
           - name: Swaps (UTXO)
-            features: docker-tests-swaps-utxo
+            features: docker-tests-swaps
             compose-profiles: "--profile utxo"
             timeout: 60
             needs-zcash-params: true

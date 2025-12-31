@@ -228,7 +228,7 @@ tests/docker_tests/
 | `docker-tests-slp` | BCH/SLP token tests | FORSLP |
 | `docker-tests-sia` | Sia tests + DSIA swaps | Sia + UTXO |
 | `docker-tests-ordermatch` | Orderbook/matching tests | UTXO + Geth |
-| `docker-tests-swaps-utxo` | UTXO swap protocol tests | UTXO |
+| `docker-tests-swaps` | Swap protocol tests | UTXO |
 | `docker-tests-watchers` | UTXO watcher tests | UTXO |
 | `docker-tests-watchers-eth` | ETH watcher tests (unstable) | UTXO + Geth |
 | `docker-tests-qrc20` | Qtum/QRC20 tests | Qtum + UTXO |

@@ -20,7 +20,7 @@
 // docker_ops - CoinDockerOps trait and UTXO compose utilities
 // (tendermint uses resolve_compose_container_id from env.rs instead)
 #[cfg(any(
-    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-swaps",
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers",
     feature = "docker-tests-qrc20",
@@ -57,7 +57,7 @@ pub mod slp;
 
 // Cross-chain swap orchestration helpers.
 #[cfg(any(
-    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-swaps",
     feature = "docker-tests-eth",
     feature = "docker-tests-qrc20",
     feature = "docker-tests-slp"
@@ -71,7 +71,7 @@ pub mod tendermint;
 // UTXO helpers (MYCOIN, MYCOIN1).
 // Note: SLP has its own self-contained module (slp.rs) and doesn't need utxo.
 #[cfg(any(
-    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-swaps",
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers",
     feature = "docker-tests-qrc20",

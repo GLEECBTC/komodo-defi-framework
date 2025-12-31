@@ -7,7 +7,7 @@ use crate::docker_tests::helpers::env::KDF_MYCOIN_SERVICE;
 use crate::docker_tests::helpers::utxo::{utxo_asset_docker_node, UtxoAssetDockerOps};
 
 #[cfg(any(
-    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-swaps",
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers",
     feature = "docker-tests-qrc20",
@@ -33,7 +33,7 @@ pub(super) fn setup(runner: &mut DockerTestRunner) {
 
     // MYCOIN1 (only for utxo pair tests - not needed by Sia)
     #[cfg(any(
-        feature = "docker-tests-swaps-utxo",
+        feature = "docker-tests-swaps",
         feature = "docker-tests-ordermatch",
         feature = "docker-tests-watchers",
         feature = "docker-tests-qrc20",

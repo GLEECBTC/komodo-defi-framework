@@ -18,25 +18,26 @@ native = [] # Deprecated
 track-ctx-pointer = ["common/track-ctx-pointer"]
 zhtlc-native-tests = ["coins/zhtlc-native-tests"]
 run-docker-tests = ["coins/run-docker-tests"]
-# Split docker test features - organized by test category and chain
-# Chain-specific coin tests (future destination: coins::*/tests, far future: separate crate per chain)
+# Split docker test features - organized by test category
+#
+# Chain-specific tests: Test coin implementations for specific blockchain protocols
+# (consideration: move to coins::*/tests; far future: separate crates per chain)
 docker-tests-slp = ["run-docker-tests"]         # BCH-SLP coin tests
 docker-tests-sia = ["run-docker-tests"]         # Sia coin tests
 docker-tests-eth = ["run-docker-tests"]         # ETH/ERC20 coin tests
 docker-tests-qrc20 = ["run-docker-tests"]       # QRC20 coin tests
 docker-tests-tendermint = ["run-docker-tests"]  # Tendermint/IBC coin tests
 docker-tests-zcoin = ["run-docker-tests"]       # ZCoin/Zombie coin tests
-# Swap protocol tests (future destination: mm2_main::lp_swap/tests, far future: lp_swap crate)
-docker-tests-swaps-utxo = ["run-docker-tests"]  # UTXO swap protocol tests (v1, v2, confs, file-locks)
-# Watcher tests (future destination: mm2_main::lp_swap::watchers/tests, far future: watchers crate)
-docker-tests-watchers = ["run-docker-tests"]    # Watcher node tests (UTXO-only, stable)
-# ETH watcher tests are disabled by default because ETH watchers are unstable and not completed yet.
-# This feature enables both the ETH watcher implementation code (in coins crate) and the ETH watcher tests.
-docker-tests-watchers-eth = ["docker-tests-watchers", "coins/enable-eth-watchers"]  # Watcher node tests (ETH/ERC20, unstable)
-# Ordermatching tests (future destination: mm2_main::lp_ordermatch/tests, far future: ordermatch crate)
+#
+# Protocol tests: Test cross-cutting protocol functionality (swaps, ordermatching, watchers).
+# Protocol logic is coin-agnostic; these tests use UTXO coins to verify protocol correctness in isolation.
+docker-tests-swaps = ["run-docker-tests"]       # Swap protocol tests (v1, v2, confs, file-locks)
 docker-tests-ordermatch = ["run-docker-tests"]  # Orderbook and matching tests
-# Integration tests for cross-chain swaps between different chain families (ETH<->Tendermint, SLP<->UTXO, etc.)
-docker-tests-integration = ["run-docker-tests"]  # Cross-chain integration swap tests
+docker-tests-watchers = ["run-docker-tests"]    # Watcher node tests (UTXO-only, stable)
+docker-tests-watchers-eth = ["docker-tests-watchers", "coins/enable-eth-watchers"]  # Watcher tests (ETH, unstable)
+#
+# Cross-chain integration tests: Test interactions between different chain families
+docker-tests-integration = ["run-docker-tests"]
 # Aggregate feature for local development - runs all docker test suites
 # Not recommended for CI (use split jobs instead for parallelism)
 docker-tests-all = [
@@ -44,7 +45,7 @@ docker-tests-all = [
     "docker-tests-slp",
     "docker-tests-sia",
     "docker-tests-ordermatch",
-    "docker-tests-swaps-utxo",
+    "docker-tests-swaps",
     "docker-tests-watchers",
     "docker-tests-qrc20",
     "docker-tests-tendermint",

@@ -7,7 +7,7 @@
 use testcontainers::{Container, GenericImage};
 
 #[cfg(any(
-    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-swaps",
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers",
     feature = "docker-tests-watchers-eth",
@@ -18,7 +18,7 @@ use testcontainers::{Container, GenericImage};
 ))]
 use crypto::Secp256k1Secret;
 #[cfg(any(
-    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-swaps",
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers",
     feature = "docker-tests-watchers-eth",
@@ -31,7 +31,7 @@ use secp256k1::SecretKey;
 
 // Cell import only needed for SET_BURN_PUBKEY_TO_ALICE
 #[cfg(any(
-    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-swaps",
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers",
     feature = "docker-tests-qrc20",
@@ -46,7 +46,7 @@ use std::cell::Cell;
 // =============================================================================
 
 #[cfg(any(
-    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-swaps",
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers",
     feature = "docker-tests-qrc20",
@@ -73,7 +73,7 @@ pub const KDF_QTUM_SERVICE: &str = "qtum";
 
 /// docker-compose service name for primary UTXO node MYCOIN
 #[cfg(any(
-    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-swaps",
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers",
     feature = "docker-tests-qrc20",
@@ -84,7 +84,7 @@ pub const KDF_MYCOIN_SERVICE: &str = "mycoin";
 
 /// docker-compose service name for secondary UTXO node MYCOIN1
 #[cfg(any(
-    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-swaps",
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers",
     feature = "docker-tests-qrc20",
@@ -124,7 +124,7 @@ pub struct DockerNode {
 
 /// Generate a random secp256k1 secret key for testing.
 #[cfg(any(
-    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-swaps",
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers",
     feature = "docker-tests-watchers-eth",
@@ -152,7 +152,7 @@ pub fn random_secp256k1_secret() -> Secp256k1Secret {
 #[cfg(any(
     feature = "docker-tests-tendermint",
     feature = "docker-tests-integration",
-    feature = "docker-tests-swaps-utxo",
+    feature = "docker-tests-swaps",
     feature = "docker-tests-ordermatch",
     feature = "docker-tests-watchers",
     feature = "docker-tests-qrc20",

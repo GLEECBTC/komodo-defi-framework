@@ -4,7 +4,7 @@
 // These tests focus on UTXO swap mechanics, payment lifecycle, and related functionality.
 // They do NOT require ETH/ERC20 containers - only MYCOIN/MYCOIN1 UTXO containers.
 //
-// Gated by: docker-tests-swaps-utxo
+// Gated by: docker-tests-swaps
 
 use crate::docker_tests::helpers::env::random_secp256k1_secret;
 use crate::docker_tests::helpers::swap::trade_base_rel;
