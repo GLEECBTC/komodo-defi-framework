@@ -118,8 +118,6 @@ services:
       - COIN_RPC_PORT=9000
       - ADDRESS_LABEL=MM2_ADDRESS_LABEL
       - FILL_MEMPOOL=true
-    volumes:
-      - qtum-data:/data
     healthcheck:
       test: ["CMD-SHELL", "qtum-cli -rpcport=9000 getblockchaininfo || exit 1"]
       interval: 5s
@@ -159,7 +157,6 @@ services:
       - COIN_RPC_PORT=7090
     volumes:
       - ${ZCASH_PARAMS_PATH:-~/.zcash-params}:/root/.zcash-params:ro
-      - zombie-data:/data
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:7090"]
       interval: 5s
@@ -223,7 +220,3 @@ services:
       timeout: 3s
       retries: 30
       start_period: 10s
-
-volumes:
-  qtum-data:
-  zombie-data:
