@@ -45,7 +45,7 @@ cargo test --test docker_tests_main --features docker-tests-eth
 Keep nodes running between test runs for faster iteration:
 
 ```bash
-# 1. Prepare environment (needed for Cosmos tests)
+# 1. Prepare environment (needed for Cosmos & Sia tests)
 ./scripts/ci/docker-test-nodes-setup.sh
 
 # 2. Start nodes (use profile for specific chains)
@@ -55,7 +55,7 @@ docker compose -f .docker/test-nodes.yml --profile all up -d
 KDF_DOCKER_COMPOSE_ENV=1 cargo test --test docker_tests_main --features docker-tests-eth
 
 # 4. Stop when done
-docker compose -f .docker/test-nodes.yml down -v
+docker compose -f .docker/test-nodes.yml --profile all down -v
 ```
 
 **Profiles**: `utxo`, `slp`, `qrc20`, `evm`, `zombie`, `cosmos`, `sia`, `all`
