@@ -8,9 +8,7 @@ use mm2_test_helpers::for_tests::{
     account_balance, enable_trx, get_new_address, get_passphrase, task_enable_trx, task_enable_trx_result, trx_conf,
     MarketMakerIt, Mm2TestConf, Mm2TestConfForSwap, TRON_NILE_NODES,
 };
-use mm2_test_helpers::structs::{
-    Bip44Chain, EnableCoinBalanceMap, EthWithTokensActivationResult, HDAccountAddressId, TaskEnableError,
-};
+use mm2_test_helpers::structs::{Bip44Chain, EnableCoinBalanceMap, EthWithTokensActivationResult, HDAccountAddressId};
 
 /// Test mnemonic for used-but-zero-balance scenario.
 /// Index 0: TSqB9tqfaQ1DYSdMCbVSLPzQsaNVjeu9hq (funded ~1777.8 TRX)

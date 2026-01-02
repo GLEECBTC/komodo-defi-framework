@@ -275,9 +275,6 @@ pub const TRON_TESTNET_KNOWN_ADDRESS: &str = "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb
 /// TRX ticker constant for tests.
 pub const TRX_TICKER: &str = "TRX";
 
-/// Zero address for TRX (no swap contract on TRON).
-pub const TRX_ZERO_SWAP_CONTRACT: &str = "0x0000000000000000000000000000000000000000";
-
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum TypedRpcResponse<T> {
@@ -3655,26 +3652,30 @@ async fn task_enable_eth_with_tokens_init(
     mm: &MarketMakerIt,
     platform_coin: &str,
     tokens: &[&str],
-    swap_contract_address: &str,
+    swap_contract_address: Option<&str>,
     nodes: &[&str],
     path_to_address: Option<HDAccountAddressId>,
 ) -> Json {
     let erc20_tokens_requests: Vec<_> = tokens.iter().map(|ticker| json!({ "ticker": ticker })).collect();
     let nodes: Vec<_> = nodes.iter().map(|url| json!({ "url": url })).collect();
 
+    let mut params = json!({
+        "ticker": platform_coin,
+        "nodes": nodes,
+        "tx_history": true,
+        "erc20_tokens_requests": erc20_tokens_requests,
+        "path_to_address": path_to_address.unwrap_or_default(),
+    });
+    if let Some(addr) = swap_contract_address {
+        params["swap_contract_address"] = json!(addr);
+    }
+
     let response = mm
         .rpc(&json!({
-        "userpass": mm.userpass,
-        "method": "task::enable_eth::init",
-        "mmrpc": "2.0",
-        "params": {
-                "ticker": platform_coin,
-                "swap_contract_address": swap_contract_address,
-                "nodes": nodes,
-                "tx_history": true,
-                "erc20_tokens_requests": erc20_tokens_requests,
-                "path_to_address": path_to_address.unwrap_or_default(),
-            }
+            "userpass": mm.userpass,
+            "method": "task::enable_eth::init",
+            "mmrpc": "2.0",
+            "params": params
         }))
         .await
         .unwrap();
@@ -3712,7 +3713,7 @@ pub async fn task_enable_eth_with_tokens(
     mm: &MarketMakerIt,
     platform_coin: &str,
     tokens: &[&str],
-    swap_contract_address: &str,
+    swap_contract_address: Option<&str>,
     nodes: &[&str],
     timeout: u64,
     path_to_address: Option<HDAccountAddressId>,
@@ -3739,7 +3740,6 @@ pub async fn task_enable_eth_with_tokens(
 }
 
 /// Immediate TRX activation helper using the enable RPC.
-/// Uses the zero address for swap_contract_address since TRON doesn't have swap contracts.
 pub async fn enable_trx(mm: &MarketMakerIt, nodes: &[&str]) -> Json {
     let nodes: Vec<_> = nodes.iter().map(|url| json!({ "url": url })).collect();
     let enable = mm
@@ -3750,7 +3750,6 @@ pub async fn enable_trx(mm: &MarketMakerIt, nodes: &[&str]) -> Json {
             "params": {
                 "ticker": "TRX",
                 "mm2": 1,
-                "swap_contract_address": TRX_ZERO_SWAP_CONTRACT,
                 "nodes": nodes,
                 "erc20_tokens_requests": []
             }
@@ -3767,27 +3766,16 @@ pub async fn enable_trx(mm: &MarketMakerIt, nodes: &[&str]) -> Json {
 }
 
 /// Task-based TRX activation helper (mirrors task_enable_eth_with_tokens).
-/// Uses the zero address for swap_contract_address since TRON doesn't have swap contracts.
 pub async fn task_enable_trx(
     mm: &MarketMakerIt,
     nodes: &[&str],
     timeout: u64,
     path_to_address: Option<HDAccountAddressId>,
 ) -> EthWithTokensActivationResult {
-    task_enable_eth_with_tokens(
-        mm,
-        "TRX",
-        &[],
-        TRX_ZERO_SWAP_CONTRACT,
-        nodes,
-        timeout,
-        path_to_address,
-    )
-    .await
+    task_enable_eth_with_tokens(mm, "TRX", &[], None, nodes, timeout, path_to_address).await
 }
 
 /// Typed TRX activation helper using the `enable_eth_with_tokens` RPC (mmrpc 2.0).
-/// Uses the zero address for swap_contract_address since TRON doesn't have swap contracts.
 ///
 /// This helper asserts `StatusCode::OK` (happy-path helper), and returns the typed response.
 pub async fn enable_trx_v2(mm: &MarketMakerIt, nodes: &[&str]) -> RpcV2Response<EthWithTokensActivationResult> {
@@ -3800,7 +3788,6 @@ pub async fn enable_trx_v2(mm: &MarketMakerIt, nodes: &[&str]) -> RpcV2Response<
             "params": {
                 "ticker": "TRX",
                 "mm2": 1,
-                "swap_contract_address": TRX_ZERO_SWAP_CONTRACT,
                 "nodes": nodes,
                 "erc20_tokens_requests": []
             }
@@ -3825,16 +3812,7 @@ pub async fn task_enable_trx_init(
     nodes: &[&str],
     path_to_address: Option<HDAccountAddressId>,
 ) -> RpcV2Response<InitTaskResult> {
-    let init = task_enable_eth_with_tokens_init(
-        mm,
-        "TRX",
-        &[],
-        TRX_ZERO_SWAP_CONTRACT,
-        nodes,
-        path_to_address,
-    )
-    .await;
-
+    let init = task_enable_eth_with_tokens_init(mm, "TRX", &[], None, nodes, path_to_address).await;
     json::from_value(init).unwrap()
 }
 
