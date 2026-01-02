@@ -7,7 +7,7 @@ Docker tests run against local blockchain nodes to verify atomic swap functional
 1. **Docker**: Install Docker Desktop or Docker Engine
 2. **Zcash Parameters** (for UTXO nodes):
    ```bash
-   wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/v0.8.1/zcutil/fetch-params-alt.sh | bash
+   wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/635112d590618165a152dfa0f31e95a9be39a8f6/zcutil/fetch-params-alt.sh | bash
    ```
 
 ## Quick Start
