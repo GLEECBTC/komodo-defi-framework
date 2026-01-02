@@ -4120,7 +4120,21 @@ fn test_update_maker_order() {
     let max_base_vol =
         BigDecimal::from_str(update_maker_order_json["result"]["max_base_vol"].as_str().unwrap()).unwrap();
     assert_eq!(update_maker_order_json["result"]["price"], Json::from("2"));
-    assert_eq!(max_base_vol, max_volume);
+    // Approximate comparison: fee/balance can change slightly between the my_balance/trade_preimage
+    // calls above and the update_maker_order call
+    let diff = if max_base_vol > max_volume {
+        &max_base_vol - &max_volume
+    } else {
+        &max_volume - &max_base_vol
+    };
+    let tolerance = BigDecimal::from_str("0.0001").unwrap();
+    assert!(
+        diff < tolerance,
+        "max_base_vol {} differs from expected {} by more than {}",
+        max_base_vol,
+        max_volume,
+        tolerance
+    );
 
     block_on(mm_bob.stop()).unwrap();
 }
