@@ -429,7 +429,7 @@ fn test_trx_hd_scanning_detects_used_but_zero_balance_address() {
         Some(HDAccountAddressId {
             account_id: 0,
             chain: Bip44Chain::External,
-            address_id: 2,
+            address_id: 0,
         }),
     ))
     .expect("Expected TRX HD activation to succeed");
@@ -456,7 +456,6 @@ fn test_trx_hd_scanning_detects_used_but_zero_balance_address() {
         account0.addresses[0].address, "TSqB9tqfaQ1DYSdMCbVSLPzQsaNVjeu9hq",
         "Unexpected address at index 0"
     );
-    TronAddress::from_base58(&account0.addresses[0].address).expect("Invalid TRON address at index 0");
     let spendable0 = &account0.addresses[0].balance.get("TRX").unwrap().spendable;
     assert!(
         *spendable0 > 1700.into(),
@@ -464,18 +463,17 @@ fn test_trx_hd_scanning_detects_used_but_zero_balance_address() {
         spendable0
     );
 
-    // Index 2 should be detected (has tx history) but have zero balance
+    // Index 2 should be detected via gap limit scanning (has tx history) but have zero balance
     assert_eq!(
         account0.addresses[2].address, "TPoJwueR4xfZCXuQTYqem4edQgoM3uV78n",
         "Unexpected address at index 2"
     );
-    TronAddress::from_base58(&account0.addresses[2].address).expect("Invalid TRON address at index 2");
 
-    // Verify index 2 has zero or negligible balance
+    // Verify index 2 has strictly zero balance
     if let Some(trx_balance) = account0.addresses[2].balance.get("TRX") {
         assert!(
-            trx_balance.spendable < 1.into(),
-            "Expected index 2 to have ~0 TRX (used but empty), got {:?}",
+            trx_balance.spendable == 0.into(),
+            "Expected index 2 to have exactly 0 TRX, got {:?}",
             trx_balance.spendable
         );
     }
