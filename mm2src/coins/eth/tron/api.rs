@@ -45,7 +45,10 @@ pub const TRON_API_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Check if a TRON error message indicates a transient condition that should be retried.
 ///
-/// Based on TRON's `Return.response_code` enum (from java-tron), these are transient:
+/// Based on TRON's `Return.response_code` enum:
+/// <https://github.com/tronprotocol/java-tron/blob/1e35f79/protocol/src/main/protos/api/api.proto#L1041-L1057>
+///
+/// Transient codes:
 /// - `SERVER_BUSY` (code 9) - node's transaction pending pool is at capacity
 /// - `NO_CONNECTION` (code 10) - no active peer connections
 /// - `NOT_ENOUGH_EFFECTIVE_CONNECTION` (code 11) - insufficient peer connections
@@ -64,7 +67,7 @@ pub fn is_retryable_tron_error(error_msg: &str) -> bool {
     if lower.contains("no_connection") || lower.contains("no connection") {
         return true;
     }
-    if lower.contains("not_enough_effective_connection") {
+    if lower.contains("not_enough_effective_connection") || lower.contains("not enough effective connection") {
         return true;
     }
     if lower.contains("block_unsolidified") || lower.contains("block unsolidified") {
@@ -82,13 +85,16 @@ pub fn is_retryable_tron_error(error_msg: &str) -> bool {
 /// Detects TRON API error payloads and extracts the error message.
 /// Returns `Some(message)` if the response indicates an error, `None` otherwise.
 ///
-/// TRON API error formats:
-/// - `{"Error": "message"}` - Access control / config errors (REST API)
-/// - `{"error": "message"}` - General errors (string variant)
-/// - `{"error": {"code": ..., "message": ...}}` - JSON-RPC 2.0 errors
-/// - `{"result": false, "code": "...", "message": "..."}` - Transaction/contract errors
-/// - `{"result": {"result": false, "code": "...", "message": "..."}}` - Nested transaction result
-/// - `{"code": "...", "message": "..."}` - Simplified error format
+/// TRON API error formats (HTTP API):
+/// - `{"Error": "message"}` - Generic servlet errors
+///   <https://github.com/tronprotocol/java-tron/blob/1e35f79/framework/src/main/java/org/tron/core/services/http/Util.java#L90-L94>
+/// - `{"error": {"code": ..., "message": ...}}` - JSON-RPC 2.0 errors (for future use)
+/// - `{"result": false, "code": "...", "message": "..."}` - Return message (broadcasttransaction)
+///   <https://github.com/tronprotocol/java-tron/blob/1e35f79/protocol/src/main/protos/api/api.proto#L1040-L1062>
+/// - `{"result": {"result": false, "code": "...", "message": "..."}}` - Nested Return (triggersmartcontract, estimateenergy)
+///   <https://developers.tron.network/reference/estimateenergy>
+///
+/// Non-error: `{}` for non-existent accounts (<https://developers.tron.network/reference/getaccount-1>)
 fn tron_error_from_value(v: &serde_json::Value) -> Option<String> {
     let obj = v.as_object()?;
 
@@ -111,25 +117,20 @@ fn tron_error_from_value(v: &serde_json::Value) -> Option<String> {
         }
     };
 
-    // Format: {"Error": "message"} - REST API access control errors
+    // Format: {"Error": "message"} - Generic servlet errors (Util.printErrorMsg, JsonFormat.printErrorMsg)
     if let Some(msg) = obj.get("Error").and_then(|v| v.as_str()) {
         return Some(msg.to_string());
     }
 
-    // Format: {"error": "message"} - General string errors
-    if let Some(msg) = obj.get("error").and_then(|v| v.as_str()) {
-        return Some(msg.to_string());
-    }
-
-    // Format: {"error": {"code": ..., "message": ...}} - JSON-RPC 2.0 errors
+    // Format: {"error": {"code": ..., "message": ...}} - JSON-RPC 2.0 errors (for future use)
     if let Some(error_obj) = obj.get("error").and_then(|v| v.as_object()) {
         let code = error_obj.get("code").map(&value_to_string);
         let message = error_obj.get("message").map(&value_to_string);
         return Some(format_error(code, message, "JSON-RPC error"));
     }
 
-    // Format: {"result": {"result": false, "code": "...", "message": "..."}} - Nested transaction result
-    // Used by triggerConstantContract, triggerContract, estimateEnergy, broadcastTransaction
+    // Format: {"result": {"result": false, "code": "...", "message": "..."}} - Nested Return
+    // Used by: TransactionExtention (triggersmartcontract), EstimateEnergyMessage (estimateenergy)
     // Note: "result" can be false, null, or missing when there's an error
     if let Some(result_obj) = obj.get("result").and_then(|v| v.as_object()) {
         let inner_result = result_obj.get("result").and_then(|v| v.as_bool());
@@ -143,22 +144,11 @@ fn tron_error_from_value(v: &serde_json::Value) -> Option<String> {
         }
     }
 
-    // Format: {"result": false, "code": "...", "message": "..."} - Top-level boolean result
+    // Format: {"result": false, "code": "...", "message": "..."} - Top-level Return (broadcasttransaction)
     if matches!(obj.get("result").and_then(|v| v.as_bool()), Some(false)) {
         let code = obj.get("code").map(&value_to_string);
         let message = obj.get("message").map(&value_to_string);
         return Some(format_error(code, message, "TRON API returned result=false"));
-    }
-
-    // Format: {"code": "...", "message": "..."} without result field
-    // Avoid false positives if endpoint returns {"result": true, "code": ..., "message": ...}
-    if obj.get("code").is_some()
-        && obj.get("message").is_some()
-        && !matches!(obj.get("result").and_then(|v| v.as_bool()), Some(true))
-    {
-        let code = obj.get("code").map(&value_to_string);
-        let message = obj.get("message").map(&value_to_string);
-        return Some(format_error(code, message, "TRON API error"));
     }
 
     None
