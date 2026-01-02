@@ -5,8 +5,8 @@
 use coins::eth::tron::TronAddress;
 use common::block_on;
 use mm2_test_helpers::for_tests::{
-    account_balance, enable_trx, get_new_address, get_passphrase, task_enable_trx, trx_conf, MarketMakerIt,
-    Mm2TestConf, Mm2TestConfForSwap, TRON_NILE_NODES,
+    account_balance, enable_trx, get_new_address, task_enable_trx, trx_conf, MarketMakerIt, Mm2TestConf,
+    Mm2TestConfForSwap, TRON_NILE_NODES,
 };
 use mm2_test_helpers::structs::{Bip44Chain, EnableCoinBalanceMap, EthWithTokensActivationResult, HDAccountAddressId};
 
@@ -20,9 +20,8 @@ const TRON_USED_ZERO_BALANCE_PASSPHRASE: &str =
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_trx_activation_immediate() {
-    let passphrase = get_passphrase(&".env.client", "BOB_PASSPHRASE").unwrap();
     let coins = serde_json::json!([trx_conf()]);
-    let conf = Mm2TestConf::seednode(&passphrase, &coins);
+    let conf = Mm2TestConf::seednode(Mm2TestConfForSwap::BOB_HD_PASSPHRASE, &coins);
     let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
 
     let result = block_on(enable_trx(&mm, TRON_NILE_NODES));
@@ -55,9 +54,8 @@ fn test_trx_activation_immediate() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_trx_activation_task_based() {
-    let passphrase = get_passphrase(&".env.client", "BOB_PASSPHRASE").unwrap();
     let coins = serde_json::json!([trx_conf()]);
-    let conf = Mm2TestConf::seednode(&passphrase, &coins);
+    let conf = Mm2TestConf::seednode(Mm2TestConfForSwap::BOB_HD_PASSPHRASE, &coins);
     let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
 
     let result =
@@ -94,9 +92,8 @@ fn test_trx_activation_task_based() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_trx_activation_node_failover() {
-    let passphrase = get_passphrase(&".env.client", "BOB_PASSPHRASE").unwrap();
     let coins = serde_json::json!([trx_conf()]);
-    let conf = Mm2TestConf::seednode(&passphrase, &coins);
+    let conf = Mm2TestConf::seednode(Mm2TestConfForSwap::BOB_HD_PASSPHRASE, &coins);
     let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
 
     let nodes = ["http://127.0.0.1:1", TRON_NILE_NODES[0]];
