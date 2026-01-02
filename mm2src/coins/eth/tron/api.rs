@@ -57,25 +57,31 @@ pub const TRON_API_TIMEOUT: Duration = Duration::from_secs(10);
 ///
 /// These errors become `InvalidResponse` which `Web3RpcError::is_retryable()` treats as permanent.
 /// This function provides TRON-specific retry classification.
+///
+/// # Why string codes instead of numeric codes
+///
+/// The `response_code` enum has numeric values (e.g., SERVER_BUSY = 9), but TRON's HTTP API
+/// serializes them as string names via `JsonFormat.printToString` which uses protobuf's
+/// `EnumValueDescriptor.getName()`. Example response: `{"code": "SERVER_BUSY", "message": "..."}`.
+/// See: <https://github.com/tronprotocol/java-tron/blob/1e35f79/framework/src/main/java/org/tron/core/services/http/JsonFormat.java#L378-L382>
 pub fn is_retryable_tron_error(error_msg: &str) -> bool {
-    let lower = error_msg.to_lowercase();
+    // TRON transient error codes from Return.response_code.
+    const RETRYABLE_CODES: &[&str] = &[
+        "SERVER_BUSY",                     // code 9
+        "NO_CONNECTION",                   // code 10
+        "NOT_ENOUGH_EFFECTIVE_CONNECTION", // code 11
+        "BLOCK_UNSOLIDIFIED",              // code 12
+    ];
 
-    // TRON-specific transient error codes (from java-tron Return.response_code)
-    if lower.contains("server_busy") || lower.contains("server busy") {
-        return true;
-    }
-    if lower.contains("no_connection") || lower.contains("no connection") {
-        return true;
-    }
-    if lower.contains("not_enough_effective_connection") || lower.contains("not enough effective connection") {
-        return true;
-    }
-    if lower.contains("block_unsolidified") || lower.contains("block unsolidified") {
+    // Rate limiting message from RateLimiterServlet (not a response_code, but a servlet error).
+    // See: https://github.com/tronprotocol/java-tron/blob/1e35f79/framework/src/main/java/org/tron/core/services/http/RateLimiterServlet.java#L114
+    const RATE_LIMIT_MSG: &str = "lack of computing resources";
+
+    if RETRYABLE_CODES.iter().any(|code| error_msg.starts_with(code)) {
         return true;
     }
 
-    // Rate limiting from RateLimiterServlet
-    if lower.contains("lack of computing resources") {
+    if error_msg.contains(RATE_LIMIT_MSG) {
         return true;
     }
 
