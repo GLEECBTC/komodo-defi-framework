@@ -176,25 +176,17 @@ pub fn resolve_compose_container_id(service_name: &str) -> String {
         .expect("failed to execute `docker ps`");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    if let Some(container_id) = stdout.lines().next().map(str::trim).filter(|s| !s.is_empty()) {
-        return container_id.to_string();
-    }
-
-    // Fallback: try by container name pattern
-    let fallback_name = format!("kdf-{}", service_name);
-    let output = Command::new("docker")
-        .args(["ps", "-q", "--filter", &format!("name={}", fallback_name)])
-        .output()
-        .expect("failed to execute `docker ps` (name filter)");
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    if let Some(container_id) = stdout.lines().next().map(str::trim).filter(|s| !s.is_empty()) {
-        return container_id.to_string();
-    }
-
-    panic!(
-        "No running container found for docker-compose service '{}'. \
-         Make sure `.docker/test-nodes.yml` is up and containers are started.",
-        service_name
-    );
+    stdout
+        .lines()
+        .next()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .unwrap_or_else(|| {
+            panic!(
+                "No running container found for docker-compose service '{}'. \
+                 Make sure `.docker/test-nodes.yml` is up and containers are started.",
+                service_name
+            )
+        })
 }
