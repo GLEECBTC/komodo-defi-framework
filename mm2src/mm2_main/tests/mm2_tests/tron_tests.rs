@@ -5,8 +5,8 @@
 use coins::eth::tron::TronAddress;
 use common::block_on;
 use mm2_test_helpers::for_tests::{
-    account_balance, enable_trx, get_new_address, get_passphrase, task_enable_trx, task_enable_trx_result, trx_conf,
-    MarketMakerIt, Mm2TestConf, Mm2TestConfForSwap, TRON_NILE_NODES,
+    account_balance, enable_trx, get_new_address, get_passphrase, task_enable_trx, trx_conf, MarketMakerIt,
+    Mm2TestConf, Mm2TestConfForSwap, TRON_NILE_NODES,
 };
 use mm2_test_helpers::structs::{Bip44Chain, EnableCoinBalanceMap, EthWithTokensActivationResult, HDAccountAddressId};
 
@@ -60,7 +60,8 @@ fn test_trx_activation_task_based() {
     let conf = Mm2TestConf::seednode(&passphrase, &coins);
     let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
 
-    let result: EthWithTokensActivationResult = block_on(task_enable_trx(&mm, TRON_NILE_NODES, 60, None));
+    let result =
+        block_on(task_enable_trx(&mm, TRON_NILE_NODES, 60, None)).expect("TRX task-based activation should succeed");
 
     match result {
         EthWithTokensActivationResult::Iguana(iguana_result) => {
@@ -99,8 +100,8 @@ fn test_trx_activation_node_failover() {
     let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
 
     let nodes = ["http://127.0.0.1:1", TRON_NILE_NODES[0]];
-    let result = block_on(task_enable_trx_result(&mm, &nodes, 60, None))
-        .expect("Expected TRX activation to succeed via node failover");
+    let result =
+        block_on(task_enable_trx(&mm, &nodes, 60, None)).expect("Expected TRX activation to succeed via node failover");
 
     match result {
         EthWithTokensActivationResult::Iguana(r) => {
@@ -134,7 +135,7 @@ fn test_trx_hd_activation_with_path() {
         address_id: 0,
     };
 
-    let result = block_on(task_enable_trx_result(&mm, TRON_NILE_NODES, 60, Some(path_to_address)))
+    let result = block_on(task_enable_trx(&mm, TRON_NILE_NODES, 60, Some(path_to_address)))
         .expect("Expected TRX HD activation to succeed");
 
     let hd = match result {
@@ -170,7 +171,7 @@ fn test_trx_get_new_address_rpc_hd() {
     let conf = Mm2TestConf::seednode_with_hd_account(Mm2TestConfForSwap::BOB_HD_PASSPHRASE, &coins);
     let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
 
-    let _activation = block_on(task_enable_trx_result(
+    let _activation = block_on(task_enable_trx(
         &mm,
         TRON_NILE_NODES,
         60,
@@ -224,7 +225,7 @@ fn test_trx_hd_balance_structure_assertions_and_funded_amounts() {
     let conf = Mm2TestConf::seednode_with_hd_account(Mm2TestConfForSwap::BOB_HD_PASSPHRASE, &coins);
     let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
 
-    let result = block_on(task_enable_trx_result(
+    let result = block_on(task_enable_trx(
         &mm,
         TRON_NILE_NODES,
         60,
@@ -300,7 +301,7 @@ fn test_trx_hd_multiple_account_ids_account_77() {
     let conf = Mm2TestConf::seednode_with_hd_account(Mm2TestConfForSwap::BOB_HD_PASSPHRASE, &coins);
     let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
 
-    let result = block_on(task_enable_trx_result(
+    let result = block_on(task_enable_trx(
         &mm,
         TRON_NILE_NODES,
         60,
@@ -354,7 +355,7 @@ fn test_trx_hd_gap_limit_scanning_finds_index_7_after_unfunded_gaps() {
     let conf = Mm2TestConf::seednode_with_hd_account(Mm2TestConfForSwap::BOB_HD_PASSPHRASE, &coins);
     let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
 
-    let result = block_on(task_enable_trx_result(
+    let result = block_on(task_enable_trx(
         &mm,
         TRON_NILE_NODES,
         60,
@@ -424,7 +425,7 @@ fn test_trx_hd_scanning_detects_used_but_zero_balance_address() {
     let conf = Mm2TestConf::seednode_with_hd_account(TRON_USED_ZERO_BALANCE_PASSPHRASE, &coins);
     let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
 
-    let result = block_on(task_enable_trx_result(
+    let result = block_on(task_enable_trx(
         &mm,
         TRON_NILE_NODES,
         60,
