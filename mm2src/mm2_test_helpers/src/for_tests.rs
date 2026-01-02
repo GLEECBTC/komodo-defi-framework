@@ -267,9 +267,6 @@ pub const BCHD_TESTNET_URLS: &[&str] = &["https://bchd-testnet.greyh.at:18335"];
 /// Nile is recommended over Shasta for more flexibility with RPC providers.
 pub const TRON_NILE_NODES: &[&str] = &["https://nile.trongrid.io"];
 
-/// TRON Shasta testnet RPC nodes (fallback option).
-pub const TRON_SHASTA_NODES: &[&str] = &["https://api.shasta.trongrid.io"];
-
 /// Known TRON testnet address that is always "activated" (zero address equivalent).
 /// This is the TRON network foundation address on testnet that has activity.
 /// T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb is the genesis address.
