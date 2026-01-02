@@ -221,7 +221,7 @@ jobs:
             timeout: 60
             needs-zcash-params: false
             needs-nodes-setup: true
-            nodes-setup-args: ""
+            nodes-setup-args: "--skip-sia"
             container-wait-time: 30
 
           # ZCoin/Zombie tests
