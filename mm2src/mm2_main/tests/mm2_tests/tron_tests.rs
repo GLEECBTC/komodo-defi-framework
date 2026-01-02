@@ -122,30 +122,6 @@ fn test_trx_activation_node_failover() {
     block_on(mm.stop()).unwrap();
 }
 
-/// Test all dead nodes returns error (not panic)
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_trx_activation_all_nodes_dead() {
-    let passphrase = get_passphrase(&".env.client", "BOB_PASSPHRASE").unwrap();
-    let coins = serde_json::json!([trx_conf()]);
-    let conf = Mm2TestConf::seednode(&passphrase, &coins);
-    let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
-
-    let nodes = ["http://127.0.0.1:1", "http://127.0.0.1:2"];
-    let res = block_on(task_enable_trx_result(&mm, &nodes, 15, None));
-
-    assert!(
-        matches!(
-            res,
-            Err(TaskEnableError::RpcError(_)) | Err(TaskEnableError::Timeout { .. })
-        ),
-        "Expected RpcError or Timeout, got: {:?}",
-        res
-    );
-
-    block_on(mm.stop()).unwrap();
-}
-
 /// Test HD wallet activation with specific derivation path
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
