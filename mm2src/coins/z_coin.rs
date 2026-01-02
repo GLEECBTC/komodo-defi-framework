@@ -1129,7 +1129,7 @@ impl<'a> ZCoinBuilder<'a> {
             Some(file_path) => PathBuf::from(file_path),
         };
 
-        #[cfg(all(test, not(target_arch = "wasm32")))]
+        #[cfg(test)]
         z_unit_tests::download_parameters_for_tests(&params_dir).await;
 
         async_blocking(move || {
