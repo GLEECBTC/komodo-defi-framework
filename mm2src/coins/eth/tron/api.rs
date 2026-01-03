@@ -343,39 +343,46 @@ struct GetAccountRequest {
 
 /// Response from `/wallet/getaccount`.
 ///
-/// Note: TRON returns an empty object `{}` if the account doesn't exist.
-/// All fields are optional to handle this case.
-#[derive(Deserialize, Debug, Default)]
-pub struct GetAccountResponse {
-    /// Account address (only present for existing accounts on some nodes).
-    #[serde(default)]
-    pub address: Option<String>,
-    /// Balance in SUN (1 TRX = 1,000,000 SUN).
-    #[serde(default)]
-    pub balance: Option<i64>,
-    /// Account creation timestamp.
-    #[serde(default)]
-    pub create_time: Option<i64>,
-    /// Owner permission structure (present for activated accounts).
-    #[serde(default)]
-    pub owner_permission: Option<serde_json::Value>,
+/// TRON returns `{}` for non-existent accounts, or account data for existing ones.
+/// Using untagged enum: `Account` (with required `address`) is tried first; if it fails,
+/// `NoAccount` matches the empty object.
+///
+/// # Proto3 serialization
+///
+/// TRON uses proto3 where default values (0, empty) are omitted from JSON.
+/// - `address`: Always non-empty for existing accounts (used as DB key), so always serialized.
+/// - `balance`: Could be 0 for new accounts, so might be omitted. We use `#[serde(default)]`.
+/// - `create_time`: Set on creation, but omitted if 0. We use `#[serde(default)]`.
+///
+/// # Extensibility
+///
+/// We don't use `#[serde(deny_unknown_fields)]`, so additional fields returned by TRON
+/// (like `net_usage`, `assetV2`, `frozenV2`, `owner_permission`, etc.) are ignored.
+/// Add fields here as needed for future functionality.
+///
+/// See: <https://developers.tron.network/reference/account-getaccount>
+#[derive(Deserialize, Debug)]
+#[serde(untagged)]
+pub enum GetAccountResponse {
+    /// Existing account. `address` is always present (non-empty bytes in protobuf).
+    Account {
+        /// Account address in hex format.
+        address: String,
+        /// Balance in SUN (1 TRX = 1,000,000 SUN). Defaults to 0 if omitted (proto3).
+        #[serde(default)]
+        balance: i64,
+        /// Account creation timestamp in milliseconds. Defaults to 0 if omitted.
+        #[serde(default)]
+        create_time: i64,
+    },
+    /// Empty object `{}` - account doesn't exist on chain.
+    NoAccount {},
 }
 
 impl GetAccountResponse {
-    /// Returns true if the account exists and has meaningful on-chain presence.
-    ///
-    /// An account is considered "used" (for HD gap-limit scanning) if any of these are true:
-    /// - Has address field (some nodes only return this for existing accounts)
-    /// - Has positive balance
-    /// - Has a creation timestamp (was explicitly activated)
-    /// - Has owner permission structure
-    ///
-    /// Based on java-tron behavior: empty object = account doesn't exist.
+    /// Returns true if the account exists on chain (used for HD gap-limit scanning).
     pub fn exists_meaningfully(&self) -> bool {
-        self.address.is_some()
-            || self.balance.unwrap_or(0) > 0
-            || self.create_time.is_some()
-            || self.owner_permission.is_some()
+        matches!(self, GetAccountResponse::Account { .. })
     }
 }
 
@@ -510,7 +517,11 @@ impl ChainRpcOps for TronApiClient {
             let addr = address;
             async move {
                 let account = client.get_account(&addr).await?;
-                let balance = account.balance.unwrap_or(0).max(0) as u64;
+                let balance = match account {
+                    GetAccountResponse::Account { balance, .. } => balance.max(0) as u64,
+                    // Address might have been created by KDF and not used on-chain yet. Return 0.
+                    GetAccountResponse::NoAccount {} => 0,
+                };
                 Ok(U256::from(balance))
             }
         })
