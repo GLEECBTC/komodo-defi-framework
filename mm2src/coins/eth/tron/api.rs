@@ -370,7 +370,7 @@ pub enum GetAccountResponse {
         address: String,
         /// Balance in SUN (1 TRX = 1,000,000 SUN). Defaults to 0 if omitted (proto3).
         #[serde(default)]
-        balance: i64,
+        balance: u64,
         /// Account creation timestamp in milliseconds. Defaults to 0 if omitted.
         #[serde(default)]
         create_time: i64,
@@ -518,7 +518,7 @@ impl ChainRpcOps for TronApiClient {
             async move {
                 let account = client.get_account(&addr).await?;
                 let balance = match account {
-                    GetAccountResponse::Account { balance, .. } => balance.max(0) as u64,
+                    GetAccountResponse::Account { balance, .. } => balance,
                     // Address might have been created by KDF and not used on-chain yet. Return 0.
                     GetAccountResponse::NoAccount {} => 0,
                 };
