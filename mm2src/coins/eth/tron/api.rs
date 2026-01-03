@@ -321,13 +321,16 @@ pub struct GetNowBlockResponse {
     pub block_header: Option<BlockHeader>,
 }
 
+/// Block header from `/wallet/getnowblock` response.
 #[derive(Deserialize, Debug)]
 pub struct BlockHeader {
     pub raw_data: BlockRawData,
 }
 
+/// Raw block data containing the block number.
 #[derive(Deserialize, Debug)]
 pub struct BlockRawData {
+    /// Block height.
     pub number: i64,
 }
 
