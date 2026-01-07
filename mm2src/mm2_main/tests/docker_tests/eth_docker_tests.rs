@@ -217,6 +217,7 @@ fn global_nft_with_random_privkey(
 ) -> EthCoin {
     // Register platform ETH coin in MM_CTX1 if not already registered.
     // Required because NFT coins call platform_coin() for get_swap_gas_fee_policy().
+    // Use let _ to ignore PlatformIsAlreadyActivatedErr from parallel test execution.
     if block_on(lp_coinfind(&MM_CTX1, &platform_ticker))
         .ok()
         .flatten()
@@ -246,7 +247,8 @@ fn global_nft_with_random_privkey(
         ))
         .unwrap();
         let coins_ctx = CoinsContext::from_ctx(&MM_CTX1).unwrap();
-        block_on(coins_ctx.add_platform_with_tokens(platform_coin.into(), vec![], None)).unwrap();
+        // Ignore error if another parallel test already registered the platform
+        let _ = block_on(coins_ctx.add_platform_with_tokens(platform_coin.into(), vec![], None));
     }
 
     let build_policy = EthPrivKeyBuildPolicy::IguanaPrivKey(random_secp256k1_secret());
