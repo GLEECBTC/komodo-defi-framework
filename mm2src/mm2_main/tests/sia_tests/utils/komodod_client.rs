@@ -8,6 +8,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use http::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use reqwest::Client as ReqwestClient;
+use serde_json::json;
 use std::net::IpAddr;
 use std::time::Duration;
 use url::Url;

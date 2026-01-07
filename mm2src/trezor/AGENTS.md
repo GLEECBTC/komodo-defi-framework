@@ -1,5 +1,7 @@
 # trezor — Hardware Wallet Integration
 
+> **Note:** Always follow the root `/CLAUDE.md` for global conventions (fmt, clippy, error handling, etc.).
+
 Trezor hardware wallet API for UTXO and EVM transaction signing. Handles device communication, user interactions (PIN/passphrase/button), and transaction signing protocols.
 
 ## Responsibilities

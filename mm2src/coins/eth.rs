@@ -22,7 +22,7 @@
 //
 use self::wallet_connect::{send_transaction_with_walletconnect, WcEthTxParams};
 use super::eth::Action::{Call, Create};
-use super::watcher_common::{validate_watcher_reward, REWARD_GAS_AMOUNT};
+use super::watcher_common::{validate_watcher_reward, REWARD_GAS_AMOUNT, REWARD_OVERPAY_FACTOR};
 use super::*;
 use crate::coin_balance::{
     EnableCoinBalanceError, EnabledCoinBalanceParams, HDAccountBalance, HDAddressBalance, HDWalletBalance,
@@ -34,6 +34,7 @@ use crate::hd_wallet::{
     DisplayAddress, HDAccountOps, HDCoinAddress, HDCoinWithdrawOps, HDConfirmAddress, HDPathAccountToAddressId,
     HDWalletCoinOps, HDXPubExtractor,
 };
+#[cfg(feature = "enable-eth-watchers")]
 use crate::lp_price::get_base_price_in_rel;
 use crate::nft::nft_errors::ParseContractTypeError;
 use crate::nft::nft_structs::{
@@ -60,10 +61,13 @@ use crate::{
     coin_balance, scan_for_new_addresses_impl, BalanceResult, CoinWithDerivationMethod, DerivationMethod, DexFee,
     Eip1559Ops, GasPriceRpcParam, MakerNftSwapOpsV2, ParseCoinAssocTypes, ParseNftAssocTypes, PrivKeyPolicy,
     RpcCommonOps, SendNftMakerPaymentArgs, SpendNftMakerPaymentArgs, ToBytes, ValidateNftMakerPaymentArgs,
-    ValidateWatcherSpendInput, WatcherSpendType,
 };
+#[cfg(feature = "enable-eth-watchers")]
+use crate::{ValidateWatcherSpendInput, WatcherSpendType};
 use async_trait::async_trait;
-use bitcrypto::{dhash160, keccak256, ripemd160, sha256};
+#[cfg(feature = "enable-eth-watchers")]
+use bitcrypto::dhash160;
+use bitcrypto::{keccak256, ripemd160, sha256};
 use common::custom_futures::repeatable::{Ready, Retry, RetryOnError};
 use common::custom_futures::timeout::FutureTimerExt;
 use common::executor::{
@@ -95,6 +99,7 @@ use futures01::Future;
 use http::Uri;
 use kdf_walletconnect::{WalletConnectCtx, WalletConnectOps};
 use mm2_core::mm_ctx::{MmArc, MmWeak};
+#[cfg(feature = "enable-eth-watchers")]
 use mm2_number::bigdecimal_custom::CheckedDivision;
 use mm2_number::{BigDecimal, BigUint, MmNumber};
 use num_traits::FromPrimitive;
@@ -133,16 +138,19 @@ use super::{
     PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionError,
     RawTransactionFut, RawTransactionRequest, RawTransactionRes, RawTransactionResult, RefundPaymentArgs, RewardTarget,
     RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared, SearchForSwapTxSpendInput,
-    SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignEthTransactionParams, SignRawTransactionEnum,
-    SignRawTransactionRequest, SignatureError, SignatureResult, SpendPaymentArgs, SwapGasFeePolicy, SwapOps, TradeFee,
-    TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction, TransactionDetails,
-    TransactionEnum, TransactionErr, TransactionFut, TransactionType, TxMarshalingErr, UnexpectedDerivationMethod,
-    ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError,
-    ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs,
-    WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-    WatcherValidateTakerFeeInput, WeakSpawner, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest,
-    WithdrawResult, EARLY_CONFIRMATION_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_PAYMENT_STATE_ERR_LOG,
-    INVALID_RECEIVER_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG,
+    SendPaymentArgs, SignEthTransactionParams, SignRawTransactionEnum, SignRawTransactionRequest, SignatureError,
+    SignatureResult, SpendPaymentArgs, SwapGasFeePolicy, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
+    TradePreimageResult, TradePreimageValue, Transaction, TransactionDetails, TransactionEnum, TransactionErr,
+    TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+    ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
+    VerificationError, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherRewardError, WeakSpawner,
+    WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult, EARLY_CONFIRMATION_ERR_LOG,
+    INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_SENDER_ERR_LOG,
+};
+#[cfg(feature = "enable-eth-watchers")]
+use crate::{
+    SendMakerPaymentSpendPreimageInput, TransactionFut, WatcherReward, WatcherSearchForSwapTxSpendInput,
+    WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, INVALID_PAYMENT_STATE_ERR_LOG, INVALID_SWAP_ID_ERR_LOG,
 };
 #[cfg(test)]
 pub(crate) use eth_utils::display_u256_with_decimal_point;
@@ -1571,14 +1579,8 @@ impl SwapOps for EthCoin {
         input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         let swap_contract_address = try_s!(input.swap_contract_address.try_to_address());
-        self.search_for_swap_tx_spend(
-            input.tx,
-            swap_contract_address,
-            input.secret_hash,
-            input.search_from_block,
-            input.watcher_reward,
-        )
-        .await
+        self.search_for_swap_tx_spend(input.tx, swap_contract_address, input.search_from_block)
+            .await
     }
 
     async fn search_for_swap_tx_spend_other(
@@ -1586,39 +1588,46 @@ impl SwapOps for EthCoin {
         input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         let swap_contract_address = try_s!(input.swap_contract_address.try_to_address());
-        self.search_for_swap_tx_spend(
-            input.tx,
-            swap_contract_address,
-            input.secret_hash,
-            input.search_from_block,
-            input.watcher_reward,
-        )
-        .await
+        self.search_for_swap_tx_spend(input.tx, swap_contract_address, input.search_from_block)
+            .await
     }
 
-    async fn extract_secret(
-        &self,
-        _secret_hash: &[u8],
-        spend_tx: &[u8],
-        watcher_reward: bool,
-    ) -> Result<[u8; 32], String> {
+    async fn extract_secret(&self, _secret_hash: &[u8], spend_tx: &[u8]) -> Result<[u8; 32], String> {
         let unverified: UnverifiedTransactionWrapper = try_s!(rlp::decode(spend_tx));
-        let function_name = get_function_name("receiverSpend", watcher_reward);
-        let function = try_s!(SWAP_CONTRACT.function(&function_name));
+        let tx_data = unverified.unsigned().data();
+        if tx_data.len() < 4 {
+            return ERR!("Transaction data too short to contain function selector");
+        }
+        let actual_signature = &tx_data[0..4];
 
-        // Validate contract call; expected to be receiverSpend.
-        // https://www.4byte.directory/signatures/?bytes4_signature=02ed292b.
-        let expected_signature = function.short_signature();
-        let actual_signature = &unverified.unsigned().data()[0..4];
-        if actual_signature != expected_signature {
+        // Auto-detect which receiverSpend variant was used by matching the function selector.
+        // Both variants have the secret at index 2, so we can use either for extraction.
+        // Note: receiverSpendReward may not exist until watcher-compatible contracts are deployed.
+        let receiver_spend = try_s!(SWAP_CONTRACT.function("receiverSpend"));
+        let receiver_spend_reward = SWAP_CONTRACT.function("receiverSpendReward").ok();
+
+        let function = if actual_signature == receiver_spend.short_signature() {
+            receiver_spend
+        } else if let Some(reward_func) = receiver_spend_reward.as_ref() {
+            if actual_signature == reward_func.short_signature() {
+                reward_func
+            } else {
+                return ERR!(
+                    "Transaction is not a receiverSpend call. Expected signature {:?} or {:?}, found {:?}",
+                    receiver_spend.short_signature(),
+                    reward_func.short_signature(),
+                    actual_signature
+                );
+            }
+        } else {
             return ERR!(
-                "Expected 'receiverSpend' contract call signature: {:?}, found {:?}",
-                expected_signature,
+                "Transaction is not a receiverSpend call. Expected signature {:?}, found {:?}",
+                receiver_spend.short_signature(),
                 actual_signature
             );
         };
 
-        let tokens = try_s!(decode_contract_call(function, unverified.unsigned().data()));
+        let tokens = try_s!(decode_contract_call(function, tx_data));
         if tokens.len() < 3 {
             return ERR!("Invalid arguments in 'receiverSpend' call: {:?}", tokens);
         }
@@ -1752,6 +1761,11 @@ impl SwapOps for EthCoin {
     }
 }
 
+// ETH WatcherOps implementation - gated behind `enable-eth-watchers` feature
+// because ETH watchers are unstable and not completed yet.
+// When disabled, EthCoin uses the default WatcherOps implementation from lp_coins.rs
+// which returns "not implemented" errors.
+#[cfg(feature = "enable-eth-watchers")]
 #[async_trait]
 impl WatcherOps for EthCoin {
     fn send_maker_payment_spend_preimage(&self, input: SendMakerPaymentSpendPreimageInput) -> TransactionFut {
@@ -2357,14 +2371,8 @@ impl WatcherOps for EthCoin {
             Create => return Err(ERRL!("Invalid payment action: the payment action cannot be create")),
         };
 
-        self.search_for_swap_tx_spend(
-            input.tx,
-            swap_contract_address,
-            input.secret_hash,
-            input.search_from_block,
-            true,
-        )
-        .await
+        self.search_for_swap_tx_spend(input.tx, swap_contract_address, input.search_from_block)
+            .await
     }
 
     async fn get_taker_watcher_reward(
@@ -2450,6 +2458,12 @@ impl WatcherOps for EthCoin {
         }))
     }
 }
+
+// Fallback WatcherOps implementation when ETH watchers are disabled.
+// Uses default implementations from the trait which return "not implemented" errors.
+#[cfg(not(feature = "enable-eth-watchers"))]
+#[async_trait]
+impl WatcherOps for EthCoin {}
 
 #[async_trait]
 #[cfg_attr(test, mockable)]
@@ -4079,7 +4093,10 @@ impl EthCoin {
                 let mut value = trade_amount;
                 let data = match &args.watcher_reward {
                     Some(reward) => {
-                        let reward_amount = try_tx_fus!(u256_from_big_decimal(&reward.amount, self.decimals));
+                        // Apply overpay factor to reward to handle gas price volatility between payment time and validation time until better things are in place.
+                        let overpay_factor = BigDecimal::from_f64(REWARD_OVERPAY_FACTOR).unwrap_or(BigDecimal::from(1));
+                        let reward_with_overpay = &reward.amount * overpay_factor;
+                        let reward_amount = try_tx_fus!(u256_from_big_decimal(&reward_with_overpay, self.decimals));
                         if !matches!(reward.reward_target, RewardTarget::None) || reward.send_contract_reward_on_spend {
                             value += reward_amount;
                         }
@@ -4122,16 +4139,19 @@ impl EthCoin {
 
                 let data = match args.watcher_reward {
                     Some(reward) => {
+                        // Apply overpay factor to reward to handle gas price volatility between payment time and validation time
+                        let overpay_factor = BigDecimal::from_f64(REWARD_OVERPAY_FACTOR).unwrap_or(BigDecimal::from(1));
+                        let reward_with_overpay = &reward.amount * overpay_factor;
                         let reward_amount = match reward.reward_target {
                             RewardTarget::Contract | RewardTarget::PaymentSender => {
                                 let eth_reward_amount =
-                                    try_tx_fus!(u256_from_big_decimal(&reward.amount, ETH_DECIMALS));
+                                    try_tx_fus!(u256_from_big_decimal(&reward_with_overpay, ETH_DECIMALS));
                                 value += eth_reward_amount;
                                 eth_reward_amount
                             },
                             RewardTarget::PaymentSpender => {
                                 let token_reward_amount =
-                                    try_tx_fus!(u256_from_big_decimal(&reward.amount, self.decimals));
+                                    try_tx_fus!(u256_from_big_decimal(&reward_with_overpay, self.decimals));
                                 amount += token_reward_amount;
                                 token_reward_amount
                             },
@@ -4139,7 +4159,7 @@ impl EthCoin {
                                 // TODO tests passed without this change, need to research on how it worked
                                 if reward.send_contract_reward_on_spend {
                                     let eth_reward_amount =
-                                        try_tx_fus!(u256_from_big_decimal(&reward.amount, ETH_DECIMALS));
+                                        try_tx_fus!(u256_from_big_decimal(&reward_with_overpay, ETH_DECIMALS));
                                     value += eth_reward_amount;
                                     eth_reward_amount
                                 } else {
@@ -4221,6 +4241,7 @@ impl EthCoin {
         }
     }
 
+    #[cfg(feature = "enable-eth-watchers")]
     fn watcher_spends_hash_time_locked_payment(&self, input: SendMakerPaymentSpendPreimageInput) -> EthTxFut {
         let tx: UnverifiedTransactionWrapper = try_tx_fus!(rlp::decode(input.preimage));
         let payment = try_tx_fus!(SignedEthTx::new(tx));
@@ -4340,6 +4361,7 @@ impl EthCoin {
         }
     }
 
+    #[cfg(feature = "enable-eth-watchers")]
     fn watcher_refunds_hash_time_locked_payment(&self, args: RefundPaymentArgs) -> EthTxFut {
         let tx: UnverifiedTransactionWrapper = try_tx_fus!(rlp::decode(args.payment_tx));
         let payment = try_tx_fus!(SignedEthTx::new(tx));
@@ -5429,21 +5451,50 @@ impl EthCoin {
         &self,
         tx: &[u8],
         swap_contract_address: Address,
-        _secret_hash: &[u8],
         search_from_block: u64,
-        watcher_reward: bool,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         let unverified: UnverifiedTransactionWrapper = try_s!(rlp::decode(tx));
         let tx = try_s!(SignedEthTx::new(unverified));
+        let tx_data = tx.unsigned().data();
+        if tx_data.len() < 4 {
+            return ERR!("Transaction data too short to contain function selector");
+        }
+        let actual_selector = &tx_data[0..4];
 
-        let func_name = match self.coin_type {
-            EthCoinType::Eth => get_function_name("ethPayment", watcher_reward),
-            EthCoinType::Erc20 { .. } => get_function_name("erc20Payment", watcher_reward),
+        // Auto-detect which payment function variant was used by matching the function selector.
+        // The id (first argument) is at the same position in all variants.
+        // Note: Reward functions may not exist until watcher-compatible contracts are deployed.
+        let (payment_func_name, payment_func_reward_name) = match self.coin_type {
+            EthCoinType::Eth => ("ethPayment", "ethPaymentReward"),
+            EthCoinType::Erc20 { .. } => ("erc20Payment", "erc20PaymentReward"),
             EthCoinType::Nft { .. } => return ERR!("Nft Protocol is not supported yet!"),
         };
 
-        let payment_func = try_s!(SWAP_CONTRACT.function(&func_name));
-        let decoded = try_s!(decode_contract_call(payment_func, tx.unsigned().data()));
+        let payment_func = try_s!(SWAP_CONTRACT.function(payment_func_name));
+        let payment_func_reward = SWAP_CONTRACT.function(payment_func_reward_name).ok();
+
+        let func_to_use = if actual_selector == payment_func.short_signature() {
+            payment_func
+        } else if let Some(reward_func) = payment_func_reward.as_ref() {
+            if actual_selector == reward_func.short_signature() {
+                reward_func
+            } else {
+                return ERR!(
+                    "Transaction is not a payment call. Expected selector {:?} or {:?}, found {:?}",
+                    payment_func.short_signature(),
+                    reward_func.short_signature(),
+                    actual_selector
+                );
+            }
+        } else {
+            return ERR!(
+                "Transaction is not a payment call. Expected selector {:?}, found {:?}",
+                payment_func.short_signature(),
+                actual_selector
+            );
+        };
+
+        let decoded = try_s!(decode_contract_call(func_to_use, tx_data));
         let id = match decoded.first() {
             Some(Token::FixedBytes(bytes)) => bytes.clone(),
             invalid_token => return ERR!("Expected Token::FixedBytes, got {:?}", invalid_token),
@@ -7721,7 +7772,9 @@ impl CommonSwapOpsV2 for EthCoin {
 
 #[cfg(all(feature = "for-tests", not(target_arch = "wasm32")))]
 impl EthCoin {
-    pub async fn set_coin_type(&self, new_coin_type: EthCoinType) -> EthCoin {
+    /// Creates a new EthCoin with a different coin type and decimals.
+    /// This is useful for tests that need to convert an ETH coin to ERC20.
+    pub async fn set_coin_type(&self, new_coin_type: EthCoinType, decimals: u8) -> EthCoin {
         let coin = EthCoinImpl {
             ticker: self.ticker.clone(),
             coin_type: new_coin_type,
@@ -7734,7 +7787,7 @@ impl EthCoin {
             fallback_swap_contract: self.fallback_swap_contract,
             contract_supports_watchers: self.contract_supports_watchers,
             web3_instances: AsyncMutex::new(self.web3_instances.lock().await.clone()),
-            decimals: self.decimals,
+            decimals,
             history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
             required_confirmations: AtomicU64::new(
                 self.required_confirmations.load(std::sync::atomic::Ordering::SeqCst),

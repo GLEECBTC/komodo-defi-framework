@@ -1,4 +1,5 @@
-use crate::{generate_utxo_coin_with_random_privkey, MYCOIN, MYCOIN1, SET_BURN_PUBKEY_TO_ALICE};
+use crate::docker_tests::helpers::env::SET_BURN_PUBKEY_TO_ALICE;
+use crate::docker_tests::helpers::utxo::{generate_utxo_coin_with_random_privkey, MYCOIN, MYCOIN1};
 use bitcrypto::dhash160;
 use coins::utxo::UtxoCommonOps;
 use coins::{
@@ -18,6 +19,7 @@ use mm2_test_helpers::for_tests::{
 };
 use mm2_test_helpers::structs::MmNumberMultiRepr;
 use script::{Builder, Opcode};
+use serde_json::json;
 use serialization::serialize;
 use std::time::Duration;
 use uuid::Uuid;

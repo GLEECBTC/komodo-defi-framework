@@ -298,6 +298,7 @@ pub async fn fetch_swap_coins_price(base: Option<String>, rel: Option<String>) -
 #[cfg(not(target_arch = "wasm32"))]
 mod tests {
     #[test]
+    #[ignore] // Requires external API access
     fn test_process_price_request() {
         use common::block_on;
 
@@ -308,6 +309,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires external API access
     fn test_fetch_swap_coins_price() {
         use common::block_on;
 

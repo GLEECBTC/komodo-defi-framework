@@ -236,15 +236,8 @@ impl SwapOps for TendermintToken {
         self.platform_coin.search_for_swap_tx_spend_other(input).await
     }
 
-    async fn extract_secret(
-        &self,
-        secret_hash: &[u8],
-        spend_tx: &[u8],
-        watcher_reward: bool,
-    ) -> Result<[u8; 32], String> {
-        self.platform_coin
-            .extract_secret(secret_hash, spend_tx, watcher_reward)
-            .await
+    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<[u8; 32], String> {
+        self.platform_coin.extract_secret(secret_hash, spend_tx).await
     }
 
     fn negotiate_swap_contract_addr(

@@ -778,10 +778,10 @@ pub fn btc_with_sync_starting_header() -> Json {
         },
         "spv_conf": {
             "starting_block_header": {
-                "height": 764064,
-                "hash": "00000000000000000006da48b920343944908861fa05b28824922d9e60aaa94d",
-                "bits": 386375189,
-                "time": 1668986059,
+                "height": 872928,
+                "hash": "00000000000000000001dc2f171d19c36ad8afb972287230900b2a352184402a",
+                "bits": 386053475,
+                "time": 1733153640,
             },
             "max_stored_block_headers": 3000,
             "validation_params": {
@@ -2714,7 +2714,10 @@ pub async fn wait_check_stats_swap_status(mm: &MarketMakerIt, uuid: &str, timeou
         if !response.0.is_success() {
             Timer::sleep(1.).await;
             if get_utc_timestamp() > wait_until {
-                panic!("Timed out waiting for swap stats status uuid={}, latest status={}", uuid, response.1);
+                panic!(
+                    "Timed out waiting for swap stats status uuid={}, latest status={}",
+                    uuid, response.1
+                );
             }
             continue;
         }
@@ -3677,7 +3680,9 @@ pub async fn task_enable_eth_with_tokens(
     timeout: u64,
     path_to_address: Option<HDAccountAddressId>,
 ) -> EthWithTokensActivationResult {
-    let init = task_enable_eth_with_tokens_init(mm, platform_coin, tokens, swap_contract_address, nodes, path_to_address).await;
+    let init =
+        task_enable_eth_with_tokens_init(mm, platform_coin, tokens, swap_contract_address, nodes, path_to_address)
+            .await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
     let timeout = wait_until_ms(timeout * 1000);
 
