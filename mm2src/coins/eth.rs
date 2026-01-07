@@ -486,7 +486,7 @@ impl EthGasLimitV2 {
                 };
                 Ok(gas_limit)
             },
-            EthCoinType::Nft { .. } => Err("NFT protocol is not supported for ETH and ERC20 Swaps".to_string()),
+            EthCoinType::Nft { .. } => Err(format!("{} is not supported for ETH and ERC20 Swaps", coin_type)),
         }
     }
 
@@ -3695,7 +3695,7 @@ impl EthCoin {
                         ctx.log.log(
                             "",
                             &[&"tx_history", &self.ticker],
-                            &ERRL!("Error on getting fee coin: Nft Protocol is not supported yet!"),
+                            &ERRL!("Error on getting fee coin: {} is not supported yet!", self.coin_type),
                         );
                         continue;
                     },
@@ -4084,7 +4084,7 @@ impl EthCoin {
                         ctx.log.log(
                             "",
                             &[&"tx_history", &self.ticker],
-                            &ERRL!("Error on getting fee coin: Nft Protocol is not supported yet!"),
+                            &ERRL!("Error on getting fee coin: {} is not supported yet!", self.coin_type),
                         );
                         continue;
                     },
@@ -4998,9 +4998,10 @@ impl EthCoin {
                             },
                         }
                     },
-                    EthCoinType::Nft { .. } => {
-                        MmError::err(BalanceError::Internal("Nft protocol is not supported yet!".to_string()))
-                    },
+                    EthCoinType::Nft { .. } => MmError::err(BalanceError::Internal(format!(
+                        "{} is not supported yet!",
+                        coin.coin_type
+                    ))),
                 },
             }
         };
@@ -5717,7 +5718,7 @@ impl EthCoin {
         let (payment_func_name, payment_func_reward_name) = match self.coin_type {
             EthCoinType::Eth => ("ethPayment", "ethPaymentReward"),
             EthCoinType::Erc20 { .. } => ("erc20Payment", "erc20PaymentReward"),
-            EthCoinType::Nft { .. } => return ERR!("Nft Protocol is not supported yet!"),
+            EthCoinType::Nft { .. } => return ERR!("{} is not supported yet!", self.coin_type),
         };
 
         let payment_func = try_s!(SWAP_CONTRACT.function(payment_func_name));
@@ -6358,7 +6359,7 @@ impl MmCoin for EthCoin {
                 let fee_coin = match &coin.coin_type {
                     EthCoinType::Eth => &coin.ticker,
                     EthCoinType::Erc20 { platform, .. } => platform,
-                    EthCoinType::Nft { .. } => return ERR!("{:?} is not supported yet!", coin.coin_type),
+                    EthCoinType::Nft { .. } => return ERR!("{} is not supported yet!", coin.coin_type),
                 };
                 Ok(TradeFee {
                     coin: fee_coin.into(),
