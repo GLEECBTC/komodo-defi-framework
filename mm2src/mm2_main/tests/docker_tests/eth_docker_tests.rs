@@ -16,11 +16,12 @@ use coins::eth::{
 use coins::hd_wallet::AddrToString;
 use coins::nft::nft_structs::{Chain, ContractType, NftInfo};
 use coins::{
-    lp_register_coin, CoinProtocol, CoinWithDerivationMethod, CommonSwapOpsV2, ConfirmPaymentInput, Eip1559Ops,
-    FoundSwapTxSpend, MakerNftSwapOpsV2, MarketCoinOps, MmCoinEnum, NftSwapInfo, ParseCoinAssocTypes,
-    ParseNftAssocTypes, PrivKeyBuildPolicy, RefundNftMakerPaymentArgs, RefundPaymentArgs, RegisterCoinParams,
-    SearchForSwapTxSpendInput, SendNftMakerPaymentArgs, SendPaymentArgs, SpendNftMakerPaymentArgs, SpendPaymentArgs,
-    SwapGasFeePolicy, SwapOps, SwapTxTypeWithSecretHash, ToBytes, Transaction, ValidateNftMakerPaymentArgs,
+    lp_coinfind, lp_register_coin, CoinProtocol, CoinWithDerivationMethod, CoinsContext, CommonSwapOpsV2,
+    ConfirmPaymentInput, Eip1559Ops, FoundSwapTxSpend, MakerNftSwapOpsV2, MarketCoinOps, MmCoinEnum, NftSwapInfo,
+    ParseCoinAssocTypes, ParseNftAssocTypes, PrivKeyBuildPolicy, RefundNftMakerPaymentArgs, RefundPaymentArgs,
+    RegisterCoinParams, SearchForSwapTxSpendInput, SendNftMakerPaymentArgs, SendPaymentArgs, SpendNftMakerPaymentArgs,
+    SpendPaymentArgs, SwapGasFeePolicy, SwapOps, SwapTxTypeWithSecretHash, ToBytes, Transaction,
+    ValidateNftMakerPaymentArgs,
 };
 use coins::{
     DexFee, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, MakerCoinSwapOpsV2,
@@ -214,6 +215,40 @@ fn global_nft_with_random_privkey(
     nft_ticker: String,
     platform_ticker: String,
 ) -> EthCoin {
+    // Register platform ETH coin in MM_CTX1 if not already registered.
+    // Required because NFT coins call platform_coin() for get_swap_gas_fee_policy().
+    if block_on(lp_coinfind(&MM_CTX1, &platform_ticker))
+        .ok()
+        .flatten()
+        .is_none()
+    {
+        let eth_conf = eth_dev_conf();
+        let eth_req = json!({
+            "urls": [GETH_RPC_URL],
+            "swap_contract_address": swap_contract_address,
+            "swap_v2_contracts": {
+                "maker_swap_v2_contract": swap_v2_contracts.maker_swap_v2_contract,
+                "taker_swap_v2_contract": swap_v2_contracts.taker_swap_v2_contract,
+                "nft_maker_swap_v2_contract": swap_v2_contracts.nft_maker_swap_v2_contract
+            },
+            "fallback_swap_contract": fallback_swap_contract_address
+        });
+        let platform_priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(Secp256k1Secret::from([1u8; 32]));
+        let platform_coin = block_on(eth_coin_from_conf_and_request(
+            &MM_CTX1,
+            &platform_ticker,
+            &eth_conf,
+            &eth_req,
+            CoinProtocol::ETH {
+                chain_id: GETH_DEV_CHAIN_ID,
+            },
+            platform_priv_key_policy,
+        ))
+        .unwrap();
+        let coins_ctx = CoinsContext::from_ctx(&MM_CTX1).unwrap();
+        block_on(coins_ctx.add_platform_with_tokens(platform_coin.into(), vec![], None)).unwrap();
+    }
+
     let build_policy = EthPrivKeyBuildPolicy::IguanaPrivKey(random_secp256k1_secret());
     let node = EthNode {
         url: GETH_RPC_URL.to_string(),

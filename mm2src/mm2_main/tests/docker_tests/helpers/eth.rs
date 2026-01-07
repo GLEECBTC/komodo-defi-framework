@@ -16,7 +16,7 @@ use coins::eth::EthCoin;
 use coins::eth::{checksum_address, eth_coin_from_conf_and_request, ERC20_ABI};
 #[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-watchers-eth"))]
 use coins::DerivationMethod;
-use coins::{CoinProtocol, CoinWithDerivationMethod, PrivKeyBuildPolicy};
+use coins::{lp_coinfind, CoinProtocol, CoinWithDerivationMethod, CoinsContext, PrivKeyBuildPolicy};
 use common::block_on;
 use common::custom_futures::timeout::FutureTimerExt;
 use crypto::privkey::key_pair_from_seed;
@@ -368,6 +368,33 @@ pub fn eth_coin_with_random_privkey(swap_contract_address: Address) -> EthCoin {
 /// Creates ERC20 protocol coin supplied with 1 ETH and 100 tokens
 #[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-watchers-eth"))]
 pub fn erc20_coin_with_random_privkey(swap_contract_address: Address) -> EthCoin {
+    let secret = random_secp256k1_secret();
+
+    // Register platform ETH coin if not already registered, so platform_coin() lookups work
+    if block_on(lp_coinfind(&MM_CTX, "ETH")).ok().flatten().is_none() {
+        let eth_conf = eth_dev_conf();
+        let eth_req = json!({
+            "method": "enable",
+            "coin": "ETH",
+            "swap_contract_address": swap_contract_address,
+            "urls": [GETH_RPC_URL],
+        });
+        let platform_coin = block_on(eth_coin_from_conf_and_request(
+            &MM_CTX,
+            "ETH",
+            &eth_conf,
+            &eth_req,
+            CoinProtocol::ETH {
+                chain_id: GETH_DEV_CHAIN_ID,
+            },
+            PrivKeyBuildPolicy::IguanaPrivKey(secret),
+        ))
+        .unwrap();
+        let coins_ctx = CoinsContext::from_ctx(&MM_CTX).unwrap();
+        block_on(coins_ctx.add_platform_with_tokens(platform_coin.into(), vec![], None)).unwrap();
+    }
+
+    // Now create the ERC20 token
     let erc20_conf = erc20_dev_conf(&erc20_contract_checksum());
     let req = json!({
         "method": "enable",
@@ -385,7 +412,7 @@ pub fn erc20_coin_with_random_privkey(swap_contract_address: Address) -> EthCoin
             platform: "ETH".to_string(),
             contract_address: checksum_address(&format!("{:02x}", erc20_contract())),
         },
-        PrivKeyBuildPolicy::IguanaPrivKey(random_secp256k1_secret()),
+        PrivKeyBuildPolicy::IguanaPrivKey(secret),
     ))
     .unwrap();
 
