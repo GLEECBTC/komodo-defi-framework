@@ -628,10 +628,18 @@ type GasDetails = (U256, PayForGasOption);
 pub enum Web3RpcError {
     #[display(fmt = "Transport: {_0}")]
     Transport(String),
+    /// Node replied with malformed/invalid/unexpected payload (schema mismatch, bad JSON, etc.).
+    /// Retryable - another node may respond correctly.
+    #[display(fmt = "Bad response: {_0}")]
+    BadResponse(String),
     #[display(fmt = "Invalid response: {_0}")]
     InvalidResponse(String),
     #[display(fmt = "Timeout: {_0}")]
     Timeout(String),
+    /// Deterministic, well-formed remote rejection (e.g., TRON's CONTRACT_VALIDATE_ERROR).
+    /// Non-retryable - another node would produce the same rejection.
+    #[display(fmt = "Remote error: {}", message)]
+    RemoteError { code: Option<String>, message: String },
     #[from_stringify("serde_json::Error")]
     #[display(fmt = "Internal: {_0}")]
     Internal(String),
@@ -646,13 +654,32 @@ pub enum Web3RpcError {
 }
 
 impl Web3RpcError {
-    /// Returns `true` if the error is transient and the request may succeed
-    /// on a different node (network failures, timeouts).
+    /// Returns `true` if the error is transient and the request may succeed on a different node.
     ///
-    /// Returns `false` for permanent errors where retrying would produce
-    /// the same result (invalid responses, API errors like "contract doesn't exist").
+    /// Retryable errors:
+    /// - `Transport`: Network failures, connection errors
+    /// - `Timeout`: Request timed out
+    /// - `BadResponse`: Node sent malformed/unexpected data (faulty node, try another)
+    ///
+    /// Non-retryable errors:
+    /// - `InvalidResponse`: Legacy, used by EVM for web3 RPC errors
+    /// - `RemoteError`: Deterministic rejection (e.g., TRON CONTRACT_VALIDATE_ERROR)
+    /// - `Internal`: Programming errors
+    /// - Others: Configuration/protocol errors
     pub fn is_retryable(&self) -> bool {
-        matches!(self, Web3RpcError::Transport(_) | Web3RpcError::Timeout(_))
+        matches!(
+            self,
+            Web3RpcError::Transport(_) | Web3RpcError::Timeout(_) | Web3RpcError::BadResponse(_)
+        )
+    }
+}
+
+/// Formats a RemoteError's code and message into a single string.
+/// Used when converting RemoteError to error types that only have a String field.
+pub fn format_remote_error(code: Option<String>, message: String) -> String {
+    match code {
+        Some(c) => format!("{c}: {message}"),
+        None => message,
     }
 }
 
@@ -672,11 +699,19 @@ impl From<web3::Error> for Web3RpcError {
 }
 
 impl From<Web3RpcError> for RawTransactionError {
+    // TODO: BadResponse (malformed JSON/schema mismatch) is collapsed into Transport here.
+    // This preserves retryability but loses semantic distinction for observability/telemetry.
+    // Consider adding a BadResponse variant to downstream errors if better debugging is needed.
     fn from(e: Web3RpcError) -> Self {
         match e {
-            Web3RpcError::Transport(tr) | Web3RpcError::InvalidResponse(tr) => RawTransactionError::Transport(tr),
+            Web3RpcError::Transport(tr)
+            | Web3RpcError::Timeout(tr)
+            | Web3RpcError::BadResponse(tr)
+            | Web3RpcError::InvalidResponse(tr) => RawTransactionError::Transport(tr),
+            Web3RpcError::RemoteError { code, message } => {
+                RawTransactionError::Transport(format_remote_error(code, message))
+            },
             Web3RpcError::Internal(internal)
-            | Web3RpcError::Timeout(internal)
             | Web3RpcError::NumConversError(internal)
             | Web3RpcError::InvalidGasApiConfig(internal)
             | Web3RpcError::ProtocolNotSupported(internal) => RawTransactionError::InternalError(internal),
@@ -740,9 +775,12 @@ impl From<web3::Error> for WithdrawError {
 impl From<Web3RpcError> for WithdrawError {
     fn from(e: Web3RpcError) -> Self {
         match e {
-            Web3RpcError::Transport(err) | Web3RpcError::InvalidResponse(err) => WithdrawError::Transport(err),
+            Web3RpcError::Transport(err)
+            | Web3RpcError::Timeout(err)
+            | Web3RpcError::BadResponse(err)
+            | Web3RpcError::InvalidResponse(err) => WithdrawError::Transport(err),
+            Web3RpcError::RemoteError { code, message } => WithdrawError::Transport(format_remote_error(code, message)),
             Web3RpcError::Internal(internal)
-            | Web3RpcError::Timeout(internal)
             | Web3RpcError::NumConversError(internal)
             | Web3RpcError::InvalidGasApiConfig(internal) => WithdrawError::InternalError(internal),
             Web3RpcError::ProtocolNotSupported(e) => WithdrawError::ProtocolNotSupported(e),
@@ -766,9 +804,14 @@ impl From<web3::Error> for TradePreimageError {
 impl From<Web3RpcError> for TradePreimageError {
     fn from(e: Web3RpcError) -> Self {
         match e {
-            Web3RpcError::Transport(err) | Web3RpcError::InvalidResponse(err) => TradePreimageError::Transport(err),
+            Web3RpcError::Transport(err)
+            | Web3RpcError::Timeout(err)
+            | Web3RpcError::BadResponse(err)
+            | Web3RpcError::InvalidResponse(err) => TradePreimageError::Transport(err),
+            Web3RpcError::RemoteError { code, message } => {
+                TradePreimageError::Transport(format_remote_error(code, message))
+            },
             Web3RpcError::Internal(internal)
-            | Web3RpcError::Timeout(internal)
             | Web3RpcError::NumConversError(internal)
             | Web3RpcError::InvalidGasApiConfig(internal) => TradePreimageError::InternalError(internal),
             Web3RpcError::ProtocolNotSupported(e) => TradePreimageError::ProtocolNotSupported(e),
@@ -802,9 +845,12 @@ impl From<web3::Error> for BalanceError {
 impl From<Web3RpcError> for BalanceError {
     fn from(e: Web3RpcError) -> Self {
         match e {
-            Web3RpcError::Transport(tr) | Web3RpcError::InvalidResponse(tr) => BalanceError::Transport(tr),
+            Web3RpcError::Transport(tr)
+            | Web3RpcError::Timeout(tr)
+            | Web3RpcError::BadResponse(tr)
+            | Web3RpcError::InvalidResponse(tr) => BalanceError::Transport(tr),
+            Web3RpcError::RemoteError { code, message } => BalanceError::Transport(format_remote_error(code, message)),
             Web3RpcError::Internal(internal)
-            | Web3RpcError::Timeout(internal)
             | Web3RpcError::NumConversError(internal)
             | Web3RpcError::InvalidGasApiConfig(internal)
             | Web3RpcError::ProtocolNotSupported(internal) => BalanceError::Internal(internal),
@@ -7279,9 +7325,14 @@ impl From<web3::Error> for EthGasDetailsErr {
 impl From<Web3RpcError> for EthGasDetailsErr {
     fn from(e: Web3RpcError) -> Self {
         match e {
-            Web3RpcError::Transport(tr) | Web3RpcError::InvalidResponse(tr) => EthGasDetailsErr::Transport(tr),
+            Web3RpcError::Transport(tr)
+            | Web3RpcError::Timeout(tr)
+            | Web3RpcError::BadResponse(tr)
+            | Web3RpcError::InvalidResponse(tr) => EthGasDetailsErr::Transport(tr),
+            Web3RpcError::RemoteError { code, message } => {
+                EthGasDetailsErr::Transport(format_remote_error(code, message))
+            },
             Web3RpcError::Internal(internal)
-            | Web3RpcError::Timeout(internal)
             | Web3RpcError::NumConversError(internal)
             | Web3RpcError::InvalidGasApiConfig(internal) => EthGasDetailsErr::Internal(internal),
             Web3RpcError::ProtocolNotSupported(e) => EthGasDetailsErr::ProtocolNotSupported(e),

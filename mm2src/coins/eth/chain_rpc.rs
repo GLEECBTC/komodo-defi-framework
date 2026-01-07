@@ -37,6 +37,7 @@
 
 use async_trait::async_trait;
 use ethereum_types::U256;
+use mm2_err_handle::prelude::*;
 
 use super::tron::{TronAddress, TronApiClient};
 use super::Web3RpcError;
@@ -108,15 +109,12 @@ impl ChainRpcClient {
     /// Get the current block number.
     ///
     /// Dispatches to the appropriate chain-specific implementation.
-    pub async fn current_block(&self) -> Result<u64, ChainRpcError> {
+    pub async fn current_block(&self) -> MmResult<u64, ChainRpcError> {
         match self {
-            ChainRpcClient::Tron(client) => client
-                .current_block()
-                .await
-                .map_err(|e| ChainRpcError::Tron(e.into_inner())),
+            ChainRpcClient::Tron(client) => client.current_block().await.mm_err(ChainRpcError::Tron),
             ChainRpcClient::Evm(_client) => {
                 // TODO: Phase 4 - implement EVM current_block
-                Err(ChainRpcError::NotImplemented("EVM current_block".into()))
+                MmError::err(ChainRpcError::NotImplemented("EVM current_block".into()))
             },
         }
     }
@@ -124,13 +122,10 @@ impl ChainRpcClient {
     /// Get native token balance for an address.
     ///
     /// For TRON addresses, use `TronAddress`. For EVM, use `ethereum_types::Address`.
-    pub async fn balance_native_tron(&self, address: &TronAddress) -> Result<U256, ChainRpcError> {
+    pub async fn balance_native_tron(&self, address: &TronAddress) -> MmResult<U256, ChainRpcError> {
         match self {
-            ChainRpcClient::Tron(client) => client
-                .balance_native(*address)
-                .await
-                .map_err(|e| ChainRpcError::Tron(e.into_inner())),
-            ChainRpcClient::Evm(_) => Err(ChainRpcError::WrongChain {
+            ChainRpcClient::Tron(client) => client.balance_native(*address).await.mm_err(ChainRpcError::Tron),
+            ChainRpcClient::Evm(_) => MmError::err(ChainRpcError::WrongChain {
                 expected: "Tron",
                 got: "Evm",
             }),
@@ -138,13 +133,10 @@ impl ChainRpcClient {
     }
 
     /// Check if a TRON address has been used on-chain.
-    pub async fn is_address_used_tron(&self, address: &TronAddress) -> Result<bool, ChainRpcError> {
+    pub async fn is_address_used_tron(&self, address: &TronAddress) -> MmResult<bool, ChainRpcError> {
         match self {
-            ChainRpcClient::Tron(client) => client
-                .is_address_used_basic(*address)
-                .await
-                .map_err(|e| ChainRpcError::Tron(e.into_inner())),
-            ChainRpcClient::Evm(_) => Err(ChainRpcError::WrongChain {
+            ChainRpcClient::Tron(client) => client.is_address_used_basic(*address).await.mm_err(ChainRpcError::Tron),
+            ChainRpcClient::Evm(_) => MmError::err(ChainRpcError::WrongChain {
                 expected: "Tron",
                 got: "Evm",
             }),
