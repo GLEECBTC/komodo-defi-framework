@@ -2714,7 +2714,10 @@ pub async fn wait_check_stats_swap_status(mm: &MarketMakerIt, uuid: &str, timeou
         if !response.0.is_success() {
             Timer::sleep(1.).await;
             if get_utc_timestamp() > wait_until {
-                panic!("Timed out waiting for swap stats status uuid={}, latest status={}", uuid, response.1);
+                panic!(
+                    "Timed out waiting for swap stats status uuid={}, latest status={}",
+                    uuid, response.1
+                );
             }
             continue;
         }
@@ -3677,7 +3680,9 @@ pub async fn task_enable_eth_with_tokens(
     timeout: u64,
     path_to_address: Option<HDAccountAddressId>,
 ) -> EthWithTokensActivationResult {
-    let init = task_enable_eth_with_tokens_init(mm, platform_coin, tokens, swap_contract_address, nodes, path_to_address).await;
+    let init =
+        task_enable_eth_with_tokens_init(mm, platform_coin, tokens, swap_contract_address, nodes, path_to_address)
+            .await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
     let timeout = wait_until_ms(timeout * 1000);
 
