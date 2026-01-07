@@ -5614,8 +5614,12 @@ fn test_sign_verify_message_eth_with_derivation_path() {
         "0x36b91a54f905f2dd88ecfd7f4a539710c699eaab2b425ba79ad959c29ec26492011674981da72d68ac0ab72bb35661a13c42bce314ecdfff0e44174f82a7ee2501";
     assert_eq!(expected_signature, response.signature);
 
-    let address0 = match result.wallet_balance {
-        EnableCoinBalanceMap::HD(bal) => bal.accounts[0].addresses[0].address.clone(),
+    // Addresses were used before, so they are included in the activation result.
+    let (address0, address1) = match result.wallet_balance {
+        EnableCoinBalanceMap::HD(bal) => (
+            bal.accounts[0].addresses[0].address.clone(),
+            bal.accounts[0].addresses[1].address.clone(),
+        ),
         EnableCoinBalanceMap::Iguana(_) => panic!("Expected HD"),
     };
     let response = block_on(verify_message(&mm_bob, "ETH", expected_signature, &address0));
@@ -5625,8 +5629,6 @@ fn test_sign_verify_message_eth_with_derivation_path() {
     assert!(response.is_valid);
 
     // Test address 1.
-    let get_new_address = block_on(get_new_address(&mm_bob, "ETH", 0, Some(Bip44Chain::External)));
-    assert!(get_new_address.new_address.balance.contains_key("ETH"));
     let response = block_on(sign_message(
         &mm_bob,
         "ETH",
@@ -5643,12 +5645,7 @@ fn test_sign_verify_message_eth_with_derivation_path() {
         "0xc8aa1d54c311e38edc815308dc67018aecbd6d4008a88b9af7aba9c98997b7b56f9e6eab64b3c496c6fff1762ae0eba8228370b369d505dd9087cded0a4d947a01";
     assert_eq!(expected_signature, response.signature);
 
-    let response = block_on(verify_message(
-        &mm_bob,
-        "ETH",
-        expected_signature,
-        &get_new_address.new_address.address,
-    ));
+    let response = block_on(verify_message(&mm_bob, "ETH", expected_signature, &address1));
     let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
     let response = response.result;
 
