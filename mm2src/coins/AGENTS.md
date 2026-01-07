@@ -1,5 +1,7 @@
 # coins — Multi-Protocol Coin Support
 
+> **Note:** Always follow the root `/CLAUDE.md` for global conventions (fmt, clippy, error handling, etc.).
+
 Abstraction layer for blockchain protocols. Defines traits for swaps, balances, and transactions.
 
 ## Responsibilities

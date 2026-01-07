@@ -17,13 +17,45 @@ custom-swap-locktime = [] # only for testing purposes, should never be activated
 native = [] # Deprecated
 track-ctx-pointer = ["common/track-ctx-pointer"]
 zhtlc-native-tests = ["coins/zhtlc-native-tests"]
-run-docker-tests = ["coins/run-docker-tests"]
 tron-network-tests = ["coins/tron-network-tests"]
+run-docker-tests = ["coins/run-docker-tests"]
+# Split docker test features - organized by test category
+#
+# Chain-specific tests: Test coin implementations for specific blockchain protocols
+# (consideration: move to coins::*/tests; far future: separate crates per chain)
+docker-tests-slp = ["run-docker-tests"]         # BCH-SLP coin tests
+docker-tests-sia = ["run-docker-tests"]         # Sia coin tests
+docker-tests-eth = ["run-docker-tests"]         # ETH/ERC20 coin tests
+docker-tests-qrc20 = ["run-docker-tests"]       # QRC20 coin tests
+docker-tests-tendermint = ["run-docker-tests"]  # Tendermint/IBC coin tests
+docker-tests-zcoin = ["run-docker-tests"]       # ZCoin/Zombie coin tests
+#
+# Protocol tests: Test cross-cutting protocol functionality (swaps, ordermatching, watchers).
+# Protocol logic is coin-agnostic; these tests use UTXO coins to verify protocol correctness in isolation.
+docker-tests-swaps = ["run-docker-tests"]       # Swap protocol tests (v1, v2, confs, file-locks)
+docker-tests-ordermatch = ["run-docker-tests"]  # Orderbook and matching tests
+docker-tests-watchers = ["run-docker-tests"]    # Watcher node tests (UTXO-only, stable)
+docker-tests-watchers-eth = ["docker-tests-watchers", "coins/enable-eth-watchers"]  # Watcher tests (ETH, unstable)
+#
+# Cross-chain integration tests: Test interactions between different chain families
+docker-tests-integration = ["run-docker-tests"]
+# Aggregate feature for local development - runs all docker test suites
+# Not recommended for CI (use split jobs instead for parallelism)
+docker-tests-all = [
+    "docker-tests-eth",
+    "docker-tests-slp",
+    "docker-tests-sia",
+    "docker-tests-ordermatch",
+    "docker-tests-swaps",
+    "docker-tests-watchers",
+    "docker-tests-qrc20",
+    "docker-tests-tendermint",
+    "docker-tests-zcoin",
+    "docker-tests-integration",
+]
 default = []
 trezor-udp = ["crypto/trezor-udp"] # use for tests to connect to trezor emulator over udp
 run-device-tests = []
-sepolia-maker-swap-v2-tests = []
-sepolia-taker-swap-v2-tests = []
 test-ext-api = ["trading_api/test-ext-api"]
 new-db-arch = ["mm2_core/new-db-arch"] # A temporary feature to integrate the new db architecture incrementally
 # Temporary feature for implementing IBC wrap/unwrap mechanism and will be removed

@@ -1,5 +1,7 @@
 # mm2_main — RPC, Swaps, and Application Logic
 
+> **Note:** Always follow the root `/CLAUDE.md` for global conventions (fmt, clippy, error handling, etc.).
+
 Core application crate: RPC dispatcher, atomic swap engines, order matching, streaming.
 
 ## Responsibilities
@@ -176,3 +178,77 @@ Enable via `stream::<event>::enable`, disable via `stream::disable`:
 - Integration: `cargo test --test mm2_tests_main`
 - Docker swaps: `cargo test --test docker_tests_main --features run-docker-tests`
 - TRON tests: `cargo test --test mm2_tests_main --features tron-network-tests tron_`
+
+### Docker Test Infrastructure
+
+Docker tests run against local blockchain test nodes to verify atomic swap functionality. Tests are split into feature-gated modules for parallel CI execution.
+
+#### Test Module Structure
+
+```
+tests/docker_tests/
+├── helpers/
+│   ├── docker_ops.rs      # CoinDockerOps trait (shared by utxo, zcoin)
+│   ├── env.rs             # MM_CTX, service constants, DockerNode
+│   ├── eth.rs             # Geth/ERC20 helpers (contracts, funding)
+│   ├── mod.rs             # Module index
+│   ├── qrc20.rs           # Qtum/QRC20 helpers
+│   ├── sia.rs             # Sia helpers
+│   ├── swap.rs            # Cross-chain swap orchestration (trade_base_rel)
+│   ├── tendermint.rs      # Tendermint/Cosmos/IBC helpers
+│   ├── utxo.rs            # UTXO coin helpers (MYCOIN, BCH/SLP)
+│   └── zcoin.rs           # ZCoin/Zombie helpers
+├── swap_watcher_tests/
+│   ├── eth.rs             # ETH watcher tests (disabled by default)
+│   ├── mod.rs             # Watcher test helpers
+│   └── utxo.rs            # UTXO watcher tests (stable)
+├── docker_ordermatch_tests.rs    # Cross-chain ordermatching
+├── docker_tests_inner.rs         # Mixed ETH/UTXO integration
+├── eth_docker_tests.rs           # ETH/ERC20/NFT coin & swap v2 tests
+├── eth_inner_tests.rs            # ETH-only ordermatching/wallet tests
+├── qrc20_tests.rs                # Qtum/QRC20 tests
+├── runner.rs                     # Container startup/initialization
+├── sia_docker_tests.rs           # Sia tests
+├── slp_tests.rs                  # SLP/BCH tests
+├── swap_proto_v2_tests.rs        # UTXO swap protocol v2
+├── swap_tests.rs                 # Cross-chain SLP swaps
+├── swaps_confs_settings_sync_tests.rs
+├── swaps_file_lock_tests.rs
+├── tendermint_swap_tests.rs      # Tendermint cross-chain swaps
+├── tendermint_tests.rs           # Cosmos/IBC tests
+├── utxo_ordermatch_v1_tests.rs   # UTXO-only ordermatching
+├── utxo_swaps_v1_tests.rs        # UTXO swap protocol v1
+└── z_coin_docker_tests.rs        # ZCoin/Zombie tests
+```
+
+#### Feature Flags
+
+| Feature | Purpose | Containers |
+|---------|---------|------------|
+| `docker-tests-eth` | ETH/ERC20/NFT tests | Geth |
+| `docker-tests-slp` | BCH/SLP token tests | FORSLP |
+| `docker-tests-sia` | Sia tests + DSIA swaps | Sia + UTXO |
+| `docker-tests-ordermatch` | Orderbook/matching tests | UTXO + Geth |
+| `docker-tests-swaps` | Swap protocol tests | UTXO |
+| `docker-tests-watchers` | UTXO watcher tests | UTXO |
+| `docker-tests-watchers-eth` | ETH watcher tests (unstable) | UTXO + Geth |
+| `docker-tests-qrc20` | Qtum/QRC20 tests | Qtum + UTXO |
+| `docker-tests-tendermint` | Cosmos/IBC tests | Cosmos |
+| `docker-tests-zcoin` | ZCoin/Zombie tests | Zombie |
+| `docker-tests-integration` | Cross-chain swaps | ALL |
+| `docker-tests-all` | All suites (local dev) | ALL |
+
+#### Running Tests
+
+```bash
+# Single suite
+cargo test --test docker_tests_main --features docker-tests-eth
+
+# All suites (local development)
+cargo test --test docker_tests_main --features docker-tests-all
+
+# With docker-compose (faster iteration)
+KDF_DOCKER_COMPOSE_ENV=1 cargo test --test docker_tests_main --features docker-tests-eth
+```
+
+See [`docs/DOCKER_TESTS.md`](../../../docs/DOCKER_TESTS.md) for full setup and troubleshooting.

@@ -5,11 +5,15 @@ edition = "2018"
 
 [features]
 zhtlc-native-tests = []
+tron-network-tests = []
 default = []
 run-docker-tests = []
-tron-network-tests = []
 for-tests = ["dep:mocktopus"]
 new-db-arch = ["mm2_core/new-db-arch"]
+
+# ETH/ERC20 watcher support - disabled by default because ETH watchers are
+# unstable and not completed yet
+enable-eth-watchers = []
 
 # Temporary feature for implementing IBC wrap/unwrap mechanism and will be removed
 # once we consider it as stable.

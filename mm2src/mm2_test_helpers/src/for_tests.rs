@@ -790,10 +790,10 @@ pub fn btc_with_sync_starting_header() -> Json {
         },
         "spv_conf": {
             "starting_block_header": {
-                "height": 764064,
-                "hash": "00000000000000000006da48b920343944908861fa05b28824922d9e60aaa94d",
-                "bits": 386375189,
-                "time": 1668986059,
+                "height": 872928,
+                "hash": "00000000000000000001dc2f171d19c36ad8afb972287230900b2a352184402a",
+                "bits": 386053475,
+                "time": 1733153640,
             },
             "max_stored_block_headers": 3000,
             "validation_params": {

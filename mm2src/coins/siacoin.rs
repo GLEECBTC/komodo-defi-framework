@@ -1385,18 +1385,10 @@ impl SiaCoin {
         &self,
         expected_hash_slice: &[u8],
         spend_tx: &[u8],
-        watcher_reward: bool,
     ) -> Result<[u8; 32], SiaCoinSiaExtractSecretError> {
         // Parse arguments to Sia specific types
         let tx = SiaTransaction::try_from(spend_tx)?;
         let expected_hash = Hash256::try_from(expected_hash_slice)?;
-
-        // watcher_reward is irrelevant, but a true value indicates a bug within the swap protocol
-        // An error is not thrown as it would not be in the best interest of the swap participant
-        // if they are still able to extract the secret and spend the HTLC output
-        if watcher_reward {
-            debug!("SiaCoin::sia_extract_secret: expected watcher_reward false, found true");
-        }
 
         // iterate over all inputs and search for preimage that hashes to expected_hash
         let found_secret =
@@ -1848,13 +1840,8 @@ impl SwapOps for SiaCoin {
         unimplemented!()
     }
 
-    async fn extract_secret(
-        &self,
-        secret_hash: &[u8],
-        spend_tx: &[u8],
-        watcher_reward: bool,
-    ) -> Result<[u8; 32], String> {
-        self.sia_extract_secret(secret_hash, spend_tx, watcher_reward)
+    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<[u8; 32], String> {
+        self.sia_extract_secret(secret_hash, spend_tx)
             .map_err(|e| e.to_string())
     }
 

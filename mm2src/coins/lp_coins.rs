@@ -855,7 +855,6 @@ pub struct SearchForSwapTxSpendInput<'a> {
     pub search_from_block: u64,
     pub swap_contract_address: &'a Option<BytesJson>,
     pub swap_unique_data: &'a [u8],
-    pub watcher_reward: bool,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -1180,12 +1179,7 @@ pub trait SwapOps {
         input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String>;
 
-    async fn extract_secret(
-        &self,
-        secret_hash: &[u8],
-        spend_tx: &[u8],
-        watcher_reward: bool,
-    ) -> Result<[u8; 32], String>;
+    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<[u8; 32], String>;
 
     /// Whether the refund transaction can be sent now
     /// For example: there are no additional conditions for ETH, but for some UTXO coins we should wait for
