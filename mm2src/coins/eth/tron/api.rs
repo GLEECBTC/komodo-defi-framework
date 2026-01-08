@@ -380,6 +380,15 @@ struct GetAccountRequest {
     visible: bool,
 }
 
+/// Empty object marker for TRON API responses.
+///
+/// MUST use `deny_unknown_fields`; otherwise arbitrary error payloads
+/// (e.g. `{ "code": "...", "message": "..." }`) could deserialize as `NoAccount` and silently
+/// bypass retry/rotation logic.
+#[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct TronEmptyObject {}
+
 /// Response from `/wallet/getaccount`.
 ///
 /// TRON returns `{}` for non-existent accounts, or account data for existing ones.
@@ -399,17 +408,7 @@ struct GetAccountRequest {
 /// (like `net_usage`, `assetV2`, `frozenV2`, `owner_permission`, etc.) are silently ignored.
 /// Add fields here as needed for future functionality.
 ///
-/// # Security
-///
-/// `TronEmptyObject` MUST use `deny_unknown_fields`; otherwise arbitrary error payloads
-/// (e.g. `{ "code": "...", "message": "..." }`) could deserialize as `NoAccount` and silently
-/// bypass retry/rotation logic.
-///
 /// See: <https://developers.tron.network/reference/getaccount-1>
-#[derive(Deserialize, Debug)]
-#[serde(deny_unknown_fields)]
-pub struct TronEmptyObject {}
-
 #[derive(Deserialize, Debug)]
 #[serde(untagged)]
 pub enum GetAccountResponse {
