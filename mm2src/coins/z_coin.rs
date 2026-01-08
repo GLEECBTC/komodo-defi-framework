@@ -69,7 +69,6 @@ use mocktopus::macros::*;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json, H264 as H264Json};
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use serde_json::Value as Json;
-use serialization::CoinVariant;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use std::iter;
@@ -313,9 +312,6 @@ impl ZCoin {
         &self.z_fields.consensus_params
     }
 
-    /// Asynchronously checks the synchronization status and returns `true` if
-    /// the Sapling state has finished synchronizing, meaning that the block number is available.
-    /// Otherwise, it returns `false`.
     #[cfg(any(test, feature = "run-docker-tests"))]
     #[inline]
     pub async fn is_sapling_state_synced(&self) -> bool {
@@ -996,7 +992,7 @@ impl UtxoCoinBuilder for ZCoinBuilder<'_> {
             #[cfg(not(target_arch = "wasm32"))]
             ZcoinRpcMode::Native => init_native_client(
                 &self,
-                self.native_client().map_mm_err()?,
+                self.native_client(utxo_arc.conf.chain_variant).map_mm_err()?,
                 blocks_db,
                 locked_notes_db.clone(),
             )
@@ -1704,12 +1700,7 @@ impl SwapOps for ZCoin {
     }
 
     #[inline]
-    async fn extract_secret(
-        &self,
-        secret_hash: &[u8],
-        spend_tx: &[u8],
-        _watcher_reward: bool,
-    ) -> Result<[u8; 32], String> {
+    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<[u8; 32], String> {
         utxo_common::extract_secret(secret_hash, spend_tx)
     }
 
@@ -1967,7 +1958,7 @@ impl UtxoCommonOps for ZCoin {
     }
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32> {
-        utxo_common::get_current_mtp(&self.utxo_arc, CoinVariant::Standard).await
+        utxo_common::get_current_mtp(&self.utxo_arc).await
     }
 
     fn is_unspent_mature(&self, output: &RpcTransaction) -> bool {

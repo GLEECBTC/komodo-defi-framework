@@ -1,5 +1,9 @@
 //! Bitcoin keys.
 
+// TODO: Remove this allow when Rust 1.92 regression is fixed.
+// See: https://github.com/rust-lang/rust/issues/147648
+#![allow(unused_assignments)]
+
 extern crate bech32;
 extern crate bitcrypto as crypto;
 extern crate bs58;

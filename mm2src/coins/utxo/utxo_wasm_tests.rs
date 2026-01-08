@@ -1,4 +1,4 @@
-use super::rpc_clients::{ElectrumClient, UtxoRpcClientOps};
+use super::rpc_clients::{ElectrumClient, ElectrumConnectionSettings, UtxoRpcClientOps};
 use super::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilderCommonOps};
 use super::utxo_standard::UtxoStandardCoin;
 use super::*;
@@ -7,7 +7,7 @@ use crate::{IguanaPrivKey, PrivKeyBuildPolicy};
 use hex::FromHex;
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_test_helpers::for_tests::DOC_ELECTRUM_ADDRS;
-use serialization::deserialize;
+use serialization::{deserialize, ChainVariant};
 use wasm_bindgen_test::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
@@ -40,10 +40,10 @@ pub async fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
         collect_metrics: false,
     };
 
-    let servers = servers.into_iter().map(|s| json::from_value(s).unwrap()).collect();
+    let servers: Vec<ElectrumConnectionSettings> = servers.into_iter().map(|s| json::from_value(s).unwrap()).collect();
     let abortable_system = AbortableQueue::default();
     builder
-        .electrum_client(abortable_system, args, servers, (None, None))
+        .electrum_client(abortable_system, args, ChainVariant::Standard, servers, (None, None))
         .await
         .unwrap()
 }

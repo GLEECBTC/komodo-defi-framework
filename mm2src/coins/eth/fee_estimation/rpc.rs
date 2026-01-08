@@ -38,7 +38,7 @@ pub async fn get_eth_estimated_fee_per_gas(
     req: GetFeeEstimationRequest,
 ) -> MmResult<FeePerGasEstimated, GetFeeEstimationRequestError> {
     match lp_coinfind(&ctx, &req.coin).await {
-        Ok(Some(MmCoinEnum::EthCoin(coin))) => {
+        Ok(Some(MmCoinEnum::EthCoinVariant(coin))) => {
             let use_simple = matches!(req.estimator_type, EstimatorType::Simple);
             let fee = coin
                 .get_eip1559_gas_fee(use_simple)

@@ -36,6 +36,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use secp256k1::PublicKey;
 use serde_json::{self as json, Value as Json};
+use serialization::ChainVariant;
 use spv_validation::conf::SPVConf;
 use spv_validation::helpers_validation::SPVError;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
@@ -387,7 +388,9 @@ where
     // all spawned futures related to this `UTXO` coin will be aborted as well.
     let abortable_system: AbortableQueue = builder.ctx().abortable_system.create_subsystem()?;
 
-    let rpc_client = builder.rpc_client(abortable_system.create_subsystem()?).await?;
+    let rpc_client = builder
+        .rpc_client(abortable_system.create_subsystem()?, conf.chain_variant)
+        .await?;
     let tx_fee = builder.tx_fee(&rpc_client).await?;
     let decimals = builder.decimals(&rpc_client).await?;
     let dust_amount = builder.dust_amount();
@@ -476,7 +479,9 @@ where
     // all spawned futures related to this `UTXO` coin will be aborted as well.
     let abortable_system: AbortableQueue = builder.ctx().abortable_system.create_subsystem()?;
 
-    let rpc_client = builder.rpc_client(abortable_system.create_subsystem()?).await?;
+    let rpc_client = builder
+        .rpc_client(abortable_system.create_subsystem()?, conf.chain_variant)
+        .await?;
     let tx_fee = builder.tx_fee(&rpc_client).await?;
     let decimals = builder.decimals(&rpc_client).await?;
     let dust_amount = builder.dust_amount();
@@ -640,7 +645,11 @@ pub trait UtxoCoinBuilderCommonOps {
         }
     }
 
-    async fn rpc_client(&self, abortable_system: AbortableQueue) -> UtxoCoinBuildResult<UtxoRpcClientEnum> {
+    async fn rpc_client(
+        &self,
+        abortable_system: AbortableQueue,
+        chain_variant: ChainVariant,
+    ) -> UtxoCoinBuildResult<UtxoRpcClientEnum> {
         match self.activation_params().mode.clone() {
             UtxoRpcMode::Native => {
                 #[cfg(target_arch = "wasm32")]
@@ -649,7 +658,7 @@ pub trait UtxoCoinBuilderCommonOps {
                 }
                 #[cfg(not(target_arch = "wasm32"))]
                 {
-                    let native = self.native_client()?;
+                    let native = self.native_client(chain_variant)?;
                     Ok(UtxoRpcClientEnum::Native(native))
                 }
             },
@@ -662,6 +671,7 @@ pub trait UtxoCoinBuilderCommonOps {
                     .electrum_client(
                         abortable_system,
                         ElectrumBuilderArgs::default(),
+                        chain_variant,
                         servers,
                         (min_connected, max_connected),
                     )
@@ -677,6 +687,7 @@ pub trait UtxoCoinBuilderCommonOps {
         &self,
         abortable_system: AbortableQueue,
         args: ElectrumBuilderArgs,
+        chain_variant: ChainVariant,
         servers: Vec<ElectrumConnectionSettings>,
         (min_connected, max_connected): (Option<usize>, Option<usize>),
     ) -> UtxoCoinBuildResult<ElectrumClient> {
@@ -692,7 +703,7 @@ pub trait UtxoCoinBuilderCommonOps {
         }
 
         let storage_ticker = self.ticker().replace('-', "_");
-        let block_headers_storage = BlockHeaderStorage::new_from_ctx(self.ctx().clone(), storage_ticker)
+        let block_headers_storage = BlockHeaderStorage::new_from_ctx(self.ctx().clone(), storage_ticker, chain_variant)
             .map_to_mm(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
         if !block_headers_storage.is_initialized_for().await? {
             block_headers_storage.init().await?;
@@ -717,12 +728,13 @@ pub trait UtxoCoinBuilderCommonOps {
             block_headers_storage,
             ctx.event_stream_manager.clone(),
             abortable_system,
+            chain_variant,
         )
         .map_to_mm(UtxoCoinBuildError::Internal)
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn native_client(&self) -> UtxoCoinBuildResult<NativeClient> {
+    fn native_client(&self, chain_variant: ChainVariant) -> UtxoCoinBuildResult<NativeClient> {
         use base64::engine::general_purpose::URL_SAFE;
         use base64::Engine;
 
@@ -751,6 +763,7 @@ pub trait UtxoCoinBuilderCommonOps {
             event_handlers,
             request_id: 0u64.into(),
             list_unspent_concurrent_map: ConcurrentRequestMap::new(),
+            chain_variant,
         });
 
         Ok(NativeClient(client))

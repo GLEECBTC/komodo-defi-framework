@@ -7,8 +7,6 @@ edition = "2018"
 doctest = false
 
 [features]
-enable-sia = []
-enable-solana = []
 default = []
 for-tests = []
 

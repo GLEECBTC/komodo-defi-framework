@@ -55,7 +55,6 @@ use coins::rpc_command::{
     init_withdraw::{cancel_withdraw, init_withdraw, withdraw_status, withdraw_user_action},
     offline_keys::get_private_keys,
 };
-#[cfg(feature = "enable-sia")]
 use coins::siacoin::SiaCoin;
 use coins::tendermint::{TendermintCoin, TendermintToken};
 use coins::utxo::bch::BchCoin;
@@ -65,8 +64,8 @@ use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::z_coin::ZCoin;
 use coins::{
     add_delegation, claim_staking_rewards, delegations_info, get_my_address, get_raw_transaction,
-    get_swap_transaction_fee_policy, nft, ongoing_undelegations_info, remove_delegation,
-    set_swap_transaction_fee_policy, sign_message, sign_raw_transaction, validators_info, verify_message, withdraw,
+    get_swap_gas_fee_policy, nft, ongoing_undelegations_info, remove_delegation, set_swap_gas_fee_policy, sign_message,
+    sign_raw_transaction, validators_info, verify_message, withdraw,
 };
 use coins_activation::{
     cancel_init_l2, cancel_init_platform_coin_with_tokens, cancel_init_standalone_coin, cancel_init_token,
@@ -179,6 +178,21 @@ async fn experimental_rpcs_dispatcher(
     ctx: MmArc,
     experimental_method: &str,
 ) -> DispatcherResult<Response<Vec<u8>>> {
+    match request.method.as_str() {
+        "experimental::enable_solana_with_assets" => {
+            return handle_mmrpc(
+                ctx,
+                request,
+                enable_platform_coin_with_tokens::<coins::solana::SolanaCoin>,
+            )
+            .await
+        },
+        "experimental::enable_solana_token" => {
+            return handle_mmrpc(ctx, request, enable_token::<coins::solana::SolanaToken>).await
+        },
+        _ => {},
+    };
+
     if let Some(staking_method) = experimental_method.strip_prefix("staking::") {
         return staking_dispatcher(request, ctx, staking_method).await;
     }
@@ -233,6 +247,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "enable_eth_with_tokens" => handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<EthCoin>).await,
         "enable_erc20" => handle_mmrpc(ctx, request, enable_token::<EthCoin>).await,
         "enable_nft" => handle_mmrpc(ctx, request, enable_token::<EthCoin>).await,
+        "enable_sia" => handle_mmrpc(ctx, request, init_standalone_coin::<SiaCoin>).await,
         "enable_tendermint_with_assets" => {
             handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<TendermintCoin>).await
         },
@@ -278,8 +293,8 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "peer_connection_healthcheck" => handle_mmrpc(ctx, request, peer_connection_healthcheck_rpc).await,
         "withdraw_nft" => handle_mmrpc(ctx, request, withdraw_nft).await,
         "get_eth_estimated_fee_per_gas" => handle_mmrpc(ctx, request, get_eth_estimated_fee_per_gas).await,
-        "get_swap_transaction_fee_policy" => handle_mmrpc(ctx, request, get_swap_transaction_fee_policy).await,
-        "set_swap_transaction_fee_policy" => handle_mmrpc(ctx, request, set_swap_transaction_fee_policy).await,
+        "get_swap_gas_fee_policy" => handle_mmrpc(ctx, request, get_swap_gas_fee_policy).await,
+        "set_swap_gas_fee_policy" => handle_mmrpc(ctx, request, set_swap_gas_fee_policy).await,
         "send_asked_data" => handle_mmrpc(ctx, request, send_asked_data_rpc).await,
         "z_coin_tx_history" => handle_mmrpc(ctx, request, coins::my_tx_history_v2::z_coin_tx_history_rpc).await,
         "wc_new_connection" => handle_mmrpc(ctx, request, new_connection).await,
@@ -372,12 +387,10 @@ async fn rpc_task_dispatcher(
         "withdraw::init" => handle_mmrpc(ctx, request, init_withdraw).await,
         "withdraw::status" => handle_mmrpc(ctx, request, withdraw_status).await,
         "withdraw::user_action" => handle_mmrpc(ctx, request, withdraw_user_action).await,
-        //"enable_sia::cancel" => handle_mmrpc(ctx, request, cancel_init_standalone_coin::<SiaCoin>).await,
-        #[cfg(feature = "enable-sia")]
+        "enable_sia::cancel" => handle_mmrpc(ctx, request, cancel_init_standalone_coin::<SiaCoin>).await,
         "enable_sia::init" => handle_mmrpc(ctx, request, init_standalone_coin::<SiaCoin>).await,
-        #[cfg(feature = "enable-sia")]
         "enable_sia::status" => handle_mmrpc(ctx, request, init_standalone_coin_status::<SiaCoin>).await,
-        //"enable_sia::user_action" => handle_mmrpc(ctx, request, init_standalone_coin_user_action::<SiaCoin>).await,
+        "enable_sia::user_action" => handle_mmrpc(ctx, request, init_standalone_coin_user_action::<SiaCoin>).await,
         "enable_z_coin::init" => handle_mmrpc(ctx, request, init_standalone_coin::<ZCoin>).await,
         "enable_z_coin::cancel" => handle_mmrpc(ctx, request, cancel_init_standalone_coin::<ZCoin>).await,
         "enable_z_coin::status" => handle_mmrpc(ctx, request, init_standalone_coin_status::<ZCoin>).await,
@@ -414,6 +427,8 @@ async fn rpc_streaming_dispatcher(
         "order_status::enable" => handle_mmrpc(ctx, request, streaming_activations::enable_order_status).await,
         "tx_history::enable" => handle_mmrpc(ctx, request, streaming_activations::enable_tx_history).await,
         "orderbook::enable" => handle_mmrpc(ctx, request, streaming_activations::enable_orderbook).await,
+        #[cfg(not(any(target_arch = "wasm32", target_os = "windows")))]
+        "shutdown_signal::enable" => handle_mmrpc(ctx, request, streaming_activations::enable_shutdown_signal).await,
         "disable" => handle_mmrpc(ctx, request, streaming_activations::disable_streamer).await,
         _ => MmError::err(DispatcherError::NoSuchMethod),
     }

@@ -15,6 +15,10 @@ use std::fmt;
 use std::num::NonZeroUsize;
 use uuid::Uuid;
 
+// TODO Alright: many of the type names within this file contain a misnomer
+// `*Result` is used for many types that are not a "Result<>"
+// Should be renamed `*Response` or similar
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RpcSuccessResponse<T> {
@@ -398,7 +402,9 @@ pub struct TradePreimageResponse {
 }
 
 impl TradePreimageResponse {
-    pub fn sort_total_fees(&mut self) { self.result.sort_total_fees() }
+    pub fn sort_total_fees(&mut self) {
+        self.result.sort_total_fees()
+    }
 }
 
 #[derive(Debug, Deserialize)]

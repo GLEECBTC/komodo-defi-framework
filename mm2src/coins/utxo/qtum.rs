@@ -50,7 +50,6 @@ use mm2_metrics::MetricsArc;
 use mm2_number::MmNumber;
 use rpc::v1::types::H264 as H264Json;
 use serde::Serialize;
-use serialization::CoinVariant;
 use utxo_signer::UtxoSignerOps;
 
 #[derive(Debug, Display)]
@@ -297,6 +296,9 @@ pub async fn qtum_coin_with_policy(
     activation_params: &UtxoActivationParams,
     priv_key_policy: PrivKeyBuildPolicy,
 ) -> Result<QtumCoin, String> {
+    if conf["coin"].as_str() != Some(ticker) {
+        return ERR!("Failed to activate '{}': ticker does not match coins config", ticker);
+    }
     let coin = try_s!(
         QtumCoinBuilder::new(ctx, ticker, conf, activation_params, priv_key_policy)
             .build()
@@ -435,7 +437,7 @@ impl UtxoCommonOps for QtumCoin {
     }
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32> {
-        utxo_common::get_current_mtp(&self.utxo_arc, CoinVariant::Qtum).await
+        utxo_common::get_current_mtp(&self.utxo_arc).await
     }
 
     fn is_unspent_mature(&self, output: &RpcTransaction) -> bool {
@@ -657,12 +659,7 @@ impl SwapOps for QtumCoin {
     }
 
     #[inline]
-    async fn extract_secret(
-        &self,
-        secret_hash: &[u8],
-        spend_tx: &[u8],
-        _watcher_reward: bool,
-    ) -> Result<[u8; 32], String> {
+    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<[u8; 32], String> {
         utxo_common::extract_secret(secret_hash, spend_tx)
     }
 

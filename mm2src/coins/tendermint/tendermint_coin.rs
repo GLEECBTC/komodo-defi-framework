@@ -397,19 +397,14 @@ impl RpcCommonOps for TendermintCoin {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(Default, PartialEq)]
 pub enum TendermintWalletConnectionType {
     Wc(kdf_walletconnect::WcTopic),
     WcLedger(kdf_walletconnect::WcTopic),
     KeplrLedger,
     Keplr,
+    #[default]
     Native,
-}
-
-impl Default for TendermintWalletConnectionType {
-    fn default() -> Self {
-        Self::Native
-    }
 }
 
 pub struct TendermintCoinImpl {
@@ -3524,7 +3519,28 @@ impl MmCoin for TendermintCoin {
     }
 
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
-        Box::new(futures01::future::err("Not implemented".into()))
+        let coin = self.clone();
+
+        let fut = async move {
+            let fee = try_s!(
+                coin.get_sender_trade_fee_for_denom(
+                    coin.ticker.to_owned(),
+                    coin.protocol_info.denom.clone(),
+                    coin.protocol_info.decimals,
+                    // Transaction amount does not influence the fee.
+                    coin.min_tx_amount(),
+                )
+                .await
+            );
+
+            Ok(TradeFee {
+                coin: coin.ticker.to_owned(),
+                amount: fee.amount,
+                paid_from_trading_vol: false,
+            })
+        };
+
+        Box::new(fut.boxed().compat())
     }
 
     async fn get_sender_trade_fee(
@@ -3564,7 +3580,7 @@ impl MmCoin for TendermintCoin {
             ticker: &str,
         ) -> Result<Option<TendermintCoin>, MmError<OrderCreationPreCheckError>> {
             match lp_coinfind(ctx, ticker).await {
-                Ok(Some(MmCoinEnum::Tendermint(coin))) => Ok(Some(coin)),
+                Ok(Some(MmCoinEnum::TendermintVariant(coin))) => Ok(Some(coin)),
                 Ok(Some(other)) => MmError::err(OrderCreationPreCheckError::InternalError {
                     reason: format!(
                         "Expected a Tendermint coin for '{}', but found '{}'.",
@@ -4187,12 +4203,7 @@ impl SwapOps for TendermintCoin {
         self.search_for_swap_tx_spend(input).await.map_err(|e| e.to_string())
     }
 
-    async fn extract_secret(
-        &self,
-        secret_hash: &[u8],
-        spend_tx: &[u8],
-        watcher_reward: bool,
-    ) -> Result<[u8; 32], String> {
+    async fn extract_secret(&self, _secret_hash: &[u8], spend_tx: &[u8]) -> Result<[u8; 32], String> {
         let tx = try_s!(cosmrs::Tx::from_bytes(spend_tx));
         let msg = try_s!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
 
@@ -4376,7 +4387,7 @@ pub(crate) fn tendermint_tx_internal_id(bytes: &[u8], token_id: Option<BytesJson
 }
 
 #[cfg(test)]
-pub mod tendermint_falsecoin_tests {
+pub mod tests {
     use super::*;
     use crate::DexFeeBurnDestination;
 
@@ -5125,7 +5136,6 @@ pub mod tendermint_falsecoin_tests {
             search_from_block: 0,
             swap_contract_address: &None,
             swap_unique_data: &[],
-            watcher_reward: false,
         };
 
         let spend_tx = match block_on(coin.search_for_swap_tx_spend_my(input)).unwrap().unwrap() {
@@ -5201,7 +5211,6 @@ pub mod tendermint_falsecoin_tests {
             search_from_block: 0,
             swap_contract_address: &None,
             swap_unique_data: &[],
-            watcher_reward: false,
         };
 
         match block_on(coin.search_for_swap_tx_spend_my(input)).unwrap().unwrap() {

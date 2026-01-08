@@ -1,11 +1,70 @@
-use super::{ETH_DECIMALS, ETH_GWEI_DECIMALS};
-use crate::{NumConversError, NumConversResult};
+use super::*;
+use crate::{coin_conf, NumConversError, NumConversResult};
 use ethabi::{Function, Token};
 use ethereum_types::{Address, FromDecStrErr, U256};
 use ethkey::{public_to_address, Public};
+use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MapToMmResult;
 use mm2_number::{BigDecimal, MmNumber};
 use secp256k1::PublicKey;
+use serde::de::DeserializeOwned;
+use serde_json::Value as Json;
+
+/// Coin config parameter name for the max supported eth transaction type
+pub(super) const MAX_ETH_TX_TYPE_SUPPORTED: &str = "max_eth_tx_type";
+/// Coin config parameter name for the eth gas price adjustment values
+pub(super) const GAS_PRICE_ADJUST: &str = "gas_price_adjust";
+/// Coin config parameter name for the eth estimate gas multiplier
+pub(super) const ESTIMATE_GAS_MULT: &str = "estimate_gas_mult";
+/// Coin config parameter name for the default eth swap gas fee policy
+pub(super) const SWAP_GAS_FEE_POLICY: &str = "swap_gas_fee_policy";
+
+pub(crate) mod nonce_sequencer {
+    use super::*;
+
+    type PerNetNonceLocksMap = Arc<AsyncMutex<HashMap<Address, Arc<AsyncMutex<()>>>>>;
+
+    /// TODO: better to use ChainSpec instead of ticker
+    type AllNetsNonceLocks = Mutex<HashMap<String, PerNetNonceLocks>>;
+
+    // We can use a nonce lock shared between tokens using the same platform coin and the platform itself.
+    // For example, ETH/USDT-ERC20 should use the same lock, but it will be different for BNB/USDT-BEP20.
+    // This lock is used to ensure that only one transaction is sent at a time per address.
+    lazy_static! {
+        static ref ALL_NETS_NONCE_LOCKS: AllNetsNonceLocks = Mutex::new(HashMap::new());
+    }
+
+    #[derive(Clone)]
+    pub(crate) struct PerNetNonceLocks {
+        locks: PerNetNonceLocksMap,
+    }
+
+    impl PerNetNonceLocks {
+        fn new_nonce_lock() -> PerNetNonceLocks {
+            Self {
+                locks: Arc::new(AsyncMutex::new(HashMap::new())),
+            }
+        }
+
+        pub(crate) fn get_net_locks(platform_ticker: String) -> Self {
+            let mut networks = ALL_NETS_NONCE_LOCKS.lock().unwrap();
+            networks
+                .entry(platform_ticker)
+                .or_insert_with(Self::new_nonce_lock)
+                .clone()
+        }
+
+        /// Retrieves the nonce lock associated with a given eth address.
+        /// If the address does not have an associated lock, a new one is created and stored.
+        pub(crate) async fn get_adddress_lock(&self, address: Address) -> Arc<AsyncMutex<()>> {
+            let mut locks = self.locks.lock().await;
+            locks
+                .entry(address)
+                .or_insert_with(|| Arc::new(AsyncMutex::new(())))
+                .clone()
+        }
+    }
+}
 
 pub(crate) fn get_function_input_data(decoded: &[Token], func: &Function, index: usize) -> Result<Token, String> {
     decoded.get(index).cloned().ok_or(format!(
@@ -53,7 +112,7 @@ pub fn u256_to_big_decimal(number: U256, decimals: u8) -> NumConversResult<BigDe
 }
 
 /// Shifts 'number' with decimal point right by 'decimals' places and converts it to U256 value
-pub fn wei_from_big_decimal(amount: &BigDecimal, decimals: u8) -> NumConversResult<U256> {
+pub fn u256_from_big_decimal(amount: &BigDecimal, decimals: u8) -> NumConversResult<U256> {
     let mut amount = amount.to_string();
     let dot = amount.find('.');
     let decimals = decimals as usize;
@@ -75,7 +134,7 @@ pub fn wei_from_big_decimal(amount: &BigDecimal, decimals: u8) -> NumConversResu
 /// Converts BigDecimal gwei value to wei value as U256
 #[inline(always)]
 pub fn wei_from_gwei_decimal(bigdec: &BigDecimal) -> NumConversResult<U256> {
-    wei_from_big_decimal(bigdec, ETH_GWEI_DECIMALS)
+    u256_from_big_decimal(bigdec, ETH_GWEI_DECIMALS)
 }
 
 /// Converts a U256 wei value to an gwei value as a BigDecimal
@@ -103,11 +162,37 @@ pub fn mm_number_from_u256(u256: U256) -> MmNumber {
 
 #[inline]
 pub fn wei_from_coins_mm_number(mm_number: &MmNumber, decimals: u8) -> NumConversResult<U256> {
-    wei_from_big_decimal(&mm_number.to_decimal(), decimals)
+    u256_from_big_decimal(&mm_number.to_decimal(), decimals)
 }
 
 #[inline]
 #[allow(unused)]
 pub fn wei_to_coins_mm_number(u256: U256, decimals: u8) -> NumConversResult<MmNumber> {
     Ok(MmNumber::from(u256_to_big_decimal(u256, decimals)?))
+}
+
+pub(super) fn get_conf_param_or_from_plaform_coin<T: DeserializeOwned>(
+    ctx: &MmArc,
+    conf: &Json,
+    coin_type: &EthCoinType,
+    param_name: &str,
+) -> Result<Option<T>, String> {
+    /// Get "max_eth_tx_type" param from a token conf, or from the platform coin conf
+    fn read_conf_param_or_from_plaform(ctx: &MmArc, conf: &Json, param: &str, coin_type: &EthCoinType) -> Option<Json> {
+        match &coin_type {
+            EthCoinType::Eth => conf.get(param).cloned(),
+            EthCoinType::Erc20 { platform, .. } | EthCoinType::Nft { platform } => conf
+                .get(param)
+                .cloned()
+                .or(coin_conf(ctx, platform).get(param).cloned()),
+        }
+    }
+
+    match read_conf_param_or_from_plaform(ctx, conf, param_name, coin_type) {
+        Some(val) => {
+            let param_val: T = serde_json::from_value(val).map_err(|_| format!("{param_name} in coins is invalid"))?;
+            Ok(Some(param_val))
+        },
+        None => Ok(None),
+    }
 }

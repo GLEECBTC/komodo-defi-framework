@@ -62,7 +62,7 @@ impl TryPlatformCoinFromMmCoinEnum for EthCoin {
         Self: Sized,
     {
         match coin {
-            MmCoinEnum::EthCoin(coin) => Some(coin),
+            MmCoinEnum::EthCoinVariant(coin) => Some(coin),
             _ => None,
         }
     }

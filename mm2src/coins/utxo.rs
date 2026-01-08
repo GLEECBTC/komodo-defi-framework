@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright © 2023 Pampex LTD and TillyHK LTD                                *
+ * Copyright © 2025 Gleec Holding OÜ                                *
  *                                                                            *
  * See the CONTRIBUTOR-LICENSE-AGREEMENT, COPYING, LICENSE-COPYRIGHT-NOTICE   *
  * and DEVELOPER-CERTIFICATE-OF-ORIGIN files in the LEGAL directory in        *
@@ -18,7 +18,7 @@
 //  utxo.rs
 //  marketmaker
 //
-//  Copyright © 2023 Pampex LTD and TillyHK LTD. All rights reserved.
+//  Copyright © 2025 Gleec Holding OÜ. All rights reserved.
 //
 
 pub mod bch;
@@ -84,7 +84,9 @@ use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as 
 use script::{Builder, Script, SignatureVersion, TransactionInputSigner};
 use secp256k1::Signature as SecpSignature;
 use serde_json::{self as json, Value as Json};
-use serialization::{deserialize, serialize, serialize_with_flags, Error as SerError, SERIALIZE_TRANSACTION_WITNESS};
+use serialization::{
+    deserialize, serialize, serialize_with_flags, ChainVariant, Error as SerError, SERIALIZE_TRANSACTION_WITNESS,
+};
 use spv_validation::conf::SPVConf;
 use spv_validation::helpers_validation::SPVError;
 use spv_validation::storage::BlockHeaderStorageError;
@@ -630,6 +632,8 @@ pub struct UtxoCoinConf {
     pub derivation_path: Option<HDPathToCoin>,
     /// The average time in seconds needed to mine a new block for this coin.
     pub avg_blocktime: Option<u64>,
+    /// How to interpret block headers for this coin (BTC, Qtum, RVN, etc.).
+    pub chain_variant: ChainVariant,
 }
 
 pub struct UtxoCoinFields {

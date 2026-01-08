@@ -12,14 +12,37 @@ env:
   FROM_SHARED_RUNNER: true
 
 jobs:
-  linux-x86-64-unit:
+  unit:
+    name: Unit / ${{ matrix.os-name }}
     timeout-minutes: 90
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            os-name: Linux
+            bob-passphrase-secret: BOB_PASSPHRASE_LINUX
+            bob-userpass-secret: BOB_USERPASS_LINUX
+            alice-passphrase-secret: ALICE_PASSPHRASE_LINUX
+            alice-userpass-secret: ALICE_USERPASS_LINUX
+          - os: macos-latest
+            os-name: macOS
+            bob-passphrase-secret: BOB_PASSPHRASE_MACOS
+            bob-userpass-secret: BOB_USERPASS_MACOS
+            alice-passphrase-secret: ALICE_PASSPHRASE_MACOS
+            alice-userpass-secret: ALICE_USERPASS_MACOS
+          - os: windows-latest
+            os-name: Windows
+            bob-passphrase-secret: BOB_PASSPHRASE_WIN
+            bob-userpass-secret: BOB_USERPASS_WIN
+            alice-passphrase-secret: ALICE_PASSPHRASE_WIN
+            alice-userpass-secret: ALICE_USERPASS_WIN
     env:
-      BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_LINUX }}
-      BOB_USERPASS: ${{ secrets.BOB_USERPASS_LINUX }}
-      ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_LINUX }}
-      ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
+      BOB_PASSPHRASE: ${{ secrets[matrix.bob-passphrase-secret] }}
+      BOB_USERPASS: ${{ secrets[matrix.bob-userpass-secret] }}
+      ALICE_PASSPHRASE: ${{ secrets[matrix.alice-passphrase-secret] }}
+      ALICE_USERPASS: ${{ secrets[matrix.alice-userpass-secret] }}
       TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
     steps:
       - uses: actions/checkout@v3
@@ -40,14 +63,37 @@ jobs:
         run: |
           cargo test --bins --lib --no-fail-fast
 
-  mac-x86-64-unit:
+  integration:
+    name: Integration / ${{ matrix.os-name }}
     timeout-minutes: 90
-    runs-on: macos-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            os-name: Linux
+            bob-passphrase-secret: BOB_PASSPHRASE_LINUX
+            bob-userpass-secret: BOB_USERPASS_LINUX
+            alice-passphrase-secret: ALICE_PASSPHRASE_LINUX
+            alice-userpass-secret: ALICE_USERPASS_LINUX
+          - os: macos-latest
+            os-name: macOS
+            bob-passphrase-secret: BOB_PASSPHRASE_MACOS
+            bob-userpass-secret: BOB_USERPASS_MACOS
+            alice-passphrase-secret: ALICE_PASSPHRASE_MACOS
+            alice-userpass-secret: ALICE_USERPASS_MACOS
+          - os: windows-latest
+            os-name: Windows
+            bob-passphrase-secret: BOB_PASSPHRASE_WIN
+            bob-userpass-secret: BOB_USERPASS_WIN
+            alice-passphrase-secret: ALICE_PASSPHRASE_WIN
+            alice-userpass-secret: ALICE_USERPASS_WIN
     env:
-      BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_MACOS }}
-      BOB_USERPASS: ${{ secrets.BOB_USERPASS_MACOS }}
-      ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_MACOS }}
-      ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_MACOS }}
+      BOB_PASSPHRASE: ${{ secrets[matrix.bob-passphrase-secret] }}
+      BOB_USERPASS: ${{ secrets[matrix.bob-userpass-secret] }}
+      ALICE_PASSPHRASE: ${{ secrets[matrix.alice-passphrase-secret] }}
+      ALICE_USERPASS: ${{ secrets[matrix.alice-userpass-secret] }}
       TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
     steps:
       - uses: actions/checkout@v3
@@ -61,141 +107,143 @@ jobs:
         with:
           deps: ('protoc')
 
-      - name: Build cache
-        uses: ./.github/actions/build-cache
-
-      - name: Test
-        run: |
-          cargo test --bins --lib --no-fail-fast
-
-  win-x86-64-unit:
-    timeout-minutes: 90
-    runs-on: windows-latest
-    env:
-      BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_WIN }}
-      BOB_USERPASS: ${{ secrets.BOB_USERPASS_WIN }}
-      ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_WIN }}
-      ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_WIN }}
-      TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
-    steps:
-      - uses: actions/checkout@v3
-      - name: Install toolchain
-        run: |
-          rustup toolchain install stable --no-self-update --profile=minimal
-          rustup default stable
-
-      - name: Install build deps
-        uses: ./.github/actions/deps-install
-        with:
-          deps: ('protoc')
-
-      - name: Build cache
-        uses: ./.github/actions/build-cache
-
-      - name: Test
-        run: |
-          cargo test --bins --lib --no-fail-fast
-
-  linux-x86-64-kdf-integration:
-    timeout-minutes: 90
-    runs-on: ubuntu-latest
-    env:
-      BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_LINUX }}
-      BOB_USERPASS: ${{ secrets.BOB_USERPASS_LINUX }}
-      ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_LINUX }}
-      ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
-      TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
-    steps:
-      - uses: actions/checkout@v3
-      - name: Install toolchain
-        run: |
-          rustup toolchain install stable --no-self-update --profile=minimal
-          rustup default stable
-
-      - name: Install build deps
-        uses: ./.github/actions/deps-install
-        with:
-          deps: ('protoc')
-
-      - name: Build cache
-        uses: ./.github/actions/build-cache
-
-      - name: Test
-        run: |
-          wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/635112d590618165a152dfa0f31e95a9be39a8f6/zcutil/fetch-params-alt.sh | bash
-          cargo test --test 'mm2_tests_main' --no-fail-fast
-
-  mac-x86-64-kdf-integration:
-    timeout-minutes: 90
-    runs-on: macos-latest
-    env:
-      BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_MACOS }}
-      BOB_USERPASS: ${{ secrets.BOB_USERPASS_MACOS }}
-      ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_MACOS }}
-      ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_MACOS }}
-      TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
-    steps:
-      - uses: actions/checkout@v3
-      - name: Install toolchain
-        run: |
-          rustup toolchain install stable --no-self-update --profile=minimal
-          rustup default stable
-
-      - name: Install build deps
-        uses: ./.github/actions/deps-install
-        with:
-          deps: ('protoc')
-
-      - name: Set loopback address
+      - name: Set loopback address (macOS)
+        if: matrix.os == 'macos-latest'
         run: ./scripts/ci/lo0_config.sh
 
       - name: Build cache
         uses: ./.github/actions/build-cache
 
-      - name: Test
-        run: |
-          wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/635112d590618165a152dfa0f31e95a9be39a8f6/zcutil/fetch-params-alt.sh | bash
-          cargo test --test 'mm2_tests_main' --no-fail-fast
-
-  win-x86-64-kdf-integration:
-    timeout-minutes: 90
-    runs-on: windows-latest
-    env:
-      BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_WIN }}
-      BOB_USERPASS: ${{ secrets.BOB_USERPASS_WIN }}
-      ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_WIN }}
-      ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_WIN }}
-      TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
-    steps:
-      - uses: actions/checkout@v3
-      - name: Install toolchain
-        run: |
-          rustup toolchain install stable --no-self-update --profile=minimal
-          rustup default stable
-
-      - name: Install build deps
-        uses: ./.github/actions/deps-install
-        with:
-          deps: ('protoc')
-
-      - name: Build cache
-        uses: ./.github/actions/build-cache
-
-      - name: Download wget64
+      - name: Download wget64 (Windows)
+        if: matrix.os == 'windows-latest'
         uses: ./.github/actions/download-and-verify
         with:
           url: "https://github.com/KomodoPlatform/komodo/raw/d456be35acd1f8584e1e4f971aea27bd0644d5c5/zcutil/wget64.exe"
           output_file: "/wget64.exe"
           checksum: "d80719431dc22b0e4a070f61fab982b113a4ed9a6d4cf25e64b5be390dcadb94"
 
-      - name: Test
-        run: |
-          Invoke-WebRequest -Uri https://raw.githubusercontent.com/KomodoPlatform/komodo/635112d590618165a152dfa0f31e95a9be39a8f6/zcutil/fetch-params-alt.bat -OutFile \cmd.bat && \cmd.bat
-          cargo test --test 'mm2_tests_main' --no-fail-fast
+      - name: Fetch zcash params (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        run: wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/635112d590618165a152dfa0f31e95a9be39a8f6/zcutil/fetch-params-alt.sh | bash
 
-  docker-tests:
-    timeout-minutes: 90
+      - name: Fetch zcash params (Windows)
+        if: matrix.os == 'windows-latest'
+        run: Invoke-WebRequest -Uri https://raw.githubusercontent.com/KomodoPlatform/komodo/635112d590618165a152dfa0f31e95a9be39a8f6/zcutil/fetch-params-alt.bat -OutFile \cmd.bat && \cmd.bat
+
+      - name: Test
+        run: cargo test --test 'mm2_tests_main' --no-fail-fast
+
+  # ==========================================================================
+  # Docker Test Suites (matrix job for clean GitHub UI grouping)
+  # ==========================================================================
+  docker:
+    name: Docker / ${{ matrix.name }}
     runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # SLP tests - BCH/SLP token tests
+          - name: SLP
+            features: docker-tests-slp
+            compose-profiles: "--profile slp"
+            timeout: 45
+            needs-zcash-params: true
+            needs-nodes-setup: false
+            nodes-setup-args: ""
+            container-wait-time: 15
+
+          # Sia tests - Sia + UTXO for swaps
+          - name: Sia
+            features: docker-tests-sia
+            compose-profiles: "--profile sia --profile utxo"
+            timeout: 30
+            needs-zcash-params: true
+            needs-nodes-setup: true
+            nodes-setup-args: "--skip-cosmos"
+            container-wait-time: 15
+
+          # ETH/EVM tests - Ethereum and ERC20
+          - name: ETH
+            features: docker-tests-eth
+            compose-profiles: "--profile evm"
+            timeout: 60
+            needs-zcash-params: false
+            needs-nodes-setup: false
+            nodes-setup-args: ""
+            container-wait-time: 15
+
+          # Ordermatching tests - UTXO order lifecycle
+          - name: Ordermatch (UTXO)
+            features: docker-tests-ordermatch
+            compose-profiles: "--profile utxo"
+            timeout: 60
+            needs-zcash-params: true
+            needs-nodes-setup: false
+            nodes-setup-args: ""
+            container-wait-time: 15
+
+          # UTXO swap protocol tests
+          - name: Swaps (UTXO)
+            features: docker-tests-swaps
+            compose-profiles: "--profile utxo"
+            timeout: 60
+            needs-zcash-params: true
+            needs-nodes-setup: false
+            nodes-setup-args: ""
+            container-wait-time: 20
+
+          # Watcher tests - UTXO watcher flows
+          - name: Watchers (UTXO)
+            features: docker-tests-watchers
+            compose-profiles: "--profile utxo"
+            timeout: 60
+            needs-zcash-params: true
+            needs-nodes-setup: false
+            nodes-setup-args: ""
+            container-wait-time: 15
+
+          # QRC20/Qtum tests
+          - name: QRC20
+            features: docker-tests-qrc20
+            compose-profiles: "--profile qrc20 --profile utxo"
+            timeout: 45
+            needs-zcash-params: true
+            needs-nodes-setup: false
+            nodes-setup-args: ""
+            container-wait-time: 20
+
+          # Tendermint/Cosmos tests
+          - name: Tendermint
+            features: docker-tests-tendermint
+            compose-profiles: "--profile cosmos"
+            timeout: 60
+            needs-zcash-params: false
+            needs-nodes-setup: true
+            nodes-setup-args: "--skip-sia"
+            container-wait-time: 30
+
+          # ZCoin/Zombie tests
+          - name: ZCoin
+            features: docker-tests-zcoin
+            compose-profiles: "--profile zombie"
+            timeout: 60
+            needs-zcash-params: true
+            needs-nodes-setup: false
+            nodes-setup-args: ""
+            container-wait-time: 30
+
+          # Cross-chain integration tests
+          - name: Integration (Cross-chain)
+            features: docker-tests-integration
+            compose-profiles: "--profile all"
+            timeout: 90
+            needs-zcash-params: true
+            needs-nodes-setup: true
+            nodes-setup-args: ""
+            container-wait-time: 45
+
     env:
       BOB_PASSPHRASE: ${{ secrets.BOB_PASSPHRASE_LINUX }}
       BOB_USERPASS: ${{ secrets.BOB_USERPASS_LINUX }}
@@ -204,6 +252,7 @@ jobs:
       TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
     steps:
       - uses: actions/checkout@v3
+
       - name: Install toolchain
         run: |
           rustup toolchain install stable --no-self-update --profile=minimal
@@ -217,12 +266,32 @@ jobs:
       - name: Build cache
         uses: ./.github/actions/build-cache
 
-      - name: Test
+      - name: Fetch zcash params
+        if: ${{ matrix.needs-zcash-params }}
+        run: wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/v0.8.1/zcutil/fetch-params-alt.sh | bash
+
+      - name: Prepare docker test environment
+        if: ${{ matrix.needs-nodes-setup }}
+        run: ./scripts/ci/docker-test-nodes-setup.sh ${{ matrix.nodes-setup-args }}
+
+      - name: Start docker nodes
         run: |
-          wget -O - https://raw.githubusercontent.com/KomodoPlatform/komodo/v0.8.1//zcutil/fetch-params-alt.sh | bash
-          cargo test --test 'docker_tests_main' --features run-docker-tests --no-fail-fast
+          docker compose -f .docker/test-nodes.yml ${{ matrix.compose-profiles }} up -d
+          echo "Waiting for containers to initialize..."
+          sleep ${{ matrix.container-wait-time }}
+          docker compose -f .docker/test-nodes.yml ps
+
+      - name: Run tests
+        env:
+          KDF_DOCKER_COMPOSE_ENV: "1"
+        run: cargo test --test 'docker_tests_main' --features ${{ matrix.features }} --no-fail-fast
+
+      - name: Stop docker nodes
+        if: always()
+        run: docker compose -f .docker/test-nodes.yml down -v
 
   wasm:
+    name: WASM
     timeout-minutes: 90
     runs-on: ubuntu-latest
     env:

@@ -57,20 +57,20 @@ pub async fn get_current_mtp_rpc(
     req: GetCurrentMtpRequest,
 ) -> GetCurrentMtpRpcResult<GetCurrentMtpResponse> {
     match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
-        MmCoinEnum::UtxoCoin(utxo) => Ok(GetCurrentMtpResponse {
+        MmCoinEnum::UtxoCoinVariant(utxo) => Ok(GetCurrentMtpResponse {
             mtp: utxo.get_current_mtp().await.map_mm_err()?,
         }),
-        MmCoinEnum::QtumCoin(qtum) => Ok(GetCurrentMtpResponse {
+        MmCoinEnum::QtumCoinVariant(qtum) => Ok(GetCurrentMtpResponse {
             mtp: qtum.get_current_mtp().await.map_mm_err()?,
         }),
-        MmCoinEnum::Qrc20Coin(qrc) => Ok(GetCurrentMtpResponse {
+        MmCoinEnum::Qrc20CoinVariant(qrc) => Ok(GetCurrentMtpResponse {
             mtp: qrc.get_current_mtp().await.map_mm_err()?,
         }),
         #[cfg(not(target_arch = "wasm32"))]
-        MmCoinEnum::ZCoin(zcoin) => Ok(GetCurrentMtpResponse {
+        MmCoinEnum::ZCoinVariant(zcoin) => Ok(GetCurrentMtpResponse {
             mtp: zcoin.get_current_mtp().await.map_mm_err()?,
         }),
-        MmCoinEnum::Bch(bch) => Ok(GetCurrentMtpResponse {
+        MmCoinEnum::BchVariant(bch) => Ok(GetCurrentMtpResponse {
             mtp: bch.get_current_mtp().await.map_mm_err()?,
         }),
         _ => Err(MmError::new(GetCurrentMtpError::NotSupportedCoin(req.coin))),
