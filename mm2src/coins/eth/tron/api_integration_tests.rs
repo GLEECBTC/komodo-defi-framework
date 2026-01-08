@@ -31,6 +31,7 @@
 use super::api::{TronApiClient, TronHttpClient, TronHttpNode};
 use super::TronAddress;
 use crate::eth::chain_rpc::ChainRpcOps;
+use crate::eth::Web3RpcError;
 use common::executor::Timer;
 use common::{cross_test, small_rng};
 use ethereum_types::Address as EthAddress;
@@ -298,15 +299,20 @@ async fn test_error_nested_result_detection_impl() {
     // Should be an error because our error detection catches nested {"result": {"result": false, ...}}
     assert!(result.is_err(), "Expected error for non-existent contract");
 
-    let error_str = format!("{:?}", result.unwrap_err());
-    println!("Caught nested result error: {}", error_str);
+    let err = result.unwrap_err().into_inner();
 
-    // Verify the error message contains the expected information
-    assert!(
-        error_str.contains("CONTRACT_VALIDATE_ERROR") || error_str.contains("Smart contract"),
-        "Error should mention CONTRACT_VALIDATE_ERROR or 'Smart contract': {}",
-        error_str
-    );
+    // Verify the error is a RemoteError with CONTRACT_VALIDATE_ERROR code
+    match err {
+        Web3RpcError::RemoteError { code, message } => {
+            assert_eq!(code.as_deref(), Some("CONTRACT_VALIDATE_ERROR"));
+            assert!(
+                message.contains("Smart contract"),
+                "Expected message to contain 'Smart contract', got: {}",
+                message
+            );
+        },
+        other => panic!("Expected RemoteError, got {:?}", other),
+    }
 }
 
 async fn test_error_invalid_endpoint_impl() {
