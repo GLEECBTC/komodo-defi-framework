@@ -1,5 +1,7 @@
 # crypto — Key Management and HD Derivation
 
+> **Note:** Always follow the root `/CLAUDE.md` for global conventions (fmt, clippy, error handling, etc.).
+
 **Security-critical crate.** Handles mnemonics, seeds, key derivation, and hardware wallet integration.
 
 ## Security Rules (Non-Negotiable)

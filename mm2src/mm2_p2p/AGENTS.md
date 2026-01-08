@@ -1,5 +1,7 @@
 # mm2_p2p — Peer-to-Peer Networking
 
+> **Note:** Always follow the root `/CLAUDE.md` for global conventions (fmt, clippy, error handling, etc.).
+
 libp2p-based networking layer for decentralized communication between KDF nodes.
 
 ## Responsibilities

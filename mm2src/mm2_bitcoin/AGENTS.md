@@ -1,5 +1,7 @@
 # mm2_bitcoin — UTXO Primitives
 
+> **Note:** Always follow the root `/CLAUDE.md` for global conventions (fmt, clippy, error handling, etc.).
+
 Low-level primitives for all UTXO-based coins (Bitcoin, Komodo, Litecoin, etc.). Named "bitcoin" historically but used across all UTXO protocols.
 
 **Note:** This is a workspace of sub-crates, not a single crate. Each sub-crate is published separately.

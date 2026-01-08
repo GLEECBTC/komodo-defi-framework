@@ -440,12 +440,7 @@ impl SwapOps for UtxoStandardCoin {
     }
 
     #[inline]
-    async fn extract_secret(
-        &self,
-        secret_hash: &[u8],
-        spend_tx: &[u8],
-        _watcher_reward: bool,
-    ) -> Result<[u8; 32], String> {
+    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<[u8; 32], String> {
         utxo_common::extract_secret(secret_hash, spend_tx)
     }
 

@@ -4203,12 +4203,7 @@ impl SwapOps for TendermintCoin {
         self.search_for_swap_tx_spend(input).await.map_err(|e| e.to_string())
     }
 
-    async fn extract_secret(
-        &self,
-        secret_hash: &[u8],
-        spend_tx: &[u8],
-        watcher_reward: bool,
-    ) -> Result<[u8; 32], String> {
+    async fn extract_secret(&self, _secret_hash: &[u8], spend_tx: &[u8]) -> Result<[u8; 32], String> {
         let tx = try_s!(cosmrs::Tx::from_bytes(spend_tx));
         let msg = try_s!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
 
@@ -5141,7 +5136,6 @@ pub mod tests {
             search_from_block: 0,
             swap_contract_address: &None,
             swap_unique_data: &[],
-            watcher_reward: false,
         };
 
         let spend_tx = match block_on(coin.search_for_swap_tx_spend_my(input)).unwrap().unwrap() {
@@ -5217,7 +5211,6 @@ pub mod tests {
             search_from_block: 0,
             swap_contract_address: &None,
             swap_unique_data: &[],
-            watcher_reward: false,
         };
 
         match block_on(coin.search_for_swap_tx_spend_my(input)).unwrap().unwrap() {
