@@ -217,7 +217,6 @@ fn global_nft_with_random_privkey(
 ) -> EthCoin {
     // Register platform ETH coin in MM_CTX1 if not already registered.
     // Required because NFT coins call platform_coin() for get_swap_gas_fee_policy().
-    // Use let _ to ignore PlatformIsAlreadyActivatedErr from parallel test execution.
     if block_on(lp_coinfind(&MM_CTX1, &platform_ticker))
         .ok()
         .flatten()

@@ -370,8 +370,7 @@ pub fn eth_coin_with_random_privkey(swap_contract_address: Address) -> EthCoin {
 pub fn erc20_coin_with_random_privkey(swap_contract_address: Address) -> EthCoin {
     let secret = random_secp256k1_secret();
 
-    // Register platform ETH coin if not already registered, so platform_coin() lookups work.
-    // Use ok() to ignore PlatformIsAlreadyActivatedErr from parallel test execution.
+    // Register platform ETH coin if not already registered by another parallel test, so platform_coin() lookups work.
     if block_on(lp_coinfind(&MM_CTX, "ETH")).ok().flatten().is_none() {
         let eth_conf = eth_dev_conf();
         let eth_req = json!({
