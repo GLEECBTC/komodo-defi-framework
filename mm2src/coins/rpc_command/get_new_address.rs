@@ -348,7 +348,13 @@ impl RpcTask for InitGetNewAddressTask {
                     AddressFormat::Standard | AddressFormat::CashAddress { .. } => {
                         Some(TrezorInputScriptType::SpendAddress)
                     },
-                    AddressFormat::Segwit => Some(TrezorInputScriptType::SpendWitness),
+                    AddressFormat::Segwit { version: 0 } => Some(TrezorInputScriptType::SpendWitness),
+                    AddressFormat::Segwit { version: 1 } => Some(TrezorInputScriptType::SpendTaproot),
+                    AddressFormat::Segwit { version: v } => {
+                        return Err(GetNewAddressRpcError::ErrorDerivingAddress(format!(
+                            "Segwit v{v} addresses are not supported for UTXO"
+                        )))?
+                    },
                 };
                 Ok(GetNewAddressResponseEnum::Map(
                     get_new_address_helper(
@@ -368,7 +374,12 @@ impl RpcTask for InitGetNewAddressTask {
                     AddressFormat::Standard | AddressFormat::CashAddress { .. } => {
                         Some(TrezorInputScriptType::SpendAddress)
                     },
-                    AddressFormat::Segwit => Some(TrezorInputScriptType::SpendWitness),
+                    AddressFormat::Segwit { version: 0 } => Some(TrezorInputScriptType::SpendWitness),
+                    AddressFormat::Segwit { version: v } => {
+                        return Err(GetNewAddressRpcError::ErrorDerivingAddress(format!(
+                            "Segwit v{v} addresses are not supported for Qtum"
+                        )))?
+                    },
                 };
                 Ok(GetNewAddressResponseEnum::Map(
                     get_new_address_helper(

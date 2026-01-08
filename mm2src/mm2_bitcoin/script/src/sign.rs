@@ -13,6 +13,9 @@ use serde::Deserialize;
 use std::convert::TryInto;
 use {Builder, Script};
 
+#[cfg(not(target_arch = "wasm32"))]
+use ext_bitcoin;
+
 const ZCASH_PREVOUTS_HASH_PERSONALIZATION: &[u8] = b"ZcashPrevoutHash";
 const ZCASH_SEQUENCE_HASH_PERSONALIZATION: &[u8] = b"ZcashSequencHash";
 const ZCASH_OUTPUTS_HASH_PERSONALIZATION: &[u8] = b"ZcashOutputsHash";
@@ -25,8 +28,12 @@ const ZCASH_SIG_HASH_PERSONALIZATION: &[u8] = b"ZcashSigHash";
 pub enum SignatureVersion {
     #[serde(rename = "base")]
     Base,
-    #[serde(rename = "witness_v0")]
-    WitnessV0,
+    // Disallow deserializing the witness variant. This variant is only used internally for marking
+    // and shouldn't be supplied from an outside source (i.e. coins config).
+    // We can already internally detect that a signature should use witness format based
+    // the address format of the coin.
+    #[serde(skip_deserializing)]
+    Witness,
     #[serde(rename = "fork_id")]
     ForkId,
 }
@@ -50,29 +57,11 @@ impl From<SighashBase> for u32 {
 pub struct Sighash {
     pub base: SighashBase,
     pub anyone_can_pay: bool,
-    pub fork_id: bool,
-}
-
-impl From<Sighash> for u32 {
-    fn from(s: Sighash) -> Self {
-        let base = s.base as u32;
-        let base = if s.anyone_can_pay { base | 0x80 } else { base };
-
-        if s.fork_id {
-            base | 0x40
-        } else {
-            base
-        }
-    }
 }
 
 impl Sighash {
-    pub fn new(base: SighashBase, anyone_can_pay: bool, fork_id: bool) -> Self {
-        Sighash {
-            base,
-            anyone_can_pay,
-            fork_id,
-        }
+    pub fn new(base: SighashBase, anyone_can_pay: bool) -> Self {
+        Sighash { base, anyone_can_pay }
     }
 
     /// Used by SCRIPT_VERIFY_STRICTENC
@@ -88,16 +77,15 @@ impl Sighash {
     }
 
     /// Creates Sighash from any u, even if is_defined() == false
-    pub fn from_u32(version: SignatureVersion, u: u32) -> Self {
+    pub fn from_u32(u: u32) -> Self {
         let anyone_can_pay = (u & 0x80) == 0x80;
-        let fork_id = version == SignatureVersion::ForkId && (u & 0x40) == 0x40;
         let base = match u & 0x1f {
             2 => SighashBase::None,
             3 => SighashBase::Single,
             _ => SighashBase::All,
         };
 
-        Sighash::new(base, anyone_can_pay, fork_id)
+        Sighash::new(base, anyone_can_pay)
     }
 }
 
@@ -117,6 +105,18 @@ impl From<TransactionInput> for UnsignedTransactionInput {
             prev_script: Vec::new().into(),
             sequence: i.sequence,
             amount: 0,
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<UnsignedTransactionInput> for ext_bitcoin::TxIn {
+    fn from(i: UnsignedTransactionInput) -> Self {
+        ext_bitcoin::TxIn {
+            previous_output: i.previous_output.into(),
+            script_sig: ext_bitcoin::Script::default(),
+            sequence: ext_bitcoin::Sequence(i.sequence),
+            witness: ext_bitcoin::Witness::default(),
         }
     }
 }
@@ -232,6 +232,18 @@ impl From<TransactionInputSigner> for Transaction {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+impl From<TransactionInputSigner> for ext_bitcoin::Transaction {
+    fn from(tx: TransactionInputSigner) -> Self {
+        ext_bitcoin::Transaction {
+            version: tx.version,
+            lock_time: ext_bitcoin::PackedLockTime(tx.lock_time),
+            input: tx.inputs.into_iter().map(|i| i.into()).collect(),
+            output: tx.outputs.into_iter().map(|o| o.into()).collect(),
+        }
+    }
+}
+
 impl TransactionInputSigner {
     pub fn signature_hash(
         &self,
@@ -241,15 +253,19 @@ impl TransactionInputSigner {
         sigversion: SignatureVersion,
         sighashtype: u32,
     ) -> H256 {
-        let sighash = Sighash::from_u32(sigversion, sighashtype);
+        let sighash = Sighash::from_u32(sighashtype);
         match sigversion {
-            SignatureVersion::ForkId if sighash.fork_id => {
-                self.signature_hash_fork_id(input_index, input_amount, script_pubkey, sighashtype, sighash)
+            SignatureVersion::ForkId => {
+                // Make sure the `fork_id` bit (0x40) is set.
+                if (sighashtype & 0x40) != 0x40 {
+                    return 1.into();
+                }
+                // For a `fork_id` chain that has the `fork_id` bit (0x40) set in the sighash,
+                // we should use segwit v0 sighash. Examples of these chains are: BCH, XRG, XEC.
+                self.signature_hash_witness0(input_index, input_amount, script_pubkey, sighashtype, sighash)
             },
-            SignatureVersion::Base | SignatureVersion::ForkId => {
-                self.signature_hash_original(input_index, script_pubkey, sighashtype, sighash)
-            },
-            SignatureVersion::WitnessV0 => {
+            SignatureVersion::Base => self.signature_hash_original(input_index, script_pubkey, sighashtype, sighash),
+            SignatureVersion::Witness => {
                 self.signature_hash_witness0(input_index, input_amount, script_pubkey, sighashtype, sighash)
             },
         }
@@ -397,6 +413,14 @@ impl TransactionInputSigner {
         sighashtype: u32,
         sighash: Sighash,
     ) -> H256 {
+        if input_index >= self.inputs.len() {
+            return 1u8.into();
+        }
+
+        if sighash.base == SighashBase::Single && input_index >= self.outputs.len() {
+            return 1u8.into();
+        }
+
         let hash_prevouts = compute_hash_prevouts(sighash, &self.inputs);
         let hash_sequence = compute_hash_sequence(sighash, &self.inputs);
         let hash_outputs = compute_hash_outputs(sighash, input_index, &self.outputs);
@@ -414,25 +438,6 @@ impl TransactionInputSigner {
         stream.append(&sighashtype); // this also includes 24-bit fork id. which is 0 for BitcoinCash
         let out = stream.out();
         dhash256(&out)
-    }
-
-    fn signature_hash_fork_id(
-        &self,
-        input_index: usize,
-        input_amount: u64,
-        script_pubkey: &Script,
-        sighashtype: u32,
-        sighash: Sighash,
-    ) -> H256 {
-        if input_index >= self.inputs.len() {
-            return 1u8.into();
-        }
-
-        if sighash.base == SighashBase::Single && input_index >= self.outputs.len() {
-            return 1u8.into();
-        }
-
-        self.signature_hash_witness0(input_index, input_amount, script_pubkey, sighashtype, sighash)
     }
 
     /// https://github.com/zcash/zips/blob/master/zip-0243.rst#notes
@@ -638,7 +643,7 @@ mod tests {
     use hash::{H160, H256};
     use keys::{
         prefixes::{BTC_PREFIXES, T_BTC_PREFIXES},
-        Address, AddressHashEnum, Private,
+        Address, LockingDestination, Private,
     };
     use script::Script;
     use ser::deserialize;
@@ -654,7 +659,7 @@ mod tests {
             H256::from_reversed_str("81b4c832d70cb56ff957589752eb4125a4cab78a25a8fc52d6a09e5bd4404d48");
         let previous_output_index = 0;
         let to: Address = Address::from_legacyaddress("1KKKK6N21XKo48zWKuQKXdvSsCf95ibHFa", &BTC_PREFIXES).unwrap();
-        assert!(to.hash().is_address_hash());
+        assert!(to.locking_destination().is_address_or_script_hash());
         let previous_output = "76a914df3bd30160e6c6145baaf2c88a8844c13a00d1d588ac".into();
         let current_output: Bytes = "76a914c8e90996c7c6080ee06284600c684ed904d14c5c88ac".into();
         let value = 91234;
@@ -662,7 +667,7 @@ mod tests {
 
         // this is irrelevant
         let mut hash = H160::default();
-        if let AddressHashEnum::AddressHash(h) = to.hash() {
+        if let LockingDestination::AddressHash(h) = to.locking_destination() {
             hash = *h;
         }
         assert_eq!(&current_output[3..23], &*hash);
@@ -714,7 +719,7 @@ mod tests {
             H256::from_reversed_str("0bc54ed426950f50bf2c2776034a03592e844757b42330eb908eb04492dad2c6");
         let previous_output_index = 1;
         let to: Address = Address::from_legacyaddress("msj7SEQmH7pUCUx8YU6R87DrAHYzcABdzw", &T_BTC_PREFIXES).unwrap();
-        assert!(to.hash().is_address_hash());
+        assert!(to.locking_destination().is_address_or_script_hash());
         let previous_output = "76a914df3bd30160e6c6145baaf2c88a8844c13a00d1d588ac".into();
         let current_output: Bytes = "76a91485ee21a7f8cdd9034fb55004e0d8ed27db1c03c288ac".into();
         let value = 100000000;
@@ -773,7 +778,7 @@ mod tests {
         let script: Script = script.into();
         let expected = H256::from_reversed_str(result);
 
-        let sighash = Sighash::from_u32(SignatureVersion::Base, hash_type as u32);
+        let sighash = Sighash::from_u32(hash_type as u32);
         let hash = signer.signature_hash_original(input_index, &script, hash_type as u32, sighash);
         assert_eq!(expected, hash);
     }
@@ -813,7 +818,7 @@ mod tests {
         signer.inputs[0].amount = 50000000;
         signer.consensus_branch_id = 0x76b809bb;
 
-        let sig_hash = Sighash::from_u32(SignatureVersion::Base, 1);
+        let sig_hash = Sighash::from_u32(1);
         let hash = signer.signature_hash_overwintered(
             0,
             &Script::from("1976a914507173527b4c3318a2aecd793bf1cfed705950cf88ac"),
@@ -847,7 +852,7 @@ mod tests {
         signer.inputs[0].amount = 9924260;
         signer.consensus_branch_id = 0x76b809bb;
 
-        let sig_hash = Sighash::from_u32(SignatureVersion::Base, 1);
+        let sig_hash = Sighash::from_u32(1);
         let hash = signer.signature_hash_overwintered(
             0,
             &Script::from("76a91405aab5342166f8594baf17a7d9bef5d56744332788ac"),
@@ -881,7 +886,7 @@ mod tests {
         signer.inputs[0].amount = 100000000;
         signer.consensus_branch_id = 0x76b809bb;
 
-        let sig_hash = Sighash::from_u32(SignatureVersion::Base, 1);
+        let sig_hash = Sighash::from_u32(1);
         let hash = signer.signature_hash_overwintered(
 			0,
 			&Script::from("6304e5928060b17521031c632dad67a611de77d9666cbc61e65957c7d7544c25e384f4e76de729e6a1bfac6782012088a914b78f0b837e2c710f8b28e59d06473d489e5315c88821037310a8fb9fd8f198a1a21db830252ad681fccda580ed4101f3f6bfb98b34fab5ac68"),

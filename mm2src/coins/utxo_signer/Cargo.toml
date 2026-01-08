@@ -19,3 +19,7 @@ primitives = { path = "../../mm2_bitcoin/primitives" }
 rpc = { path = "../../mm2_bitcoin/rpc" }
 script = { path = "../../mm2_bitcoin/script" }
 serialization = { path = "../../mm2_bitcoin/serialization" }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+bitcoin.workspace = true
+rand.workspace = true

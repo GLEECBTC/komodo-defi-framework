@@ -16,3 +16,6 @@ serde.workspace = true
 serialization = { path = "../serialization" }
 log.workspace = true
 blake2b_simd.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+bitcoin.workspace = true

@@ -215,7 +215,7 @@ async fn sign_funding_transaction(
     let signed = sign_tx(
         unsigned,
         key_pair,
-        SignatureVersion::WitnessV0,
+        SignatureVersion::Witness,
         coin.as_ref().conf.fork_id,
     )
     .map_err(|e| SignFundingTransactionError::TxSignFailed(e.to_string()))?;
@@ -520,7 +520,7 @@ impl LightningEventHandler {
                     return;
                 },
             };
-            let change_destination_script = match Builder::build_p2wpkh(my_address.hash()) {
+            let change_destination_script = match Builder::build_p2wpkh(my_address.locking_destination()) {
                 Ok(script) => script.to_bytes().take().into(),
                 Err(err) => {
                     error!(

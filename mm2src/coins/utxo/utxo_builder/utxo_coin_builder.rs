@@ -202,7 +202,7 @@ where
         conf.address_prefixes.clone(),
         conf.bech32_hrp.clone(),
     )
-    .as_pkh_from_pk(*key_pair.public())
+    .using_pk(*key_pair.public())
     .build()
     .map_to_mm(UtxoCoinBuildError::Internal)?;
 
@@ -331,7 +331,7 @@ where
         conf.address_prefixes.clone(),
         conf.bech32_hrp.clone(),
     )
-    .as_pkh_from_pk(Public::Compressed(pubkey.serialize().into()))
+    .using_pk(Public::Compressed(pubkey.serialize().into()))
     .build()
     .map_to_mm(UtxoCoinBuildError::Internal)?;
     let derivation_method = DerivationMethod::SingleAddress(my_address.clone());
@@ -370,15 +370,17 @@ where
         }
     };
     let addr_format = builder.address_format()?;
+    println!("Address format: {:?}", addr_format);
     let my_address = AddressBuilder::new(
         addr_format,
         conf.checksum_type,
         conf.address_prefixes.clone(),
         conf.bech32_hrp.clone(),
     )
-    .as_pkh_from_pk(pubkey)
+    .using_pk(pubkey)
     .build()
     .map_to_mm(UtxoCoinBuildError::Internal)?;
+    println!("My address: {:?}", my_address);
 
     let my_script_pubkey = output_script(&my_address).map(|script| script.to_bytes())?;
 
@@ -534,7 +536,7 @@ pub trait UtxoCoinBuilderCommonOps {
 
         let mut address_format = match format_from_req {
             Some(from_req) => {
-                if from_req.is_segwit() != format_from_conf.is_segwit() {
+                if from_req.is_legacy_or_cashaddr() != format_from_conf.is_legacy_or_cashaddr() {
                     let error = format!(
                         "Both conf {format_from_conf:?} and request {from_req:?} must be either Segwit or Standard/CashAddress"
                     );

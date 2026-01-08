@@ -226,7 +226,7 @@ impl BchDockerOps {
                 self.coin.as_ref().conf.address_prefixes.clone(),
                 None,
             )
-            .as_pkh_from_pk(*key_pair.public())
+            .using_pk(*key_pair.public())
             .build()
             .expect("valid address props");
 

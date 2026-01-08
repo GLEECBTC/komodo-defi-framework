@@ -2,7 +2,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use bech32;
-use AddressHashEnum;
+use LockingDestination;
 
 /// Address error.
 #[derive(Debug, PartialEq)]
@@ -59,9 +59,12 @@ impl From<bech32::Error> for Error {
 /// The different types of segwit addresses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SegwitAddrType {
+    /// pay-to-witness-public-key-hash
     P2wpkh,
     /// pay-to-witness-script-hash
     P2wsh,
+    /// pay-to-taproot
+    P2tr,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -76,24 +79,30 @@ pub struct SegwitAddress {
 }
 
 impl SegwitAddress {
-    pub fn new(hash: &AddressHashEnum, hrp: String) -> SegwitAddress {
-        SegwitAddress {
-            hrp,
-            version: bech32::u5::try_from_u8(0).expect("0<32"),
-            program: hash.to_vec(),
+    pub fn new(program: &LockingDestination, hrp: String, version: u8) -> Result<SegwitAddress, Error> {
+        if version > 16 {
+            return Err(Error::InvalidWitnessVersion(version));
         }
+        Ok(SegwitAddress {
+            hrp,
+            version: bech32::u5::try_from_u8(version).expect("version must be < 16, thus also < 32"),
+            program: program.to_vec(),
+        })
+    }
+
+    pub fn version_as_u8(&self) -> u8 {
+        self.version.to_u8()
     }
 
     /// Get the address type of the address.
     /// None if unknown or non-standard.
     pub fn address_type(&self) -> Option<SegwitAddrType> {
         // BIP-141 p2wpkh or p2wsh addresses.
-        match self.version.to_u8() {
-            0 => match self.program.len() {
-                20 => Some(SegwitAddrType::P2wpkh),
-                32 => Some(SegwitAddrType::P2wsh),
-                _ => None,
-            },
+        match self.version_as_u8() {
+            0 if self.program.len() == 20 => Some(SegwitAddrType::P2wpkh),
+            0 if self.program.len() == 32 => Some(SegwitAddrType::P2wsh),
+            1 if self.program.len() == 32 => Some(SegwitAddrType::P2tr),
+            // Future versions or non-standard program sizes.
             _ => None,
         }
     }
@@ -130,7 +139,14 @@ impl fmt::Display for SegwitAddress {
         } else {
             fmt as &mut dyn fmt::Write
         };
-        let mut bech32_writer = bech32::Bech32Writer::new(self.hrp.as_str(), bech32::Variant::Bech32, writer)?;
+        let bech32_version = match self.version.to_u8() {
+            0 => bech32::Variant::Bech32,
+            1 => bech32::Variant::Bech32m,
+            // Ideally, all v1+ segwit addresses should be formatted using Bech32m.
+            // But let's error on such attempts unless we explicitly support higher versions.
+            _ => return Err(fmt::Error),
+        };
+        let mut bech32_writer = bech32::Bech32Writer::new(self.hrp.as_str(), bech32_version, writer)?;
         bech32::WriteBase32::write_u5(&mut bech32_writer, self.version)?;
         bech32::ToBase32::write_base32(&self.program, &mut bech32_writer)
     }
@@ -147,10 +163,11 @@ impl FromStr for SegwitAddress {
         if payload.is_empty() {
             return Err(Error::EmptyBech32Payload);
         }
+
+        // We perform this match to trigger a compilation error if a new variant gets added that we didn't handle yet.
         match variant {
             bech32::Variant::Bech32 => (),
-            bech32::Variant::Bech32m => return Err(Error::UnsupportedAddressVariant("Bech32m".into())),
-            // Important: If a new variant is added we should return an error until we support the new variant
+            bech32::Variant::Bech32m => (),
         }
 
         // Get the script version and program (converted from 5-bit to 8-bit)
@@ -163,22 +180,39 @@ impl FromStr for SegwitAddress {
         if version.to_u8() > 16 {
             return Err(Error::InvalidWitnessVersion(version.to_u8()));
         }
+
+        // Only support segwit v0 and v1. Note that we are relaxing this check in tests
+        // so to test the detection of other errors (invalid length, wrong encoding used, etc...)
+        #[cfg(not(test))]
+        if ![0, 1].contains(&version.to_u8()) {
+            return Err(Error::UnsupportedWitnessVersion(version.to_u8()));
+        }
+
         if program.len() < 2 || program.len() > 40 {
             return Err(Error::InvalidWitnessProgramLength(program.len()));
         }
 
-        // Specific segwit v0 check.
-        if version.to_u8() != 0 {
-            return Err(Error::UnsupportedWitnessVersion(version.to_u8()));
+        if version.to_u8() == 0 {
+            // Bech32 length check for segwit v0 (later versions use bech32m which isn't vulnerable to this problem).
+            // Important: we should be careful when using new program lengths since a valid Bech32 string can be modified according to
+            // the below 2 links while still having a valid checksum.
+            // https://github.com/bitcoin/bips/blob/master/bip-0350.mediawiki#motivation
+            // https://github.com/sipa/bech32/issues/51
+            if program.len() != 20 && program.len() != 32 {
+                return Err(Error::InvalidSegwitV0ProgramLength(program.len()));
+            }
+            if variant == bech32::Variant::Bech32m {
+                return Err(Error::UnsupportedAddressVariant(
+                    "Bech32m is not supported for witness version 0. Bech32 should be used instead.".into(),
+                ));
+            }
         }
 
-        // Bech32 length check.
-        // Important: we should be careful when using new program lengths since a valid Bech32 string can be modified according to
-        // the below 2 links while still having a valid checksum.
-        // https://github.com/bitcoin/bips/blob/master/bip-0350.mediawiki#motivation
-        // https://github.com/sipa/bech32/issues/51
-        if program.len() != 20 && program.len() != 32 {
-            return Err(Error::InvalidSegwitV0ProgramLength(program.len()));
+        if version.to_u8() != 0 && variant == bech32::Variant::Bech32 {
+            return Err(Error::UnsupportedAddressVariant(format!(
+                "Bech32 is not supported for witness version {}. Bech32m should be used instead.",
+                version.to_u8()
+            )));
         }
 
         Ok(SegwitAddress { hrp, version, program })
@@ -190,6 +224,7 @@ mod tests {
     use super::*;
     use crypto::sha256;
     use hex::ToHex;
+    use primitives::hash::H256;
     use Public;
 
     fn hex_to_bytes(s: &str) -> Option<Vec<u8>> {
@@ -211,7 +246,7 @@ mod tests {
         let public_key = Public::from_slice(&bytes).unwrap();
         let hash = public_key.address_hash();
         let hrp = "bc";
-        let addr = SegwitAddress::new(&AddressHashEnum::AddressHash(hash), hrp.to_string());
+        let addr = SegwitAddress::new(&LockingDestination::AddressHash(hash), hrp.to_string(), 0).unwrap();
         assert_eq!(&addr.to_string(), "bc1qvzvkjn4q3nszqxrv3nraga2r822xjty3ykvkuw");
         assert_eq!(addr.address_type(), Some(SegwitAddrType::P2wpkh));
     }
@@ -222,7 +257,7 @@ mod tests {
         let bytes = hex_to_bytes(script).unwrap();
         let hash = sha256(&bytes);
         let hrp = "bc";
-        let addr = SegwitAddress::new(&AddressHashEnum::WitnessScriptHash(hash), hrp.to_string());
+        let addr = SegwitAddress::new(&LockingDestination::WitnessScriptHash(hash), hrp.to_string(), 0).unwrap();
         assert_eq!(
             &addr.to_string(),
             "bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3"
@@ -231,8 +266,23 @@ mod tests {
     }
 
     #[test]
+    fn test_p2tr_address() {
+        let x_only_pub = "d5e89e0b73605abba690ba5e00484e279d006283bed0055a0530fb6a8c9adac7";
+        let bytes = hex_to_bytes(x_only_pub).unwrap();
+        let x_only_pub = H256::from_slice(&bytes).unwrap();
+        let hrp = "tb";
+        let addr = SegwitAddress::new(&LockingDestination::TweakedXOnlyPubkey(x_only_pub), hrp.to_string(), 1).unwrap();
+        assert_eq!(
+            &addr.to_string(),
+            "tb1p6h5fuzmnvpdthf5shf0qqjzwy7wsqc5rhmgq2ks9xrak4ry6mtrscsqvzp"
+        );
+        assert_eq!(addr.address_type(), Some(SegwitAddrType::P2tr));
+    }
+
+    #[test]
     // https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki#test-vectors
     fn test_valid_segwit() {
+        // p2wpkh
         let addr = "BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T4";
         let segwit_addr = SegwitAddress::from_str(addr).unwrap();
         assert_eq!(0, segwit_addr.version.to_u8());
@@ -240,7 +290,7 @@ mod tests {
             "751e76e8199196d454941c45d1b3a323f1433bd6",
             segwit_addr.program.to_hex::<String>()
         );
-
+        // p2wsh
         let addr = "tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7";
         let segwit_addr = SegwitAddress::from_str(addr).unwrap();
         assert_eq!(0, segwit_addr.version.to_u8());
@@ -248,7 +298,7 @@ mod tests {
             "1863143c14c5166804bd19203356da136c985678cd4d27a1b8c6329604903262",
             segwit_addr.program.to_hex::<String>()
         );
-
+        // p2wsh
         let addr = "tb1qqqqqp399et2xygdj5xreqhjjvcmzhxw4aywxecjdzew6hylgvsesrxh6hy";
         let segwit_addr = SegwitAddress::from_str(addr).unwrap();
         assert_eq!(0, segwit_addr.version.to_u8());
@@ -256,10 +306,19 @@ mod tests {
             "000000c4a5cad46221b2a187905e5266362b99d5e91c6ce24d165dab93e86433",
             segwit_addr.program.to_hex::<String>()
         );
+        // p2tr
+        let addr = "tb1p6h5fuzmnvpdthf5shf0qqjzwy7wsqc5rhmgq2ks9xrak4ry6mtrscsqvzp";
+        let segwit_addr = SegwitAddress::from_str(addr).unwrap();
+        assert_eq!(1, segwit_addr.version.to_u8());
+        assert_eq!(
+            "d5e89e0b73605abba690ba5e00484e279d006283bed0055a0530fb6a8c9adac7",
+            segwit_addr.program.to_hex::<String>()
+        );
     }
 
     #[test]
     // https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki#test-vectors
+    // https://github.com/bitcoin/bips/blob/master/bip-0350.mediawiki#test-vectors
     fn test_invalid_segwit_addresses() {
         // Invalid checksum
         let invalid_address = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t5";
@@ -271,8 +330,13 @@ mod tests {
         let err = SegwitAddress::from_str(invalid_address).unwrap_err();
         assert_eq!(err, Error::InvalidWitnessVersion(17));
 
-        // Invalid program length
+        // Invalid program length (bech32)
         let invalid_address = "bc1rw5uspcuh";
+        let err = SegwitAddress::from_str(invalid_address).unwrap_err();
+        assert_eq!(err, Error::InvalidWitnessProgramLength(1));
+
+        // Invalid program length (bech32m)
+        let invalid_address = "bc1pw5dgrnzv";
         let err = SegwitAddress::from_str(invalid_address).unwrap_err();
         assert_eq!(err, Error::InvalidWitnessProgramLength(1));
 
@@ -308,21 +372,43 @@ mod tests {
 
         // Version 1 shouldn't be used with bech32 variant although the below address is given as valid in BIP173
         // https://github.com/bitcoin/bips/blob/master/bip-0350.mediawiki#abstract
-        // If the version byte is 1 to 16, no further interpretation of the witness program or witness stack happens,
-        // and there is no size restriction for the witness stack. These versions are reserved for future extensions
-        // https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki#witness-program
         let invalid_address = "bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7k7grplx";
         let err = SegwitAddress::from_str(invalid_address).unwrap_err();
-        assert_eq!(err, Error::UnsupportedWitnessVersion(1));
+        assert_eq!(
+            err,
+            Error::UnsupportedAddressVariant(
+                "Bech32 is not supported for witness version 1. Bech32m should be used instead.".into()
+            )
+        );
 
-        // Version 16 shouldn't be used with bech32 variant although the below address is given as valid in BIP173
+        // Invalid checksum for version 0 (bech32m instead of bech32)
+        let invalid_address = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kemeawh";
+        let err = SegwitAddress::from_str(invalid_address).unwrap_err();
+        assert_eq!(
+            err,
+            Error::UnsupportedAddressVariant(
+                "Bech32m is not supported for witness version 0. Bech32 should be used instead.".into()
+            )
+        );
+
+        // Version 16 shouldn't be used with bech32
         let invalid_address = "BC1SW50QA3JX3S";
         let err = SegwitAddress::from_str(invalid_address).unwrap_err();
-        assert_eq!(err, Error::UnsupportedWitnessVersion(16));
+        assert_eq!(
+            err,
+            Error::UnsupportedAddressVariant(
+                "Bech32 is not supported for witness version 16. Bech32m should be used instead.".into()
+            )
+        );
 
-        // Version 2 shouldn't be used with bech32 variant although the below address is given as valid in BIP173
+        // Version 2 shouldn't be used with bech32
         let invalid_address = "bc1zw508d6qejxtdg4y5r3zarvaryvg6kdaj";
         let err = SegwitAddress::from_str(invalid_address).unwrap_err();
-        assert_eq!(err, Error::UnsupportedWitnessVersion(2));
+        assert_eq!(
+            err,
+            Error::UnsupportedAddressVariant(
+                "Bech32 is not supported for witness version 2. Bech32m should be used instead.".into()
+            )
+        );
     }
 }

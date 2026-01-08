@@ -21,7 +21,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc::v1::types::ToTxHash;
 use rpc_task::RpcTaskError;
-use script::{SignatureVersion, TransactionInputSigner};
+use script::TransactionInputSigner;
 use serialization::{serialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
 use std::iter::once;
 use std::sync::Arc;
@@ -138,15 +138,6 @@ where
 
     fn request(&self) -> &WithdrawRequest;
 
-    fn signature_version(&self) -> SignatureVersion {
-        match self.sender_address().addr_format() {
-            UtxoAddressFormat::Segwit => SignatureVersion::WitnessV0,
-            UtxoAddressFormat::Standard | UtxoAddressFormat::CashAddress { .. } => {
-                self.coin().as_ref().conf.signature_version
-            },
-        }
-    }
-
     #[allow(clippy::result_large_err)]
     fn on_generating_transaction(&self) -> Result<(), MmError<WithdrawError>>;
 
@@ -222,7 +213,7 @@ where
             amount: big_decimal_from_sat(data.fee_amount as i64, decimals),
         };
         let tx_hex = match coin.addr_format() {
-            UtxoAddressFormat::Segwit => serialize_with_flags(&signed, SERIALIZE_TRANSACTION_WITNESS).into(),
+            UtxoAddressFormat::Segwit { .. } => serialize_with_flags(&signed, SERIALIZE_TRANSACTION_WITNESS).into(),
             _ => serialize(&signed).into(),
         };
         Ok(TransactionDetails {
@@ -312,21 +303,25 @@ where
         let mut sign_params = UtxoSignTxParamsBuilder::new();
 
         // TODO refactor [`UtxoTxBuilder::build`] to return `SpendingInputInfo` and `SendingOutputInfo` within `AdditionalTxData`.
-        sign_params.add_inputs_infos(
-            unsigned_tx
-                .inputs
-                .iter()
-                .map(|_input| match self.from_address.addr_format() {
-                    AddressFormat::Segwit => SpendingInputInfo::P2WPKH {
-                        address_derivation_path: self.from_derivation_path.clone(),
-                        address_pubkey: self.from_pubkey,
-                    },
-                    AddressFormat::Standard | AddressFormat::CashAddress { .. } => SpendingInputInfo::P2PKH {
-                        address_derivation_path: self.from_derivation_path.clone(),
-                        address_pubkey: self.from_pubkey,
-                    },
-                }),
-        );
+        let spending_input_info = match self.from_address.addr_format() {
+            AddressFormat::Standard | AddressFormat::CashAddress { .. } => SpendingInputInfo::P2PKH {
+                address_derivation_path: self.from_derivation_path.clone(),
+                address_pubkey: self.from_pubkey,
+            },
+            AddressFormat::Segwit { version: 0 } => SpendingInputInfo::P2WPKH {
+                address_derivation_path: self.from_derivation_path.clone(),
+                address_pubkey: self.from_pubkey,
+            },
+            AddressFormat::Segwit { version: 1 } => SpendingInputInfo::P2TR {
+                address_derivation_path: self.from_derivation_path.clone(),
+            },
+            AddressFormat::Segwit { version: v } => {
+                return Err(WithdrawError::InvalidAddress(format!(
+                    "Unsupported segwit version v{v}"
+                )))?;
+            },
+        };
+        sign_params.add_inputs_infos(std::iter::repeat_n(spending_input_info, unsigned_tx.inputs.len()));
         sign_params.add_outputs_infos(once(SendingOutputInfo {
             destination_address: OutputDestination::plain(self.req.to.clone()),
         }));
@@ -349,7 +344,7 @@ where
         }
 
         sign_params
-            .with_signature_version(self.signature_version())
+            .with_signature_version(self.coin.as_ref().conf.signature_version)
             .with_unsigned_tx(unsigned_tx);
         let sign_params = sign_params.build().map_mm_err()?;
 
@@ -483,7 +478,7 @@ where
         Ok(with_key_pair::sign_tx(
             unsigned_tx,
             &self.key_pair,
-            self.signature_version(),
+            self.coin.as_ref().conf.signature_version,
             self.coin.as_ref().conf.fork_id,
         )
         .map_mm_err()?)

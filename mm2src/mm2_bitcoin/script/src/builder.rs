@@ -1,7 +1,7 @@
 //! Script builder
 
 use bytes::Bytes;
-use keys::{AddressHashEnum, Error, Public};
+use keys::{Error, LockingDestination, Public};
 use {Num, Opcode, Script};
 
 /// Script builder
@@ -12,11 +12,11 @@ pub struct Builder {
 
 impl Builder {
     /// Builds p2pkh script pubkey
-    pub fn build_p2pkh(address: &AddressHashEnum) -> Script {
+    pub fn build_p2pkh(address_hash: &LockingDestination) -> Script {
         Builder::default()
             .push_opcode(Opcode::OP_DUP)
             .push_opcode(Opcode::OP_HASH160)
-            .push_data(&address.to_vec())
+            .push_data(&address_hash.to_vec())
             .push_opcode(Opcode::OP_EQUALVERIFY)
             .push_opcode(Opcode::OP_CHECKSIG)
             .into_script()
@@ -31,33 +31,44 @@ impl Builder {
     }
 
     /// Builds p2sh script pubkey
-    pub fn build_p2sh(address: &AddressHashEnum) -> Script {
+    pub fn build_p2sh(script_hash: &LockingDestination) -> Script {
         Builder::default()
             .push_opcode(Opcode::OP_HASH160)
-            .push_data(&address.to_vec())
+            .push_data(&script_hash.to_vec())
             .push_opcode(Opcode::OP_EQUAL)
             .into_script()
     }
 
     /// Builds p2wpkh script pubkey
-    pub fn build_p2wpkh(address_hash: &AddressHashEnum) -> Result<Script, Error> {
+    pub fn build_p2wpkh(address_hash: &LockingDestination) -> Result<Script, Error> {
         match address_hash {
-            AddressHashEnum::AddressHash(wpkh_hash) => Ok(Builder::default()
+            LockingDestination::AddressHash(wpkh_hash) => Ok(Builder::default()
                 .push_opcode(Opcode::OP_0)
                 .push_data(wpkh_hash.as_ref())
                 .into_script()),
-            AddressHashEnum::WitnessScriptHash(_) => Err(Error::WitnessHashMismatched),
+            _ => Err(Error::WitnessHashMismatched),
         }
     }
 
     /// Builds p2wsh script pubkey
-    pub fn build_p2wsh(address_hash: &AddressHashEnum) -> Result<Script, Error> {
-        match address_hash {
-            AddressHashEnum::WitnessScriptHash(wsh_hash) => Ok(Builder::default()
+    pub fn build_p2wsh(witness_script_hash: &LockingDestination) -> Result<Script, Error> {
+        match witness_script_hash {
+            LockingDestination::WitnessScriptHash(wsh_hash) => Ok(Builder::default()
                 .push_opcode(Opcode::OP_0)
                 .push_data(wsh_hash.as_ref())
                 .into_script()),
-            AddressHashEnum::AddressHash(_) => Err(Error::WitnessHashMismatched),
+            _ => Err(Error::WitnessHashMismatched),
+        }
+    }
+
+    /// Builds p2tr script pubkey
+    pub fn build_p2tr(x_only_pubkey: &LockingDestination) -> Result<Script, Error> {
+        match x_only_pubkey {
+            LockingDestination::TweakedXOnlyPubkey(x_only_pubkey) => Ok(Builder::default()
+                .push_opcode(Opcode::OP_1)
+                .push_data(x_only_pubkey.as_ref())
+                .into_script()),
+            _ => Err(Error::WitnessHashMismatched),
         }
     }
 

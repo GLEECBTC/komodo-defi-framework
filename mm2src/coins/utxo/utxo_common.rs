@@ -50,8 +50,8 @@ use keys::bytes::Bytes;
 #[cfg(test)]
 use keys::prefixes::{KMD_PREFIXES, T_QTUM_PREFIXES};
 use keys::{
-    Address, AddressBuilder, AddressBuilderOption, AddressFormat as UtxoAddressFormat, AddressFormat, AddressHashEnum,
-    AddressScriptType, CompactSignature, Public, SegwitAddress,
+    Address, AddressBuilder, AddressBuilderOption, AddressFormat as UtxoAddressFormat, AddressFormat,
+    AddressScriptType, CompactSignature, LockingDestination, Public, SegwitAddress,
 };
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -335,14 +335,24 @@ pub fn addresses_from_script<T: UtxoCommonOps>(coin: &T, script: &Script) -> Res
             let (addr_format, build_option) = match dst.kind {
                 AddressScriptType::P2PKH => (
                     coin.addr_format_for_standard_scripts(),
-                    AddressBuilderOption::PubkeyHash(dst.hash),
+                    AddressBuilderOption::PubkeyHash(dst.destination),
                 ),
                 AddressScriptType::P2SH => (
                     coin.addr_format_for_standard_scripts(),
-                    AddressBuilderOption::ScriptHash(dst.hash),
+                    AddressBuilderOption::ScriptHash(dst.destination),
                 ),
-                AddressScriptType::P2WPKH => (UtxoAddressFormat::Segwit, AddressBuilderOption::PubkeyHash(dst.hash)),
-                AddressScriptType::P2WSH => (UtxoAddressFormat::Segwit, AddressBuilderOption::ScriptHash(dst.hash)),
+                AddressScriptType::P2WPKH => (
+                    UtxoAddressFormat::Segwit { version: 0 },
+                    AddressBuilderOption::PubkeyHash(dst.destination),
+                ),
+                AddressScriptType::P2WSH => (
+                    UtxoAddressFormat::Segwit { version: 0 },
+                    AddressBuilderOption::ScriptHash(dst.destination),
+                ),
+                AddressScriptType::P2TR => (
+                    UtxoAddressFormat::Segwit { version: 1 },
+                    AddressBuilderOption::TweakedXOnlyPubkey(dst.destination),
+                ),
             };
 
             AddressBuilder::new(
@@ -441,7 +451,7 @@ pub fn tx_size_in_v_bytes(from_addr_format: &UtxoAddressFormat, tx: &UtxoTx) -> 
     // Virtual size of the transaction
     // https://bitcoin.stackexchange.com/questions/87275/how-to-calculate-segwit-transaction-fee-in-bytes/87276#87276
     match from_addr_format {
-        UtxoAddressFormat::Segwit => {
+        UtxoAddressFormat::Segwit { .. } => {
             let base_size = transaction_bytes.len();
             // 4 additional bytes (2 for the marker and 2 for the flag) and 1 additional byte for every input in the witness for the SIGHASH flag
             let total_size = transaction_bytes.len() + 4 + tx.inputs().len() * (additional_len + 1);
@@ -459,7 +469,7 @@ pub fn output_script_checked(coin: &UtxoCoinFields, addr: &Address) -> MmResult<
                 return MmError::err(UnsupportedAddr::PrefixError(coin.conf.ticker.clone()));
             }
         },
-        UtxoAddressFormat::Segwit => match (coin.conf.bech32_hrp.as_ref(), addr.hrp().as_ref()) {
+        UtxoAddressFormat::Segwit { .. } => match (coin.conf.bech32_hrp.as_ref(), addr.hrp().as_ref()) {
             (Some(conf_hrp), Some(addr_hrp)) => {
                 if conf_hrp != addr_hrp {
                     return MmError::err(UnsupportedAddr::HrpError {
@@ -1082,7 +1092,8 @@ async fn gen_taker_funding_spend_preimage<T: UtxoCommonOps>(
 
     let payment_output = TransactionOutput {
         value: funding_amount - fee,
-        script_pubkey: Builder::build_p2sh(&AddressHashEnum::AddressHash(dhash160(&payment_redeem_script))).to_bytes(),
+        script_pubkey: Builder::build_p2sh(&LockingDestination::AddressHash(dhash160(&payment_redeem_script)))
+            .to_bytes(),
     };
 
     p2sh_spending_tx_preimage(
@@ -1606,7 +1617,7 @@ where
 
             let mut outputs = vec![TransactionOutput {
                 value: fee_amount,
-                script_pubkey: Builder::build_p2pkh(dex_address.hash()).to_bytes(),
+                script_pubkey: Builder::build_p2pkh(dex_address.locking_destination()).to_bytes(),
             }];
 
             if let DexFee::WithBurn {
@@ -1624,7 +1635,7 @@ where
                     },
                     DexFeeBurnDestination::PreBurnAccount => TransactionOutput {
                         value: burn_amount_u64,
-                        script_pubkey: Builder::build_p2pkh(burn_address.hash()).to_bytes(),
+                        script_pubkey: Builder::build_p2pkh(burn_address.locking_destination()).to_bytes(),
                     },
                 };
                 outputs.push(burn_output);
@@ -2407,7 +2418,7 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps + SwapOps>(
             let dex_address = dex_address(&coin).map_to_mm(ValidatePaymentError::TxDeserializationError)?;
             match taker_fee_tx.outputs.get(output_index) {
                 Some(out) => {
-                    let expected_script_pubkey = Builder::build_p2pkh(dex_address.hash()).to_bytes();
+                    let expected_script_pubkey = Builder::build_p2pkh(dex_address.locking_destination()).to_bytes();
                     if out.script_pubkey != expected_script_pubkey {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "{}: Provided dex fee tx output script_pubkey doesn't match expected {:?} {:?}",
@@ -2439,7 +2450,7 @@ fn validate_dex_output<T: UtxoCommonOps + SwapOps>(
     let fee_amount_u64 = sat_from_big_decimal(&fee_amount.to_decimal(), coin.as_ref().decimals).map_mm_err()?;
     match tx.outputs.get(output_index) {
         Some(out) => {
-            let expected_script_pubkey = Builder::build_p2pkh(dex_address.hash()).to_bytes();
+            let expected_script_pubkey = Builder::build_p2pkh(dex_address.locking_destination()).to_bytes();
             if out.script_pubkey != expected_script_pubkey {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                     "{}: Provided dex fee tx output script_pubkey doesn't match expected {:?} {:?}",
@@ -2561,7 +2572,7 @@ pub fn validate_fee<T: UtxoCommonOps + SwapOps>(
                     validate_burn_output(&coin, &tx, output_index + 1, &burn_script_pubkey, &burn_amount)?;
                 },
                 DexFeeBurnDestination::PreBurnAccount => {
-                    let burn_script_pubkey = Builder::build_p2pkh(burn_address.hash());
+                    let burn_script_pubkey = Builder::build_p2pkh(burn_address.locking_destination());
                     validate_dex_output(&coin, &tx, output_index, &dex_address, &fee_amount)?;
                     validate_burn_output(&coin, &tx, output_index + 1, &burn_script_pubkey, &burn_amount)?;
                 },
@@ -3082,7 +3093,7 @@ pub fn verify_message<T: UtxoCommonOps>(
         .map_to_mm(|err| VerificationError::SignatureDecodingError(err.to_string()))?;
     let recovered_pubkey = Public::recover_compact(&H256::from(message_hash), &signature)?;
     let received_address = checked_address_from_str(coin, address).map_mm_err()?;
-    Ok(AddressHashEnum::from(recovered_pubkey.address_hash()) == *received_address.hash())
+    Ok(LockingDestination::from(recovered_pubkey.address_hash()) == *received_address.locking_destination())
 }
 
 pub fn my_balance<T>(coin: T) -> BalanceFut<CoinBalance>
@@ -3559,16 +3570,21 @@ pub fn convert_to_address<T: UtxoCommonOps>(coin: &T, from: &str, to_address_for
         UtxoAddressFormat::Standard => {
             // assuming convertion to p2pkh
             Ok(LegacyAddress::new(
-                from_address.hash(),
+                from_address.locking_destination(),
                 coin.as_ref().conf.address_prefixes.p2pkh.clone(),
                 coin.as_ref().conf.checksum_type,
             )
             .to_string())
         },
-        UtxoAddressFormat::Segwit => {
+        UtxoAddressFormat::Segwit { version } => {
             let bech32_hrp = &coin.as_ref().conf.bech32_hrp;
             match bech32_hrp {
-                Some(hrp) => Ok(SegwitAddress::new(from_address.hash(), hrp.clone()).to_string()),
+                Some(hrp) => Ok(try_s!(SegwitAddress::new(
+                    from_address.locking_destination(),
+                    hrp.clone(),
+                    version
+                ))
+                .to_string()),
                 None => ERR!("Cannot convert to a segwit address for a coin with no bech32_hrp in config"),
             }
         },
@@ -4525,7 +4541,7 @@ pub fn coin_protocol_info<T: UtxoCommonOps>(coin: &T) -> Vec<u8> {
 pub fn is_coin_protocol_supported<T: UtxoCommonOps>(coin: &T, info: &Option<Vec<u8>>) -> bool {
     match info {
         Some(format) => rmp_serde::from_slice::<UtxoAddressFormat>(format).is_ok(),
-        None => !coin.addr_format().is_segwit(),
+        None => !coin.addr_format().is_segwit_v0(),
     }
 }
 
@@ -4754,7 +4770,7 @@ pub fn address_from_raw_pubkey(
     addr_format: UtxoAddressFormat,
 ) -> Result<Address, String> {
     AddressBuilder::new(addr_format, checksum_type, prefixes, hrp)
-        .as_pkh_from_pk(try_s!(Public::from_slice(pub_key)))
+        .using_pk(try_s!(Public::from_slice(pub_key)))
         .build()
 }
 
@@ -4766,7 +4782,7 @@ pub fn address_from_pubkey(
     addr_format: UtxoAddressFormat,
 ) -> Address {
     AddressBuilder::new(addr_format, checksum_type, prefixes, hrp)
-        .as_pkh_from_pk(*pubkey)
+        .using_pk(*pubkey)
         .build()
         .expect("valid address props")
 }
@@ -5195,7 +5211,7 @@ pub fn addr_format(coin: &dyn AsRef<UtxoCoinFields>) -> &UtxoAddressFormat {
 
 pub fn addr_format_for_standard_scripts(coin: &dyn AsRef<UtxoCoinFields>) -> UtxoAddressFormat {
     match &coin.as_ref().conf.default_address_format {
-        UtxoAddressFormat::Segwit => UtxoAddressFormat::Standard,
+        UtxoAddressFormat::Segwit { .. } => UtxoAddressFormat::Standard,
         format @ (UtxoAddressFormat::Standard | UtxoAddressFormat::CashAddress { .. }) => format.clone(),
     }
 }
@@ -5218,7 +5234,7 @@ where
                 Ok(())
             }
         },
-        UtxoAddressFormat::Segwit => {
+        UtxoAddressFormat::Segwit { .. } => {
             if !conf.segwit {
                 return MmError::err(UnsupportedAddr::SegwitNotActivated(conf.ticker.clone()));
             }
@@ -5424,7 +5440,7 @@ where
     );
     let expected_output = TransactionOutput {
         value: expected_amount_sat,
-        script_pubkey: Builder::build_p2sh(&AddressHashEnum::AddressHash(dhash160(&redeem_script))).into(),
+        script_pubkey: Builder::build_p2sh(&LockingDestination::AddressHash(dhash160(&redeem_script))).into(),
     };
 
     if args.funding_tx.outputs.first() != Some(&expected_output) {
@@ -5743,22 +5759,22 @@ fn test_tx_v_size() {
     // the transaction is deserialized without the witnesses which makes the calculation of v_size similar to how
     // it's calculated in generate_transaction
     let tx: UtxoTx = "0200000000010192a4497268107d7999e9551be733f5e0eab479be7d995a061a7bbdc43ef0e5ed0000000000feffffff02cd857a00000000001600145cb39bfcd68d520e29cadc990bceb5cd1562c507a0860100000000001600149a85cc05e9a722575feb770a217c73fd6145cf01024730440220030e0fb58889ab939c701f12d950f00b64836a1a33ec0d6697fd3053d469d244022053e33d72ef53b37b86eea8dfebbafffb0f919ef952dcb6ea6058b81576d8dc86012102225de6aed071dc29d0ca10b9f64a4b502e33e55b3c0759eedd8e333834c6a7d07a1f2000".into();
-    let v_size = tx_size_in_v_bytes(&UtxoAddressFormat::Segwit, &tx);
+    let v_size = tx_size_in_v_bytes(&UtxoAddressFormat::Segwit { version: 0 }, &tx);
     assert_eq!(v_size, 141);
     // Segwit input with 1 P2WSH output
     // https://live.blockcypher.com/btc-testnet/tx/f8c1fed6f307eb131040965bd11018787567413e6437c907b1fd15de6517ad16/
     let tx: UtxoTx = "010000000001017996e77b2b1f4e66da606cfc2f16e3f52e1eac4a294168985bd4dbd54442e61f0100000000ffffffff01ab36010000000000220020693090c0e291752d448826a9dc72c9045b34ed4f7bd77e6e8e62645c23d69ac502483045022100d0800719239d646e69171ede7f02af916ac778ffe384fa0a5928645b23826c9f022044072622de2b47cfc81ac5172b646160b0c48d69d881a0ce77be06dbd6f6e5ac0121031ac6d25833a5961e2a8822b2e8b0ac1fd55d90cbbbb18a780552cbd66fc02bb3735a9e61".into();
-    let v_size = tx_size_in_v_bytes(&UtxoAddressFormat::Segwit, &tx);
+    let v_size = tx_size_in_v_bytes(&UtxoAddressFormat::Segwit { version: 0 }, &tx);
     assert_eq!(v_size, 122);
     // Multiple segwit inputs with P2PKH output
     // https://live.blockcypher.com/btc-testnet/tx/649d514d76702a0925a917d830e407f4f1b52d78832520e486c140ce8d0b879f/
     let tx: UtxoTx = "0100000000010250c434acbad252481564d56b41990577c55d247aedf4bb853dca3567c4404c8f0000000000ffffffff55baf016f0628ecf0f0ec228e24d8029879b0491ab18bac61865afaa9d16e8bb0000000000ffffffff01e8030000000000001976a9146d9d2b554d768232320587df75c4338ecc8bf37d88ac0247304402202611c05dd0e748f7c9955ed94a172af7ed56a0cdf773e8c919bef6e70b13ec1c02202fd7407891c857d95cdad1038dcc333186815f50da2fc9a334f814dd8d0a2d63012103c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed02483045022100bb9d483f6b2b46f8e70d62d65b33b6de056e1878c9c2a1beed69005daef2f89502201690cd44cf6b114fa0d494258f427e1ed11a21d897e407d8a1ff3b7e09b9a426012103c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed9cf7bd60".into();
-    let v_size = tx_size_in_v_bytes(&UtxoAddressFormat::Segwit, &tx);
+    let v_size = tx_size_in_v_bytes(&UtxoAddressFormat::Segwit { version: 0 }, &tx);
     assert_eq!(v_size, 181);
     // Multiple segwit inputs
     // https://live.blockcypher.com/btc-testnet/tx/a7bb128703b57058955d555ed48b65c2c9bdefab6d3acbb4243c56e430533def/
     let tx: UtxoTx = "010000000001023b7308e5ca5d02000b743441f7653c1110e07275b7ab0e983f489e92bfdd2b360100000000ffffffffd6c4f22e9b1090b2584a82cf4cb6f85595dd13c16ad065711a7585cc373ae2e50000000000ffffffff02947b2a00000000001600148474e72f396d44504cd30b1e7b992b65344240c609050700000000001600141b891309c8fe1338786fa3476d5d1a9718d43a0202483045022100bfae465fcd8d2636b2513f68618eb4996334c94d47e285cb538e3416eaf4521b02201b953f46ff21c8715a0997888445ca814dfdb834ef373a29e304bee8b32454d901210226bde3bca3fe7c91e4afb22c4bc58951c60b9bd73514081b6bd35f5c09b8c9a602483045022100ba48839f7becbf8f91266140f9727edd08974fcc18017661477af1d19603ed31022042fd35af1b393eeb818b420e3a5922079776cc73f006d26dd67be932e1b4f9000121034b6a54040ad2175e4c198370ac36b70d0b0ab515b59becf100c4cd310afbfd0c00000000".into();
-    let v_size = tx_size_in_v_bytes(&UtxoAddressFormat::Segwit, &tx);
+    let v_size = tx_size_in_v_bytes(&UtxoAddressFormat::Segwit { version: 0 }, &tx);
     assert_eq!(v_size, 209)
 }
 
@@ -5785,7 +5801,7 @@ fn test_generate_taker_fee_tx_outputs_with_standard_dex_fee() {
     assert_eq!(outputs[0].value, fee_uamount);
     assert_eq!(
         outputs[0].script_pubkey,
-        Builder::build_p2pkh(dex_address.hash()).to_bytes()
+        Builder::build_p2pkh(dex_address.locking_destination()).to_bytes()
     );
 }
 
@@ -5814,12 +5830,12 @@ fn test_generate_taker_fee_tx_outputs_with_non_kmd_burn() {
     assert_eq!(outputs[0].value, fee_uamount);
     assert_eq!(
         outputs[0].script_pubkey,
-        Builder::build_p2pkh(dex_address.hash()).to_bytes()
+        Builder::build_p2pkh(dex_address.locking_destination()).to_bytes()
     );
     assert_eq!(outputs[1].value, burn_uamount);
     assert_eq!(
         outputs[1].script_pubkey,
-        Builder::build_p2pkh(burn_address.hash()).to_bytes()
+        Builder::build_p2pkh(burn_address.locking_destination()).to_bytes()
     );
 }
 
@@ -5854,7 +5870,7 @@ fn test_generate_taker_fee_tx_outputs_with_kmd_burn() {
     assert_eq!(outputs[0].value, fee_uamount);
     assert_eq!(
         outputs[0].script_pubkey,
-        Builder::build_p2pkh(dex_address.hash()).to_bytes()
+        Builder::build_p2pkh(dex_address.locking_destination()).to_bytes()
     );
     assert_eq!(outputs[1].value, burn_uamount);
     assert_eq!(

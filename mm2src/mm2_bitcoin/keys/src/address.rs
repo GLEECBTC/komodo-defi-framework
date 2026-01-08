@@ -13,7 +13,7 @@ use std::str::FromStr;
 use std::{fmt, hash::Hash};
 
 use {
-    AddressHashEnum, AddressPrefix, CashAddrType, CashAddress, Error, LegacyAddress, NetworkAddressPrefixes,
+    AddressPrefix, CashAddrType, CashAddress, Error, LegacyAddress, LockingDestination, NetworkAddressPrefixes,
     SegwitAddress,
 };
 
@@ -43,6 +43,11 @@ pub enum AddressScriptType {
     /// as the scripthash, eg: bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3.
     /// https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki
     P2WSH,
+    /// Pay to Taproot
+    /// Segwit v1 P2TR which begins with the human readable part followed by 1 followed by 59 base32 characters
+    /// as the scripthash, eg: bc1p6gps4j04duwphrhkwx0vhl6r9kkq8m8n7r9r02rvwzrekjt0f4pskz8zas.
+    /// https://github.com/bitcoin/bips/blob/master/bip-0350.mediawiki
+    P2TR,
 }
 
 #[derive(Clone, Debug, Default, Display, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -55,9 +60,13 @@ pub enum AddressFormat {
     #[default]
     Standard,
     /// Segwit Address
-    /// https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki
+    /// https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki (bech32 for v0)
+    /// https://github.com/bitcoin/bips/blob/master/bip-0350.mediawiki (bech32m for v1+)
     #[serde(rename = "segwit")]
-    Segwit,
+    Segwit {
+        #[serde(default)]
+        version: u8,
+    },
     /// Bitcoin Cash specific address format.
     /// https://github.com/bitcoincashorg/bitcoincash.org/blob/master/spec/cashaddr.md
     #[serde(rename = "cashaddress")]
@@ -73,7 +82,15 @@ pub enum AddressFormat {
 
 impl AddressFormat {
     pub fn is_segwit(&self) -> bool {
-        matches!(*self, AddressFormat::Segwit)
+        matches!(*self, AddressFormat::Segwit { .. })
+    }
+
+    pub fn is_segwit_v0(&self) -> bool {
+        matches!(*self, AddressFormat::Segwit { version: 0 })
+    }
+
+    pub fn is_segwit_v1(&self) -> bool {
+        matches!(*self, AddressFormat::Segwit { version: 1 })
     }
 
     pub fn is_cashaddress(&self) -> bool {
@@ -82,6 +99,10 @@ impl AddressFormat {
 
     pub fn is_legacy(&self) -> bool {
         matches!(*self, AddressFormat::Standard)
+    }
+
+    pub fn is_legacy_or_cashaddr(&self) -> bool {
+        self.is_legacy() || self.is_cashaddress()
     }
 }
 
@@ -112,8 +133,8 @@ pub struct Address {
     hrp: Option<String>,
     /// The public key of the address.
     pubkey: Option<Public>,
-    /// Public key/Script hash.
-    hash: AddressHashEnum,
+    /// Public key hash/Script hash/witness script hash/tweaked x-only pubkey
+    locking_destination: LockingDestination,
     /// Checksum type
     checksum_type: ChecksumType,
     /// Address Format
@@ -129,7 +150,7 @@ impl PartialEq for Address {
     fn eq(&self, other: &Self) -> bool {
         self.prefix == other.prefix
             && self.hrp == other.hrp
-            && self.hash == other.hash
+            && self.locking_destination == other.locking_destination
             && self.checksum_type == other.checksum_type
             && self.addr_format == other.addr_format
             && self.script_type == other.script_type
@@ -141,7 +162,7 @@ impl Hash for Address {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.prefix.hash(state);
         self.hrp.hash(state);
-        self.hash.hash(state);
+        self.locking_destination.hash(state);
         self.checksum_type.hash(state);
         self.addr_format.hash(state);
         self.script_type.hash(state);
@@ -158,8 +179,8 @@ impl Address {
     pub fn pubkey(&self) -> &Option<Public> {
         &self.pubkey
     }
-    pub fn hash(&self) -> &AddressHashEnum {
-        &self.hash
+    pub fn locking_destination(&self) -> &LockingDestination {
+        &self.locking_destination
     }
     pub fn checksum_type(&self) -> &ChecksumType {
         &self.checksum_type
@@ -173,20 +194,24 @@ impl Address {
 
     /// Returns true if output script type is pubkey hash (p2pkh or p2wpkh)
     pub fn is_pubkey_hash(&self) -> bool {
-        if matches!(self.addr_format, AddressFormat::Segwit) {
+        if self.addr_format.is_segwit_v0() {
             self.script_type == AddressScriptType::P2WPKH
-        } else {
+        } else if self.addr_format.is_legacy_or_cashaddr() {
             self.script_type == AddressScriptType::P2PKH
+        } else {
+            false
         }
     }
 
     pub fn display_address(&self) -> Result<String, String> {
         match &self.addr_format {
             AddressFormat::Standard => {
-                Ok(LegacyAddress::new(&self.hash, self.prefix.clone(), self.checksum_type).to_string())
+                Ok(LegacyAddress::new(&self.locking_destination, self.prefix.clone(), self.checksum_type).to_string())
             },
-            AddressFormat::Segwit => match &self.hrp {
-                Some(hrp) => Ok(SegwitAddress::new(&self.hash, hrp.clone()).to_string()),
+            AddressFormat::Segwit { version } => match &self.hrp {
+                Some(hrp) => Ok(SegwitAddress::new(&self.locking_destination, hrp.clone(), *version)
+                    .map_err(|e| e.to_string())?
+                    .to_string()),
                 None => Err("Cannot display segwit address for a coin with no bech32_hrp in config".into()),
             },
             AddressFormat::CashAddress {
@@ -210,8 +235,8 @@ impl Address {
         if address.hash.len() != 20 {
             return Err("Expect 20 bytes long hash".into());
         }
-        let mut hash = AddressHashEnum::default_address_hash();
-        hash.copy_from_slice(address.hash.as_slice());
+        let mut locking_destination = LockingDestination::default_address_hash();
+        locking_destination.copy_from_slice(address.hash.as_slice());
 
         let script_type = if address.prefix == prefixes.p2pkh {
             AddressScriptType::P2PKH
@@ -223,7 +248,7 @@ impl Address {
 
         Ok(Address {
             prefix: address.prefix,
-            hash,
+            locking_destination,
             checksum_type: address.checksum_type,
             hrp: None,
             pubkey: None,
@@ -243,8 +268,8 @@ impl Address {
             return Err("Expect 20 bytes long hash".into());
         }
 
-        let mut hash = AddressHashEnum::default_address_hash();
-        hash.copy_from_slice(address.hash.as_slice());
+        let mut locking_destination = LockingDestination::default_address_hash();
+        locking_destination.copy_from_slice(address.hash.as_slice());
 
         let (script_type, addr_prefix) = match address.address_type {
             CashAddrType::P2PKH => (AddressScriptType::P2PKH, net_addr_prefixes.p2pkh.clone()),
@@ -253,7 +278,7 @@ impl Address {
 
         Ok(Address {
             prefix: addr_prefix,
-            hash,
+            locking_destination,
             checksum_type,
             hrp: None,
             pubkey: None,
@@ -281,48 +306,67 @@ impl Address {
                 self.prefix, network_addr_prefixes.p2pkh, network_addr_prefixes.p2sh
             ));
         };
-        CashAddress::new(network_prefix, self.hash.to_vec(), address_type)
+        CashAddress::new(network_prefix, self.locking_destination.to_vec(), address_type)
     }
 
     pub fn from_segwitaddress(segaddr: &str, checksum_type: ChecksumType) -> Result<Address, String> {
         let address = SegwitAddress::from_str(segaddr).map_err(|e| e.to_string())?;
 
-        let (script_type, mut hash) = if address.program.len() == 20 {
-            (AddressScriptType::P2WPKH, AddressHashEnum::default_address_hash())
-        } else if address.program.len() == 32 {
-            (AddressScriptType::P2WSH, AddressHashEnum::default_witness_script_hash())
-        } else {
-            return Err("Expect either 20 or 32 bytes long hash".into());
+        let (script_type, mut locking_destination) = match (address.version_as_u8(), address.program.len()) {
+            (0, 20) => (AddressScriptType::P2WPKH, LockingDestination::default_address_hash()),
+            (0, 32) => (
+                AddressScriptType::P2WSH,
+                LockingDestination::default_witness_script_hash(),
+            ),
+            (1, 32) => (
+                AddressScriptType::P2TR,
+                LockingDestination::default_tweaked_xonly_pubkey(),
+            ),
+            (0, _) => return Err("Expect either 20 or 32 bytes long hash for witness v0 address".into()),
+            (1, _) => return Err("Expect 32 bytes long public key for witness v1 address".into()),
+            (v, _) => return Err(format!("Unsupported segwit version: {v}")),
         };
-        hash.copy_from_slice(address.program.as_slice());
+
+        locking_destination.copy_from_slice(address.program.as_slice());
+
+        let addr_format = AddressFormat::Segwit {
+            version: address.version_as_u8(),
+        };
 
         let hrp = Some(address.hrp);
 
         Ok(Address {
             prefix: AddressPrefix::default(),
-            hash,
+            locking_destination,
             checksum_type,
             hrp,
             pubkey: None,
-            addr_format: AddressFormat::Segwit,
+            addr_format,
             script_type,
         })
     }
 
     pub fn to_segwitaddress(&self) -> Result<SegwitAddress, String> {
-        match &self.hrp {
-            Some(hrp) => Ok(SegwitAddress::new(&self.hash, hrp.to_string())),
-            None => Err("hrp must be provided for segwit address".into()),
-        }
+        let Some(hrp) = &self.hrp else {
+            return Err("hrp must be provided for segwit address".into());
+        };
+        let AddressFormat::Segwit { version } = self.addr_format else {
+            return Err("address format must be segwit".into());
+        };
+        SegwitAddress::new(&self.locking_destination, hrp.to_string(), version).map_err(|e| e.to_string())
     }
 }
 
 impl fmt::Display for Address {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self.addr_format {
-            AddressFormat::Segwit => {
-                SegwitAddress::new(&self.hash, self.hrp.clone().expect("Segwit address should have an hrp")).fmt(f)
-            },
+            AddressFormat::Segwit { version } => SegwitAddress::new(
+                &self.locking_destination,
+                self.hrp.clone().expect("Segwit address should have an hrp"),
+                *version,
+            )
+            .expect("Segwit address should be valid")
+            .fmt(f),
             AddressFormat::CashAddress {
                 network,
                 pub_addr_prefix,
@@ -339,14 +383,16 @@ impl fmt::Display for Address {
                     .expect("A valid address");
                 cash_address.encode().expect("A valid address").fmt(f)
             },
-            AddressFormat::Standard => LegacyAddress::new(&self.hash, self.prefix.clone(), self.checksum_type).fmt(f),
+            AddressFormat::Standard => {
+                LegacyAddress::new(&self.locking_destination, self.prefix.clone(), self.checksum_type).fmt(f)
+            },
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Address, AddressBuilder, AddressFormat, AddressHashEnum, CashAddrType, CashAddress, ChecksumType};
+    use super::{Address, AddressBuilder, AddressFormat, CashAddrType, CashAddress, ChecksumType, LockingDestination};
     use crate::address_prefixes::prefixes::*;
     use crate::{NetworkAddressPrefixes, NetworkPrefix};
 
@@ -358,7 +404,7 @@ mod tests {
             (*BTC_PREFIXES).clone(),
             None,
         )
-        .as_pkh(AddressHashEnum::AddressHash(
+        .as_pkh(LockingDestination::AddressHash(
             "3f4aa1fedf1f54eeb03b759deadb36676b184911".into(),
         ))
         .build()
@@ -375,7 +421,7 @@ mod tests {
             (*KMD_PREFIXES).clone(),
             None,
         )
-        .as_pkh(AddressHashEnum::AddressHash(
+        .as_pkh(LockingDestination::AddressHash(
             "05aab5342166f8594baf17a7d9bef5d567443327".into(),
         ))
         .build()
@@ -392,7 +438,7 @@ mod tests {
             (*T_ZCASH_PREFIXES).clone(),
             None,
         )
-        .as_pkh(AddressHashEnum::AddressHash(
+        .as_pkh(LockingDestination::AddressHash(
             "05aab5342166f8594baf17a7d9bef5d567443327".into(),
         ))
         .build()
@@ -409,7 +455,7 @@ mod tests {
             (*KMD_PREFIXES).clone(),
             None,
         )
-        .as_sh(AddressHashEnum::AddressHash(
+        .as_sh(LockingDestination::AddressHash(
             "ca0c3786c96ff7dacd40fdb0f7c196528df35f85".into(),
         ))
         .build()
@@ -426,7 +472,7 @@ mod tests {
             (*BTC_PREFIXES).clone(),
             None,
         )
-        .as_pkh(AddressHashEnum::AddressHash(
+        .as_pkh(LockingDestination::AddressHash(
             "3f4aa1fedf1f54eeb03b759deadb36676b184911".into(),
         ))
         .build()
@@ -447,7 +493,7 @@ mod tests {
             (*KMD_PREFIXES).clone(),
             None,
         )
-        .as_pkh(AddressHashEnum::AddressHash(
+        .as_pkh(LockingDestination::AddressHash(
             "05aab5342166f8594baf17a7d9bef5d567443327".into(),
         ))
         .build()
@@ -468,7 +514,7 @@ mod tests {
             (*T_ZCASH_PREFIXES).clone(),
             None,
         )
-        .as_pkh(AddressHashEnum::AddressHash(
+        .as_pkh(LockingDestination::AddressHash(
             "05aab5342166f8594baf17a7d9bef5d567443327".into(),
         ))
         .build()
@@ -489,7 +535,7 @@ mod tests {
             (*KMD_PREFIXES).clone(),
             None,
         )
-        .as_sh(AddressHashEnum::AddressHash(
+        .as_sh(LockingDestination::AddressHash(
             "ca0c3786c96ff7dacd40fdb0f7c196528df35f85".into(),
         ))
         .build()
@@ -510,7 +556,7 @@ mod tests {
             (*GRS_PREFIXES).clone(),
             None,
         )
-        .as_pkh(AddressHashEnum::AddressHash(
+        .as_pkh(LockingDestination::AddressHash(
             "c3f710deb7320b0efa6edb14e3ebeeb9155fa90d".into(),
         ))
         .build()
@@ -531,7 +577,7 @@ mod tests {
             (*SYS_PREFIXES).clone(),
             None,
         )
-        .as_pkh(AddressHashEnum::AddressHash(
+        .as_pkh(LockingDestination::AddressHash(
             "56bb05aa20f5a80cf84e90e5dab05be331333e27".into(),
         ))
         .build()
@@ -562,7 +608,7 @@ mod tests {
                 Address::from_cashaddress(cashaddresses[i], ChecksumType::DSHA256, &BCH_PREFIXES).unwrap();
             let expected_address: Address = Address::from_legacyaddress(expected[i], &BCH_PREFIXES).unwrap();
             // comparing only hashes here as Address::from_cashaddress has a different internal format from into()
-            assert_eq!(actual_address.hash, expected_address.hash);
+            assert_eq!(actual_address.locking_destination, expected_address.locking_destination);
             let actual_cashaddress = actual_address
                 .to_cashaddress("bitcoincash", &BCH_PREFIXES)
                 .unwrap()
@@ -601,7 +647,7 @@ mod tests {
             unknown_prefixes,
             None,
         )
-        .as_sh(AddressHashEnum::AddressHash(
+        .as_sh(LockingDestination::AddressHash(
             [
                 140, 0, 44, 191, 189, 83, 144, 173, 47, 216, 127, 59, 80, 232, 159, 100, 156, 132, 78, 192,
             ]

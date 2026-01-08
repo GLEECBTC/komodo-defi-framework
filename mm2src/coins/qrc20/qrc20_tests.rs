@@ -81,7 +81,7 @@ fn test_withdraw_to_p2sh_address_should_fail() {
     )
     .as_sh(
         block_on(coin.as_ref().derivation_method.unwrap_single_addr())
-            .hash()
+            .locking_destination()
             .clone(),
     )
     .build()

@@ -4,7 +4,7 @@ use bitcrypto::ChecksumType;
 use coins::utxo::UtxoAddressFormat;
 use common::block_on;
 use http::StatusCode;
-use keys::{Address, AddressBuilder, AddressHashEnum, AddressPrefix, NetworkAddressPrefixes};
+use keys::{Address, AddressBuilder, AddressPrefix, LockingDestination, NetworkAddressPrefixes};
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::{BalanceResponse, CoinInitResponse};
 use mm2_test_helpers::for_tests::{
@@ -66,7 +66,7 @@ fn utxo_burn_address() -> Address {
         },
         None,
     )
-    .as_pkh(AddressHashEnum::default_address_hash())
+    .as_pkh(LockingDestination::default_address_hash())
     .build()
     .expect("valid address props")
 }

@@ -14,13 +14,13 @@ use mm2_test_helpers::electrums::*;
 use mm2_test_helpers::for_tests::wait_check_stats_swap_status;
 use mm2_test_helpers::for_tests::{
     account_balance, btc_segwit_conf, btc_with_spv_conf, btc_with_sync_starting_header, check_recent_swaps,
-    delete_wallet, enable_qrc20, enable_utxo_v2_electrum, eth_dev_conf, find_metrics_in_json, from_env_file,
+    delete_wallet, doc_conf, enable_qrc20, enable_utxo_v2_electrum, eth_dev_conf, find_metrics_in_json, from_env_file,
     get_new_address, get_shared_db_id, get_wallet_names, mm_spat, morty_conf, my_balance, rick_conf, sign_message,
-    start_swaps, tbtc_conf, tbtc_segwit_conf, tbtc_with_spv_conf, test_qrc20_history_impl, tqrc20_conf, verify_message,
-    wait_for_swaps_finish_and_check_status, wait_till_history_has_records, MarketMakerIt, Mm2InitPrivKeyPolicy,
-    Mm2TestConf, Mm2TestConfForSwap, RaiiDump, DOC_ELECTRUM_ADDRS, ETH_MAINNET_NODES, ETH_MAINNET_SWAP_CONTRACT,
-    ETH_SEPOLIA_NODES, ETH_SEPOLIA_SWAP_CONTRACT, MARTY_ELECTRUM_ADDRS, MORTY, QRC20_ELECTRUMS, RICK,
-    RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS, T_BCH_ELECTRUMS,
+    start_swaps, tbtc_conf, tbtc_segwit_conf, tbtc_taproot_conf, tbtc_with_spv_conf, test_qrc20_history_impl,
+    tqrc20_conf, verify_message, wait_for_swaps_finish_and_check_status, wait_till_history_has_records, MarketMakerIt,
+    Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, RaiiDump, DOC_ELECTRUM_ADDRS, ETH_MAINNET_NODES,
+    ETH_MAINNET_SWAP_CONTRACT, ETH_SEPOLIA_NODES, ETH_SEPOLIA_SWAP_CONTRACT, MARTY_ELECTRUM_ADDRS, MORTY,
+    QRC20_ELECTRUMS, RICK, RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS, T_BCH_ELECTRUMS,
 };
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::*;
@@ -695,9 +695,10 @@ async fn trade_base_rel_electrum(
     volume: f64,
 ) {
     let coins = json!([
-        rick_conf(),
+        doc_conf(),
         morty_conf(),
         {"coin":"ZOMBIE","asset":"ZOMBIE","fname":"ZOMBIE (TESTCOIN)","txversion":4,"overwintered":1,"mm2":1,"protocol":{"type":"ZHTLC"},"required_confirmations":0},
+        tbtc_taproot_conf(),
     ]);
 
     let bob_conf = Mm2TestConfForSwap::bob_conf_with_policy(&bob_priv_key_policy, &coins);
@@ -752,24 +753,60 @@ async fn trade_base_rel_electrum(
         log!("enable ZOMBIE alice {:?}", zombie_alice);
     }
     // Enable coins on Bob side. Print the replies in case we need the address.
-    let rc = enable_utxo_v2_electrum(&mm_bob, "RICK", doc_electrums(), bob_path_to_address.clone(), 600, None).await;
-    log!("enable RICK (bob): {:?}", rc);
-    let rc = enable_utxo_v2_electrum(&mm_bob, "MORTY", marty_electrums(), bob_path_to_address, 600, None).await;
+    let rc = enable_utxo_v2_electrum(&mm_bob, "DOC", doc_electrums(), bob_path_to_address.clone(), 600, None).await;
+    log!("enable DOC (bob): {:?}", rc);
+    let rc = enable_utxo_v2_electrum(
+        &mm_bob,
+        "MORTY",
+        marty_electrums(),
+        bob_path_to_address.clone(),
+        600,
+        None,
+    )
+    .await;
     log!("enable MORTY (bob): {:?}", rc);
+    let rc = enable_utxo_v2_electrum(
+        &mm_bob,
+        "tBTC-taproot",
+        tbtc_electrums(),
+        bob_path_to_address,
+        600,
+        None,
+    )
+    .await;
+    log!("enable tBTC-taproot (bob): {:?}", rc);
 
     // Enable coins on Alice side. Print the replies in case we need the address.
     let rc = enable_utxo_v2_electrum(
         &mm_alice,
-        "RICK",
+        "DOC",
         doc_electrums(),
         alice_path_to_address.clone(),
         600,
         None,
     )
     .await;
-    log!("enable RICK (alice): {:?}", rc);
-    let rc = enable_utxo_v2_electrum(&mm_alice, "MORTY", marty_electrums(), alice_path_to_address, 600, None).await;
+    log!("enable DOC (alice): {:?}", rc);
+    let rc = enable_utxo_v2_electrum(
+        &mm_alice,
+        "MORTY",
+        marty_electrums(),
+        alice_path_to_address.clone(),
+        600,
+        None,
+    )
+    .await;
     log!("enable MORTY (alice): {:?}", rc);
+    let rc = enable_utxo_v2_electrum(
+        &mm_alice,
+        "tBTC-taproot",
+        tbtc_electrums(),
+        alice_path_to_address,
+        600,
+        None,
+    )
+    .await;
+    log!("enable tBTC-taproot (alice): {:?}", rc);
 
     let uuids = start_swaps(&mut mm_bob, &mut mm_alice, pairs, maker_price, taker_price, volume).await;
 
@@ -844,10 +881,10 @@ async fn trade_base_rel_electrum(
 
 #[test]
 #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc-native-tests"))]
-fn trade_test_electrum_rick_zombie() {
+fn trade_test_electrum_doc_zombie() {
     let bob_policy = Mm2InitPrivKeyPolicy::Iguana;
     let alice_policy = Mm2InitPrivKeyPolicy::Iguana;
-    let pairs = &[("RICK", "ZOMBIE")];
+    let pairs = &[("DOC", "ZOMBIE")];
     block_on(trade_base_rel_electrum(
         bob_policy,
         alice_policy,
@@ -857,6 +894,26 @@ fn trade_test_electrum_rick_zombie() {
         1.,
         2.,
         0.1,
+    ));
+}
+
+// Taproot testnet swap coverage between tBTC-taproot and DOC.
+// Ignored by default because it requires funded taproot/DOC balances on the public cipig electrum servers.
+#[test]
+#[ignore]
+fn trade_test_taproot_tbtc_with_doc() {
+    let bob_policy = Mm2InitPrivKeyPolicy::GlobalHDAccount;
+    let alice_policy = Mm2InitPrivKeyPolicy::GlobalHDAccount;
+    let pairs = &[("tBTC-taproot", "DOC")];
+    block_on(trade_base_rel_electrum(
+        bob_policy,
+        alice_policy,
+        None,
+        None,
+        pairs,
+        1.,
+        2.,
+        0.0001,
     ));
 }
 
@@ -1227,7 +1284,7 @@ fn test_withdraw_segwit() {
     assert!(withdraw_error.get("error_type").is_none());
     assert!(withdraw_error.get("error_data").is_none());
 
-    // Withdraw to taproot addresses should fail
+    // Withdraw to taproot addresses should also work
     let withdraw = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "withdraw",
@@ -1237,13 +1294,8 @@ fn test_withdraw_segwit() {
     })))
     .unwrap();
 
-    assert!(withdraw.0.is_server_error(), "tBTC withdraw: {}", withdraw.1);
-    log!("{:?}", withdraw.1);
-    let withdraw_error: Json = json::from_str(&withdraw.1).unwrap();
-    assert!(withdraw_error["error"]
-        .as_str()
-        .expect("Expected 'error' field")
-        .contains("address variant/format Bech32m is not supported yet"));
+    assert!(withdraw.0.is_success(), "tBTC withdraw: {}", withdraw.1);
+    let _: TransactionDetails = json::from_str(&withdraw.1).expect("Expected 'TransactionDetails'");
 
     block_on(mm_alice.stop()).unwrap();
 }

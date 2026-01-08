@@ -43,7 +43,7 @@ use futures01::Future;
 use hex::FromHexError;
 use keys::hash::H160;
 use keys::{
-    AddressHashEnum, CashAddrType, CashAddress, CompactSignature, KeyPair, NetworkPrefix as CashAddrPrefix, Public,
+    CashAddrType, CashAddress, CompactSignature, KeyPair, LockingDestination, NetworkPrefix as CashAddrPrefix, Public,
 };
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -1624,7 +1624,7 @@ impl MmCoin for SlpToken {
             // TODO clarify with community whether we should support withdrawal to SLP P2SH addresses
             let script_pubkey = match address.address_type {
                 CashAddrType::P2PKH => {
-                    ScriptBuilder::build_p2pkh(&AddressHashEnum::AddressHash(address_hash)).to_bytes()
+                    ScriptBuilder::build_p2pkh(&LockingDestination::AddressHash(address_hash)).to_bytes()
                 },
                 CashAddrType::P2SH => {
                     return MmError::err(WithdrawError::InvalidAddress(

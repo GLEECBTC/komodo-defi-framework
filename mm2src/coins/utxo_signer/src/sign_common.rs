@@ -106,6 +106,22 @@ pub(crate) fn p2wpkh_spend_with_signature(
     }
 }
 
+/// Create TransactionInput spending P2TR output, adding script witness with signature
+pub(crate) fn p2tr_spend_with_signature(
+    unsigned_input: &UnsignedTransactionInput,
+    fork_id: u32,
+    signature: Signature,
+) -> TransactionInput {
+    let script_sig = script_sig(signature, fork_id);
+
+    TransactionInput {
+        previous_output: unsigned_input.previous_output,
+        script_sig: Bytes::from(Vec::new()),
+        sequence: unsigned_input.sequence,
+        script_witness: vec![script_sig],
+    }
+}
+
 pub(crate) fn script_sig_with_pub(public_key: &PublicKey, fork_id: u32, signature: Signature) -> Bytes {
     let script_sig = script_sig(signature, fork_id);
     let builder = Builder::default();

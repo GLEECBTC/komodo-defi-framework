@@ -3434,6 +3434,7 @@ name = "keys"
 version = "0.1.0"
 dependencies = [
  "bech32",
+ "bitcoin",
  "bitcrypto",
  "bs58 0.4.0",
  "derive_more",
@@ -6494,6 +6495,7 @@ checksum = "9c8132065adcfd6e02db789d9285a0deb2f3fcb04002865ab67d5fb103533898"
 name = "script"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
  "bitcrypto",
  "blake2b_simd",
  "chain",
@@ -9031,6 +9033,7 @@ name = "utxo_signer"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "bitcoin",
  "chain",
  "common",
  "crypto",
@@ -9039,6 +9042,7 @@ dependencies = [
  "keys",
  "mm2_err_handle",
  "primitives",
+ "rand 0.7.3",
  "rpc",
  "script",
  "serialization",

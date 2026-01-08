@@ -1,4 +1,6 @@
-use crate::sign_common::{complete_tx, p2pkh_spend_with_signature, p2wpkh_spend_with_signature};
+use crate::sign_common::{
+    complete_tx, p2pkh_spend_with_signature, p2tr_spend_with_signature, p2wpkh_spend_with_signature,
+};
 use crate::sign_params::{OutputDestination, SendingOutputInfo, SpendingInputInfo, UtxoSignTxParams};
 use crate::{TxProvider, UtxoSignTxError, UtxoSignTxResult};
 use chain::{Transaction as UtxoTx, TransactionOutput};
@@ -49,6 +51,9 @@ impl<TxP: TxProvider + Send + Sync> TrezorTxSigner<'_, TxP> {
                 SpendingInputInfo::P2WPKH { address_pubkey, .. } => {
                     p2wpkh_spend_with_signature(unsigned_input, address_pubkey, self.fork_id, Bytes::from(signature))
                 },
+                SpendingInputInfo::P2TR { .. } => {
+                    p2tr_spend_with_signature(unsigned_input, self.fork_id, Bytes::from(signature))
+                },
             })
             .collect();
         Ok(complete_tx(self.params.unsigned_tx, signed_inputs))
@@ -57,7 +62,7 @@ impl<TxP: TxProvider + Send + Sync> TrezorTxSigner<'_, TxP> {
     async fn get_trezor_unsigned_tx(&self) -> UtxoSignTxResult<UnsignedUtxoTx> {
         let mut inputs = Vec::with_capacity(self.params.unsigned_tx.inputs.len());
         for (unsigned_input, input_info) in self.params.inputs() {
-            let unsigned_input = self
+            let unsigned_input: UnsignedTxInput = self
                 .get_trezor_unsigned_input(unsigned_input, input_info)
                 .await
                 .map_mm_err()?;
@@ -119,6 +124,12 @@ impl<TxP: TxProvider + Send + Sync> TrezorTxSigner<'_, TxP> {
             } => (
                 Some(address_derivation_path.clone()),
                 TrezorInputScriptType::SpendWitness,
+            ),
+            SpendingInputInfo::P2TR {
+                address_derivation_path,
+            } => (
+                Some(address_derivation_path.clone()),
+                TrezorInputScriptType::SpendTaproot,
             ),
         };
 

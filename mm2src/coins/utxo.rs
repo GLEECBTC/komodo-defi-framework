@@ -65,8 +65,8 @@ use keys::bytes::Bytes;
 use keys::NetworkAddressPrefixes;
 use keys::Signature;
 pub use keys::{
-    Address, AddressBuilder, AddressFormat as UtxoAddressFormat, AddressHashEnum, AddressPrefix, AddressScriptType,
-    KeyPair, LegacyAddress, Private, Public, Secret,
+    Address, AddressBuilder, AddressFormat as UtxoAddressFormat, AddressPrefix, AddressScriptType, KeyPair,
+    LegacyAddress, LockingDestination, Private, Public, Secret,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use lightning_invoice::Currency as LightningCurrency;
@@ -1880,7 +1880,6 @@ async fn generate_tx<T>(
 where
     T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps + UtxoTxBroadcastOps,
 {
-    let my_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err().await);
     let key_pair = try_tx_s!(coin.as_ref().priv_key_policy.activated_key_or_err());
     let mut builder = UtxoTxBuilder::new(coin)
         .await
@@ -1903,15 +1902,10 @@ where
         })
         .collect();
 
-    let signature_version = match my_address.addr_format() {
-        UtxoAddressFormat::Segwit => SignatureVersion::WitnessV0,
-        _ => coin.as_ref().conf.signature_version,
-    };
-
     let signed = try_tx_s!(sign_tx(
         unsigned,
         key_pair,
-        signature_version,
+        coin.as_ref().conf.signature_version,
         coin.as_ref().conf.fork_id
     ));
 
@@ -1921,10 +1915,11 @@ where
 /// Builds transaction output script for an Address struct
 pub fn output_script(address: &Address) -> Result<Script, keys::Error> {
     match address.script_type() {
-        AddressScriptType::P2PKH => Ok(Builder::build_p2pkh(address.hash())),
-        AddressScriptType::P2SH => Ok(Builder::build_p2sh(address.hash())),
-        AddressScriptType::P2WPKH => Builder::build_p2wpkh(address.hash()),
-        AddressScriptType::P2WSH => Builder::build_p2wsh(address.hash()),
+        AddressScriptType::P2PKH => Ok(Builder::build_p2pkh(address.locking_destination())),
+        AddressScriptType::P2SH => Ok(Builder::build_p2sh(address.locking_destination())),
+        AddressScriptType::P2WPKH => Builder::build_p2wpkh(address.locking_destination()),
+        AddressScriptType::P2WSH => Builder::build_p2wsh(address.locking_destination()),
+        AddressScriptType::P2TR => Builder::build_p2tr(address.locking_destination()),
     }
 }
 
@@ -1965,7 +1960,7 @@ pub fn address_by_conf_and_pubkey_str(
         utxo_conf.address_prefixes,
         utxo_conf.bech32_hrp,
     )
-    .as_pkh_from_pk(pubkey)
+    .using_pk(pubkey)
     .build()?;
     address.display_address()
 }

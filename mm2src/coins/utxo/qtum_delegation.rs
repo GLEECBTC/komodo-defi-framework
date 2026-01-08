@@ -20,7 +20,7 @@ use ethabi::{Contract, Token};
 use ethereum_types::H160;
 use futures::compat::Future01CompatExt;
 use futures::{FutureExt, TryFutureExt};
-use keys::{AddressHashEnum, Signature};
+use keys::{LockingDestination, Signature};
 use mm2_err_handle::prelude::*;
 use mm2_number::bigdecimal::{BigDecimal, Zero};
 use rpc::v1::types::ToTxHash;
@@ -115,7 +115,7 @@ impl QtumDelegationOps for QtumCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn generate_pod(&self, addr_hash: AddressHashEnum) -> Result<Signature, MmError<DelegationError>> {
+    fn generate_pod(&self, addr_hash: LockingDestination) -> Result<Signature, MmError<DelegationError>> {
         let mut buffer = b"\x15Qtum Signed Message:\n\x28".to_vec();
         buffer.append(&mut addr_hash.to_string().into_bytes());
         let hashed = dhash256(&buffer);
@@ -131,7 +131,7 @@ impl QtumDelegationOps for QtumCoin {
 
 impl QtumCoin {
     async fn remove_delegation_impl(&self) -> DelegationResult {
-        if self.addr_format().is_segwit() {
+        if self.addr_format().is_segwit_v0() {
             return MmError::err(DelegationError::DelegationOpsNotSupported {
                 reason: "Qtum doesn't support delegation for segwit".to_string(),
             });
@@ -236,7 +236,7 @@ impl QtumCoin {
                 amount,
                 staker,
                 am_i_staking,
-                is_staking_supported: !my_address.addr_format().is_segwit(),
+                is_staking_supported: !my_address.addr_format().is_segwit_v0(),
             }
             .into(),
         };
@@ -244,7 +244,7 @@ impl QtumCoin {
     }
 
     async fn add_delegation_impl(&self, request: QtumDelegationRequest) -> DelegationResult {
-        if self.addr_format().is_segwit() {
+        if self.addr_format().is_segwit_v0() {
             return MmError::err(DelegationError::DelegationOpsNotSupported {
                 reason: "Qtum doesn't support delegation for segwit".to_string(),
             });
@@ -260,7 +260,7 @@ impl QtumCoin {
         let staker_address_hex = qtum::contract_addr_from_utxo_addr(to_addr.clone()).map_mm_err()?;
         let delegation_output = self.add_delegation_output(
             staker_address_hex,
-            to_addr.hash().clone(),
+            to_addr.locking_destination().clone(),
             fee,
             QRC20_GAS_LIMIT_DELEGATION,
             QRC20_GAS_PRICE_DEFAULT,
@@ -377,7 +377,7 @@ impl QtumCoin {
     fn add_delegation_output(
         &self,
         to_addr: H160,
-        addr_hash: AddressHashEnum,
+        addr_hash: LockingDestination,
         fee: u64,
         gas_limit: u64,
         gas_price: u64,
