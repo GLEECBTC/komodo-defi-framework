@@ -83,3 +83,6 @@ hidden
 # Claude Code symlinks (generated from AGENTS.md)
 CLAUDE.md
 mm2src/*/CLAUDE.md
+
+# Claude Code configuration
+.claude

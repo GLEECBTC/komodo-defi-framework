@@ -1,5 +1,7 @@
 # coins_activation — Coin Activation Flows
 
+> **Note:** Always follow the root `/CLAUDE.md` for global conventions (fmt, clippy, error handling, etc.).
+
 Manages the lifecycle of cryptocurrency activation. Handles standalone coins, platform coins with tokens, and L2 layers.
 
 ## Responsibilities

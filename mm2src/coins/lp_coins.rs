@@ -26,7 +26,10 @@
     clippy::swap_ptr_to_ref,
     clippy::forget_non_drop,
     clippy::doc_lazy_continuation,
-    clippy::needless_lifetimes // mocktopus requires explicit lifetimes
+    clippy::needless_lifetimes, // mocktopus requires explicit lifetimes
+    // TODO: Remove this allow when Rust 1.92 regression is fixed.
+    // See: https://github.com/rust-lang/rust/issues/147648
+    unused_assignments
 )]
 #![allow(uncommon_codepoints)]
 
@@ -187,7 +190,7 @@ macro_rules! try_tx_s {
 
 /// `TransactionErr:Plain` compatible `ERR` macro.
 macro_rules! TX_PLAIN_ERR {
-    ($format: expr, $($args: tt)+) => { Err(crate::TransactionErr::Plain((ERRL!($format, $($args)+)))) };
+    ($format: expr, $($args: tt)+) => { Err(crate::TransactionErr::Plain(ERRL!($format, $($args)+))) };
     ($format: expr) => { Err(crate::TransactionErr::Plain(ERRL!($format))) }
 }
 
@@ -852,7 +855,6 @@ pub struct SearchForSwapTxSpendInput<'a> {
     pub search_from_block: u64,
     pub swap_contract_address: &'a Option<BytesJson>,
     pub swap_unique_data: &'a [u8],
-    pub watcher_reward: bool,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -1177,12 +1179,7 @@ pub trait SwapOps {
         input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String>;
 
-    async fn extract_secret(
-        &self,
-        secret_hash: &[u8],
-        spend_tx: &[u8],
-        watcher_reward: bool,
-    ) -> Result<[u8; 32], String>;
+    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<[u8; 32], String>;
 
     /// Whether the refund transaction can be sent now
     /// For example: there are no additional conditions for ETH, but for some UTXO coins we should wait for

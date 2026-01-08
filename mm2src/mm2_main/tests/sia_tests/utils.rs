@@ -4,7 +4,7 @@ pub use coins::siacoin::sia_rust::utils::V2TransactionBuilder;
 use coins::siacoin::{ApiClientHelpers, SiaApiClient, SiaClient, SiaClientConf};
 use keys::hash::H256;
 
-use crate::docker_tests::docker_tests_common::SIA_RPC_PARAMS;
+use crate::docker_tests::helpers::sia::SIA_RPC_PARAMS;
 use common::custom_futures::timeout::FutureTimerExt;
 use common::executor::Timer;
 use mm2_rpc::data::legacy::CoinInitResponse;
@@ -12,7 +12,7 @@ use mm2_test_helpers::for_tests::{MarketMakerIt, Mm2TestConf};
 
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as Json;
+use serde_json::{json, Value as Json};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::time::Duration;
@@ -315,7 +315,11 @@ pub async fn wait_for_dsia_node_ready() {
 
     let client = init_sia_client().await.unwrap();
     // Mine 155 blocks to begin because coinbase maturity is 150
+    log!("Mining 155 blocks to Charlie's address...");
     client.mine_blocks(155, &CHARLIE_SIA_ADDRESS).await.unwrap();
+    // Verify blocks were mined
+    let height = client.current_height().await.unwrap();
+    log!("Mining complete. Current height: {}", height);
 
     // Spawn a loop that will keep mining blocks every 10 seconds to advance the chain
     // and get the swap tests running.
