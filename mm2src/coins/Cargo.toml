@@ -5,7 +5,7 @@ edition = "2018"
 
 [features]
 zhtlc-native-tests = []
-default = ["utxo-walletconnect"]
+default = []
 run-docker-tests = []
 for-tests = ["dep:mocktopus"]
 new-db-arch = ["mm2_core/new-db-arch"]
@@ -39,7 +39,7 @@ bs58.workspace = true
 byteorder.workspace = true
 bytes.workspace = true
 cfg-if.workspace = true
-chain = { path = "../mm2_bitcoin/chain", default-features = false }
+chain = { path = "../mm2_bitcoin/chain" }
 chrono = { workspace = true, "features" = ["serde"] }
 common = { path = "../common" }
 compatible-time.workspace = true

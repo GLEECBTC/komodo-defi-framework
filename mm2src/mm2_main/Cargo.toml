@@ -72,11 +72,11 @@ bitcrypto = { path = "../mm2_bitcoin/crypto" }
 blake2.workspace = true
 bytes.workspace = true
 cfg-if.workspace = true
-chain = { path = "../mm2_bitcoin/chain", default-features = false }
+chain = { path = "../mm2_bitcoin/chain" }
 chrono.workspace = true
 clap.workspace = true
-coins = { path = "../coins", default-features = false }
-coins_activation = { path = "../coins_activation", default-features = false }
+coins = { path = "../coins" }
+coins_activation = { path = "../coins_activation" }
 common = { path = "../common" }
 compatible-time.workspace = true
 crc32fast.workspace = true

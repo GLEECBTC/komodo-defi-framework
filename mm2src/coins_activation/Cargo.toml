@@ -7,7 +7,7 @@ edition = "2018"
 doctest = false
 
 [features]
-default = ["utxo-walletconnect"]
+default = []
 utxo-walletconnect = ["coins/utxo-walletconnect"]
 for-tests = []
 
