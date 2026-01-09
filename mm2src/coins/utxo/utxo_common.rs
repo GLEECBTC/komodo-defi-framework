@@ -46,6 +46,7 @@ use futures::compat::Future01CompatExt;
 use futures::future::{FutureExt, TryFutureExt};
 use futures01::future::Either;
 use itertools::Itertools;
+#[cfg(feature = "utxo-walletconnect")]
 use kdf_walletconnect::WcTopic;
 use keys::bytes::Bytes;
 #[cfg(test)]
@@ -912,6 +913,7 @@ fn get_tx_fee_with_relay_fee(fee_rate: &ActualFeeRate, tx_size: u64, min_relay_f
 
 pub enum P2SHSigner {
     KeyPair(KeyPair),
+    #[cfg(feature = "utxo-walletconnect")]
     WalletConnect(WcTopic),
 }
 
@@ -927,7 +929,12 @@ impl P2SHSigner {
             PrivKeyPolicy::Trezor => Err("P2SH signing is not supported for Trezor".to_string()),
             #[cfg(target_arch = "wasm32")]
             PrivKeyPolicy::Metamask(_) => Err("P2SH signing is not supported for Metamask".to_string()),
+            #[cfg(feature = "utxo-walletconnect")]
             PrivKeyPolicy::WalletConnect { session_topic, .. } => Ok(P2SHSigner::WalletConnect(session_topic.clone())),
+            #[cfg(not(feature = "utxo-walletconnect"))]
+            PrivKeyPolicy::WalletConnect { .. } => {
+                Err("P2SH WalletConnect signing requires utxo-walletconnect feature".to_string())
+            },
         }
     }
 }
@@ -1040,6 +1047,7 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxI
             ));
             Ok(complete_tx(unsigned, vec![signed_input]))
         },
+        #[cfg(feature = "utxo-walletconnect")]
         P2SHSigner::WalletConnect(session_topic) => wallet_connect::sign_p2sh(
             coin,
             &session_topic,

@@ -5,7 +5,7 @@ edition = "2018"
 
 [features]
 zhtlc-native-tests = []
-default = []
+default = ["utxo-walletconnect"]
 run-docker-tests = []
 for-tests = ["dep:mocktopus"]
 new-db-arch = ["mm2_core/new-db-arch"]
@@ -18,6 +18,10 @@ enable-eth-watchers = []
 # once we consider it as stable.
 ibc-routing-for-swaps = []
 
+# UTXO WalletConnect support - requires bitcoin crate and chain/ext-bitcoin for PSBT signing
+# TODO: Remove this feature once secp256k1 versions are unified (see mm2_bitcoin/chain/Cargo.toml).
+utxo-walletconnect = ["bitcoin", "chain/ext-bitcoin"]
+
 [lib]
 path = "lp_coins.rs"
 doctest = false
@@ -27,7 +31,7 @@ async-std = { workspace = true, features = ["unstable"] }
 async-trait.workspace = true
 base64.workspace = true
 bip32.workspace = true
-bitcoin.workspace = true
+bitcoin = { workspace = true, optional = true }
 bitcoin_hashes.workspace = true
 bitcrypto = { path = "../mm2_bitcoin/crypto" }
 blake2b_simd = { workspace = true }
@@ -35,7 +39,7 @@ bs58.workspace = true
 byteorder.workspace = true
 bytes.workspace = true
 cfg-if.workspace = true
-chain = { path = "../mm2_bitcoin/chain" }
+chain = { path = "../mm2_bitcoin/chain", default-features = false }
 chrono = { workspace = true, "features" = ["serde"] }
 common = { path = "../common" }
 compatible-time.workspace = true

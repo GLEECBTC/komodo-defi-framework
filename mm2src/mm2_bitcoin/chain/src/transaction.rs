@@ -4,9 +4,6 @@
 use bytes::Bytes;
 use constants::{LOCKTIME_THRESHOLD, SEQUENCE_FINAL};
 use crypto::{dhash256, sha256};
-use ext_bitcoin::blockdata::transaction::{OutPoint as ExtOutpoint, Transaction as ExtTransaction, TxIn, TxOut};
-use ext_bitcoin::hash_types::Txid;
-use ext_bitcoin::{PackedLockTime, Sequence, Witness};
 use hash::{CipherText, EncCipherText, OutCipherText, ZkProof, ZkProofSapling, H256, H512, H64};
 use hex::FromHex;
 use ser::{deserialize, serialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
@@ -41,15 +38,6 @@ impl OutPoint {
     }
 }
 
-impl From<OutPoint> for ExtOutpoint {
-    fn from(outpoint: OutPoint) -> Self {
-        ExtOutpoint {
-            txid: Txid::from_hash(outpoint.hash.to_sha256d()),
-            vout: outpoint.index,
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Default, Clone)]
 pub struct TransactionInput {
     pub previous_output: OutPoint,
@@ -77,17 +65,6 @@ impl TransactionInput {
     }
 }
 
-impl From<TransactionInput> for TxIn {
-    fn from(txin: TransactionInput) -> Self {
-        TxIn {
-            previous_output: txin.previous_output.into(),
-            script_sig: txin.script_sig.take().into(),
-            sequence: Sequence(txin.sequence),
-            witness: Witness::from_vec(txin.script_witness.into_iter().map(|s| s.take()).collect()),
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Clone, Serializable, Deserializable)]
 pub struct TransactionOutput {
     pub value: u64,
@@ -99,15 +76,6 @@ impl Default for TransactionOutput {
         TransactionOutput {
             value: 0xffffffffffffffffu64,
             script_pubkey: Bytes::default(),
-        }
-    }
-}
-
-impl From<TransactionOutput> for TxOut {
-    fn from(txout: TransactionOutput) -> Self {
-        TxOut {
-            value: txout.value,
-            script_pubkey: txout.script_pubkey.take().into(),
         }
     }
 }
@@ -236,17 +204,6 @@ pub struct Transaction {
 impl From<&'static str> for Transaction {
     fn from(s: &'static str) -> Self {
         deserialize(&s.from_hex::<Vec<u8>>().unwrap() as &[u8]).unwrap()
-    }
-}
-
-impl From<Transaction> for ExtTransaction {
-    fn from(tx: Transaction) -> Self {
-        ExtTransaction {
-            version: tx.version,
-            lock_time: PackedLockTime(tx.lock_time),
-            input: tx.inputs.into_iter().map(|i| i.into()).collect(),
-            output: tx.outputs.into_iter().map(|o| o.into()).collect(),
-        }
     }
 }
 
@@ -639,7 +596,6 @@ impl Deserializable for Transaction {
 
 #[cfg(test)]
 mod tests {
-    use super::ExtTransaction;
     use super::{Bytes, OutPoint, Transaction, TransactionInput, TransactionOutput};
     use hash::{H256, H512};
     use hex::ToHex;
@@ -1121,14 +1077,6 @@ mod tests {
             v_extra_payload: None,
 		};
         assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn test_from_tx_to_ext_tx() {
-        // https://live.blockcypher.com/btc-testnet/tx/2be90e03abb4d5328bf7e9467ca9c571aef575837b55f1253119b87e85ccb94f/
-        let tx: Transaction = "010000000001016546e6d844ad0142c8049a839e8deae16c17f0a6587e36e75ff2181ed7020a800100000000ffffffff0247070800000000002200200bbfbd271853ec0a775e5455d4bb19d32818e9b5bda50655ac183fb15c9aa01625910300000000001600149a85cc05e9a722575feb770a217c73fd6145cf0102473044022002eac5d11f3800131985c14a3d1bc03dfe5e694f5731bde39b0d2b183eb7d3d702201d62e7ff2dd433260bf7a8223db400d539a2c4eccd27a5aa24d83f5ad9e9e1750121031ac6d25833a5961e2a8822b2e8b0ac1fd55d90cbbbb18a780552cbd66fc02bb35c099c61".into();
-        let ext_tx = ExtTransaction::from(tx.clone());
-        assert_eq!(tx.hash().reversed().to_string(), ext_tx.txid().to_string());
     }
 
     #[test]

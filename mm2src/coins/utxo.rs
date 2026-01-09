@@ -41,6 +41,7 @@ pub mod utxo_hd_wallet;
 pub mod utxo_standard;
 pub mod utxo_tx_history_v2;
 pub mod utxo_withdraw;
+#[cfg(feature = "utxo-walletconnect")]
 pub mod wallet_connect;
 
 use async_trait::async_trait;
@@ -1920,8 +1921,15 @@ where
                 coin.as_ref().conf.fork_id
             ))
         },
+        #[cfg(feature = "utxo-walletconnect")]
         PrivKeyPolicy::WalletConnect { ref session_topic, .. } => {
             try_tx_s!(wallet_connect::sign_p2pkh(coin, session_topic, &unsigned).await)
+        },
+        #[cfg(not(feature = "utxo-walletconnect"))]
+        PrivKeyPolicy::WalletConnect { .. } => {
+            return Err(TransactionErr::Plain(
+                "WalletConnect signing requires utxo-walletconnect feature".to_string(),
+            ))
         },
         PrivKeyPolicy::Trezor => return Err(TransactionErr::Plain("Can't sign tx with trezor".to_string())),
         #[cfg(target_arch = "wasm32")]
