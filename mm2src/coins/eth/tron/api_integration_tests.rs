@@ -253,7 +253,7 @@ cross_test!(tron_nile_balance_native, {
 // ============================================================================
 // These tests verify that our error detection handles real TRON API error responses.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Request for /wallet/triggerconstantcontract endpoint.
 #[derive(Serialize)]
@@ -322,15 +322,25 @@ async fn test_error_invalid_endpoint_impl() {
     #[derive(Serialize)]
     struct EmptyRequest {}
 
-    #[derive(Deserialize)]
+    #[derive(Deserialize, Debug)]
     struct AnyResponse {}
 
     let result: Result<AnyResponse, _> = client
         .post("/wallet/nonexistent_endpoint_12345", &EmptyRequest {})
         .await;
 
-    // Should return an error (either HTTP 404 or API error)
-    assert!(result.is_err(), "Non-existent endpoint should return error");
+    let err = result.unwrap_err().into_inner();
+    match err {
+        Web3RpcError::Transport(msg) => {
+            // 405 Method Not Allowed are returned for non-existent endpoints
+            assert!(
+                msg.starts_with("TRON API returned status 405"),
+                "Expected HTTP 405 status error, got: {}",
+                msg
+            );
+        },
+        other => panic!("Expected Web3RpcError::Transport, got {:?}", other),
+    }
 }
 
 async fn test_error_empty_response_handling_impl() {
@@ -405,6 +415,12 @@ async fn test_all_nodes_failing_returns_transport_error_impl() {
     assert!(
         inner.is_retryable(),
         "Final error should be Transport (retryable) when all nodes fail: {:?}",
+        inner
+    );
+
+    assert!(
+        matches!(inner, Web3RpcError::Transport(_)),
+        "Expected Web3RpcError::Transport, got {:?}",
         inner
     );
 }
