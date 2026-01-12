@@ -16,7 +16,7 @@ use coins::eth::EthCoin;
 use coins::eth::{checksum_address, eth_coin_from_conf_and_request, ERC20_ABI};
 #[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-watchers-eth"))]
 use coins::DerivationMethod;
-use coins::{CoinProtocol, CoinWithDerivationMethod, PrivKeyBuildPolicy};
+use coins::{lp_coinfind, CoinProtocol, CoinWithDerivationMethod, CoinsContext, PrivKeyBuildPolicy};
 use common::block_on;
 use common::custom_futures::timeout::FutureTimerExt;
 use crypto::privkey::key_pair_from_seed;
@@ -349,7 +349,7 @@ pub fn eth_coin_with_random_privkey_using_urls(swap_contract_address: Address, u
     .unwrap();
 
     let my_address = match eth_coin.derivation_method() {
-        DerivationMethod::SingleAddress(addr) => *addr,
+        DerivationMethod::SingleAddress(addr) => addr.inner(),
         _ => panic!("Expected single address"),
     };
 
@@ -368,6 +368,34 @@ pub fn eth_coin_with_random_privkey(swap_contract_address: Address) -> EthCoin {
 /// Creates ERC20 protocol coin supplied with 1 ETH and 100 tokens
 #[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-watchers-eth"))]
 pub fn erc20_coin_with_random_privkey(swap_contract_address: Address) -> EthCoin {
+    let secret = random_secp256k1_secret();
+
+    // Register platform ETH coin if not already registered by another parallel test, so platform_coin() lookups work.
+    if block_on(lp_coinfind(&MM_CTX, "ETH")).ok().flatten().is_none() {
+        let eth_conf = eth_dev_conf();
+        let eth_req = json!({
+            "method": "enable",
+            "coin": "ETH",
+            "swap_contract_address": swap_contract_address,
+            "urls": [GETH_RPC_URL],
+        });
+        let platform_coin = block_on(eth_coin_from_conf_and_request(
+            &MM_CTX,
+            "ETH",
+            &eth_conf,
+            &eth_req,
+            CoinProtocol::ETH {
+                chain_id: GETH_DEV_CHAIN_ID,
+            },
+            PrivKeyBuildPolicy::IguanaPrivKey(secret),
+        ))
+        .unwrap();
+        let coins_ctx = CoinsContext::from_ctx(&MM_CTX).unwrap();
+        // Ignore error if another parallel test already registered the platform
+        let _ = block_on(coins_ctx.add_platform_with_tokens(platform_coin.into(), vec![], None));
+    }
+
+    // Now create the ERC20 token
     let erc20_conf = erc20_dev_conf(&erc20_contract_checksum());
     let req = json!({
         "method": "enable",
@@ -385,12 +413,12 @@ pub fn erc20_coin_with_random_privkey(swap_contract_address: Address) -> EthCoin
             platform: "ETH".to_string(),
             contract_address: checksum_address(&format!("{:02x}", erc20_contract())),
         },
-        PrivKeyBuildPolicy::IguanaPrivKey(random_secp256k1_secret()),
+        PrivKeyBuildPolicy::IguanaPrivKey(secret),
     ))
     .unwrap();
 
     let my_address = match erc20_coin.derivation_method() {
-        DerivationMethod::SingleAddress(addr) => *addr,
+        DerivationMethod::SingleAddress(addr) => addr.inner(),
         _ => panic!("Expected single address"),
     };
 
@@ -426,7 +454,7 @@ pub fn fill_eth_erc20_with_private_key(priv_key: Secp256k1Secret) {
     let my_address = block_on(eth_coin.derivation_method().single_addr_or_err()).unwrap();
 
     // 100 ETH
-    fill_eth(my_address, U256::from(10).pow(U256::from(20)));
+    fill_eth(my_address.inner(), U256::from(10).pow(U256::from(20)));
 
     let erc20_conf = erc20_dev_conf(&erc20_contract_checksum());
     let req = json!({
@@ -450,7 +478,7 @@ pub fn fill_eth_erc20_with_private_key(priv_key: Secp256k1Secret) {
     .unwrap();
 
     // 100 tokens (it has 8 decimals)
-    fill_erc20(my_address, U256::from(10000000000u64));
+    fill_erc20(my_address.inner(), U256::from(10000000000u64));
 }
 
 // =============================================================================

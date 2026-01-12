@@ -722,6 +722,15 @@ pub enum InitEthWithTokensStatus {
     UserActionRequired(Json),
 }
 
+/// Error type for non-panicking task enable helpers.
+#[derive(Debug)]
+pub enum TaskEnableError {
+    /// Task timed out waiting for completion.
+    Timeout { ticker: String, timeout_sec: u64 },
+    /// RPC returned an error status.
+    RpcError(Json),
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, tag = "status", content = "details")]
 pub enum InitErc20TokenStatus {

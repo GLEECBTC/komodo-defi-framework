@@ -1,7 +1,7 @@
 use super::EthCoin;
 use crate::{
-    eth::{u256_to_big_decimal, Erc20TokenDetails},
-    hd_wallet::AddrToString,
+    eth::{u256_to_big_decimal, ChainTaggedAddress, Erc20TokenDetails},
+    hd_wallet::DisplayAddress,
     BalanceError, CoinWithDerivationMethod,
 };
 use common::{executor::Timer, log, Future01CompatExt};
@@ -67,7 +67,10 @@ type BalanceResult = Result<BalanceData, BalanceFetchError>;
 /// This implementation differs from others, as they immediately return
 /// an error if any of the requests fails. This one completes all futures
 /// and returns their results individually.
-async fn get_all_balance_results_concurrently(coin: &EthCoin, addresses: HashSet<Address>) -> Vec<BalanceResult> {
+async fn get_all_balance_results_concurrently(
+    coin: &EthCoin,
+    addresses: HashSet<ChainTaggedAddress>,
+) -> Vec<BalanceResult> {
     let mut tokens = coin.get_erc_tokens_infos();
     // Workaround for performance purposes.
     //
@@ -106,10 +109,11 @@ async fn get_all_balance_results_concurrently(coin: &EthCoin, addresses: HashSet
 
 async fn fetch_balance(
     coin: &EthCoin,
-    address: Address,
+    address: ChainTaggedAddress,
     token_ticker: String,
     info: &Erc20TokenDetails,
 ) -> Result<BalanceData, BalanceFetchError> {
+    let address_str = address.display_address();
     let (balance_as_u256, decimals) = if token_ticker == coin.ticker {
         (
             coin.address_balance(address)
@@ -117,18 +121,18 @@ async fn fetch_balance(
                 .await
                 .map_err(|error| BalanceFetchError {
                     ticker: token_ticker.clone(),
-                    address: address.addr_to_string(),
+                    address: address_str.clone(),
                     error,
                 })?,
             coin.decimals,
         )
     } else {
         (
-            coin.get_token_balance(info.token_address)
+            coin.get_token_balance_for_address(address.inner(), info.token_address)
                 .await
                 .map_err(|error| BalanceFetchError {
                     ticker: token_ticker.clone(),
-                    address: address.addr_to_string(),
+                    address: address_str.clone(),
                     error,
                 })?,
             info.decimals,
@@ -137,13 +141,13 @@ async fn fetch_balance(
 
     let balance_as_big_decimal = u256_to_big_decimal(balance_as_u256, decimals).map_err(|e| BalanceFetchError {
         ticker: token_ticker.clone(),
-        address: address.addr_to_string(),
+        address: address_str.clone(),
         error: e.map(BalanceError::from),
     })?;
 
     Ok(BalanceData {
         ticker: token_ticker,
-        address: address.addr_to_string(),
+        address: address_str,
         balance: balance_as_big_decimal,
     })
 }

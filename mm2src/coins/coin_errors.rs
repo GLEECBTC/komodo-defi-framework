@@ -1,7 +1,8 @@
 use crate::eth::eth_swap_v2::{PrepareTxDataError, ValidatePaymentV2Err};
 use crate::eth::nft_swap_v2::errors::{Erc721FunctionError, HtlcParamsError};
-use crate::eth::{EthAssocTypesError, EthNftAssocTypesError, Web3RpcError};
-use crate::{utxo::rpc_clients::UtxoRpcError, NumConversError, UnexpectedDerivationMethod};
+use crate::eth::{format_remote_error, EthAssocTypesError, EthNftAssocTypesError, Web3RpcError};
+use crate::utxo::rpc_clients::UtxoRpcError;
+use crate::{NumConversError, UnexpectedDerivationMethod};
 use derive_more::Display;
 use enum_derives::EnumFromStringify;
 use futures01::Future;
@@ -76,15 +77,17 @@ impl From<UtxoRpcError> for ValidatePaymentError {
 impl From<Web3RpcError> for ValidatePaymentError {
     fn from(e: Web3RpcError) -> Self {
         match e {
-            Web3RpcError::Transport(tr) => ValidatePaymentError::Transport(tr),
+            Web3RpcError::Transport(tr) | Web3RpcError::Timeout(tr) | Web3RpcError::BadResponse(tr) => {
+                ValidatePaymentError::Transport(tr)
+            },
             Web3RpcError::InvalidResponse(resp) => ValidatePaymentError::InvalidRpcResponse(resp),
+            Web3RpcError::RemoteError { code, message } => {
+                ValidatePaymentError::Transport(format_remote_error(code, message))
+            },
             Web3RpcError::Internal(internal)
-            | Web3RpcError::Timeout(internal)
             | Web3RpcError::NumConversError(internal)
             | Web3RpcError::InvalidGasApiConfig(internal) => ValidatePaymentError::InternalError(internal),
-            Web3RpcError::NftProtocolNotSupported => {
-                ValidatePaymentError::ProtocolNotSupported("Nft protocol is not supported".to_string())
-            },
+            Web3RpcError::ProtocolNotSupported(e) => ValidatePaymentError::ProtocolNotSupported(e),
             Web3RpcError::NoSuchCoin { .. } => ValidatePaymentError::InternalError(e.to_string()),
         }
     }

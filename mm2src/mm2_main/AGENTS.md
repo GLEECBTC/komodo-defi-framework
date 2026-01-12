@@ -177,6 +177,7 @@ Enable via `stream::<event>::enable`, disable via `stream::disable`:
 - Unit tests: `cargo test -p mm2_main --lib`
 - Integration: `cargo test --test mm2_tests_main`
 - Docker swaps: `cargo test --test docker_tests_main --features run-docker-tests`
+- TRON tests: `cargo test --test mm2_tests_main --features tron-network-tests tron_`
 
 ### Docker Test Infrastructure
 

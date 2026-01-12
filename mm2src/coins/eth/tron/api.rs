@@ -1,0 +1,601 @@
+//! TRON HTTP API client for wallet operations.
+//!
+//! Implements the minimal TRON API endpoints needed for HD activation and balance queries:
+//! - `/wallet/getnowblock` - current block number
+//! - `/wallet/getaccount` - account info (balance, existence)
+//!
+//! # TODO: RPC Pool Trait Refactoring
+//!
+//! The current structure has node rotation logic duplicated between EVM (`try_rpc_send` in
+//! `eth_rpc.rs`) and TRON (`try_clients` here). This should be unified via a common trait:
+//!
+//! ```ignore
+//! #[async_trait]
+//! pub trait RpcPool: Send + Sync + Clone {
+//!     type Client: Send + Sync + Clone;
+//!     type Error;
+//!
+//!     async fn try_nodes<F, Fut, T>(&self, op: F) -> Result<T, Self::Error>
+//!     where
+//!         F: Fn(Self::Client) -> Fut + Send + Sync,
+//!         Fut: Future<Output = Result<T, Self::Error>> + Send;
+//!
+//!     fn is_retryable(error: &Self::Error) -> bool;
+//! }
+//! ```
+//!
+//! See `docs/plans/chain-rpc-client-refactor.md` for the full refactoring plan.
+
+use super::TronAddress;
+use crate::eth::{Web3RpcError, Web3RpcResult};
+
+use common::{APPLICATION_JSON, PROXY_REQUEST_EXPIRATION_SEC, X_AUTH_PAYLOAD};
+use ethereum_types::U256;
+use http::header::CONTENT_TYPE;
+use http::Uri;
+use mm2_p2p::Keypair;
+use proxy_signature::RawMessage;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+use serde_json::Value as Json;
+use serde_json::{self as json};
+use std::sync::Arc;
+use std::time::Duration;
+
+/// Timeout for individual TRON API requests.
+pub const TRON_API_TIMEOUT: Duration = Duration::from_secs(10);
+
+// ============================================================================
+// TRON Error Classification
+// ============================================================================
+
+/// Structured TRON API error payload with code and message.
+///
+/// Separating code and message enables proper retry classification at the source.
+#[derive(Debug)]
+struct TronErrorPayload {
+    code: Option<String>,
+    message: String,
+}
+
+impl TronErrorPayload {
+    /// Check if this error indicates a transient condition that should be retried.
+    ///
+    /// Based on TRON's `Return.response_code` enum:
+    /// <https://github.com/tronprotocol/java-tron/blob/1e35f79/protocol/src/main/protos/api/api.proto#L1041-L1057>
+    ///
+    /// Transient codes (retryable):
+    /// - `SERVER_BUSY` (code 9) - node's transaction pending pool is at capacity
+    /// - `NO_CONNECTION` (code 10) - no active peer connections
+    /// - `NOT_ENOUGH_EFFECTIVE_CONNECTION` (code 11) - insufficient peer connections
+    /// - `BLOCK_UNSOLIDIFIED` (code 12) - blockchain not fully synchronized
+    /// - Rate limiting: "lack of computing resources" message
+    ///
+    /// All other codes are permanent (not retryable): SIGERROR, CONTRACT_VALIDATE_ERROR,
+    /// CONTRACT_EXE_ERROR, BANDWITH_ERROR, DUP_TRANSACTION_ERROR, TAPOS_ERROR,
+    /// TOO_BIG_TRANSACTION_ERROR, TRANSACTION_EXPIRATION_ERROR, OTHER_ERROR.
+    ///
+    /// # Why string codes instead of numeric codes
+    ///
+    /// TRON's HTTP API serializes enum values as string names via `JsonFormat.printToString`.
+    /// Example response: `{"code": "SERVER_BUSY", "message": "..."}`.
+    /// See: <https://github.com/tronprotocol/java-tron/blob/1e35f79/framework/src/main/java/org/tron/core/services/http/JsonFormat.java#L378-L382>
+    fn is_retryable(&self) -> bool {
+        const RETRYABLE_CODES: &[&str] = &[
+            "SERVER_BUSY",
+            "NO_CONNECTION",
+            "NOT_ENOUGH_EFFECTIVE_CONNECTION",
+            "BLOCK_UNSOLIDIFIED",
+        ];
+
+        // Rate limiting message from RateLimiterServlet (not a response_code, but a servlet error).
+        // See: https://github.com/tronprotocol/java-tron/blob/1e35f79/framework/src/main/java/org/tron/core/services/http/RateLimiterServlet.java#L114
+        const RATE_LIMIT_MSG: &str = "lack of computing resources";
+
+        if let Some(c) = &self.code {
+            if RETRYABLE_CODES.contains(&c.as_str()) {
+                return true;
+            }
+        }
+
+        self.message.contains(RATE_LIMIT_MSG)
+    }
+}
+
+impl std::fmt::Display for TronErrorPayload {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.code {
+            Some(code) => write!(f, "{}: {}", code, self.message),
+            None => write!(f, "{}", self.message),
+        }
+    }
+}
+
+/// Detects TRON API error payloads and extracts structured error information.
+/// Returns `Some(TronErrorPayload)` if the response indicates an error, `None` otherwise.
+///
+/// TRON API error formats (HTTP API):
+/// - `{"Error": "message"}` - Generic servlet errors
+///   <https://github.com/tronprotocol/java-tron/blob/1e35f79/framework/src/main/java/org/tron/core/services/http/Util.java#L90-L94>
+/// - `{"error": {"code": ..., "message": ...}}` - JSON-RPC 2.0 errors (for future use)
+/// - `{"result": false, "code": "...", "message": "..."}` - Return message (broadcasttransaction)
+///   <https://github.com/tronprotocol/java-tron/blob/1e35f79/protocol/src/main/protos/api/api.proto#L1040-L1062>
+/// - `{"result": {"result": false, "code": "...", "message": "..."}}` - Nested Return (triggersmartcontract, estimateenergy)
+///   <https://developers.tron.network/reference/estimateenergy>
+///
+/// Non-error: `{}` for non-existent accounts (<https://developers.tron.network/reference/getaccount-1>)
+fn tron_error_from_value(v: &Json) -> Option<TronErrorPayload> {
+    let obj = v.as_object()?;
+
+    // Helper to convert JSON values to string (handles string, number, or fallback to JSON repr)
+    let value_to_string = |v: &Json| -> String {
+        match v {
+            Json::String(s) => s.clone(),
+            Json::Number(n) => n.to_string(),
+            other => other.to_string(),
+        }
+    };
+
+    // Format: {"Error": "message"} - Generic servlet errors (Util.printErrorMsg, JsonFormat.printErrorMsg)
+    if let Some(msg) = obj.get("Error").and_then(|v| v.as_str()) {
+        return Some(TronErrorPayload {
+            code: None,
+            message: msg.to_string(),
+        });
+    }
+
+    // Format: {"error": {"code": ..., "message": ...}} - JSON-RPC 2.0 errors (for future use)
+    if let Some(error_obj) = obj.get("error").and_then(|v| v.as_object()) {
+        let code = error_obj.get("code").map(&value_to_string);
+        let message = error_obj
+            .get("message")
+            .map(&value_to_string)
+            .unwrap_or_else(|| "JSON-RPC error".to_string());
+        return Some(TronErrorPayload { code, message });
+    }
+
+    // Format: {"result": {"result": false, "code": "...", "message": "..."}} - Nested Return
+    // Used by: TransactionExtention (triggersmartcontract), EstimateEnergyMessage (estimateenergy)
+    // Note: "result" can be false, null, or missing when there's an error
+    if let Some(result_obj) = obj.get("result").and_then(|v| v.as_object()) {
+        let inner_result = result_obj.get("result").and_then(|v| v.as_bool());
+        let has_error_code = result_obj.get("code").is_some();
+
+        // Error if: inner result is false, OR inner result is null/missing but has error code
+        if inner_result == Some(false) || (inner_result.is_none() && has_error_code) {
+            let code = result_obj.get("code").map(&value_to_string);
+            let message = result_obj
+                .get("message")
+                .map(&value_to_string)
+                .unwrap_or_else(|| "Transaction failed".to_string());
+            return Some(TronErrorPayload { code, message });
+        }
+    }
+
+    // Format: {"result": false, "code": "...", "message": "..."} - Top-level Return (broadcasttransaction)
+    if matches!(obj.get("result").and_then(|v| v.as_bool()), Some(false)) {
+        let code = obj.get("code").map(&value_to_string);
+        let message = obj
+            .get("message")
+            .map(&value_to_string)
+            .unwrap_or_else(|| "TRON API returned result=false".to_string());
+        return Some(TronErrorPayload { code, message });
+    }
+
+    None
+}
+
+/// TRON HTTP transport node configuration.
+#[derive(Clone, Debug)]
+pub struct TronHttpNode {
+    pub uri: Uri,
+    pub komodo_proxy: bool,
+}
+
+/// TRON HTTP client for a single node.
+#[derive(Clone, Debug)]
+pub struct TronHttpClient {
+    pub node: TronHttpNode,
+    /// Keypair for signing requests to komodo proxy nodes.
+    pub proxy_sign_keypair: Option<Arc<Keypair>>,
+}
+
+impl TronHttpClient {
+    pub fn new(node: TronHttpNode, proxy_sign_keypair: Option<Arc<Keypair>>) -> Self {
+        Self {
+            node,
+            proxy_sign_keypair,
+        }
+    }
+
+    /// Send a POST request to the TRON API.
+    ///
+    /// Error classification at source:
+    /// - **Retryable**: malformed JSON, unexpected payload structure, transient TRON errors
+    ///   (SERVER_BUSY, NO_CONNECTION, etc.), rate limiting. These trigger node rotation.
+    /// - **Non-retryable**: permanent TRON errors like CONTRACT_VALIDATE_ERROR, SIGERROR, etc.
+    ///   These would fail on any node.
+    /// - **Internal**: programming errors (invalid URI, serialization bugs). Not retryable.
+    pub async fn post<T: Serialize, R: DeserializeOwned>(&self, path: &str, body: &T) -> Web3RpcResult<R> {
+        // Build URI, avoiding double slashes
+        let base = self.node.uri.to_string();
+        let base = base.trim_end_matches('/');
+        let path = path.trim_start_matches('/');
+        let uri_str = format!("{}/{}", base, path);
+        let uri: Uri = uri_str
+            .parse()
+            .map_err(|e| Web3RpcError::Internal(format!("Invalid URI: {e}")))?;
+
+        let body_bytes = json::to_vec(body).map_err(|e| Web3RpcError::Internal(e.to_string()))?;
+        let response_bytes = self.send_request(&uri, body_bytes).await?;
+
+        // Parse JSON once. Malformed JSON = faulty node, try another.
+        let response_json: Json = json::from_slice(&response_bytes)
+            .map_err(|e| Web3RpcError::BadResponse(format!("TRON node returned malformed JSON: {e}")))?;
+
+        // Check for TRON error payloads (200 OK but error content).
+        // Classify transient errors as retryable; permanent rejections as non-retryable.
+        if let Some(tron_err) = tron_error_from_value(&response_json) {
+            if tron_err.is_retryable() {
+                return Err(Web3RpcError::Transport(format!("TRON API transient error: {tron_err}")).into());
+            } else {
+                return Err(Web3RpcError::RemoteError {
+                    code: tron_err.code,
+                    message: tron_err.message,
+                }
+                .into());
+            }
+        }
+
+        // Convert Json to typed response. Unexpected structure = faulty node, try another.
+        json::from_value(response_json)
+            .map_err(|e| Web3RpcError::BadResponse(format!("TRON node returned unexpected payload: {e}")).into())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn send_request(&self, uri: &Uri, body: Vec<u8>) -> Web3RpcResult<Vec<u8>> {
+        use common::custom_futures::timeout::FutureTimerExt;
+        use http::header::HeaderValue;
+        use mm2_net::transport::slurp_req;
+
+        let mut req = http::Request::new(body.clone());
+        *req.method_mut() = http::Method::POST;
+        *req.uri_mut() = uri.clone();
+        req.headers_mut()
+            .insert(CONTENT_TYPE, HeaderValue::from_static(APPLICATION_JSON));
+
+        // Add proxy signature if using komodo proxy
+        if self.node.komodo_proxy {
+            let keypair = self.proxy_sign_keypair.as_ref().ok_or_else(|| {
+                Web3RpcError::Internal("Proxy node requires signing keypair but none provided".to_string())
+            })?;
+
+            let proxy_sign = RawMessage::sign(keypair, uri, body.len(), PROXY_REQUEST_EXPIRATION_SEC)
+                .map_err(|e| Web3RpcError::Internal(format!("Proxy signing failed: {e}")))?;
+
+            let proxy_sign_json = json::to_string(&proxy_sign).map_err(|e| Web3RpcError::Internal(e.to_string()))?;
+
+            let header_value = proxy_sign_json
+                .parse()
+                .map_err(|e| Web3RpcError::Internal(format!("Invalid proxy header value: {e}")))?;
+
+            req.headers_mut().insert(X_AUTH_PAYLOAD, header_value);
+        }
+
+        match Box::pin(slurp_req(req)).timeout(TRON_API_TIMEOUT).await {
+            Ok(Ok((status, _headers, response_body))) => {
+                if !status.is_success() {
+                    return Err(Web3RpcError::Transport(format!(
+                        "TRON API returned status {}: {}",
+                        status,
+                        String::from_utf8_lossy(&response_body)
+                    ))
+                    .into());
+                }
+                Ok(response_body)
+            },
+            Ok(Err(e)) => Err(Web3RpcError::Transport(format!("Request failed: {e}")).into()),
+            Err(_timeout) => Err(Web3RpcError::Timeout(format!("Request to {} timed out", uri)).into()),
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    async fn send_request(&self, uri: &Uri, body: Vec<u8>) -> Web3RpcResult<Vec<u8>> {
+        use common::custom_futures::timeout::FutureTimerExt;
+        use http::header::ACCEPT;
+        use mm2_net::wasm::http::FetchRequest;
+
+        let body_str =
+            String::from_utf8(body.clone()).map_err(|e| Web3RpcError::Internal(format!("Invalid UTF-8 body: {e}")))?;
+
+        let mut request = FetchRequest::post(&uri.to_string());
+        request = request
+            .cors()
+            .body_utf8(body_str)
+            .header(ACCEPT.as_str(), APPLICATION_JSON)
+            .header(CONTENT_TYPE.as_str(), APPLICATION_JSON);
+
+        // Add proxy signature if using komodo proxy
+        if self.node.komodo_proxy {
+            let keypair = self.proxy_sign_keypair.as_ref().ok_or_else(|| {
+                Web3RpcError::Internal("Proxy node requires signing keypair but none provided".to_string())
+            })?;
+
+            let proxy_sign = RawMessage::sign(keypair, uri, body.len(), PROXY_REQUEST_EXPIRATION_SEC)
+                .map_err(|e| Web3RpcError::Internal(format!("Proxy signing failed: {e}")))?;
+
+            let proxy_sign_json = json::to_string(&proxy_sign).map_err(|e| Web3RpcError::Internal(e.to_string()))?;
+
+            request = request.header(X_AUTH_PAYLOAD, &proxy_sign_json);
+        }
+
+        let (status_code, response_str) = match Box::pin(request.request_str()).timeout(TRON_API_TIMEOUT).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(e)) => return Err(Web3RpcError::Transport(format!("WASM fetch failed: {e:?}")).into()),
+            Err(_timeout) => return Err(Web3RpcError::Timeout(format!("Request to {} timed out", uri)).into()),
+        };
+
+        if !status_code.is_success() {
+            return Err(
+                Web3RpcError::Transport(format!("TRON API returned status {}: {}", status_code, response_str)).into(),
+            );
+        }
+
+        Ok(response_str.into_bytes())
+    }
+}
+
+// ============================================================================
+// TRON API Request/Response Types
+// ============================================================================
+
+/// Request body for `/wallet/getnowblock`.
+#[derive(Serialize)]
+struct GetNowBlockRequest {}
+
+/// Response from `/wallet/getnowblock`.
+#[derive(Deserialize, Debug)]
+pub struct GetNowBlockResponse {
+    #[serde(default)]
+    pub block_header: Option<BlockHeader>,
+}
+
+/// Block header from `/wallet/getnowblock` response.
+#[derive(Deserialize, Debug)]
+pub struct BlockHeader {
+    pub raw_data: BlockRawData,
+}
+
+/// Raw block data containing the block number.
+#[derive(Deserialize, Debug)]
+pub struct BlockRawData {
+    /// Block height.
+    pub number: i64,
+}
+
+/// Request body for `/wallet/getaccount`.
+#[derive(Serialize)]
+struct GetAccountRequest {
+    address: String,
+    visible: bool,
+}
+
+/// Empty object marker for TRON API responses.
+///
+/// MUST use `deny_unknown_fields`; otherwise arbitrary error payloads
+/// (e.g. `{ "code": "...", "message": "..." }`) could deserialize as `NoAccount` and silently
+/// bypass retry/rotation logic.
+#[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct TronEmptyObject {}
+
+/// Response from `/wallet/getaccount`.
+///
+/// TRON returns `{}` for non-existent accounts, or account data for existing ones.
+/// Using untagged enum: `Account` (with required `address`) is tried first; if it fails,
+/// `NoAccount` matches the empty object.
+///
+/// # Proto3 serialization
+///
+/// TRON uses proto3 where default values (0, empty) are omitted from JSON.
+/// - `address`: Always non-empty for existing accounts (used as DB key), so always serialized.
+/// - `balance`: Could be 0 for new accounts, so might be omitted. We use `#[serde(default)]`.
+/// - `create_time`: Set on creation, but omitted if 0. We use `#[serde(default)]`.
+///
+/// # Extensibility
+///
+/// `Account` does NOT use `deny_unknown_fields` so additional fields returned by TRON
+/// (like `net_usage`, `assetV2`, `frozenV2`, `owner_permission`, etc.) are silently ignored.
+/// Add fields here as needed for future functionality.
+///
+/// See: <https://developers.tron.network/reference/getaccount-1>
+#[derive(Deserialize, Debug)]
+#[serde(untagged)]
+pub enum GetAccountResponse {
+    /// Existing account. `address` is always present (non-empty bytes in protobuf).
+    Account {
+        /// Account address in hex format.
+        address: String,
+        /// Balance in SUN (1 TRX = 1,000,000 SUN). Defaults to 0 if omitted (proto3).
+        #[serde(default)]
+        balance: u64,
+        /// Account creation timestamp in milliseconds. Defaults to 0 if omitted.
+        #[serde(default)]
+        create_time: i64,
+    },
+    /// Empty object `{}` - account doesn't exist on chain.
+    NoAccount(TronEmptyObject),
+}
+
+impl GetAccountResponse {
+    /// Returns true if the account exists on chain (used for HD gap-limit scanning).
+    pub fn exists_meaningfully(&self) -> bool {
+        matches!(self, GetAccountResponse::Account { .. })
+    }
+}
+
+// ============================================================================
+// High-level TRON API methods
+// ============================================================================
+
+impl TronHttpClient {
+    /// Get the current block.
+    pub async fn get_now_block(&self) -> Web3RpcResult<GetNowBlockResponse> {
+        self.post("/wallet/getnowblock", &GetNowBlockRequest {}).await
+    }
+
+    /// Get account information for a TRON address.
+    pub async fn get_account(&self, address: &TronAddress) -> Web3RpcResult<GetAccountResponse> {
+        let request = GetAccountRequest {
+            // Use hex format with 0x41 prefix for the API
+            address: address.to_hex(),
+            visible: false,
+        };
+        self.post("/wallet/getaccount", &request).await
+    }
+}
+
+// ============================================================================
+// TRON API Client (node rotation)
+// ============================================================================
+
+use futures::lock::Mutex as AsyncMutex;
+
+/// Pool of TRON HTTP clients with rotation on success.
+#[derive(Clone)]
+pub struct TronApiClient {
+    clients: Arc<AsyncMutex<Vec<TronHttpClient>>>,
+}
+
+impl TronApiClient {
+    pub fn new(clients: Vec<TronHttpClient>) -> Self {
+        Self {
+            clients: Arc::new(AsyncMutex::new(clients)),
+        }
+    }
+
+    /// Execute an operation with node rotation.
+    /// Tries each node until one succeeds, rotating successful nodes to front.
+    ///
+    /// Retryability is determined by `Web3RpcError::is_retryable()`:
+    /// - **Retryable** (`Transport`, `Timeout`, `BadResponse`): try next node. Includes network failures/timeouts,
+    ///   malformed JSON/unexpected payloads, and transient TRON conditions (SERVER_BUSY, etc.).
+    /// - **Non-retryable** (`RemoteError`, `InvalidResponse`, `Internal`, etc.): fail immediately. Includes
+    ///   deterministic TRON rejections (CONTRACT_VALIDATE_ERROR, SIGERROR, etc.) and programming errors.
+    ///
+    /// Note: Holds mutex across await for consistency with EVM's `try_rpc_send` pattern.
+    async fn try_clients<F, Fut, T>(&self, op: F) -> Web3RpcResult<T>
+    where
+        F: Fn(TronHttpClient) -> Fut,
+        Fut: std::future::Future<Output = Web3RpcResult<T>>,
+    {
+        let mut clients = self.clients.lock().await;
+
+        if clients.is_empty() {
+            return Err(Web3RpcError::Transport("No TRON API nodes configured".to_string()).into());
+        }
+
+        let mut last_retryable: Option<Web3RpcError> = None;
+
+        for (i, client) in clients.clone().into_iter().enumerate() {
+            match op(client).await {
+                Ok(result) => {
+                    // Rotate successful client to front
+                    clients.rotate_left(i);
+                    return Ok(result);
+                },
+                Err(e) => {
+                    let inner = e.into_inner();
+                    if inner.is_retryable() {
+                        last_retryable = Some(inner);
+                        continue;
+                    }
+                    // Non-retryable error, fail fast
+                    return Err(inner.into());
+                },
+            }
+        }
+
+        Err(last_retryable
+            .unwrap_or_else(|| Web3RpcError::Transport("All TRON nodes unreachable".to_string()))
+            .into())
+    }
+
+    /// Get account information with node rotation.
+    pub async fn get_account(&self, address: &TronAddress) -> Web3RpcResult<GetAccountResponse> {
+        self.try_clients(|client| {
+            let addr = *address;
+            async move { client.get_account(&addr).await }
+        })
+        .await
+    }
+}
+
+// ============================================================================
+// ChainRpcOps implementation for TronApiClient
+// ============================================================================
+
+use crate::eth::chain_rpc::ChainRpcOps;
+use async_trait::async_trait;
+use mm2_err_handle::prelude::MmError;
+
+#[async_trait]
+impl ChainRpcOps for TronApiClient {
+    type Error = MmError<Web3RpcError>;
+    type Address = TronAddress;
+    type Balance = U256;
+
+    async fn current_block(&self) -> Result<u64, Self::Error> {
+        self.try_clients(|client| async move {
+            let response = client.get_now_block().await?;
+            // Faulty node validation: missing block_header means this node returned bad data.
+            // Use BadResponse to trigger rotation to another node.
+            let block_header = response.block_header.ok_or_else(|| {
+                Web3RpcError::BadResponse("TRON node returned getnowblock without block_header".to_string())
+            })?;
+            let block_number = block_header.raw_data.number;
+            // Faulty node validation: negative block number is invalid data from this node.
+            if block_number < 0 {
+                return Err(Web3RpcError::BadResponse(format!(
+                    "TRON node returned invalid negative block number: {block_number}"
+                ))
+                .into());
+            }
+            Ok(block_number as u64)
+        })
+        .await
+    }
+
+    async fn balance_native(&self, address: Self::Address) -> Result<Self::Balance, Self::Error> {
+        self.try_clients(|client| {
+            let addr = address;
+            async move {
+                let account = client.get_account(&addr).await?;
+                let balance = match account {
+                    GetAccountResponse::Account { balance, .. } => balance,
+                    // Address might have been created by KDF and not used on-chain yet. Return 0.
+                    GetAccountResponse::NoAccount(_) => 0,
+                };
+                Ok(U256::from(balance))
+            }
+        })
+        .await
+    }
+
+    async fn is_address_used_basic(&self, address: Self::Address) -> Result<bool, Self::Error> {
+        self.try_clients(|client| {
+            let addr = address;
+            async move {
+                let account = client.get_account(&addr).await?;
+                Ok(account.exists_meaningfully())
+            }
+        })
+        .await
+    }
+}
+
+impl std::fmt::Debug for TronApiClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TronApiClient").finish_non_exhaustive()
+    }
+}

@@ -2291,28 +2291,25 @@ mod tests {
 #[cfg(all(test, target_arch = "wasm32"))]
 mod wasm_tests {
     use super::*;
-    use common::log::info;
     use common::log::wasm_log::register_wasm_log;
-    use wasm_bindgen::prelude::*;
+    use sia_rust::transport::client::{ApiClient, ApiClientHelpers};
     use wasm_bindgen_test::*;
 
     use url::Url;
 
     wasm_bindgen_test_configure!(run_in_browser);
 
-    async fn init_client() -> SiaClientType {
+    async fn init_client() -> SiaClient {
         let conf = SiaClientConf {
             server_url: Url::parse("https://api.siascan.com/wallet/api").unwrap(),
             headers: HashMap::new(),
         };
-        SiaClientType::new(conf).await.unwrap()
+        SiaClient::new(conf).await.unwrap()
     }
 
     #[wasm_bindgen_test]
     async fn test_endpoint_txpool_broadcast() {
         register_wasm_log();
-
-        use sia_rust::transaction::V2Transaction;
 
         let client = init_client().await;
 
@@ -2364,18 +2361,13 @@ mod wasm_tests {
             }
             "#).unwrap();
 
-        let request = TxpoolBroadcastRequest {
-            transactions: vec![],
-            v2transactions: vec![tx],
-        };
-        let resp = client.dispatcher(request).await.unwrap();
+        // Use the helper which handles getting the basis (chain tip) automatically
+        client.broadcast_transaction(&tx).await.unwrap();
     }
 
     #[wasm_bindgen_test]
     async fn test_helper_address_balance() {
         register_wasm_log();
-        use sia_rust::http::endpoints::AddressBalanceRequest;
-        use sia_rust::types::Address;
 
         let client = init_client().await;
 

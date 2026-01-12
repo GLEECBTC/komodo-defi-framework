@@ -7,7 +7,7 @@ Manages the lifecycle of cryptocurrency activation. Handles standalone coins, pl
 ## Responsibilities
 
 - Task-based coin activation via `RpcTaskManager`
-- Platform coin + token initialization (ETH+ERC20, BCH+SLP, Tendermint+IBC, Solana+SPL)
+- Platform coin + token initialization (ETH+ERC20, TRON, BCH+SLP, Tendermint+IBC, Solana+SPL)
 - Standalone coin activation (UTXO, Qtum, ZCash, Sia)
 - L2/Lightning activation (native only)
 - Hardware wallet interaction during activation
@@ -58,7 +58,7 @@ src/
 
 ### 1. Platform Coin with Tokens
 
-For coins that host tokens (ETH, BCH, Tendermint, Solana):
+For coins that host tokens (ETH, TRON, BCH, Tendermint, Solana):
 
 ```rust
 // RPC: "task::enable_eth_with_tokens::init"
@@ -79,6 +79,13 @@ Flow:
 6. Get activation result (block height, balances)
 7. Start tx history fetching if enabled
 8. Register with `CoinsContext`
+
+**TRON-specific behavior:**
+- Uses same `eth_with_token_activation.rs` flow as ETH
+- Identified by `ChainSpec::Tron { network }` (vs `ChainSpec::Evm { chain_id }`)
+- Wallet-only mode: rejects token/NFT activation requests
+- Address format: `TronAddress` with Base58Check encoding (`T...` prefix)
+- RPC abstraction: `ChainRpcClient::Tron` implements `ChainRpcOps` for balance/block queries
 
 ### 2. Standalone Coins
 
@@ -234,3 +241,4 @@ All errors implement `HttpStatusCode` for proper RPC responses.
 ## Tests
 
 - Integration: Platform activation tests in `mm2_main/tests/`
+- TRON tests: `cargo test --test mm2_tests_main --features tron-network-tests tron_`

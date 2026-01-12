@@ -618,7 +618,7 @@ fn test_withdraw_and_send_hd_eth_erc20() {
         &mm_hd,
         "ETH",
         &["ERC20DEV"],
-        &swap_contract,
+        Some(&swap_contract),
         &[GETH_RPC_URL],
         60,
         Some(path_to_address.clone()),

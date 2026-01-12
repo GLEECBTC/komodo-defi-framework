@@ -263,6 +263,18 @@ pub const ETH_SEPOLIA_TOKEN_CONTRACT: &str = "0x09d0d71FBC00D7CCF9CFf132f5E6825C
 
 pub const BCHD_TESTNET_URLS: &[&str] = &["https://bchd-testnet.greyh.at:18335"];
 
+/// TRON Nile testnet RPC nodes.
+/// Nile is recommended over Shasta for more flexibility with RPC providers.
+pub const TRON_NILE_NODES: &[&str] = &["https://nile.trongrid.io"];
+
+/// Known TRON testnet address that is always "activated" (zero address equivalent).
+/// This is the TRON network foundation address on testnet that has activity.
+/// T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb is the genesis address.
+pub const TRON_TESTNET_KNOWN_ADDRESS: &str = "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb";
+
+/// TRX ticker constant for tests.
+pub const TRX_TICKER: &str = "TRX";
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum TypedRpcResponse<T> {
@@ -999,6 +1011,28 @@ pub fn eth_sepolia_trezor_firmware_compat_conf() -> Json {
         },
         "max_eth_tx_type": 2,
         "trezor_coin": "tETH"
+    })
+}
+
+/// TRX coin config for MarketMakerIt tests (Nile testnet).
+/// Uses TRON's SLIP-44 coin type 195 for HD wallet derivation.
+pub fn trx_conf() -> Json {
+    json!({
+        "coin": "TRX",
+        "name": "tron",
+        "fname": "TRON",
+        "mm2": 1,
+        "wallet_only": true,
+        "decimals": 6,
+        "avg_blocktime": 3,
+        "required_confirmations": 1,
+        "derivation_path": "m/44'/195'",
+        "protocol": {
+            "type": "TRX",
+            "protocol_data": {
+                "network": "Nile"
+            }
+        }
     })
 }
 
@@ -3618,26 +3652,30 @@ async fn task_enable_eth_with_tokens_init(
     mm: &MarketMakerIt,
     platform_coin: &str,
     tokens: &[&str],
-    swap_contract_address: &str,
+    swap_contract_address: Option<&str>,
     nodes: &[&str],
     path_to_address: Option<HDAccountAddressId>,
 ) -> Json {
     let erc20_tokens_requests: Vec<_> = tokens.iter().map(|ticker| json!({ "ticker": ticker })).collect();
     let nodes: Vec<_> = nodes.iter().map(|url| json!({ "url": url })).collect();
 
+    let mut params = json!({
+        "ticker": platform_coin,
+        "nodes": nodes,
+        "tx_history": true,
+        "erc20_tokens_requests": erc20_tokens_requests,
+        "path_to_address": path_to_address.unwrap_or_default(),
+    });
+    if let Some(addr) = swap_contract_address {
+        params["swap_contract_address"] = json!(addr);
+    }
+
     let response = mm
         .rpc(&json!({
-        "userpass": mm.userpass,
-        "method": "task::enable_eth::init",
-        "mmrpc": "2.0",
-        "params": {
-                "ticker": platform_coin,
-                "swap_contract_address": swap_contract_address,
-                "nodes": nodes,
-                "tx_history": true,
-                "erc20_tokens_requests": erc20_tokens_requests,
-                "path_to_address": path_to_address.unwrap_or_default(),
-            }
+            "userpass": mm.userpass,
+            "method": "task::enable_eth::init",
+            "mmrpc": "2.0",
+            "params": params
         }))
         .await
         .unwrap();
@@ -3675,7 +3713,7 @@ pub async fn task_enable_eth_with_tokens(
     mm: &MarketMakerIt,
     platform_coin: &str,
     tokens: &[&str],
-    swap_contract_address: &str,
+    swap_contract_address: Option<&str>,
     nodes: &[&str],
     timeout: u64,
     path_to_address: Option<HDAccountAddressId>,
@@ -3697,6 +3735,78 @@ pub async fn task_enable_eth_with_tokens(
             InitEthWithTokensStatus::Ok(result) => break result,
             InitEthWithTokensStatus::Error(e) => panic!("{} initialization error {:?}", platform_coin, e),
             _ => Timer::sleep(1.).await,
+        }
+    }
+}
+
+/// Immediate TRX activation helper using the enable RPC.
+pub async fn enable_trx(mm: &MarketMakerIt, nodes: &[&str]) -> Json {
+    let nodes: Vec<_> = nodes.iter().map(|url| json!({ "url": url })).collect();
+    let enable = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "enable_eth_with_tokens",
+            "mmrpc": "2.0",
+            "params": {
+                "ticker": "TRX",
+                "mm2": 1,
+                "nodes": nodes,
+                "erc20_tokens_requests": []
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        enable.0,
+        StatusCode::OK,
+        "'enable_eth_with_tokens' for TRX failed: {}",
+        enable.1
+    );
+    json::from_str(&enable.1).unwrap()
+}
+
+/// TRX task init helper (typed).
+/// Internally calls the shared `task::enable_eth::init` endpoint.
+pub async fn task_enable_trx_init(
+    mm: &MarketMakerIt,
+    nodes: &[&str],
+    path_to_address: Option<HDAccountAddressId>,
+) -> RpcV2Response<InitTaskResult> {
+    let init = task_enable_eth_with_tokens_init(mm, "TRX", &[], None, nodes, path_to_address).await;
+    json::from_value(init).unwrap()
+}
+
+/// TRX task status helper (typed).
+/// Internally calls the shared `task::enable_eth::status` endpoint.
+pub async fn task_enable_trx_status(mm: &MarketMakerIt, task_id: u64) -> RpcV2Response<InitEthWithTokensStatus> {
+    let status = task_eth_with_tokens_status(mm, task_id).await;
+    json::from_value(status).unwrap()
+}
+
+/// Task-based TRX activation helper.
+pub async fn task_enable_trx(
+    mm: &MarketMakerIt,
+    nodes: &[&str],
+    timeout_sec: u64,
+    path_to_address: Option<HDAccountAddressId>,
+) -> Result<EthWithTokensActivationResult, TaskEnableError> {
+    let init = task_enable_trx_init(mm, nodes, path_to_address).await;
+    let timeout_at = wait_until_ms(timeout_sec * 1000);
+
+    loop {
+        if now_ms() > timeout_at {
+            return Err(TaskEnableError::Timeout {
+                ticker: "TRX".to_string(),
+                timeout_sec,
+            });
+        }
+
+        let status = task_enable_trx_status(mm, init.result.task_id).await;
+        match status.result {
+            InitEthWithTokensStatus::Ok(result) => return Ok(result),
+            InitEthWithTokensStatus::Error(e) => return Err(TaskEnableError::RpcError(e)),
+            InitEthWithTokensStatus::UserActionRequired(e) => return Err(TaskEnableError::RpcError(e)),
+            InitEthWithTokensStatus::InProgress(_) => Timer::sleep(1.).await,
         }
     }
 }

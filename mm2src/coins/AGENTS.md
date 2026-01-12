@@ -46,6 +46,7 @@ Abstraction layer for blockchain protocols. Defines traits for swaps, balances, 
 | SLP Token | `SlpToken` | SLP tokens on BCH |
 | QRC20 | `Qrc20Coin` | QRC20 tokens on Qtum |
 | EVM | `EthCoin` | ETH, MATIC, BNB |
+| TRON | `EthCoin` | TRX (wallet-only, via ChainSpec::Tron) |
 | ERC20/NFT | `EthCoin` (token) | USDT, WBTC, NFTs |
 | Tendermint | `TendermintCoin` | ATOM, OSMO |
 | Tendermint Token | `TendermintToken` | IBC tokens |
@@ -95,10 +96,19 @@ See `coins_activation/AGENTS.md`. Activation traits (task-based `Init*` traits t
 - WalletConnect: P2PKH/P2WPKH/P2SH signing via PSBT (`utxo/wallet_connect.rs`)
 
 ### EVM (eth.rs, eth/)
+- `ChainSpec`: `Evm { chain_id }` or `Tron { network }` - determines chain behavior
 - `EthCoinType`: `Eth`, `Erc20 { token_addr }`, `Nft`
 - `EthPrivKeyPolicy`: Iguana/HD/Trezor/MetaMask/WalletConnect
 - Gas constants: `ETH_PAYMENT = 65_000`, `ERC20_PAYMENT = 150_000`
 - NFT swap support via `SwapV2Contracts`
+
+### TRON (eth/tron/)
+- Reuses `EthCoin` with `ChainSpec::Tron { network }`
+- `TronAddress`: Base58Check encoding (`T...` format)
+- `TronApiClient`: HTTP RPC client (native + WASM)
+- `ChainRpcClient::Tron`: Implements `ChainRpcOps` for balance, block, address-used checks
+- Wallet-only mode (no swap contracts yet)
+- HD activation via `enable_eth_with_tokens` / `task::enable_eth::*`
 
 ### Tendermint (tendermint/)
 - IBC token transfers

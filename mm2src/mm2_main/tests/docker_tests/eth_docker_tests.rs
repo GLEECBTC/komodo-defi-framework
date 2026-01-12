@@ -16,11 +16,12 @@ use coins::eth::{
 use coins::hd_wallet::AddrToString;
 use coins::nft::nft_structs::{Chain, ContractType, NftInfo};
 use coins::{
-    lp_register_coin, CoinProtocol, CoinWithDerivationMethod, CommonSwapOpsV2, ConfirmPaymentInput, Eip1559Ops,
-    FoundSwapTxSpend, MakerNftSwapOpsV2, MarketCoinOps, MmCoinEnum, NftSwapInfo, ParseCoinAssocTypes,
-    ParseNftAssocTypes, PrivKeyBuildPolicy, RefundNftMakerPaymentArgs, RefundPaymentArgs, RegisterCoinParams,
-    SearchForSwapTxSpendInput, SendNftMakerPaymentArgs, SendPaymentArgs, SpendNftMakerPaymentArgs, SpendPaymentArgs,
-    SwapGasFeePolicy, SwapOps, SwapTxTypeWithSecretHash, ToBytes, Transaction, ValidateNftMakerPaymentArgs,
+    lp_coinfind, lp_register_coin, CoinProtocol, CoinWithDerivationMethod, CoinsContext, CommonSwapOpsV2,
+    ConfirmPaymentInput, Eip1559Ops, FoundSwapTxSpend, MakerNftSwapOpsV2, MarketCoinOps, MmCoinEnum, NftSwapInfo,
+    ParseCoinAssocTypes, ParseNftAssocTypes, PrivKeyBuildPolicy, RefundNftMakerPaymentArgs, RefundPaymentArgs,
+    RegisterCoinParams, SearchForSwapTxSpendInput, SendNftMakerPaymentArgs, SendPaymentArgs, SpendNftMakerPaymentArgs,
+    SpendPaymentArgs, SwapGasFeePolicy, SwapOps, SwapTxTypeWithSecretHash, ToBytes, Transaction,
+    ValidateNftMakerPaymentArgs,
 };
 use coins::{
     DexFee, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, MakerCoinSwapOpsV2,
@@ -214,6 +215,41 @@ fn global_nft_with_random_privkey(
     nft_ticker: String,
     platform_ticker: String,
 ) -> EthCoin {
+    // Register platform ETH coin in MM_CTX1 if not already registered.
+    // Required because NFT coins call platform_coin() for get_swap_gas_fee_policy().
+    if block_on(lp_coinfind(&MM_CTX1, &platform_ticker))
+        .ok()
+        .flatten()
+        .is_none()
+    {
+        let eth_conf = eth_dev_conf();
+        let eth_req = json!({
+            "urls": [GETH_RPC_URL],
+            "swap_contract_address": swap_contract_address,
+            "swap_v2_contracts": {
+                "maker_swap_v2_contract": swap_v2_contracts.maker_swap_v2_contract,
+                "taker_swap_v2_contract": swap_v2_contracts.taker_swap_v2_contract,
+                "nft_maker_swap_v2_contract": swap_v2_contracts.nft_maker_swap_v2_contract
+            },
+            "fallback_swap_contract": fallback_swap_contract_address
+        });
+        let platform_priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(Secp256k1Secret::from([1u8; 32]));
+        let platform_coin = block_on(eth_coin_from_conf_and_request(
+            &MM_CTX1,
+            &platform_ticker,
+            &eth_conf,
+            &eth_req,
+            CoinProtocol::ETH {
+                chain_id: GETH_DEV_CHAIN_ID,
+            },
+            platform_priv_key_policy,
+        ))
+        .unwrap();
+        let coins_ctx = CoinsContext::from_ctx(&MM_CTX1).unwrap();
+        // Ignore error if another parallel test already registered the platform
+        let _ = block_on(coins_ctx.add_platform_with_tokens(platform_coin.into(), vec![], None));
+    }
+
     let build_policy = EthPrivKeyBuildPolicy::IguanaPrivKey(random_secp256k1_secret());
     let node = EthNode {
         url: GETH_RPC_URL.to_string(),
@@ -222,7 +258,7 @@ fn global_nft_with_random_privkey(
     let platform_request = EthActivationV2Request {
         nodes: vec![node],
         rpc_mode: Default::default(),
-        swap_contract_address,
+        swap_contract_address: Some(swap_contract_address),
         swap_v2_contracts: Some(swap_v2_contracts),
         fallback_swap_contract: Some(fallback_swap_contract_address),
         contract_supports_watchers: false,
@@ -702,12 +738,12 @@ fn test_nonce_several_urls() {
     // Use one working and one failing URL.
     let coin = eth_coin_with_random_privkey_using_urls(swap_contract(), &[GETH_RPC_URL, "http://127.0.0.1:0"]);
     let my_address = block_on(coin.derivation_method().single_addr_or_err()).unwrap();
-    let (old_nonce, _) = block_on_f01(coin.clone().get_addr_nonce(my_address)).unwrap();
+    let (old_nonce, _) = block_on_f01(coin.clone().get_addr_nonce(my_address.inner())).unwrap();
 
     // Send a payment to increase the nonce.
-    block_on_f01(coin.send_to_address(my_address, 200000000.into())).unwrap();
+    block_on_f01(coin.send_to_address(my_address.inner(), 200000000.into())).unwrap();
 
-    let (new_nonce, _) = block_on_f01(coin.get_addr_nonce(my_address)).unwrap();
+    let (new_nonce, _) = block_on_f01(coin.get_addr_nonce(my_address.inner())).unwrap();
     assert_eq!(old_nonce + 1, new_nonce);
 }
 
@@ -717,7 +753,7 @@ fn test_nonce_lock() {
 
     let coin = eth_coin_with_random_privkey(swap_contract());
     let my_address = block_on(coin.derivation_method().single_addr_or_err()).unwrap();
-    let futures = (0..5).map(|_| coin.send_to_address(my_address, 200000000.into()).compat());
+    let futures = (0..5).map(|_| coin.send_to_address(my_address.inner(), 200000000.into()).compat());
     let results = block_on(join_all(futures));
 
     // make sure all transactions are successful
@@ -781,10 +817,10 @@ fn test_nonce_erc20_lock() {
     let my_address = block_on(eth_coin.derivation_method().single_addr_or_err()).unwrap();
 
     let futures = vec![
-        eth_coin.send_to_address(my_address, 100.into()).compat(),
-        eth_token.send_to_address(my_address, 1.into()).compat(),
-        eth_token.send_to_address(my_address, 2.into()).compat(),
-        eth_coin.send_to_address(my_address, 200.into()).compat(),
+        eth_coin.send_to_address(my_address.inner(), 100.into()).compat(),
+        eth_token.send_to_address(my_address.inner(), 1.into()).compat(),
+        eth_token.send_to_address(my_address.inner(), 2.into()).compat(),
+        eth_coin.send_to_address(my_address.inner(), 200.into()).compat(),
     ];
     let results = block_on(join_all(futures));
 
@@ -1214,7 +1250,7 @@ fn eth_coin_v2_activation_with_random_privkey(
     let platform_request = EthActivationV2Request {
         nodes: vec![node],
         rpc_mode: Default::default(),
-        swap_contract_address: swap_addr.swap_contract_address,
+        swap_contract_address: Some(swap_addr.swap_contract_address),
         swap_v2_contracts: Some(swap_addr.swap_v2_contracts),
         fallback_swap_contract: Some(swap_addr.fallback_swap_contract_address),
         contract_supports_watchers: false,
@@ -2178,7 +2214,7 @@ fn test_eth_erc20_hd() {
         &mm_hd,
         "ETH",
         &["ERC20DEV"],
-        &swap_contract,
+        Some(&swap_contract),
         &[GETH_RPC_URL],
         60,
         Some(path_to_address),
@@ -2217,7 +2253,7 @@ fn test_eth_erc20_hd() {
         &mm_hd,
         "ETH",
         &["ERC20DEV"],
-        &swap_contract,
+        Some(&swap_contract),
         &[GETH_RPC_URL],
         60,
         Some(path_to_address),
@@ -2271,7 +2307,7 @@ fn test_eth_erc20_hd() {
         &mm_hd,
         "ETH",
         &["ERC20DEV"],
-        &swap_contract,
+        Some(&swap_contract),
         &[GETH_RPC_URL],
         60,
         Some(path_to_address),
@@ -2314,7 +2350,7 @@ fn test_enable_custom_erc20() {
         &mm_hd,
         "ETH",
         &[],
-        &swap_contract,
+        Some(&swap_contract),
         &[GETH_RPC_URL],
         60,
         Some(path_to_address.clone()),
@@ -2398,7 +2434,7 @@ fn test_enable_custom_erc20_with_duplicate_contract_in_config() {
         &mm_hd,
         "ETH",
         &[],
-        &swap_contract,
+        Some(&swap_contract),
         &[GETH_RPC_URL],
         60,
         Some(path_to_address.clone()),

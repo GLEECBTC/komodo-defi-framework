@@ -4,7 +4,7 @@ use super::types::{
     ClassicSwapLiquiditySourcesResponse, ClassicSwapQuoteRequest, ClassicSwapResponse, ClassicSwapTokensRequest,
     ClassicSwapTokensResponse,
 };
-use coins::eth::{u256_from_big_decimal, EthCoin, EthCoinType};
+use coins::eth::{u256_from_big_decimal, ChainFamily, EthCoin, EthCoinType};
 use coins::hd_wallet::DisplayAddress;
 use coins::{lp_coinfind_or_err, CoinWithDerivationMethod, MmCoin, MmCoinEnum, Ticker};
 use ethereum_types::Address;
@@ -38,8 +38,8 @@ pub async fn one_inch_v6_0_classic_swap_quote_rpc(
     let sell_amount = u256_from_big_decimal(&req.amount.to_decimal(), base.decimals())
         .mm_err(|err| ApiIntegrationRpcError::InvalidParam(err.to_string()))?;
     let query_params = ClassicSwapQuoteParams::new(
-        base_contract.display_address(),
-        rel_contract.display_address(),
+        ChainFamily::Evm.format(base_contract),
+        ChainFamily::Evm.format(rel_contract),
         sell_amount.to_string(),
     )
     .with_fee(req.fee)
@@ -83,8 +83,8 @@ pub async fn one_inch_v6_0_classic_swap_create_rpc(
     let single_address = base.derivation_method().single_addr_or_err().await.map_mm_err()?;
 
     let query_params = ClassicSwapCreateParams::new(
-        base_contract.display_address(),
-        rel_contract.display_address(),
+        ChainFamily::Evm.format(base_contract),
+        ChainFamily::Evm.format(rel_contract),
         sell_amount.to_string(),
         single_address.display_address(),
         req.slippage,
@@ -165,7 +165,12 @@ pub(crate) async fn get_coin_for_one_inch(
         EthCoinType::Eth => Address::from_str(ApiClient::eth_special_contract())
             .map_to_mm(|_| ApiIntegrationRpcError::InternalError("invalid address".to_owned()))?,
         EthCoinType::Erc20 { token_addr, .. } => token_addr,
-        EthCoinType::Nft { .. } => return Err(MmError::new(ApiIntegrationRpcError::NftProtocolNotSupported)),
+        EthCoinType::Nft { .. } => {
+            return Err(MmError::new(ApiIntegrationRpcError::ProtocolNotSupported(format!(
+                "{} protocol is not supported by get_coin_for_one_inch",
+                coin.coin_type
+            ))))
+        },
     };
     Ok((coin, contract))
 }

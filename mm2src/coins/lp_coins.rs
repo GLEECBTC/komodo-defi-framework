@@ -2870,8 +2870,8 @@ pub enum TradePreimageError {
     #[from_stringify("NumConversError", "UnexpectedDerivationMethod")]
     #[display(fmt = "Internal error: {_0}")]
     InternalError(String),
-    #[display(fmt = "Nft Protocol is not supported yet!")]
-    NftProtocolNotSupported,
+    #[display(fmt = "Protocol not supported: {_0}")]
+    ProtocolNotSupported(String),
     #[display(fmt = "No such coin {}", coin)]
     NoSuchCoin { coin: String },
 }
@@ -3363,8 +3363,8 @@ pub enum WithdrawError {
         my_address: String,
         token_owner: String,
     },
-    #[display(fmt = "Nft Protocol is not supported yet!")]
-    NftProtocolNotSupported,
+    #[display(fmt = "Protocol not supported: {_0}")]
+    ProtocolNotSupported(String),
     #[display(fmt = "Chain id must be set for typed transaction for coin {coin}")]
     NoChainIdSet {
         coin: String,
@@ -3409,7 +3409,7 @@ impl HttpStatusCode for WithdrawError {
             WithdrawError::HwError(_) => StatusCode::GONE,
             #[cfg(target_arch = "wasm32")]
             WithdrawError::BroadcastExpected(_) => StatusCode::BAD_REQUEST,
-            WithdrawError::InternalError(_) | WithdrawError::DbError(_) | WithdrawError::NftProtocolNotSupported => {
+            WithdrawError::InternalError(_) | WithdrawError::DbError(_) | WithdrawError::ProtocolNotSupported(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             },
             WithdrawError::Transport(_) => StatusCode::BAD_GATEWAY,
@@ -3508,7 +3508,7 @@ impl From<EthGasDetailsErr> for WithdrawError {
             },
             EthGasDetailsErr::Internal(e) => WithdrawError::InternalError(e),
             EthGasDetailsErr::Transport(e) => WithdrawError::Transport(e),
-            EthGasDetailsErr::NftProtocolNotSupported => WithdrawError::NftProtocolNotSupported,
+            EthGasDetailsErr::ProtocolNotSupported(e) => WithdrawError::ProtocolNotSupported(e),
             EthGasDetailsErr::NoSuchCoin { coin } => WithdrawError::NoSuchCoin { coin },
         }
     }
@@ -5970,8 +5970,13 @@ pub fn address_by_coin_conf_and_pubkey_str(
         CoinProtocol::ERC20 { .. } | CoinProtocol::ETH { .. } | CoinProtocol::NFT { .. } => {
             eth::addr_from_pubkey_str(pubkey)
         },
-        // Todo: implement TRX address generation
-        CoinProtocol::TRX { .. } => ERR!("TRX address generation is not implemented yet"),
+        CoinProtocol::TRX { .. } => {
+            let pubkey_hex = pubkey.strip_prefix("0x").unwrap_or(pubkey);
+            let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| ERRL!("{}", e))?;
+            let raw_addr = eth::addr_from_raw_pubkey(&pubkey_bytes)?;
+            let tron_addr = eth::tron::TronAddress::from(raw_addr);
+            Ok(tron_addr.to_base58())
+        },
         CoinProtocol::UTXO { .. } | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
             utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format)
         },

@@ -107,7 +107,8 @@ impl EthCoin {
                 .await
             },
             EthCoinType::Nft { .. } => Err(TransactionErr::ProtocolNotSupported(ERRL!(
-                "NFT protocol is not supported for ETH and ERC20 Swaps"
+                "{} protocol is not supported for ETH and ERC20 Swaps",
+                self.coin_type
             ))),
         }
     }
@@ -135,8 +136,9 @@ impl EthCoin {
         let swap_id = self.etomic_swap_id_v2(args.time_lock, args.maker_secret_hash);
 
         let tx = args.maker_payment_tx;
-        let maker_address = public_to_address(args.maker_pub);
-        validate_from_to_addresses(tx, maker_address, maker_swap_v2_contract).map_mm_err()?;
+        let maker_address = self.tag_address(public_to_address(args.maker_pub));
+        let contract_tagged = self.tag_address(maker_swap_v2_contract);
+        validate_from_to_addresses(tx, maker_address, contract_tagged).map_mm_err()?;
 
         let validation_args = {
             let amount = u256_from_big_decimal(&args.amount, self.decimals).map_mm_err()?;
@@ -162,9 +164,10 @@ impl EthCoin {
                 validate_erc20_maker_payment_data(&decoded, &validation_args, function, token_addr)?;
             },
             EthCoinType::Nft { .. } => {
-                return MmError::err(ValidatePaymentError::ProtocolNotSupported(
-                    "NFT protocol is not supported for ETH and ERC20 Swaps".to_string(),
-                ));
+                return MmError::err(ValidatePaymentError::ProtocolNotSupported(format!(
+                    "{} protocol is not supported for ETH and ERC20 Swaps",
+                    self.coin_type
+                )));
             },
         }
 
