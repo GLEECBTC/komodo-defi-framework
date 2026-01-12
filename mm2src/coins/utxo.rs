@@ -41,6 +41,7 @@ pub mod utxo_hd_wallet;
 pub mod utxo_standard;
 pub mod utxo_tx_history_v2;
 pub mod utxo_withdraw;
+#[cfg(feature = "utxo-walletconnect")]
 pub mod wallet_connect;
 
 use async_trait::async_trait;
@@ -61,6 +62,7 @@ use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender};
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures01::Future;
+use kdf_walletconnect::chain::WcChainId;
 use keys::bytes::Bytes;
 use keys::NetworkAddressPrefixes;
 use keys::Signature;
@@ -602,6 +604,9 @@ pub struct UtxoCoinConf {
     pub checksum_type: ChecksumType,
     /// Fork id used in sighash
     pub fork_id: u32,
+    /// A CAIP-2 compliant chain ID. This is used to identify the UTXO chain in WalletConnect and other cross-chain protocols.
+    /// https://github.com/ChainAgnostic/CAIPs/blob/9516a2c0b26223d98a342938bf6d9ee59517f190/CAIPs/caip-4.md
+    pub chain_id: Option<WcChainId>,
     /// Signature version
     pub signature_version: SignatureVersion,
     pub required_confirmations: AtomicU64,
@@ -1060,7 +1065,7 @@ pub trait UtxoCommonOps:
     /// The method is expected to fail if [`UtxoCoinFields::priv_key_policy`] is [`PrivKeyPolicy::HardwareWallet`].
     /// It's worth adding a method like `my_public_key_der_path`
     /// that takes a derivation path from which we derive the corresponding public key.
-    fn my_public_key(&self) -> Result<&Public, MmError<UnexpectedDerivationMethod>>;
+    fn my_public_key(&self) -> Result<Public, MmError<UnexpectedDerivationMethod>>;
 
     /// Try to parse address from string using specified on asset enable format,
     /// and if it failed inform user that he used a wrong format.
@@ -1087,7 +1092,7 @@ pub trait UtxoCommonOps:
 
     /// Generates a transaction spending P2SH vout (typically, with 0 index [`utxo_common::DEFAULT_SWAP_VOUT`]) of input.prev_transaction
     /// Works only if single signature is required!
-    async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput<'_>) -> Result<UtxoTx, String>;
+    async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput) -> Result<UtxoTx, String>;
 
     /// Loads verbose transactions from cache or requests it using RPC client.
     fn get_verbose_transactions_from_cache_or_rpc(
@@ -1881,7 +1886,6 @@ where
     T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps + UtxoTxBroadcastOps,
 {
     let my_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err().await);
-    let key_pair = try_tx_s!(coin.as_ref().priv_key_policy.activated_key_or_err());
     let mut builder = UtxoTxBuilder::new(coin)
         .await
         .add_available_inputs(unspents)
@@ -1892,7 +1896,7 @@ where
     }
     let (unsigned, _) = try_tx_s!(builder.build().await);
 
-    let spent_unspents = unsigned
+    let spent_unspents: Vec<_> = unsigned
         .inputs
         .iter()
         .map(|input| UnspentInfo {
@@ -1908,12 +1912,29 @@ where
         _ => coin.as_ref().conf.signature_version,
     };
 
-    let signed = try_tx_s!(sign_tx(
-        unsigned,
-        key_pair,
-        signature_version,
-        coin.as_ref().conf.fork_id
-    ));
+    let signed = match coin.as_ref().priv_key_policy {
+        PrivKeyPolicy::Iguana(activated_key) | PrivKeyPolicy::HDWallet { activated_key, .. } => {
+            try_tx_s!(sign_tx(
+                unsigned,
+                &activated_key,
+                signature_version,
+                coin.as_ref().conf.fork_id
+            ))
+        },
+        #[cfg(feature = "utxo-walletconnect")]
+        PrivKeyPolicy::WalletConnect { ref session_topic, .. } => {
+            try_tx_s!(wallet_connect::sign_p2pkh(coin, session_topic, &unsigned).await)
+        },
+        #[cfg(not(feature = "utxo-walletconnect"))]
+        PrivKeyPolicy::WalletConnect { .. } => {
+            return Err(TransactionErr::Plain(
+                "WalletConnect signing requires utxo-walletconnect feature".to_string(),
+            ))
+        },
+        PrivKeyPolicy::Trezor => return Err(TransactionErr::Plain("Can't sign tx with trezor".to_string())),
+        #[cfg(target_arch = "wasm32")]
+        PrivKeyPolicy::Metamask { .. } => return Err(TransactionErr::Plain("Can't sign tx with metamask".to_string())),
+    };
 
     Ok((signed, spent_unspents))
 }

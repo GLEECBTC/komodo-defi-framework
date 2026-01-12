@@ -9,7 +9,7 @@ doctest = false
 
 [dependencies]
 bitcrypto = { path = "../crypto" }
-chain = { path = "../chain" }
+chain = { path = "../chain", default-features = false }
 keys = { path = "../keys" }
 primitives = { path = "../primitives" }
 serde.workspace = true

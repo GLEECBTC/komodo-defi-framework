@@ -1,4 +1,7 @@
-use serde::de::{self, Deserializer};
+use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
+use base64::Engine;
+use serde::de;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 
 /// Deserializes an empty string into `None`.  
@@ -38,4 +41,14 @@ pub fn de_none_if_empty<'de, D: Deserializer<'de>>(des: D) -> Result<Option<Stri
         }
     }
     des.deserialize_any(Visitor)
+}
+
+pub fn deserialize_base64<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+    let base64 = String::deserialize(d)?;
+    BASE64_ENGINE.decode(base64).map_err(serde::de::Error::custom)
+}
+
+pub fn serialize_base64<S: Serializer>(v: &Vec<u8>, s: S) -> Result<S::Ok, S::Error> {
+    let base64 = BASE64_ENGINE.encode(v);
+    String::serialize(&base64, s)
 }

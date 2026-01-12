@@ -7,7 +7,7 @@
 
 use super::{GenTxError, ZCoin};
 use crate::utxo::rpc_clients::{UtxoRpcClientEnum, UtxoRpcError};
-use crate::utxo::utxo_common::payment_script;
+use crate::utxo::utxo_common::{payment_script, DEFAULT_SWAP_VOUT};
 use crate::utxo::{sat_from_big_decimal, UtxoAddressFormat};
 use crate::z_coin::SendOutputsErr;
 use crate::z_coin::{ZOutput, DEX_FEE_OVK};
@@ -182,9 +182,9 @@ pub async fn z_p2sh_spend(
 
     let secp_secret = SecretKey::from_slice(htlc_keypair.private_ref()).expect("Keypair contains a valid secret key");
 
-    let outpoint = ZCashOutpoint::new(p2sh_tx.txid().0, 0);
+    let outpoint = ZCashOutpoint::new(p2sh_tx.txid().0, DEFAULT_SWAP_VOUT as u32);
     let tx_out = TxOut {
-        value: p2sh_tx.vout[0].value,
+        value: p2sh_tx.vout[DEFAULT_SWAP_VOUT].value,
         script_pubkey: ZCashScript(redeem_script.to_vec()),
     };
     tx_builder.add_transparent_input(
@@ -198,7 +198,7 @@ pub async fn z_p2sh_spend(
         None,
         coin.z_fields.my_z_addr.clone(),
         // TODO use fee from coin here. Will do on next iteration, 1000 is default value that works fine
-        p2sh_tx.vout[0].value - Amount::from_i64(1000).expect("1000 will always succeed"),
+        p2sh_tx.vout[DEFAULT_SWAP_VOUT].value - Amount::from_i64(1000).expect("1000 will always succeed"),
         None,
     )?;
 

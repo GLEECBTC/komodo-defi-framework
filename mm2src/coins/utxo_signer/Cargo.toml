@@ -8,7 +8,7 @@ doctest = false
 
 [dependencies]
 async-trait.workspace = true
-chain = { path = "../../mm2_bitcoin/chain" }
+chain = { path = "../../mm2_bitcoin/chain", default-features = false }
 common = { path = "../../common" }
 mm2_err_handle = { path = "../../mm2_err_handle" }
 crypto = { path = "../../crypto" }

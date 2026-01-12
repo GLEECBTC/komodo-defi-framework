@@ -464,7 +464,7 @@ fn test_search_for_swap_tx_spend_taker_spent() {
     let maker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
         time_lock: timelock,
-        other_pubkey: taker_pub,
+        other_pubkey: &taker_pub,
         secret_hash: secret_hash.as_slice(),
         amount,
         swap_contract_address: &maker_coin.swap_contract_address(),
@@ -493,7 +493,7 @@ fn test_search_for_swap_tx_spend_taker_spent() {
     let taker_spends_payment_args = SpendPaymentArgs {
         other_payment_tx: &payment_tx_hex,
         time_lock: timelock,
-        other_pubkey: maker_pub,
+        other_pubkey: &maker_pub,
         secret,
         secret_hash: secret_hash.as_slice(),
         swap_contract_address: &taker_coin.swap_contract_address(),
@@ -517,7 +517,7 @@ fn test_search_for_swap_tx_spend_taker_spent() {
 
     let search_input = SearchForSwapTxSpendInput {
         time_lock: timelock,
-        other_pub: taker_pub,
+        other_pub: &taker_pub,
         secret_hash: secret_hash.as_slice(),
         tx: &payment_tx_hex,
         search_from_block,
@@ -677,7 +677,7 @@ fn test_wait_for_tx_spend() {
     let maker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
         time_lock: timelock,
-        other_pubkey: taker_pub,
+        other_pubkey: &taker_pub,
         secret_hash: secret_hash.as_slice(),
         amount,
         swap_contract_address: &maker_coin.swap_contract_address(),
@@ -1392,7 +1392,7 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_maker() {
     let maker_payment = SendPaymentArgs {
         time_lock_duration: 0,
         time_lock,
-        other_pubkey: my_public_key,
+        other_pubkey: &my_public_key,
         secret_hash: &[0; 20],
         amount: 1u64.into(),
         swap_contract_address: &None,
@@ -1414,7 +1414,7 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_maker() {
     let maker_refunds_payment_args = RefundPaymentArgs {
         payment_tx: &tx.tx_hex(),
         time_lock,
-        other_pubkey: my_public_key,
+        other_pubkey: &my_public_key,
         tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
             maker_secret_hash: &[0; 20],
         },
@@ -1433,9 +1433,10 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_maker() {
     };
     block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
+    let pubkey = coin.my_public_key().unwrap();
     let search_input = SearchForSwapTxSpendInput {
         time_lock,
-        other_pub: coin.my_public_key().unwrap(),
+        other_pub: &pubkey,
         secret_hash: &[0; 20],
         tx: &tx.tx_hex(),
         search_from_block: 0,
@@ -1459,7 +1460,7 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_taker() {
     let taker_payment = SendPaymentArgs {
         time_lock_duration: 0,
         time_lock,
-        other_pubkey: my_public_key,
+        other_pubkey: &my_public_key,
         secret_hash: &[0; 20],
         amount: 1u64.into(),
         swap_contract_address: &None,
@@ -1481,7 +1482,7 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_taker() {
     let maker_refunds_payment_args = RefundPaymentArgs {
         payment_tx: &tx.tx_hex(),
         time_lock,
-        other_pubkey: my_public_key,
+        other_pubkey: &my_public_key,
         tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
             maker_secret_hash: &[0; 20],
         },
@@ -1500,9 +1501,10 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_taker() {
     };
     block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
+    let pubkey = coin.my_public_key().unwrap();
     let search_input = SearchForSwapTxSpendInput {
         time_lock,
-        other_pub: coin.my_public_key().unwrap(),
+        other_pub: &pubkey,
         secret_hash: &[0; 20],
         tx: &tx.tx_hex(),
         search_from_block: 0,
@@ -1635,9 +1637,10 @@ fn test_send_standard_taker_fee_qtum() {
     let tx = block_on(coin.send_taker_fee(DexFee::Standard(amount.clone().into()), &[], 0)).expect("!send_taker_fee");
     assert!(matches!(tx, TransactionEnum::UtxoTx(_)), "Expected UtxoTx");
 
+    let pubkey = coin.my_public_key().unwrap();
     block_on(coin.validate_fee(ValidateFeeArgs {
         fee_tx: &tx,
-        expected_sender: coin.my_public_key().unwrap(),
+        expected_sender: &pubkey,
         dex_fee: &DexFee::Standard(amount.into()),
         min_block_number: 0,
         uuid: &[],
@@ -1665,9 +1668,10 @@ fn test_send_taker_fee_with_burn_qtum() {
     .expect("!send_taker_fee");
     assert!(matches!(tx, TransactionEnum::UtxoTx(_)), "Expected UtxoTx");
 
+    let pubkey = coin.my_public_key().unwrap();
     block_on(coin.validate_fee(ValidateFeeArgs {
         fee_tx: &tx,
-        expected_sender: coin.my_public_key().unwrap(),
+        expected_sender: &pubkey,
         dex_fee: &DexFee::WithBurn {
             fee_amount: fee_amount.into(),
             burn_amount: burn_amount.into(),
@@ -1691,9 +1695,10 @@ fn test_send_taker_fee_qrc20() {
     let tx = block_on(coin.send_taker_fee(DexFee::Standard(amount.clone().into()), &[], 0)).expect("!send_taker_fee");
     assert!(matches!(tx, TransactionEnum::UtxoTx(_)), "Expected UtxoTx");
 
+    let pubkey = coin.my_public_key().unwrap();
     block_on(coin.validate_fee(ValidateFeeArgs {
         fee_tx: &tx,
-        expected_sender: coin.my_public_key().unwrap(),
+        expected_sender: &pubkey,
         dex_fee: &DexFee::Standard(amount.into()),
         min_block_number: 0,
         uuid: &[],

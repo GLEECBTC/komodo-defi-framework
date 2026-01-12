@@ -1945,7 +1945,7 @@ impl UtxoCommonOps for ZCoin {
         utxo_common::denominate_satoshis(&self.utxo_arc, satoshi)
     }
 
-    fn my_public_key(&self) -> Result<&Public, MmError<UnexpectedDerivationMethod>> {
+    fn my_public_key(&self) -> Result<Public, MmError<UnexpectedDerivationMethod>> {
         utxo_common::my_public_key(self.as_ref())
     }
 
@@ -1983,7 +1983,7 @@ impl UtxoCommonOps for ZCoin {
         utxo_common::get_mut_verbose_transaction_from_map_or_rpc(self, tx_hash, utxo_tx_map).await
     }
 
-    async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput<'_>) -> Result<UtxoTx, String> {
+    async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput) -> Result<UtxoTx, String> {
         utxo_common::p2sh_spending_tx(self, input).await
     }
 

@@ -9,7 +9,7 @@ doctest = false
 
 [dependencies]
 async-trait.workspace = true
-chain = {path = "../chain"}
+chain = { path = "../chain", default-features = false }
 derive_more.workspace = true
 keys = {path = "../keys"}
 primitives = { path = "../primitives" }

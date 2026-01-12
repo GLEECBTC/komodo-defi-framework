@@ -1237,6 +1237,20 @@ pub struct TokenInfoResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreateConnectionResponse {
+    pub url: String,
+    pub pairing_topic: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GetSessionResponse {
+    pub session: Option<kdf_walletconnect::session::SessionRpcInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SpentUtxo {
     pub txid: String,
     pub vout: u32,

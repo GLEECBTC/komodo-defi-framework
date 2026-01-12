@@ -92,6 +92,7 @@ See `coins_activation/AGENTS.md`. Activation traits (task-based `Init*` traits t
 - `UtxoRpcClientEnum`: Electrum or Native RPC
 - SPV validation via `mm2_bitcoin/spv_validation`
 - Address formats: Standard, Segwit, CashAddress
+- WalletConnect: P2PKH/P2WPKH/P2SH signing via PSBT (`utxo/wallet_connect.rs`)
 
 ### EVM (eth.rs, eth/)
 - `EthCoinType`: `Eth`, `Erc20 { token_addr }`, `Nft`
@@ -144,6 +145,7 @@ Key traits in `hd_wallet/`:
 | **mm2_core** | MmArc context access, CoinsContext storage |
 | **mm2_err_handle** | MmError framework |
 | **trezor** | Hardware wallet signing |
+| **kdf_walletconnect** | WalletConnect v2 signing (EVM + UTXO) |
 | **utxo_signer** | UTXO transaction signing (sub-crate) |
 | **mm2_net** | HTTP transport for RPC calls |
 | **mm2_db** | IndexedDB storage (WASM) |

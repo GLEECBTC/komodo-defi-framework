@@ -6705,8 +6705,8 @@ mod trezor_tests {
     use coins::rpc_command::get_new_address::{GetNewAddressParams, GetNewAddressRpcOps};
     use coins::rpc_command::init_create_account::for_tests::test_create_new_account_init_loop;
     use coins::utxo::{utxo_standard::UtxoStandardCoin, UtxoActivationParams};
-    use coins::EthGasLimitOption;
     use coins::{lp_coinfind, CoinProtocol, MmCoinEnum, PrivKeyBuildPolicy};
+    use coins::{EthGasLimitOption, PrivKeyActivationPolicy};
     use coins_activation::platform_for_tests::init_platform_coin_with_tokens_loop;
     use coins_activation::{for_tests::init_standalone_coin_loop, InitStandaloneCoinReq};
     use common::executor::Timer;
@@ -6993,7 +6993,7 @@ mod trezor_tests {
             tbtc_electrums(),
             None,
             80,
-            Some("Trezor"),
+            Some(json!(PrivKeyActivationPolicy::Trezor)),
         ));
         log!("enable UTXO bob {:?}", utxo_bob);
 
@@ -7034,7 +7034,7 @@ mod trezor_tests {
             tbtc_electrums(),
             None,
             80,
-            Some("Trezor"),
+            Some(json!(PrivKeyActivationPolicy::Trezor)),
         ));
         log!("enable UTXO bob {:?}", utxo_bob);
 
