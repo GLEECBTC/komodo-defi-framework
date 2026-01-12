@@ -3562,7 +3562,7 @@ pub async fn init_utxo_electrum(
     coin: &str,
     servers: Vec<Json>,
     path_to_address: Option<HDAccountAddressId>,
-    priv_key_policy: Option<&str>,
+    priv_key_policy: Option<Json>,
 ) -> Json {
     let mut activation_params = json!({
         "mode": {
@@ -3573,7 +3573,7 @@ pub async fn init_utxo_electrum(
         }
     });
     if let Some(priv_key_policy) = priv_key_policy {
-        activation_params["priv_key_policy"] = priv_key_policy.into();
+        activation_params["priv_key_policy"] = priv_key_policy;
     }
     if let Some(path_to_address) = path_to_address {
         activation_params["path_to_address"] = json!(path_to_address);
@@ -3626,7 +3626,7 @@ pub async fn enable_utxo_v2_electrum(
     servers: Vec<Json>,
     path_to_address: Option<HDAccountAddressId>,
     timeout: u64,
-    priv_key_policy: Option<&str>,
+    priv_key_policy: Option<Json>,
 ) -> UtxoStandardActivationResult {
     let init = init_utxo_electrum(mm, coin, servers, path_to_address, priv_key_policy).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
@@ -4425,4 +4425,45 @@ pub async fn active_swaps(mm: &MarketMakerIt) -> ActiveSwapsResponse {
     let response = mm.rpc(&request).await.unwrap();
     assert_eq!(response.0, StatusCode::OK, "'active_swaps' failed: {}", response.1);
     json::from_str(&response.1).unwrap()
+}
+
+pub async fn new_walletconnect_connection(mm: &MarketMakerIt, params: Json) -> CreateConnectionResponse {
+    let request = json!({
+        "method": "wc_new_connection",
+        "userpass": mm.userpass,
+        "mmrpc": "2.0",
+        "params": params,
+    });
+    let response = mm.rpc(&request).await.unwrap();
+    assert_eq!(response.0, StatusCode::OK, "'wc_new_connection' failed: {}", response.1);
+    log!("wc_new_connection response {}", response.1);
+    let response: RpcV2Response<CreateConnectionResponse> = json::from_str(&response.1).unwrap();
+    response.result
+}
+
+pub async fn wait_for_walletconnect_session(mm: &MarketMakerIt, pairing_topic: &str, timeout: u64) -> String {
+    let timeout = wait_until_ms(timeout * 1000);
+    loop {
+        if now_ms() > timeout {
+            panic!("WalletConnect session not established in {} seconds", timeout / 1000);
+        }
+
+        let request = json!({
+            "userpass": mm.userpass,
+            "method": "wc_get_session",
+            "mmrpc": "2.0",
+            "params": {
+                "topic": pairing_topic,
+                "with_pairing_topic": true,
+            }
+        });
+        let response = mm.rpc(&request).await.unwrap();
+        assert_eq!(response.0, StatusCode::OK, "'wc_session' failed: {}", response.1);
+        let response: RpcV2Response<GetSessionResponse> = json::from_str(&response.1).unwrap();
+        let GetSessionResponse { session } = response.result;
+        if let Some(session) = session {
+            return session.topic.to_string();
+        }
+        Timer::sleep(1.).await;
+    }
 }

@@ -9,6 +9,7 @@ use rpc::v1::types::{Transaction as RpcTransaction, H256 as H256Json};
 use script::Script;
 
 mod sign_common;
+pub use sign_common::complete_tx;
 pub mod sign_params;
 pub mod with_key_pair;
 pub mod with_trezor;

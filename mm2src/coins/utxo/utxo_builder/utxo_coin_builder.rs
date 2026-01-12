@@ -8,15 +8,15 @@ use crate::utxo::rpc_clients::{
 use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfError, UtxoFeeConfig};
-use crate::utxo::wallet_connect::{get_pubkey_via_wallatconnect_signature, get_walletconnect_address};
+#[cfg(feature = "utxo-walletconnect")]
+use crate::utxo::wallet_connect::{get_pubkey_via_walletconnect_signature, get_walletconnect_address};
 use crate::utxo::{
     output_script, ElectrumBuilderArgs, FeeRate, RecentlySpentOutPoints, UtxoCoinConf, UtxoCoinFields, UtxoHDWallet,
     UtxoRpcMode, UtxoSyncStatus, UtxoSyncStatusLoopHandle, UTXO_DUST_AMOUNT,
 };
 use crate::{
-    BlockchainNetwork, CoinProtocol, CoinTransportMetrics, DerivationMethod, HistorySyncState, IguanaPrivKey,
-    PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed, RpcClientType, SharableRpcTransportEventHandler,
-    UtxoActivationParams,
+    BlockchainNetwork, CoinTransportMetrics, DerivationMethod, HistorySyncState, IguanaPrivKey, PrivKeyBuildPolicy,
+    PrivKeyPolicy, PrivKeyPolicyNotAllowed, RpcClientType, SharableRpcTransportEventHandler, UtxoActivationParams,
 };
 use async_trait::async_trait;
 use chain::TxHashAlgo;
@@ -30,12 +30,14 @@ use derive_more::Display;
 use futures::channel::mpsc::{channel, Receiver as AsyncReceiver};
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
-use kdf_walletconnect::chain::WcChainId;
+#[cfg(feature = "utxo-walletconnect")]
 use kdf_walletconnect::error::WalletConnectError;
+#[cfg(feature = "utxo-walletconnect")]
 use kdf_walletconnect::{WalletConnectCtx, WcTopic};
 pub use keys::{Address, AddressBuilder, AddressFormat as UtxoAddressFormat, KeyPair, Private, Public};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+#[cfg(feature = "utxo-walletconnect")]
 use secp256k1::PublicKey;
 use serde_json::{self as json, Value as Json};
 use serialization::ChainVariant;
@@ -94,6 +96,7 @@ pub enum UtxoCoinBuildError {
         mode: String,
     },
     InvalidPathToAddress(String),
+    #[cfg(feature = "utxo-walletconnect")]
     WalletConnectError(WalletConnectError),
 }
 
@@ -146,6 +149,7 @@ impl From<keys::Error> for UtxoCoinBuildError {
     }
 }
 
+#[cfg(feature = "utxo-walletconnect")]
 impl From<WalletConnectError> for UtxoCoinBuildError {
     fn from(e: WalletConnectError) -> Self {
         UtxoCoinBuildError::WalletConnectError(e)
@@ -168,9 +172,14 @@ pub trait UtxoCoinBuilder: UtxoCoinBuilderCommonOps {
                 build_utxo_fields_with_global_hd(self, global_hd_ctx).await
             },
             PrivKeyBuildPolicy::Trezor => build_utxo_fields_with_trezor(self).await,
+            #[cfg(feature = "utxo-walletconnect")]
             PrivKeyBuildPolicy::WalletConnect { session_topic } => {
                 build_utxo_fields_with_walletconnect(self, &session_topic).await
             },
+            #[cfg(not(feature = "utxo-walletconnect"))]
+            PrivKeyBuildPolicy::WalletConnect { .. } => MmError::err(UtxoCoinBuildError::Internal(
+                "WalletConnect activation requires utxo-walletconnect feature".to_string(),
+            )),
         }
     }
 }
@@ -280,6 +289,7 @@ where
     build_utxo_coin_fields_with_conf_and_policy(builder, conf, priv_key_policy, derivation_method).await
 }
 
+#[cfg(feature = "utxo-walletconnect")]
 async fn build_utxo_fields_with_walletconnect<Builder>(
     builder: &Builder,
     session_topic: &WcTopic,
@@ -291,7 +301,11 @@ where
         .build()
         .map_mm_err()?;
 
-    let chain_id = builder.wallet_connect_chain_id()?;
+    let chain_id = conf.chain_id.clone().ok_or_else(|| {
+        UtxoCoinBuildError::ConfError(UtxoConfError::InvalidProtocolData(
+            "chain_id is not set correctly in coins config".to_string(),
+        ))
+    })?;
     let full_derivation_path = builder.full_derivation_path()?;
 
     let wc_ctx = WalletConnectCtx::from_ctx(builder.ctx()).map_mm_err()?;
@@ -306,7 +320,7 @@ where
             let sign_message_prefix = conf.sign_message_prefix.as_ref().ok_or_else(|| {
                 UtxoCoinBuildError::Internal("sign_message_prefix is not set in coins config".to_string())
             })?;
-            get_pubkey_via_wallatconnect_signature(&wc_ctx, session_topic, &chain_id, &address, sign_message_prefix)
+            get_pubkey_via_walletconnect_signature(&wc_ctx, session_topic, &chain_id, &address, sign_message_prefix)
                 .await
                 .map_mm_err()?
         },
@@ -589,30 +603,6 @@ pub trait UtxoCoinBuilderCommonOps {
                 .map_to_mm(|e| UtxoCoinBuildError::InvalidBlockchainNetwork(e.to_string()));
         }
         Ok(BlockchainNetwork::Mainnet)
-    }
-
-    /// Returns WcChainId for this coin. Parsed from the coin config.
-    fn wallet_connect_chain_id(&self) -> UtxoCoinBuildResult<WcChainId> {
-        let protocol: CoinProtocol = json::from_value(self.conf()["protocol"].clone()).map_to_mm(|e| {
-            UtxoCoinBuildError::ConfError(UtxoConfError::InvalidProtocolData(format!(
-                "Couldn't parse protocol info: {e}"
-            )))
-        })?;
-
-        if let CoinProtocol::UTXO(utxo_info) = protocol {
-            let utxo_info = utxo_info.ok_or_else(|| {
-                WalletConnectError::InvalidChainId(format!(
-                    "coin={} doesn't have chain_id (bip122 standard) set in coin config which is required for WalletConnect",
-                    self.ticker()
-                ))
-            })?;
-            let chain_id = WcChainId::try_from_str(&utxo_info.chain_id).map_mm_err()?;
-            Ok(chain_id)
-        } else {
-            MmError::err(UtxoCoinBuildError::ConfError(UtxoConfError::InvalidProtocolData(
-                format!("Expected UTXO protocol, got: {protocol:?}"),
-            )))
-        }
     }
 
     /// Constructs the full HD derivation path from the coin config and the activation params partial paths.

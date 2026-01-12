@@ -53,7 +53,10 @@ docker-tests-all = [
     "docker-tests-zcoin",
     "docker-tests-integration",
 ]
+# utxo-walletconnect excluded: it requires the `bitcoin` crate which pulls secp256k1-sys v0.6.1,
+# conflicting with v0.4.2 from existing deps and causing duplicate WASM symbol linker errors.
 default = []
+utxo-walletconnect = ["coins/utxo-walletconnect", "coins_activation/utxo-walletconnect"]
 trezor-udp = ["crypto/trezor-udp"] # use for tests to connect to trezor emulator over udp
 run-device-tests = []
 test-ext-api = ["trading_api/test-ext-api"]
@@ -70,11 +73,11 @@ bitcrypto = { path = "../mm2_bitcoin/crypto" }
 blake2.workspace = true
 bytes.workspace = true
 cfg-if.workspace = true
-chain = { path = "../mm2_bitcoin/chain" }
+chain = { path = "../mm2_bitcoin/chain", default-features = false }
 chrono.workspace = true
 clap.workspace = true
-coins = { path = "../coins" }
-coins_activation = { path = "../coins_activation" }
+coins = { path = "../coins", default-features = false }
+coins_activation = { path = "../coins_activation", default-features = false }
 common = { path = "../common" }
 compatible-time.workspace = true
 crc32fast.workspace = true
@@ -169,8 +172,8 @@ signal-hook-tokio = { version = "0.3", features = [ "futures-v0_3" ] }
 
 [dev-dependencies]
 base64.workspace = true
-coins = { path = "../coins", features = ["for-tests"] }
-coins_activation = { path = "../coins_activation", features = ["for-tests"] }
+coins = { path = "../coins", default-features = false, features = ["for-tests"] }
+coins_activation = { path = "../coins_activation", default-features = false, features = ["for-tests"] }
 common = { path = "../common", features = ["for-tests"] }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
 trading_api = { path = "../trading_api", features = ["for-tests"] }

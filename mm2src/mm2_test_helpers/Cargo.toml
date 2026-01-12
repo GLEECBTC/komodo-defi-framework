@@ -21,6 +21,7 @@ mm2_metrics = { path = "../mm2_metrics" }
 mm2_net = { path = "../mm2_net" }
 mm2_number = { path = "../mm2_number" }
 mm2_rpc = { path = "../mm2_rpc" }
+kdf_walletconnect = { path = "../kdf_walletconnect" }
 rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
 regex = "1"
 rpc = { path = "../mm2_bitcoin/rpc" }

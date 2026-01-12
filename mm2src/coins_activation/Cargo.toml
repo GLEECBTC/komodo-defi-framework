@@ -7,12 +7,13 @@ edition = "2018"
 doctest = false
 
 [features]
-default = []
+default = ["utxo-walletconnect"]
+utxo-walletconnect = ["coins/utxo-walletconnect"]
 for-tests = []
 
 [dependencies]
 async-trait.workspace = true
-coins = { path = "../coins" }
+coins = { path = "../coins", default-features = false }
 common = { path = "../common" }
 crypto = { path = "../crypto" }
 derive_more.workspace = true
@@ -28,7 +29,6 @@ mm2_number = { path = "../mm2_number" }
 parking_lot = { workspace = true }
 rpc = { path = "../mm2_bitcoin/rpc" }
 rpc_task = { path = "../rpc_task" }
-secp256k1 = { version = "0.24" }
 ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
 serde.workspace = true
@@ -43,3 +43,4 @@ mm2_metamask = { path = "../mm2_metamask" }
 lightning.workspace = true
 lightning-background-processor.workspace = true
 lightning-invoice.workspace = true
+secp256k1v24.workspace = true

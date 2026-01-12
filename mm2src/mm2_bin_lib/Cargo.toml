@@ -36,7 +36,9 @@ common = { path = "../common" }
 enum-primitive-derive.workspace = true
 libc.workspace = true
 mm2_core = { path = "../mm2_core" }
-mm2_main = { path = "../mm2_main" }
+# utxo-walletconnect is safe here: WASM library builds don't fully link like test binaries,
+# so duplicate secp256k1-sys symbols don't cause conflicts.
+mm2_main = { path = "../mm2_main", features = ["utxo-walletconnect"] }
 num-traits.workspace = true
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 

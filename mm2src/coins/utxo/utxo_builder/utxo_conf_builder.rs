@@ -3,10 +3,11 @@ use crate::utxo::{
     parse_hex_encoded_u32, UtxoCoinConf, DEFAULT_DYNAMIC_FEE_VOLATILITY_PERCENT, KMD_MTP_BLOCK_COUNT,
     MATURE_CONFIRMATIONS_DEFAULT,
 };
-use crate::UtxoActivationParams;
+use crate::{CoinProtocol, UtxoActivationParams};
 use bitcrypto::ChecksumType;
 use crypto::{Bip32Error, HDPathToCoin};
 use derive_more::Display;
+use kdf_walletconnect::chain::WcChainId;
 pub use keys::AddressFormat as UtxoAddressFormat;
 use keys::NetworkAddressPrefixes;
 use mm2_err_handle::prelude::*;
@@ -120,6 +121,7 @@ impl<'a> UtxoConfBuilder<'a> {
         let derivation_path = self.derivation_path()?;
         let avg_blocktime = self.avg_blocktime();
         let spv_conf = self.spv_conf()?;
+        let chain_id = self.bip122_chain_id();
         let chain_variant = self.chain_variant()?;
 
         Ok(UtxoCoinConf {
@@ -143,6 +145,7 @@ impl<'a> UtxoConfBuilder<'a> {
             checksum_type,
             signature_version,
             fork_id,
+            chain_id,
             required_confirmations: required_confirmations.into(),
             force_min_relay_fee,
             mtp_block_count,
@@ -281,6 +284,14 @@ impl<'a> UtxoConfBuilder<'a> {
         let hex_string = self.conf["fork_id"].as_str().unwrap_or(default_fork_id);
         let fork_id = u32::from_str_radix(hex_string.trim_start_matches("0x"), 16).unwrap();
         fork_id
+    }
+
+    fn bip122_chain_id(&self) -> Option<WcChainId> {
+        if let Ok(CoinProtocol::UTXO(Some(utxo_info))) = json::from_value(self.conf["protocol"].clone()) {
+            WcChainId::try_from_str(&utxo_info.chain_id).ok()
+        } else {
+            None
+        }
     }
 
     fn required_confirmations(&self) -> u64 {

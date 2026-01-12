@@ -424,7 +424,7 @@ impl UtxoCommonOps for QtumCoin {
         utxo_common::denominate_satoshis(&self.utxo_arc, satoshi)
     }
 
-    fn my_public_key(&self) -> Result<&Public, MmError<UnexpectedDerivationMethod>> {
+    fn my_public_key(&self) -> Result<Public, MmError<UnexpectedDerivationMethod>> {
         utxo_common::my_public_key(self.as_ref())
     }
 
@@ -462,7 +462,7 @@ impl UtxoCommonOps for QtumCoin {
         utxo_common::get_mut_verbose_transaction_from_map_or_rpc(self, tx_hash, utxo_tx_map).await
     }
 
-    async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput<'_>) -> Result<UtxoTx, String> {
+    async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput) -> Result<UtxoTx, String> {
         utxo_common::p2sh_spending_tx(self, input).await
     }
 
@@ -683,7 +683,7 @@ impl SwapOps for QtumCoin {
     }
 
     fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> [u8; 33] {
-        utxo_common::derive_htlc_pubkey(self, swap_unique_data)
+        utxo_common::derive_htlc_pubkey(self.as_ref(), swap_unique_data)
     }
 
     #[inline]
