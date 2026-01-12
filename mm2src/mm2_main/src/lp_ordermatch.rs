@@ -6672,8 +6672,10 @@ fn orderbook_address(
                 .map(OrderbookAddress::Transparent)
                 .map_to_mm(OrderbookAddrErr::AddrFromPubkeyError)
         },
-        // Todo: implement TRX address generation
-        CoinProtocol::TRX { .. } => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
+        // Todo: implement TRX/TRC20 address generation
+        CoinProtocol::TRX { .. } | CoinProtocol::TRC20 { .. } => {
+            MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned()))
+        },
         CoinProtocol::UTXO { .. } | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
             coins::utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format)
                 .map(OrderbookAddress::Transparent)
