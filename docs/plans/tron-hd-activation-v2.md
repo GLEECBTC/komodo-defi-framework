@@ -20,7 +20,7 @@
 | `ChainRpcOps` trait | `mm2src/coins/eth/chain_rpc.rs` | `current_block()`, `balance_native()`, `is_address_used_basic()` |
 | TRX stubs removed | `mm2src/coins/eth.rs`, `eth_rpc.rs` | `current_block()` and `balance()` use TRON RPC via `rpc_client` |
 | Wallet-only activation | `mm2src/coins/eth/v2_activation.rs` | TRX skips swap contract validation |
-| Token/NFT rejection | `mm2src/coins_activation/src/eth_with_token_activation.rs` | TRON rejects ERC20/NFT requests early |
+| Token/NFT gating | `mm2src/coins_activation/src/eth_with_token_activation.rs` | TRON rejects NFTs; TRC20 support (activation + balance queries) is planned in Section 19 |
 | HD scanning | `mm2src/coins/eth/eth_hd_wallet.rs` | Uses `ChainRpcOps::is_address_used_basic()` for TRON |
 | Platform balance fix | `mm2src/coins/eth.rs` | `platform_coin_balance()` is chain-aware |
 | TRON address type | `mm2src/coins/eth/tron/address.rs` | `TronAddress` with Base58Check encode/decode |
@@ -81,9 +81,10 @@ See `.claude/plans/chain-rpc-client-refactor.md` sections 19-20 for full archite
    - Mirror existing ETH activation test patterns for TRX (same RPC routes, similar helpers, same response enums).
 
 ### Non-goals (explicitly out of scope for this plan)
-- TRC20 activation (tokens on TRON)
-- TRON transaction signing, withdraw, swaps, watchers
-- TRON fee estimation (bandwidth/energy), swap-contract deployment, any trading support
+- TRC20 **state-changing** operations: `transfer`, `approve`, `transferFrom`, any allowance/permit-style writes (no token transfers in this phase)
+- TRON transaction signing/broadcasting, withdraw, swaps, watchers
+- TRON fee/resource estimation (bandwidth/energy), swap-contract deployment, any trading support
+- Automatic TRC20 token discovery (this plan supports only explicitly requested/activated tokens)
 
 ---
 
@@ -496,9 +497,10 @@ For `ChainSpec::Tron`:
   - `swap_v2_contracts` must be `None`.
   - `fallback_swap_contract` must be `None`.
   - `contract_supports_watchers` must be `false` (or ignored).
-- **Tokens are not supported**:
-  - `erc20_tokens_requests` must be empty.
-  - `nft_req` must be `None`.
+- **Tokens / NFTs**:
+  - **NFTs** are not supported on TRON: `nft_req` must be `None`.
+  - **TRC20 tokens** are supported only for **activation + balance queries** (no transfers) — see Section 19.
+    - Client requests still use the existing `erc20_tokens_requests` field name (legacy), but token configs/protocols must be `TRC20`.
 - **RPC mode restrictions**:
   - disallow MetaMask mode for TRON (already implied by `chain_id()` being `None`)
   - WalletConnect: either disallow entirely for TRX in the wallet-only phase, or require a future TRON WC path (out of scope). Prefer explicit "unsupported" error.
@@ -1054,9 +1056,10 @@ This plan was validated through:
 
 ## 16) Follow-ups (explicitly deferred)
 
-- TRC20 support (`TriggerSmartContract`, TRC20 balance, token activation)
-- TRON signing / withdraw
+- TRC20 **state-changing** support (`triggersmartcontract`: transfers/approve/transferFrom), signing, broadcasting, fee/resource estimation (bandwidth/energy)
+- TRON signing / withdraw (native TRX and TRC20)
 - Swap support and contract validation for TRON
+- TRC20 token discovery (automatic detection/indexing rather than explicit activation)
 
 ---
 
@@ -1178,3 +1181,230 @@ When `MmCoinEnum` is refactored (has TODO about `enum_dispatch`), consider:
 3. Generic `EthCoin<B>` becomes viable
 
 This is documented here so the constraint is known during future refactoring.
+
+---
+
+## 19) TRC20 Tokens on TRON (Activation + Balance Queries Only)
+
+> **Scope**: Add **TRC20 token activation and balance queries** on TRON while reusing the existing ETH activation entrypoints:
+> - request/response: `enable_eth_with_tokens`
+> - task-based: `task::enable_eth::{init,status,user_action,cancel}`
+>
+> **Explicitly out of scope**: any TRC20 transfer/approval, fee estimation (energy/bandwidth), signing/broadcasting, swaps, watchers, tx history.
+
+### 19.1 User-facing behavior (API contract)
+
+#### 19.1.1 Platform activation (TRX)
+Unchanged:
+- TRX activation continues to work via `enable_eth_with_tokens` and `task::enable_eth::*`
+- Addresses remain Base58 (`T...`) everywhere
+
+#### 19.1.2 Token activation (TRC20) via existing request schema
+- Clients request TRC20 tokens using the existing field:
+  - `erc20_tokens_requests` (legacy name; still used for compatibility)
+- Each token entry is a normal `TokenActivationRequest<Erc20TokenActivationRequest>` referencing a token ticker whose coin config uses `protocol.type = "TRC20"`.
+- NFTs remain unsupported on TRON (`nft_req` must be `None`).
+
+#### 19.1.3 Balance queries
+- Iguana mode (`DerivationMethod::SingleAddress`):
+  - `get_balances=true` returns TRX balance + TRC20 balances:
+    - TRX under `eth_addresses_infos[*].balances["TRX"]`
+    - TRC20 tokens under `erc20_addresses_infos[*].balances["<TOKEN>"]`
+- HD mode (`DerivationMethod::HDWallet`):
+  - `wallet_balance` must include TRX + TRC20 balances per derived address (same `CoinBalanceMap` shape as EVM tokens).
+
+### 19.2 Data model (minimal-change, refactor-friendly)
+
+#### 19.2.1 Keep the existing coin model
+- Keep `MmCoinEnum::EthCoinVariant(EthCoin)` — **no new enum variants**.
+- Keep `EthCoinType::Erc20 { .. }` as the representation for TRC20 in MVP:
+  - `chain_spec = ChainSpec::Tron { network }`
+  - `coin_type = EthCoinType::Erc20 { platform: "TRX", token_addr: <raw20> }`
+
+#### 19.2.2 Address representation invariant
+- Internally we keep raw 20-byte `ethereum_types::Address` (same as EVM).
+- For TRON:
+  - The on-chain address is `TronAddress` = `0x41 + raw20`.
+  - Use `TronAddress::from(raw20)` to add the prefix.
+- User-facing formatting must use chain-aware formatting:
+  - `EthCoin::format_raw_address(raw20)` should return Base58 `T...` when `chain_spec` is TRON.
+
+### 19.3 Protocol / coin config changes
+
+#### 19.3.1 Add a new protocol variant
+Add to `CoinProtocol` (in `mm2src/coins/lp_coins.rs`):
+- `TRC20 { platform: String, contract_address: String }`
+
+#### 19.3.2 Expected token config shape
+Example token coin config (wallet-only, balance-only):
+
+```json
+{
+  "coin": "USDT-TRX",
+  "fname": "Tether USD (TRC20)",
+  "mm2": 1,
+  "wallet_only": true,
+  "decimals": 6,
+  "protocol": {
+    "type": "TRC20",
+    "protocol_data": {
+      "platform": "TRX",
+      "contract_address": "TG3XXyExBkPp9nzdajDZsozEu4BkaSJozs"
+    }
+  }
+}
+```
+
+Accepted `contract_address` formats:
+- Base58Check: `T...` (preferred)
+- Hex with TRON prefix: `41...` (with or without `0x`)
+
+> Optional ergonomics: consider extending `TronAddress::from_str` to accept raw 20-byte hex (`0x...`) by interpreting it as the payload and auto-prepending `0x41`.
+
+### 19.4 TRON RPC details: `triggerconstantcontract` for TRC20
+
+#### 19.4.1 Endpoint
+Use FullNode HTTP API:
+- `POST /wallet/triggerconstantcontract`
+
+#### 19.4.2 Calls required for MVP
+- `balanceOf(address)` → token balance
+- `decimals()` → token decimals when not present in config
+
+(Optionally: `name()`, `symbol()` for diagnostics; not required for balances.)
+
+#### 19.4.3 Parameter encoding (critical correctness point)
+Use **standard 20-byte EVM ABI encoding** (not TRON's 21-byte format):
+
+- `parameter` (hex string, no `0x`) for `balanceOf(address)` is:
+  - 12 zero bytes + 20 raw address bytes (without 0x41 prefix)
+  - total 32 bytes (64 hex chars)
+  - Example: `0000000000000000000000005cbdd86a2fa8dc4bddd8a8f69dba48572eec07fb`
+
+**Why 20-byte instead of 21-byte?**
+- Tested: Both encodings work on TRON because ABI decoders ignore padding bytes
+- 20-byte is canonical Solidity ABI for `address` type
+- Enables direct reuse of `ethabi` crate for encoding/decoding
+- More future-proof if strict ABI validation is ever enforced
+
+**Implementation**: Use `TronAddress::to_evm_address()` to get raw 20 bytes, then encode with `ethabi` as `Token::Address(H160)`.
+
+#### 19.4.4 Return value decoding
+- Response contains `constant_result: ["<hex>"]`
+- `<hex>` is a 32-byte ABI word (no `0x` prefix)
+- For `balanceOf`: parse as big-endian `U256`
+
+#### 19.4.5 Error handling and retry
+Reuse existing TRON error classification already implemented in `tron/api.rs`:
+- transient (`SERVER_BUSY`, `NO_CONNECTION`, rate limiting message) → retry/rotate nodes
+- contract validate/execution errors (`CONTRACT_VALIDATE_ERROR`, etc.) → fail fast as `RemoteError`
+- malformed JSON / unexpected structure → `BadResponse` (retryable)
+
+### 19.5 Code integration points (exact files to touch)
+
+#### 19.5.1 TRON RPC client
+- `mm2src/coins/eth/tron/api.rs`
+  - Add request/response types and high-level methods:
+    - `trigger_constant_contract`
+    - `trc20_balance_of`
+    - `trc20_decimals`
+  - Add internal helpers:
+    - encode TRON `address` ABI param (32-byte hex word)
+
+#### 19.5.2 Protocol parsing: TRC20 → existing Erc20Protocol carrier
+- `mm2src/coins_activation/src/erc20_token_activation.rs`
+  - Extend `TryFromCoinProtocol for Erc20Protocol` to accept `CoinProtocol::TRC20`:
+    - parse contract as `TronAddress`
+    - convert to raw 20 bytes (`to_evm_address()`)
+    - store into `Erc20Protocol.token_addr`
+
+#### 19.5.3 Activation gating: allow tokens on TRON
+- `mm2src/coins_activation/src/eth_with_token_activation.rs`
+  - Remove blanket "TRON doesn't support ERC20 tokens" rejection.
+  - Keep NFT rejection on TRON.
+  - Ensure error messages refer to ERC20-vs-TRC20 correctly.
+
+#### 19.5.4 Token init: decimals retrieval on TRON
+- `mm2src/coins/eth/v2_activation.rs` (`EthCoin::initialize_erc20_token`)
+  - If `chain_spec` is TRON and decimals not provided in config:
+    - call `tron_rpc().trc20_decimals(...)` instead of `get_token_decimals(web3, ...)`
+
+#### 19.5.5 Balance plumbing (Iguana + HD)
+- `mm2src/coins/eth.rs`
+  - Implement TRON branch for TRC20 balance queries (instead of EVM `eth_call`)
+  - Update `platform_coin_balance()` so TRC20 tokens can return TRX balance (no longer "not supported")
+
+- `mm2src/coins/eth/eth_hd_wallet.rs`
+  - Include TRC20 balances in `known_address_balance()` for TRON
+  - Update TRON `is_address_used` logic:
+    - If `getaccount` says "no account" **and** TRC20 tokens are activated,
+      check TRC20 token balances to avoid missing "token-only" used addresses.
+
+#### 19.5.6 User-facing formatting for contract addresses
+- `mm2src/coins_activation/src/erc20_token_activation.rs`
+- `mm2src/coins_activation/src/init_erc20_token_activation.rs`
+  - Replace `format!("{token_contract_address:#02x}")` with chain-aware formatting:
+    - For TRON: Base58 contract address (`T...`)
+    - For EVM: keep current behavior (0x hex) or use checksum formatter if desired (but keep API stable).
+
+### 19.6 Tests plan (feature-gated TRON network tests)
+
+#### 19.6.1 Low-level TRON RPC tests (coins crate)
+- File: `mm2src/coins/eth/tron/api_integration_tests.rs`
+- Add tests behind `tron-network-tests`:
+  - `triggerconstantcontract` for `decimals()` (no holder required)
+  - `balanceOf(random address)` (should return a valid `U256`; likely 0)
+  - Optional: `balanceOf(known holder)` behind env var to assert non-zero and validate address-parameter encoding
+
+**Nile testnet TRC20 tokens (for testing):**
+| Token | Contract Address | Decimals | Faucet Amount |
+|-------|------------------|----------|---------------|
+| USDT (primary) | `TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf` | 6 | 1,000 |
+| BTT | `TNuoKL1ni8aoshfFL1ASca1Gou9RXwAzfn` | 18 | 10,000,000 |
+| JST | `TF17BgPaZYbz8oxbjhriubPDsA7ArKoLX3` | 18 | 1,000 |
+| WIN | `TNDSHKGBmgRx9mDYA9CnxPx55nu672yQw2` | 6 | 1,000 |
+
+Faucet: https://nileex.io/join/getJoinPage
+
+Suggested env vars (for optional holder-based tests):
+- `TRON_TRC20_CONTRACT` (Base58 or 41-hex)
+- `TRON_TRC20_HOLDER` (Base58)
+
+#### 19.6.2 End-to-end activation tests (mm2_main)
+- File: `mm2src/mm2_main/tests/mm2_tests/tron_tests.rs`
+- Add new tests (still behind `tron-network-tests`):
+  - Activate TRX with a TRC20 token requested in `erc20_tokens_requests`
+  - Assert activation result includes the token ticker in balances map
+  - Optional non-zero assertions behind env vars
+
+Test helper additions:
+- `mm2src/mm2_test_helpers/src/for_tests.rs`:
+  - Add helper to build a TRC20 token coin config JSON (ticker, protocol TRC20, contract address)
+  - Add helper to call `enable_trx`/`task_enable_trx` with token requests
+
+### 19.7 Commit-by-commit implementation plan (exact files per commit)
+
+> Notes:
+> - Keep commits small and mechanically reviewable.
+> - Avoid broad refactors; keep chain branching localized (as done for TRX MVP).
+> - No new dispatcher routes; only extend existing parsing and balance plumbing.
+
+| # | Commit message | Files (exact) | Key changes | Tests |
+|---:|---|---|---|---|
+| 1 | `docs: add TRC20 balance-only plan for TRON` | `docs/plans/tron-hd-activation-v2.md` | Add Section 19 (this section). Clarify scope and deferred items. | N/A |
+| 2 | `coins: add CoinProtocol::TRC20` | `mm2src/coins/lp_coins.rs` | Add `TRC20 { platform, contract_address }` variant; ensure serde parsing works; keep TODO for TRC10 as separate. | `cargo test -p coins` |
+| 3 | `tron: add triggerconstantcontract + TRC20 helpers` | `mm2src/coins/eth/tron/api.rs` | Implement request/response types + `TronApiClient` methods for TRC20 constant calls (`balanceOf`, `decimals`); use `ethabi` with 20-byte addresses. | `cargo test -p coins` + `cargo test -p coins --features tron-network-tests --lib tron_nile` |
+| 4 | `activation: parse TRC20 protocol for token activation` | `mm2src/coins_activation/src/erc20_token_activation.rs` | Extend `TryFromCoinProtocol for Erc20Protocol` to accept `TRC20` and convert `TronAddress` → raw20; keep ERC20 parsing unchanged. | `cargo test -p coins_activation` |
+| 5 | `activation: allow TRC20 tokens on TRON (keep NFTs rejected)` | `mm2src/coins_activation/src/eth_with_token_activation.rs` | Remove blanket TRON token rejection; keep NFT gating; improve error messages (`ERC20` vs `TRC20`). | `cargo test -p coins_activation` |
+| 6 | `eth: add centralized token balance API with chain_spec dispatch` | `mm2src/coins/eth.rs` | Add `token_balance_of()` and `token_decimals()` methods that dispatch on `chain_spec` (EVM → eth_call, TRON → triggerconstantcontract). Prevents accidentally using EVM paths for TRON. | `cargo test -p coins` |
+| 7 | `eth: implement TRC20 token balances via TRON RPC` | `mm2src/coins/eth.rs` | Use new centralized API in token balance functions (`get_token_balance_for_address`, `get_tokens_balance_list_for_address`); update `platform_coin_balance` for TRON tokens. | `cargo test -p coins` |
+| 8 | `eth-hd: include TRC20 in HD balances and gap-limit scanning` | `mm2src/coins/eth/eth_hd_wallet.rs` | For TRON: include TRC20 balances in `known_address_balance`; update `is_address_used` to check TRC20 balances when account doesn't exist. | `cargo test -p coins` + selected TRON network tests |
+| 9 | `eth: fetch TRC20 decimals during token init` | `mm2src/coins/eth/v2_activation.rs` | In `initialize_erc20_token`, use centralized `token_decimals()` when `chain_spec` is TRON; avoid any `web3()` usage on TRON. | `cargo test -p coins` |
+| 10 | `activation-results: format TRC20 contract addresses chain-aware` | `mm2src/coins_activation/src/erc20_token_activation.rs`, `mm2src/coins_activation/src/init_erc20_token_activation.rs` | Return contract address as Base58 for TRON (via `format_raw_address`), keep existing EVM formatting stable. | `cargo test -p coins_activation` |
+| 11 | `tests: add TRC20 activation network tests` | `mm2src/mm2_main/tests/mm2_tests/tron_tests.rs`, `mm2src/mm2_test_helpers/src/for_tests.rs` | Add end-to-end enable tests that request TRC20 tokens and assert balances structure; env-var gate non-zero checks. | `cargo test --test mm2_tests_main --features tron-network-tests tron_` |
+
+### 19.8 MVP guardrails (TRC20-specific)
+- Do **not** detect TRON by `rpc_client.is_some()`; always match `ChainSpec::Tron` or `ChainRpcClient::Tron`.
+- Do **not** reuse EVM `eth_call` paths for TRC20 (no `web3()` on TRON).
+- Keep token activation requests under the existing `erc20_tokens_requests` field for backward compatibility.
+- Keep state-changing TRC20 calls explicitly unsupported (return clear errors).
