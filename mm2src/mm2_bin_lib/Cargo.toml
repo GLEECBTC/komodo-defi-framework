@@ -5,8 +5,8 @@
 
 [package]
 name = "mm2_bin_lib"
-version = "2.5.1-beta"
-authors = ["James Lee", "Artem Pikulin", "Artem Grinblat", "Omar S.", "Onur Ozkan", "Alina Sharon", "Caglar Kaya", "Cipi", "Sergey Boiko", "Samuel Onoja", "Roman Sztergbaum", "Kadan Stadelmann <ca333@komodoplatform.com>", "Dimxy", "Omer Yacine", "DeckerSU", "dragonhound <smk@komodoplatform>", "Devin AI"]
+version = "2.6.0-beta"
+authors = ["James Lee", "Artem Pikulin", "Artem Grinblat", "Omar S.", "Onur Ozkan", "Alina Sharon", "Caglar Kaya", "Cipi", "Sergey Boiko", "Samuel Onoja", "Roman Sztergbaum", "Kadan Stadelmann <ca333@komodoplatform.com>", "Dimxy", "Omer Yacine", "DeckerSU", "dragonhound <smk@komodoplatform>", "Guru Charan Gupta", "Devin AI"]
 edition = "2018"
 default-run = "kdf"
 
@@ -36,7 +36,9 @@ common = { path = "../common" }
 enum-primitive-derive.workspace = true
 libc.workspace = true
 mm2_core = { path = "../mm2_core" }
-mm2_main = { path = "../mm2_main" }
+# utxo-walletconnect is safe here: WASM library builds don't fully link like test binaries,
+# so duplicate secp256k1-sys symbols don't cause conflicts.
+mm2_main = { path = "../mm2_main", features = ["utxo-walletconnect"] }
 num-traits.workspace = true
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 

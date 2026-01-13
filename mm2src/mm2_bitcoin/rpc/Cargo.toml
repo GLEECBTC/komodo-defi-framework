@@ -15,7 +15,7 @@ serde_derive.workspace = true
 rustc-hex.workspace = true
 
 serialization = { path = "../serialization" }
-chain = { path = "../chain" }
+chain = { path = "../chain", default-features = false }
 primitives = { path = "../primitives" }
 keys = { path = "../keys" }
 script = { path = "../script" }

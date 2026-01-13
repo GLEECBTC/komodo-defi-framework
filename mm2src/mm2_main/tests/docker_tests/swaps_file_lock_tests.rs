@@ -1,4 +1,4 @@
-use crate::generate_utxo_coin_with_random_privkey;
+use crate::docker_tests::helpers::utxo::generate_utxo_coin_with_random_privkey;
 use crate::integration_tests_common::enable_native;
 use bitcrypto::ChecksumType;
 use common::block_on;
@@ -6,7 +6,7 @@ use crypto::Secp256k1Secret;
 use keys::{KeyPair, Private};
 use mm2_io::file_lock::FileLock;
 use mm2_test_helpers::for_tests::{mm_dump, new_mm2_temp_folder_path, MarketMakerIt};
-use serde_json::Value as Json;
+use serde_json::{json, Value as Json};
 use std::thread;
 use std::time::Duration;
 
@@ -19,7 +19,7 @@ const FINISHED_TAKER_SWAP: &str = r#"{"type":"Taker","uuid":"5acb0e63-8b26-469e-
 fn swap_file_lock_prevents_double_swap_start_on_kick_start(swap_json: &str) {
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
     let addr_hash = addr_hash_for_privkey(bob_priv_key);
-    let db_folder = new_mm2_temp_folder_path(None).join("DB");
+    let db_folder = new_mm2_temp_folder_path(None, None).join("DB");
     let swaps_db_folder = db_folder.join(addr_hash).join("SWAPS").join("MY");
     std::fs::create_dir_all(&swaps_db_folder).unwrap();
     let swap_path = swaps_db_folder.join("5acb0e63-8b26-469e-81df-7dd9e4a9ad15.json");
@@ -190,7 +190,7 @@ fn swap_should_not_kick_start_if_finished_during_waiting_for_file_lock(
 ) {
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
     let addr_hash = addr_hash_for_privkey(bob_priv_key);
-    let db_folder = new_mm2_temp_folder_path(None).join("DB");
+    let db_folder = new_mm2_temp_folder_path(None, None).join("DB");
     let swaps_db_folder = db_folder.join(addr_hash).join("SWAPS").join("MY");
     std::fs::create_dir_all(&swaps_db_folder).unwrap();
     let swap_path = swaps_db_folder.join("5acb0e63-8b26-469e-81df-7dd9e4a9ad15.json");

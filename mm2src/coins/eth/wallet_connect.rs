@@ -280,10 +280,8 @@ pub(crate) async fn send_transaction_with_walletconnect(
         .chain_spec
         .chain_id()
         .ok_or(TransactionErr::Plain("Tron is not supported for this action!".into()))?;
-    let pay_for_gas_option = try_tx_s!(
-        coin.get_swap_pay_for_gas_option(coin.get_swap_transaction_fee_policy())
-            .await
-    );
+    let pay_for_gas_policy = try_tx_s!(coin.get_swap_gas_fee_policy().await);
+    let pay_for_gas_option = try_tx_s!(coin.get_swap_pay_for_gas_option(pay_for_gas_policy).await);
     let (max_fee_per_gas, max_priority_fee_per_gas) = pay_for_gas_option.get_fee_per_gas();
     let (nonce, _) = try_tx_s!(coin.clone().get_addr_nonce(my_address).compat().await);
 

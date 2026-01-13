@@ -6,7 +6,7 @@ use common::log::debug;
 use common::PagingOptions;
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Result as SqlResult, ToSql};
 use db_common::sqlite::sql_builder::SqlBuilder;
-use db_common::sqlite::{offset_by_uuid, query_single_row};
+use db_common::sqlite::{offset_by_uuid, query_single_row, SqlValue};
 use mm2_core::mm_ctx::MmArc;
 use std::convert::TryInto;
 use uuid::{Error as UuidError, Uuid};
@@ -134,7 +134,7 @@ pub fn insert_new_swap_v2(ctx: &MmArc, params: &[(&str, &dyn ToSql)]) -> SqlResu
 
 /// Returns SQL statements to initially fill my_swaps table using existing DB with JSON files
 /// Use this only in migration code!
-pub async fn fill_my_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
+pub async fn fill_my_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<SqlValue>)> {
     let swaps = SavedSwap::load_all_my_swaps_from_db(ctx).await.unwrap_or_default();
     swaps
         .into_iter()
@@ -143,14 +143,18 @@ pub async fn fill_my_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'static st
 }
 
 /// Use this only in migration code!
-fn insert_saved_swap_sql_migration_1(swap: SavedSwap) -> Option<(&'static str, Vec<String>)> {
+fn insert_saved_swap_sql_migration_1(swap: SavedSwap) -> Option<(&'static str, Vec<SqlValue>)> {
     let swap_info = swap.get_my_info()?;
     let params = vec![
         swap_info.my_coin,
         swap_info.other_coin,
         swap.uuid().to_string(),
         swap_info.started_at.to_string(),
-    ];
+    ]
+    .into_iter()
+    .map(SqlValue::from)
+    .collect();
+
     Some((INSERT_MY_SWAP_MIGRATION_1, params))
 }
 
@@ -355,13 +359,13 @@ WHERE uuid = :uuid;
 "#;
 
 /// Returns SQL statements to set is_finished to 1 for completed legacy swaps
-pub async fn set_is_finished_for_legacy_swaps_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
+pub async fn set_is_finished_for_legacy_swaps_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<SqlValue>)> {
     let swaps = SavedSwap::load_all_my_swaps_from_db(ctx).await.unwrap_or_default();
     swaps
         .into_iter()
         .filter_map(|swap| {
             if swap.is_finished() {
-                Some((UPDATE_SWAP_IS_FINISHED_BY_UUID, vec![swap.uuid().to_string()]))
+                Some((UPDATE_SWAP_IS_FINISHED_BY_UUID, vec![swap.uuid().to_string().into()]))
             } else {
                 None
             }

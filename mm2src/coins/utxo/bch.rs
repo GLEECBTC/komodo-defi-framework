@@ -42,7 +42,7 @@ use mm2_metrics::MetricsArc;
 use mm2_number::MmNumber;
 use rpc::v1::types::H264 as H264Json;
 use serde_json::{self as json, Value as Json};
-use serialization::{deserialize, CoinVariant};
+use serialization::deserialize;
 use std::sync::MutexGuard;
 
 pub type BchUnspentMap = HashMap<Address, BchUnspents>;
@@ -659,6 +659,9 @@ pub async fn bch_coin_with_policy(
     slp_addr_prefix: CashAddrPrefix,
     priv_key_policy: PrivKeyBuildPolicy,
 ) -> Result<BchCoin, String> {
+    if conf["coin"].as_str() != Some(ticker) {
+        return ERR!("Failed to activate '{}': ticker does not match coins config", ticker);
+    }
     if params.bchd_urls.is_empty() && !params.allow_slp_unsafe_conf {
         return Err("Using empty bchd_urls is unsafe for SLP users!".into());
     }
@@ -822,8 +825,7 @@ impl UtxoCommonOps for BchCoin {
     }
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32> {
-        // BCH uses the same coin variant as BTC for block header deserialization
-        utxo_common::get_current_mtp(&self.utxo_arc, CoinVariant::BTC).await
+        utxo_common::get_current_mtp(&self.utxo_arc).await
     }
 
     fn is_unspent_mature(&self, output: &RpcTransaction) -> bool {
@@ -1017,12 +1019,7 @@ impl SwapOps for BchCoin {
     }
 
     #[inline]
-    async fn extract_secret(
-        &self,
-        secret_hash: &[u8],
-        spend_tx: &[u8],
-        _watcher_reward: bool,
-    ) -> Result<[u8; 32], String> {
+    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<[u8; 32], String> {
         utxo_common::extract_secret(secret_hash, spend_tx)
     }
 

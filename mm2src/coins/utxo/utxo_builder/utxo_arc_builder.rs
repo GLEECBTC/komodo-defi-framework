@@ -24,7 +24,7 @@ use mocktopus::macros::*;
 use rand::Rng;
 use script::Script;
 use serde_json::Value as Json;
-use serialization::Reader;
+use serialization::{ChainVariant, Reader};
 use spv_validation::conf::SPVConf;
 use spv_validation::helpers_validation::{validate_headers, SPVError};
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
@@ -385,7 +385,10 @@ pub(crate) async fn block_header_utxo_loop(
         let last_height_in_storage = match storage.get_last_block_height().await {
             Ok(Some(height)) => height,
             Ok(None) => {
-                if let Err(err) = validate_and_store_starting_header(&client, ticker, storage, &spv_conf).await {
+                if let Err(err) =
+                    validate_and_store_starting_header(&client, ticker, storage, &spv_conf, client.chain_variant())
+                        .await
+                {
                     sync_status_loop_handle.notify_on_permanent_error(err);
                     break;
                 }
@@ -705,6 +708,7 @@ async fn validate_and_store_starting_header(
     ticker: &str,
     storage: &dyn BlockHeaderStorageOps,
     spv_conf: &SPVConf,
+    chain_variant: ChainVariant,
 ) -> MmResult<(), StartingHeaderValidationError> {
     let height = spv_conf.starting_block_header.height;
     let header_bytes = client
@@ -713,7 +717,7 @@ async fn validate_and_store_starting_header(
         .await
         .map_to_mm(|err| StartingHeaderValidationError::RpcError(err.to_string()))?;
 
-    let mut reader = Reader::new_with_coin_variant(&header_bytes, ticker.into());
+    let mut reader = Reader::new_with_chain_variant(&header_bytes, chain_variant);
     let header = reader
         .read()
         .map_to_mm(|err| StartingHeaderValidationError::DecodeErr {

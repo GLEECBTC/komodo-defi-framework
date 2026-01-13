@@ -49,7 +49,7 @@ impl Qrc20Coin {
         };
 
         let balance = try_tx_s!(self.my_spendable_balance().compat().await);
-        let balance = try_tx_s!(wei_from_big_decimal(&balance, self.utxo.decimals));
+        let balance = try_tx_s!(u256_from_big_decimal(&balance, self.utxo.decimals));
 
         // Check the balance to avoid unnecessary burning of gas
         if balance < value {
@@ -136,7 +136,7 @@ impl Qrc20Coin {
         }
 
         let expected_call_bytes = {
-            let expected_value = wei_from_big_decimal(&amount, self.utxo.decimals).map_mm_err()?;
+            let expected_value = u256_from_big_decimal(&amount, self.utxo.decimals).map_mm_err()?;
             let my_address = self.utxo.derivation_method.single_addr_or_err().await.map_mm_err()?;
             let expected_receiver = qtum::contract_addr_from_utxo_addr(my_address)
                 .mm_err(|err| ValidatePaymentError::InternalError(err.to_string()))?;

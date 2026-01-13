@@ -8,7 +8,7 @@ use mm2_number::BigDecimal;
 use num_traits::Signed;
 use web3::types::TransactionId;
 
-use super::ContractType;
+use super::{signed_tx_from_web3_tx, ContractType};
 use crate::coin_errors::{ValidatePaymentError, ValidatePaymentResult};
 use crate::eth::eth_swap_v2::{validate_from_to_addresses, PaymentMethod, PrepareTxDataError, ZERO_VALUE};
 use crate::eth::{
@@ -47,13 +47,14 @@ impl EthCoin {
                     ZERO_VALUE.into(),
                     Action::Call(*args.nft_swap_info.token_address),
                     data,
-                    U256::from(gas_limit),
+                    Some(U256::from(gas_limit)),
                 )
                 .compat()
                 .await
             },
             EthCoinType::Eth | EthCoinType::Erc20 { .. } => Err(TransactionErr::ProtocolNotSupported(ERRL!(
-                "ETH and ERC20 protocols are not supported for NFT swaps."
+                "{} protocol is not supported for NFT swaps.",
+                self.coin_type
             ))),
         }
     }
@@ -92,7 +93,11 @@ impl EthCoin {
                         args.maker_payment_tx.tx_hash()
                     ))
                 })?;
-                validate_from_to_addresses(tx_from_rpc, maker_address, *token_address).map_mm_err()?;
+                let signed_tx = signed_tx_from_web3_tx(tx_from_rpc.clone())
+                    .map_err(|err| ValidatePaymentError::WrongPaymentTx(format!("Could not parse tx: {:?}", err)))?;
+                let maker_address_tagged = self.tag_address(maker_address);
+                let token_address_tagged = self.tag_address(*token_address);
+                validate_from_to_addresses(&signed_tx, maker_address_tagged, token_address_tagged).map_mm_err()?;
 
                 let (decoded, bytes_index) = get_decoded_tx_data_and_bytes_index(contract_type, &tx_from_rpc.input.0)?;
 
@@ -159,13 +164,14 @@ impl EthCoin {
                     ZERO_VALUE.into(),
                     Action::Call(nft_maker_swap_v2_contract),
                     data,
-                    U256::from(gas_limit),
+                    Some(U256::from(gas_limit)),
                 )
                 .compat()
                 .await
             },
             EthCoinType::Eth | EthCoinType::Erc20 { .. } => Err(TransactionErr::ProtocolNotSupported(ERRL!(
-                "ETH and ERC20 protocols are not supported for NFT swaps."
+                "{} protocol is not supported for NFT swaps.",
+                self.coin_type
             ))),
         }
     }
@@ -196,13 +202,14 @@ impl EthCoin {
                     ZERO_VALUE.into(),
                     Action::Call(nft_maker_swap_v2_contract),
                     data,
-                    U256::from(gas_limit),
+                    Some(U256::from(gas_limit)),
                 )
                 .compat()
                 .await
             },
             EthCoinType::Eth | EthCoinType::Erc20 { .. } => Err(TransactionErr::ProtocolNotSupported(ERRL!(
-                "ETH and ERC20 protocols are not supported for NFT swaps."
+                "{} protocol is not supported for NFT swaps.",
+                self.coin_type
             ))),
         }
     }
@@ -234,13 +241,14 @@ impl EthCoin {
                     ZERO_VALUE.into(),
                     Action::Call(nft_maker_swap_v2_contract),
                     data,
-                    U256::from(gas_limit),
+                    Some(U256::from(gas_limit)),
                 )
                 .compat()
                 .await
             },
             EthCoinType::Eth | EthCoinType::Erc20 { .. } => Err(TransactionErr::ProtocolNotSupported(ERRL!(
-                "ETH and ERC20 protocols are not supported for NFT swaps."
+                "{} protocol is not supported for NFT swaps.",
+                self.coin_type
             ))),
         }
     }

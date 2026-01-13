@@ -193,7 +193,7 @@ mod tests {
     use Public;
 
     fn hex_to_bytes(s: &str) -> Option<Vec<u8>> {
-        if s.len() % 2 == 0 {
+        if s.len().is_multiple_of(2) {
             (0..s.len())
                 .step_by(2)
                 .map(|i| s.get(i..i + 2).and_then(|sub| u8::from_str_radix(sub, 16).ok()))

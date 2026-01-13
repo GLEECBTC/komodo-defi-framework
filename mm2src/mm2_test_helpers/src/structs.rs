@@ -15,6 +15,10 @@ use std::fmt;
 use std::num::NonZeroUsize;
 use uuid::Uuid;
 
+// TODO Alright: many of the type names within this file contain a misnomer
+// `*Result` is used for many types that are not a "Result<>"
+// Should be renamed `*Response` or similar
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RpcSuccessResponse<T> {
@@ -398,7 +402,9 @@ pub struct TradePreimageResponse {
 }
 
 impl TradePreimageResponse {
-    pub fn sort_total_fees(&mut self) { self.result.sort_total_fees() }
+    pub fn sort_total_fees(&mut self) {
+        self.result.sort_total_fees()
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -714,6 +720,15 @@ pub enum InitEthWithTokensStatus {
     Error(Json),
     InProgress(Json),
     UserActionRequired(Json),
+}
+
+/// Error type for non-panicking task enable helpers.
+#[derive(Debug)]
+pub enum TaskEnableError {
+    /// Task timed out waiting for completion.
+    Timeout { ticker: String, timeout_sec: u64 },
+    /// RPC returned an error status.
+    RpcError(Json),
 }
 
 #[derive(Debug, Deserialize)]

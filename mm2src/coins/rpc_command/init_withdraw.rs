@@ -141,10 +141,12 @@ impl RpcTask for WithdrawTask {
         let ctx = self.ctx.clone();
         let request = self.request.clone();
         match self.coin {
-            MmCoinEnum::UtxoCoin(ref standard_utxo) => standard_utxo.init_withdraw(ctx, request, task_handle).await,
-            MmCoinEnum::QtumCoin(ref qtum) => qtum.init_withdraw(ctx, request, task_handle).await,
-            MmCoinEnum::ZCoin(ref z) => z.init_withdraw(ctx, request, task_handle).await,
-            MmCoinEnum::EthCoin(ref eth) => eth.init_withdraw(ctx, request, task_handle).await,
+            MmCoinEnum::UtxoCoinVariant(ref standard_utxo) => {
+                standard_utxo.init_withdraw(ctx, request, task_handle).await
+            },
+            MmCoinEnum::QtumCoinVariant(ref qtum) => qtum.init_withdraw(ctx, request, task_handle).await,
+            MmCoinEnum::ZCoinVariant(ref z) => z.init_withdraw(ctx, request, task_handle).await,
+            MmCoinEnum::EthCoinVariant(ref eth) => eth.init_withdraw(ctx, request, task_handle).await,
             _ => MmError::err(WithdrawError::CoinDoesntSupportInitWithdraw {
                 coin: self.coin.ticker().to_owned(),
             }),

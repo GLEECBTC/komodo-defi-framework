@@ -12,9 +12,9 @@ use std::str::FromStr;
 use std::str::Utf8Error;
 
 pub const PRICE_ENDPOINTS: [&str; 3] = [
-    "https://prices.komodian.info/api/v2/tickers",
+    "https://prices.gleec.com/api/v2/tickers",
     "https://prices.cipig.net:1717/api/v2/tickers",
-    "https://cache.defi-stats.komodo.earth/api/v3/prices/tickers_v2.json",
+    "https://defistats.gleec.com/api/v3/prices/tickers_v2",
 ];
 
 #[derive(Debug)]
@@ -298,6 +298,7 @@ pub async fn fetch_swap_coins_price(base: Option<String>, rel: Option<String>) -
 #[cfg(not(target_arch = "wasm32"))]
 mod tests {
     #[test]
+    #[ignore] // Requires external API access
     fn test_process_price_request() {
         use common::block_on;
 
@@ -308,6 +309,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires external API access
     fn test_fetch_swap_coins_price() {
         use common::block_on;
 

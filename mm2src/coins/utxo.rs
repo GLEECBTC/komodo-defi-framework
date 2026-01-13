@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright © 2023 Pampex LTD and TillyHK LTD                                *
+ * Copyright © 2025 Gleec Holding OÜ                                *
  *                                                                            *
  * See the CONTRIBUTOR-LICENSE-AGREEMENT, COPYING, LICENSE-COPYRIGHT-NOTICE   *
  * and DEVELOPER-CERTIFICATE-OF-ORIGIN files in the LEGAL directory in        *
@@ -18,7 +18,7 @@
 //  utxo.rs
 //  marketmaker
 //
-//  Copyright © 2023 Pampex LTD and TillyHK LTD. All rights reserved.
+//  Copyright © 2025 Gleec Holding OÜ. All rights reserved.
 //
 
 pub mod bch;
@@ -41,6 +41,7 @@ pub mod utxo_hd_wallet;
 pub mod utxo_standard;
 pub mod utxo_tx_history_v2;
 pub mod utxo_withdraw;
+#[cfg(feature = "utxo-walletconnect")]
 pub mod wallet_connect;
 
 use async_trait::async_trait;
@@ -84,7 +85,9 @@ use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as 
 use script::{Builder, Script, SignatureVersion, TransactionInputSigner};
 use secp256k1::Signature as SecpSignature;
 use serde_json::{self as json, Value as Json};
-use serialization::{deserialize, serialize, serialize_with_flags, Error as SerError, SERIALIZE_TRANSACTION_WITNESS};
+use serialization::{
+    deserialize, serialize, serialize_with_flags, ChainVariant, Error as SerError, SERIALIZE_TRANSACTION_WITNESS,
+};
 use spv_validation::conf::SPVConf;
 use spv_validation::helpers_validation::SPVError;
 use spv_validation::storage::BlockHeaderStorageError;
@@ -630,6 +633,8 @@ pub struct UtxoCoinConf {
     pub derivation_path: Option<HDPathToCoin>,
     /// The average time in seconds needed to mine a new block for this coin.
     pub avg_blocktime: Option<u64>,
+    /// How to interpret block headers for this coin (BTC, Qtum, RVN, etc.).
+    pub chain_variant: ChainVariant,
 }
 
 pub struct UtxoCoinFields {
@@ -1916,8 +1921,15 @@ where
                 coin.as_ref().conf.fork_id
             ))
         },
+        #[cfg(feature = "utxo-walletconnect")]
         PrivKeyPolicy::WalletConnect { ref session_topic, .. } => {
             try_tx_s!(wallet_connect::sign_p2pkh(coin, session_topic, &unsigned).await)
+        },
+        #[cfg(not(feature = "utxo-walletconnect"))]
+        PrivKeyPolicy::WalletConnect { .. } => {
+            return Err(TransactionErr::Plain(
+                "WalletConnect signing requires utxo-walletconnect feature".to_string(),
+            ))
         },
         PrivKeyPolicy::Trezor => return Err(TransactionErr::Plain("Can't sign tx with trezor".to_string())),
         #[cfg(target_arch = "wasm32")]

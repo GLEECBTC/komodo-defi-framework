@@ -5,8 +5,7 @@ use crate::lp_ordermatch::RpcOrderbookEntryV2;
 use crate::rpc::lp_commands::lr_swap::types::{AskOrBidOrder, AsksForCoin, BidsForCoin};
 use crate::rpc::lp_commands::one_inch::errors::ApiIntegrationRpcError;
 use crate::rpc::lp_commands::one_inch::rpcs::get_coin_for_one_inch;
-use coins::eth::{mm_number_from_u256, mm_number_to_u256, wei_from_coins_mm_number};
-use coins::hd_wallet::DisplayAddress;
+use coins::eth::{mm_number_from_u256, mm_number_to_u256, wei_from_coins_mm_number, ChainFamily};
 use coins::lp_coinfind_or_err;
 use coins::MmCoin;
 use coins::Ticker;
@@ -62,24 +61,21 @@ struct LrStepData {
 impl LrStepData {
     #[allow(clippy::result_large_err)]
     fn get_chain_contract_info(&self) -> MmResult<(String, String, u64), ApiIntegrationRpcError> {
-        let src_contract = self
-            .src_contract
-            .as_ref()
-            .ok_or(ApiIntegrationRpcError::InternalError(
-                "Source LR contract not set".to_owned(),
-            ))?
-            .display_address();
-        let dst_contract = self
-            .dst_contract
-            .as_ref()
-            .ok_or(ApiIntegrationRpcError::InternalError(
-                "Destination LR contract not set".to_owned(),
-            ))?
-            .display_address();
+        let src_contract = self.src_contract.as_ref().ok_or(ApiIntegrationRpcError::InternalError(
+            "Source LR contract not set".to_owned(),
+        ))?;
+        let dst_contract = self.dst_contract.as_ref().ok_or(ApiIntegrationRpcError::InternalError(
+            "Destination LR contract not set".to_owned(),
+        ))?;
         let chain_id = self
             .chain_id
             .ok_or(ApiIntegrationRpcError::InternalError("LR chain id not set".to_owned()))?;
-        Ok((src_contract, dst_contract, chain_id))
+        // LR swaps are EVM-only, use EVM checksum formatting
+        Ok((
+            ChainFamily::Evm.format(*src_contract),
+            ChainFamily::Evm.format(*dst_contract),
+            chain_id,
+        ))
     }
 }
 

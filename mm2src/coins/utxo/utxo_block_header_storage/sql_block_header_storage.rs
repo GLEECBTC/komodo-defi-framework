@@ -9,7 +9,7 @@ use db_common::{
     sqlite::CHECK_TABLE_EXISTS_SQL,
 };
 use primitives::hash::H256;
-use serialization::Reader;
+use serialization::{ChainVariant, Reader};
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -96,6 +96,7 @@ fn remove_headers_from_to_height_sql(for_coin: &str) -> Result<String, BlockHead
 #[derive(Clone, Debug)]
 pub struct SqliteBlockHeadersStorage {
     pub ticker: String,
+    pub chain_variant: ChainVariant,
     pub conn: Arc<Mutex<Connection>>,
 }
 
@@ -204,7 +205,7 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
                 coin: coin.clone(),
                 reason: e.to_string(),
             })?;
-            let mut reader = Reader::new_with_coin_variant(serialized, coin.as_str().into());
+            let mut reader = Reader::new_with_chain_variant(serialized, self.chain_variant);
             let header: BlockHeader =
                 reader
                     .read()
@@ -275,7 +276,7 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
         })?;
 
         if let Some(header_raw) = maybe_header_raw {
-            let header = BlockHeader::try_from_string_with_coin_variant(header_raw, coin.as_str().into()).map_err(
+            let header = BlockHeader::try_from_string_with_chain_variant(header_raw, self.chain_variant).map_err(
                 |e: serialization::Error| BlockHeaderStorageError::DecodeError {
                     coin,
                     reason: e.to_string(),
@@ -349,6 +350,7 @@ impl SqliteBlockHeadersStorage {
     pub fn in_memory(ticker: String) -> Self {
         SqliteBlockHeadersStorage {
             ticker,
+            chain_variant: ChainVariant::Standard,
             conn: Arc::new(Mutex::new(Connection::open_in_memory().unwrap())),
         }
     }

@@ -1,4 +1,6 @@
+use crate::eth::chain_address::ChainTaggedAddress;
 use crate::eth::{decode_contract_call, signed_tx_from_web3_tx, EthCoin, EthCoinType, Transaction, TransactionErr};
+use crate::hd_wallet::DisplayAddress;
 use crate::{FindPaymentSpendError, MarketCoinOps};
 use common::executor::Timer;
 use common::log::{error, info};
@@ -6,13 +8,13 @@ use common::now_sec;
 use derive_more::Display;
 use enum_derives::EnumFromStringify;
 use ethabi::{Contract, Token};
-use ethcore_transaction::SignedTransaction as SignedEthTx;
+use ethcore_transaction::{Action, SignedTransaction as SignedEthTx};
 use ethereum_types::{Address, H256, U256};
 use futures::compat::Future01CompatExt;
 use mm2_err_handle::prelude::{MmError, MmResult};
 use mm2_number::BigDecimal;
 use num_traits::Signed;
-use web3::types::{Transaction as Web3Tx, TransactionId};
+use web3::types::TransactionId;
 
 pub(crate) mod eth_maker_swap_v2;
 pub(crate) mod eth_taker_swap_v2;
@@ -75,7 +77,10 @@ impl EthCoin {
         match &self.coin_type {
             EthCoinType::Eth => Ok(Address::default()),
             EthCoinType::Erc20 { token_addr, .. } => Ok(*token_addr),
-            EthCoinType::Nft { .. } => Err("NFT protocol is not supported for ETH and ERC20 Swaps".to_string()),
+            EthCoinType::Nft { .. } => Err(format!(
+                "{} protocol is not supported for ETH and ERC20 Swaps",
+                self.coin_type
+            )),
         }
     }
 
@@ -174,22 +179,44 @@ impl EthCoin {
     }
 }
 
+/// Validates that a signed transaction has the expected from and to addresses.
+///
+/// Uses `ChainTaggedAddress` to ensure chain-aware formatting in error messages
+/// (EVM checksum for EVM chains, Base58 for TRON).
 pub(crate) fn validate_from_to_addresses(
-    tx_from_rpc: &Web3Tx,
-    expected_from: Address,
-    expected_to: Address,
+    signed_tx: &SignedEthTx,
+    expected_from: ChainTaggedAddress,
+    expected_to: ChainTaggedAddress,
 ) -> Result<(), MmError<ValidatePaymentV2Err>> {
-    if tx_from_rpc.from != Some(expected_from) {
+    let family = expected_from.family();
+    let actual_from = signed_tx.sender();
+
+    if actual_from != expected_from.inner() {
         return MmError::err(ValidatePaymentV2Err::WrongPaymentTx(format!(
-            "Payment tx {tx_from_rpc:?} was sent from wrong address, expected {expected_from:?}"
+            "Payment tx {signed_tx:?} was sent from wrong address, expected {}, got {}",
+            expected_from.display_address(),
+            family.format(actual_from)
         )));
     }
+
     // (in NFT case) as NFT owner calls "safeTransferFrom" directly, then in Transaction 'to' field we expect token_address
-    if tx_from_rpc.to != Some(expected_to) {
-        return MmError::err(ValidatePaymentV2Err::WrongPaymentTx(format!(
-            "Payment tx {tx_from_rpc:?} was sent to wrong address, expected {expected_to:?}",
-        )));
+    match signed_tx.unsigned().action() {
+        Action::Call(actual_to) => {
+            if *actual_to != expected_to.inner() {
+                return MmError::err(ValidatePaymentV2Err::WrongPaymentTx(format!(
+                    "Payment tx was sent to wrong address, expected {}, got {}",
+                    expected_to.display_address(),
+                    family.format(*actual_to)
+                )));
+            }
+        },
+        Action::Create => {
+            return MmError::err(ValidatePaymentV2Err::WrongPaymentTx(
+                "Tx action must be Call, found Create instead".to_string(),
+            ));
+        },
     }
+
     Ok(())
 }
 

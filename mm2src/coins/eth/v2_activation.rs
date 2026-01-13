@@ -1,11 +1,13 @@
 use super::*;
 use crate::eth::erc20::{get_enabled_erc20_by_platform_and_contract, get_token_decimals};
+use crate::eth::eth_utils::nonce_sequencer::PerNetNonceLocks;
 use crate::eth::wallet_connect::eth_request_wc_personal_sign;
 use crate::eth::web3_transport::http_transport::HttpTransport;
 use crate::hd_wallet::{
     load_hd_accounts_from_storage, HDAccountsMutex, HDPathAccountToAddressId, HDWalletCoinStorage,
     HDWalletStorageError, DEFAULT_GAP_LIMIT,
 };
+use crate::is_wallet_only_conf;
 use crate::nft::get_nfts_for_activation;
 use crate::nft::nft_errors::{GetNftInfoError, ParseChainTypeError};
 use crate::nft::nft_structs::Chain;
@@ -14,7 +16,7 @@ use crate::EthMetamaskPolicy;
 
 use common::executor::AbortedError;
 use compatible_time::Instant;
-use crypto::{trezor::TrezorError, Bip32Error, CryptoCtxError, HwError};
+use crypto::{trezor::TrezorError, Bip32Error, CryptoCtx, CryptoCtxError, HwError};
 use enum_derives::EnumFromTrait;
 use ethereum_types::H264;
 use kdf_walletconnect::error::WalletConnectError;
@@ -229,7 +231,8 @@ pub struct EthActivationV2Request {
     pub nodes: Vec<EthNode>,
     #[serde(default)]
     pub rpc_mode: EthRpcMode,
-    pub swap_contract_address: Address,
+    #[serde(default)]
+    pub swap_contract_address: Option<Address>,
     #[serde(default)]
     pub swap_v2_contracts: Option<SwapV2Contracts>,
     pub fallback_swap_contract: Option<Address>,
@@ -244,6 +247,7 @@ pub struct EthActivationV2Request {
     #[serde(default)]
     pub path_to_address: HDPathAccountToAddressId,
     pub gap_limit: Option<u32>,
+    pub swap_gas_fee_policy: Option<SwapGasFeePolicy>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -466,7 +470,7 @@ impl EthCoin {
                     return MmError::err(EthTokenActivationError::CustomTokenError(
                         CustomTokenError::TokenWithSameContractAlreadyActivated {
                             ticker: token.ticker().to_string(),
-                            contract_address: protocol.token_addr.display_address(),
+                            contract_address: self.format_raw_address(protocol.token_addr),
                         },
                     ));
                 },
@@ -505,13 +509,21 @@ impl EthCoin {
             platform: protocol.platform,
             token_addr: protocol.token_addr,
         };
-        let max_eth_tx_type = get_max_eth_tx_type_conf(&ctx, &token_conf, &coin_type).await?;
-        let gas_limit: EthGasLimit = extract_gas_limit_from_conf(&token_conf)
-            .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {e}")))
-            .map_mm_err()?;
-        let gas_limit_v2: EthGasLimitV2 = extract_gas_limit_from_conf(&token_conf)
-            .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {e}")))
-            .map_mm_err()?;
+        let max_eth_tx_type =
+            get_conf_param_or_from_plaform_coin(&ctx, &token_conf, &coin_type, MAX_ETH_TX_TYPE_SUPPORTED)?;
+        let estimate_gas_mult = get_conf_param_or_from_plaform_coin(&ctx, &token_conf, &coin_type, ESTIMATE_GAS_MULT)?;
+        let gas_price_adjust = get_conf_param_or_from_plaform_coin(&ctx, &token_conf, &coin_type, GAS_PRICE_ADJUST)?;
+        let gas_limit: EthGasLimit =
+            get_conf_param_or_from_plaform_coin(&ctx, &token_conf, &coin_type, EthGasLimit::key())
+                .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {}", e)))
+                .map_mm_err()?
+                .unwrap_or_default();
+        let gas_limit_v2: EthGasLimitV2 =
+            get_conf_param_or_from_plaform_coin(&ctx, &token_conf, &coin_type, EthGasLimitV2::key())
+                .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {}", e)))
+                .map_mm_err()?
+                .unwrap_or_default();
+        let swap_gas_fee_policy = SwapGasFeePolicy::default();
 
         let token = EthCoinImpl {
             priv_key_policy: self.priv_key_policy.clone(),
@@ -529,9 +541,11 @@ impl EthCoin {
             decimals,
             ticker,
             web3_instances: AsyncMutex::new(self.web3_instances.lock().await.clone()),
+            rpc_client: self.rpc_client.clone(),
             history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
-            swap_txfee_policy: Mutex::new(SwapTxFeePolicy::Internal),
+            swap_gas_fee_policy: Mutex::new(swap_gas_fee_policy),
             max_eth_tx_type,
+            gas_price_adjust,
             ctx: self.ctx.clone(),
             required_confirmations,
             trezor_coin: self.trezor_coin.clone(),
@@ -541,6 +555,7 @@ impl EthCoin {
             nfts_infos: Default::default(),
             gas_limit,
             gas_limit_v2,
+            estimate_gas_mult,
             abortable_system,
         };
 
@@ -593,17 +608,23 @@ impl EthCoin {
             None
         };
 
-        let nft_infos = get_nfts_for_activation(&chain, &my_address, original_url, proxy_sign)
+        let nft_infos = get_nfts_for_activation(&chain, &my_address.inner(), original_url, proxy_sign)
             .await
             .map_mm_err()?;
         let coin_type = EthCoinType::Nft {
             platform: self.ticker.clone(),
         };
-        let max_eth_tx_type = get_max_eth_tx_type_conf(&ctx, &conf, &coin_type).await?;
-        let gas_limit: EthGasLimit = extract_gas_limit_from_conf(&conf)
-            .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {e}")))?;
-        let gas_limit_v2: EthGasLimitV2 = extract_gas_limit_from_conf(&conf)
-            .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {e}")))?;
+        let max_eth_tx_type = get_conf_param_or_from_plaform_coin(&ctx, &conf, &coin_type, MAX_ETH_TX_TYPE_SUPPORTED)?;
+        let estimate_gas_mult = get_conf_param_or_from_plaform_coin(&ctx, &conf, &coin_type, ESTIMATE_GAS_MULT)?;
+        let gas_price_adjust = get_conf_param_or_from_plaform_coin(&ctx, &conf, &coin_type, GAS_PRICE_ADJUST)?;
+        let gas_limit: EthGasLimit = get_conf_param_or_from_plaform_coin(&ctx, &conf, &coin_type, EthGasLimit::key())
+            .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {}", e)))?
+            .unwrap_or_default();
+        let gas_limit_v2: EthGasLimitV2 =
+            get_conf_param_or_from_plaform_coin(&ctx, &conf, &coin_type, EthGasLimitV2::key())
+                .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {}", e)))?
+                .unwrap_or_default();
+        let swap_gas_fee_policy = SwapGasFeePolicy::default();
 
         let global_nft = EthCoinImpl {
             ticker,
@@ -617,10 +638,12 @@ impl EthCoin {
             fallback_swap_contract: self.fallback_swap_contract,
             contract_supports_watchers: self.contract_supports_watchers,
             web3_instances: AsyncMutex::new(self.web3_instances.lock().await.clone()),
+            rpc_client: self.rpc_client.clone(),
             decimals: self.decimals,
             history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
-            swap_txfee_policy: Mutex::new(SwapTxFeePolicy::Internal),
+            swap_gas_fee_policy: Mutex::new(swap_gas_fee_policy),
             max_eth_tx_type,
+            gas_price_adjust,
             required_confirmations,
             ctx: self.ctx.clone(),
             trezor_coin: self.trezor_coin.clone(),
@@ -630,10 +653,81 @@ impl EthCoin {
             nfts_infos: Arc::new(AsyncMutex::new(nft_infos)),
             gas_limit,
             gas_limit_v2,
+            estimate_gas_mult,
             abortable_system,
         };
         Ok(EthCoin(Arc::new(global_nft)))
     }
+}
+
+/// Resolved swap contracts after validation.
+struct ResolvedSwapContracts {
+    swap_contract_address: Address,
+    swap_v2_contracts: Option<SwapV2Contracts>,
+    fallback_swap_contract: Option<Address>,
+}
+
+/// Validates and resolves all swap contract configuration.
+/// - Wallet-only: swap contracts are irrelevant, accepts any values
+/// - Trading-capable: validates V1 and V2 contracts as required
+fn resolve_swap_contracts(
+    wallet_only: bool,
+    use_trading_proto_v2: bool,
+    swap_contract_address: Option<Address>,
+    swap_v2_contracts: Option<SwapV2Contracts>,
+    fallback_swap_contract: Option<Address>,
+) -> MmResult<ResolvedSwapContracts, EthActivationV2Error> {
+    if wallet_only {
+        return Ok(ResolvedSwapContracts {
+            swap_contract_address: swap_contract_address.unwrap_or_default(),
+            swap_v2_contracts,
+            fallback_swap_contract,
+        });
+    }
+
+    // Trading-capable: V1 swap contract is required and must be non-zero
+    let swap_contract_address = swap_contract_address.ok_or_else(|| {
+        EthActivationV2Error::InvalidSwapContractAddr(
+            "swap_contract_address is required for trading-capable coins".to_string(),
+        )
+    })?;
+    if swap_contract_address == Address::default() {
+        return MmError::err(EthActivationV2Error::InvalidSwapContractAddr(
+            "swap_contract_address can't be zero address".to_string(),
+        ));
+    }
+
+    // Trading-capable with V2 protocol: V2 contracts are required
+    if use_trading_proto_v2 {
+        let contracts = swap_v2_contracts.as_ref().ok_or_else(|| {
+            EthActivationV2Error::InvalidPayload(
+                "swap_v2_contracts must be provided when using trading protocol v2".to_string(),
+            )
+        })?;
+        if contracts.maker_swap_v2_contract == Address::default()
+            || contracts.taker_swap_v2_contract == Address::default()
+            || contracts.nft_maker_swap_v2_contract == Address::default()
+        {
+            return MmError::err(EthActivationV2Error::InvalidSwapContractAddr(
+                "All swap_v2_contracts addresses must be non-zero".to_string(),
+            ));
+        }
+    }
+
+    // Fallback contract: if provided, must be non-zero
+    if let Some(fallback) = fallback_swap_contract {
+        if fallback == Address::default() {
+            return MmError::err(EthActivationV2Error::InvalidFallbackSwapContract(
+                "fallback_swap_contract can't be zero address".to_string(),
+            ));
+        }
+    }
+
+    Ok(ResolvedSwapContracts {
+        swap_contract_address,
+        swap_v2_contracts,
+        fallback_swap_contract,
+    })
 }
 
 /// Activate eth coin from coin config and private key build policy,
@@ -646,38 +740,14 @@ pub async fn eth_coin_from_conf_and_request_v2(
     priv_key_build_policy: EthPrivKeyBuildPolicy,
     chain_spec: ChainSpec,
 ) -> MmResult<EthCoin, EthActivationV2Error> {
-    if req.swap_contract_address == Address::default() {
-        return Err(EthActivationV2Error::InvalidSwapContractAddr(
-            "swap_contract_address can't be zero address".to_string(),
-        )
-        .into());
-    }
-
-    if ctx.use_trading_proto_v2() {
-        let contracts = req.swap_v2_contracts.as_ref().ok_or_else(|| {
-            EthActivationV2Error::InvalidPayload(
-                "swap_v2_contracts must be provided when using trading protocol v2".to_string(),
-            )
-        })?;
-        if contracts.maker_swap_v2_contract == Address::default()
-            || contracts.taker_swap_v2_contract == Address::default()
-            || contracts.nft_maker_swap_v2_contract == Address::default()
-        {
-            return Err(EthActivationV2Error::InvalidSwapContractAddr(
-                "All swap_v2_contracts addresses must be non-zero".to_string(),
-            )
-            .into());
-        }
-    }
-
-    if let Some(fallback) = req.fallback_swap_contract {
-        if fallback == Address::default() {
-            return Err(EthActivationV2Error::InvalidFallbackSwapContract(
-                "fallback_swap_contract can't be zero address".to_string(),
-            )
-            .into());
-        }
-    }
+    let wallet_only = is_wallet_only_conf(conf);
+    let swap_contracts = resolve_swap_contracts(
+        wallet_only,
+        ctx.use_trading_proto_v2(),
+        req.swap_contract_address,
+        req.swap_v2_contracts,
+        req.fallback_swap_contract,
+    )?;
 
     let (priv_key_policy, derivation_method) = build_address_and_priv_key_policy(
         ctx,
@@ -686,31 +756,58 @@ pub async fn eth_coin_from_conf_and_request_v2(
         priv_key_build_policy,
         &req.path_to_address,
         req.gap_limit,
-        Some(&chain_spec),
+        &chain_spec,
     )
     .await?;
 
-    let web3_instances = match (req.rpc_mode, &priv_key_policy) {
-        (EthRpcMode::Default, EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. })
-        | (EthRpcMode::Default, EthPrivKeyPolicy::Trezor)
-        | (EthRpcMode::Default, EthPrivKeyPolicy::WalletConnect { .. }) => {
-            build_web3_instances(ctx, ticker.to_string(), req.nodes.clone()).await?
+    // Build chain-specific RPC clients
+    let (web3_instances, rpc_client) = match (&chain_spec, req.rpc_mode, &priv_key_policy) {
+        // EVM: Standard RPC with software/hardware/external wallets
+        (
+            ChainSpec::Evm { .. },
+            EthRpcMode::Default,
+            EthPrivKeyPolicy::Iguana(_)
+            | EthPrivKeyPolicy::HDWallet { .. }
+            | EthPrivKeyPolicy::Trezor
+            | EthPrivKeyPolicy::WalletConnect { .. },
+        ) => {
+            let web3 = build_web3_instances(ctx, ticker.to_string(), req.nodes.clone()).await?;
+            (web3, None)
         },
+
+        // EVM + Metamask (WASM only): Both rpc_mode and policy must be Metamask
         #[cfg(target_arch = "wasm32")]
-        (EthRpcMode::Metamask, EthPrivKeyPolicy::Metamask(_)) => {
-            // Metamask doesn't support native Tron
+        (ChainSpec::Evm { .. }, EthRpcMode::Metamask, EthPrivKeyPolicy::Metamask(_)) => {
             let chain_id = chain_spec.chain_id().ok_or(EthActivationV2Error::UnsupportedChain {
                 chain: chain_spec.kind().to_string(),
                 feature: "Metamask".to_string(),
             })?;
-            build_metamask_transport(ctx, ticker.to_string(), chain_id).await?
+            let web3 = build_metamask_transport(ctx, ticker.to_string(), chain_id).await?;
+            (web3, None)
         },
+
+        // EVM + Metamask mismatch (WASM only): policy and rpc_mode must match
         #[cfg(target_arch = "wasm32")]
-        (EthRpcMode::Default, EthPrivKeyPolicy::Metamask(_)) | (EthRpcMode::Metamask, _) => {
-            let error = r#"priv_key_policy="Metamask" and rpc_mode="Metamask" should be used both"#.to_string();
+        (ChainSpec::Evm { .. }, EthRpcMode::Default, EthPrivKeyPolicy::Metamask(_))
+        | (ChainSpec::Evm { .. }, EthRpcMode::Metamask, _) => {
             return MmError::err(EthActivationV2Error::ActivationFailed {
                 ticker: ticker.to_string(),
-                error,
+                error: "priv_key_policy and rpc_mode must both be Metamask, or neither".to_string(),
+            });
+        },
+
+        // TRON: Uses dedicated TRON API via ChainRpcClient, no Web3
+        (ChainSpec::Tron { .. }, EthRpcMode::Default, _) => {
+            let tron_api = build_tron_api_client(ctx, req.nodes.clone()).await?;
+            (Vec::new(), Some(chain_rpc::ChainRpcClient::Tron(tron_api)))
+        },
+
+        // TRON + Metamask (WASM only): Not supported
+        #[cfg(target_arch = "wasm32")]
+        (ChainSpec::Tron { .. }, EthRpcMode::Metamask, _) => {
+            return MmError::err(EthActivationV2Error::UnsupportedChain {
+                chain: "TRON".to_string(),
+                feature: "Metamask".to_string(),
             });
         },
     };
@@ -729,22 +826,27 @@ pub async fn eth_coin_from_conf_and_request_v2(
 
     let trezor_coin: Option<String> = json::from_value(conf["trezor_coin"].clone()).ok();
 
-    let address_nonce_locks = {
-        let mut map = NONCE_LOCK.lock().unwrap();
-        Arc::new(AsyncMutex::new(
-            map.entry(ticker.to_string()).or_insert_with(new_nonce_lock).clone(),
-        ))
-    };
-
     // Create an abortable system linked to the `MmCtx` so if the app is stopped on `MmArc::stop`,
     // all spawned futures related to `ETH` coin will be aborted as well.
     let abortable_system = ctx.abortable_system.create_subsystem()?;
     let coin_type = EthCoinType::Eth;
-    let max_eth_tx_type = get_max_eth_tx_type_conf(ctx, conf, &coin_type).await?;
-    let gas_limit: EthGasLimit = extract_gas_limit_from_conf(conf)
-        .map_to_mm(|e| EthActivationV2Error::InternalError(format!("invalid gas_limit config {e}")))?;
-    let gas_limit_v2: EthGasLimitV2 = extract_gas_limit_from_conf(conf)
-        .map_to_mm(|e| EthActivationV2Error::InternalError(format!("invalid gas_limit config {e}")))?;
+    let max_eth_tx_type = get_conf_param_or_from_plaform_coin(ctx, conf, &coin_type, MAX_ETH_TX_TYPE_SUPPORTED)?;
+    let estimate_gas_mult = get_conf_param_or_from_plaform_coin(ctx, conf, &coin_type, ESTIMATE_GAS_MULT)?;
+    let gas_price_adjust = get_conf_param_or_from_plaform_coin(ctx, conf, &coin_type, GAS_PRICE_ADJUST)?;
+    let gas_limit: EthGasLimit = get_conf_param_or_from_plaform_coin(ctx, conf, &coin_type, EthGasLimit::key())
+        .map_to_mm(|e| EthActivationV2Error::InternalError(format!("invalid gas_limit config {}", e)))?
+        .unwrap_or_default();
+    let gas_limit_v2: EthGasLimitV2 = get_conf_param_or_from_plaform_coin(ctx, conf, &coin_type, EthGasLimitV2::key())
+        .map_to_mm(|e| EthActivationV2Error::InternalError(format!("invalid gas_limit config {}", e)))?
+        .unwrap_or_default();
+    let swap_gas_fee_policy_default: SwapGasFeePolicy =
+        get_conf_param_or_from_plaform_coin(ctx, conf, &coin_type, SWAP_GAS_FEE_POLICY)?.unwrap_or_default();
+    let swap_gas_fee_policy: SwapGasFeePolicy = req.swap_gas_fee_policy.unwrap_or(swap_gas_fee_policy_default);
+
+    let decimals = match &chain_spec {
+        ChainSpec::Evm { .. } => ETH_DECIMALS,
+        ChainSpec::Tron { .. } => tron::TRX_DECIMALS,
+    };
 
     let coin = EthCoinImpl {
         priv_key_policy,
@@ -752,25 +854,28 @@ pub async fn eth_coin_from_conf_and_request_v2(
         coin_type,
         chain_spec,
         sign_message_prefix,
-        swap_contract_address: req.swap_contract_address,
-        swap_v2_contracts: req.swap_v2_contracts,
-        fallback_swap_contract: req.fallback_swap_contract,
+        swap_contract_address: swap_contracts.swap_contract_address,
+        swap_v2_contracts: swap_contracts.swap_v2_contracts,
+        fallback_swap_contract: swap_contracts.fallback_swap_contract,
         contract_supports_watchers: req.contract_supports_watchers,
-        decimals: ETH_DECIMALS,
+        decimals,
         ticker: ticker.to_string(),
         web3_instances: AsyncMutex::new(web3_instances),
+        rpc_client,
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
-        swap_txfee_policy: Mutex::new(SwapTxFeePolicy::Internal),
+        swap_gas_fee_policy: Mutex::new(swap_gas_fee_policy),
         max_eth_tx_type,
+        gas_price_adjust,
         ctx: ctx.weak(),
         required_confirmations,
         trezor_coin,
         logs_block_range: conf["logs_block_range"].as_u64().unwrap_or(DEFAULT_LOGS_BLOCK_RANGE),
-        address_nonce_locks,
+        address_nonce_locks: PerNetNonceLocks::get_net_locks(ticker.to_owned()),
         erc20_tokens_infos: Default::default(),
         nfts_infos: Default::default(),
         gas_limit,
         gas_limit_v2,
+        estimate_gas_mult,
         abortable_system,
     };
 
@@ -787,13 +892,15 @@ pub(crate) async fn build_address_and_priv_key_policy(
     priv_key_build_policy: EthPrivKeyBuildPolicy,
     path_to_address: &HDPathAccountToAddressId,
     gap_limit: Option<u32>,
-    chain_spec: Option<&ChainSpec>,
+    chain_spec: &ChainSpec,
 ) -> MmResult<(EthPrivKeyPolicy, EthDerivationMethod), EthActivationV2Error> {
+    let family = ChainFamily::from(chain_spec);
+
     match priv_key_build_policy {
         EthPrivKeyBuildPolicy::IguanaPrivKey(iguana) => {
             let key_pair = KeyPair::from_secret_slice(iguana.as_slice())
                 .map_to_mm(|e| EthActivationV2Error::InternalError(e.to_string()))?;
-            let address = key_pair.address();
+            let address = ChainTaggedAddress::new(key_pair.address(), family);
             let derivation_method = DerivationMethod::SingleAddress(address);
             Ok((EthPrivKeyPolicy::Iguana(key_pair), derivation_method))
         },
@@ -871,9 +978,10 @@ pub(crate) async fn build_address_and_priv_key_policy(
         },
         #[cfg(target_arch = "wasm32")]
         EthPrivKeyBuildPolicy::Metamask(metamask_ctx) => {
-            let address = *metamask_ctx.check_active_eth_account().await.map_mm_err()?;
+            let raw_address = *metamask_ctx.check_active_eth_account().await.map_mm_err()?;
             let public_key_uncompressed = metamask_ctx.eth_account_pubkey_uncompressed();
             let public_key = compress_public_key(public_key_uncompressed)?;
+            let address = ChainTaggedAddress::new(raw_address, family);
             Ok((
                 EthPrivKeyPolicy::Metamask(EthMetamaskPolicy {
                     public_key,
@@ -886,15 +994,15 @@ pub(crate) async fn build_address_and_priv_key_policy(
             let wc = WalletConnectCtx::from_ctx(ctx).map_err(|e| {
                 EthActivationV2Error::WalletConnectError(format!("Failed to get WalletConnect context: {e}"))
             })?;
-            let chain_spec = chain_spec.ok_or(EthActivationV2Error::ChainIdNotSet)?;
             let chain_id = chain_spec.chain_id().ok_or(EthActivationV2Error::UnsupportedChain {
                 chain: chain_spec.kind().to_string(),
                 feature: "WalletConnect".to_string(),
             })?;
-            let (public_key_uncompressed, address) = eth_request_wc_personal_sign(&wc, &session_topic, chain_id)
+            let (public_key_uncompressed, raw_address) = eth_request_wc_personal_sign(&wc, &session_topic, chain_id)
                 .await
                 .mm_err(|err| EthActivationV2Error::WalletConnectError(err.to_string()))?;
             let public_key = compress_public_key(public_key_uncompressed)?;
+            let address = ChainTaggedAddress::new(raw_address, family);
             Ok((
                 EthPrivKeyPolicy::WalletConnect {
                     public_key,
@@ -905,6 +1013,45 @@ pub(crate) async fn build_address_and_priv_key_policy(
             ))
         },
     }
+}
+
+/// Legacy EVM-only wrapper for `build_address_and_priv_key_policy`.
+///
+/// This function is ONLY for legacy V1 activation paths that exclusively support EVM chains.
+/// It uses `ChainFamily::Evm` for address formatting.
+///
+/// # When NOT to Use
+/// - V2 activation - use `build_address_and_priv_key_policy` with explicit `&ChainSpec`
+/// - TRON activation - MUST use V2 activation with `ChainSpec::Tron`
+/// - WalletConnect - MUST use V2 activation with explicit chain_id
+pub(crate) async fn build_address_and_priv_key_policy_evm_legacy(
+    ctx: &MmArc,
+    ticker: &str,
+    conf: &Json,
+    priv_key_build_policy: EthPrivKeyBuildPolicy,
+    path_to_address: &HDPathAccountToAddressId,
+    gap_limit: Option<u32>,
+    chain_id: u64,
+) -> MmResult<(EthPrivKeyPolicy, EthDerivationMethod), EthActivationV2Error> {
+    if matches!(priv_key_build_policy, EthPrivKeyBuildPolicy::WalletConnect { .. }) {
+        return MmError::err(EthActivationV2Error::PrivKeyPolicyNotAllowed(
+            PrivKeyPolicyNotAllowed::UnsupportedMethod(
+                "WalletConnect requires V2 activation with explicit chain_id".to_string(),
+            ),
+        ));
+    }
+
+    let legacy_evm_chain_spec = ChainSpec::Evm { chain_id };
+    build_address_and_priv_key_policy(
+        ctx,
+        ticker,
+        conf,
+        priv_key_build_policy,
+        path_to_address,
+        gap_limit,
+        &legacy_evm_chain_spec,
+    )
+    .await
 }
 
 async fn build_web3_instances(
@@ -942,6 +1089,51 @@ async fn build_web3_instances(
     }
 
     Ok(web3_instances)
+}
+
+/// Build TRON RPC pool from provided nodes.
+async fn build_tron_api_client(
+    ctx: &MmArc,
+    mut nodes: Vec<EthNode>,
+) -> MmResult<tron::TronApiClient, EthActivationV2Error> {
+    if nodes.is_empty() {
+        return MmError::err(EthActivationV2Error::AtLeastOneNodeRequired);
+    }
+
+    let mut rng = small_rng();
+    nodes.as_mut_slice().shuffle(&mut rng);
+    drop_mutability!(nodes);
+
+    // Get keypair for proxy signing from P2P context
+    let proxy_sign_keypair = Some(Arc::new(P2PContext::fetch_from_mm_arc(ctx).keypair().clone()));
+
+    let mut clients = Vec::with_capacity(nodes.len());
+    for node in nodes {
+        let uri: Uri = node
+            .url
+            .parse()
+            .map_err(|_| EthActivationV2Error::InvalidPayload(format!("{} could not be parsed as URI", node.url)))?;
+
+        // TRON only supports HTTP endpoints
+        match uri.scheme_str() {
+            Some("http") | Some("https") => {},
+            _ => {
+                return MmError::err(EthActivationV2Error::InvalidPayload(format!(
+                    "Invalid TRON node address '{}'. Only HTTP(S) is supported for TRON",
+                    node.url
+                )));
+            },
+        }
+
+        let tron_node = tron::TronHttpNode {
+            uri,
+            komodo_proxy: node.komodo_proxy,
+        };
+
+        clients.push(tron::TronHttpClient::new(tron_node, proxy_sign_keypair.clone()));
+    }
+
+    Ok(tron::TronApiClient::new(clients))
 }
 
 fn create_transport(

@@ -17,13 +17,48 @@ custom-swap-locktime = [] # only for testing purposes, should never be activated
 native = [] # Deprecated
 track-ctx-pointer = ["common/track-ctx-pointer"]
 zhtlc-native-tests = ["coins/zhtlc-native-tests"]
+tron-network-tests = ["coins/tron-network-tests"]
 run-docker-tests = ["coins/run-docker-tests"]
+# Split docker test features - organized by test category
+#
+# Chain-specific tests: Test coin implementations for specific blockchain protocols
+# (consideration: move to coins::*/tests; far future: separate crates per chain)
+docker-tests-slp = ["run-docker-tests"]         # BCH-SLP coin tests
+docker-tests-sia = ["run-docker-tests"]         # Sia coin tests
+docker-tests-eth = ["run-docker-tests"]         # ETH/ERC20 coin tests
+docker-tests-qrc20 = ["run-docker-tests"]       # QRC20 coin tests
+docker-tests-tendermint = ["run-docker-tests"]  # Tendermint/IBC coin tests
+docker-tests-zcoin = ["run-docker-tests"]       # ZCoin/Zombie coin tests
+#
+# Protocol tests: Test cross-cutting protocol functionality (swaps, ordermatching, watchers).
+# Protocol logic is coin-agnostic; these tests use UTXO coins to verify protocol correctness in isolation.
+docker-tests-swaps = ["run-docker-tests"]       # Swap protocol tests (v1, v2, confs, file-locks)
+docker-tests-ordermatch = ["run-docker-tests"]  # Orderbook and matching tests
+docker-tests-watchers = ["run-docker-tests"]    # Watcher node tests (UTXO-only, stable)
+docker-tests-watchers-eth = ["docker-tests-watchers", "coins/enable-eth-watchers"]  # Watcher tests (ETH, unstable)
+#
+# Cross-chain integration tests: Test interactions between different chain families
+docker-tests-integration = ["run-docker-tests"]
+# Aggregate feature for local development - runs all docker test suites
+# Not recommended for CI (use split jobs instead for parallelism)
+docker-tests-all = [
+    "docker-tests-eth",
+    "docker-tests-slp",
+    "docker-tests-sia",
+    "docker-tests-ordermatch",
+    "docker-tests-swaps",
+    "docker-tests-watchers",
+    "docker-tests-qrc20",
+    "docker-tests-tendermint",
+    "docker-tests-zcoin",
+    "docker-tests-integration",
+]
+# utxo-walletconnect excluded: it requires the `bitcoin` crate which pulls secp256k1-sys v0.6.1,
+# conflicting with v0.4.2 from existing deps and causing duplicate WASM symbol linker errors.
 default = []
+utxo-walletconnect = ["coins/utxo-walletconnect", "coins_activation/utxo-walletconnect"]
 trezor-udp = ["crypto/trezor-udp"] # use for tests to connect to trezor emulator over udp
 run-device-tests = []
-enable-sia = ["coins/enable-sia", "coins_activation/enable-sia"]
-sepolia-maker-swap-v2-tests = []
-sepolia-taker-swap-v2-tests = []
 test-ext-api = ["trading_api/test-ext-api"]
 new-db-arch = ["mm2_core/new-db-arch"] # A temporary feature to integrate the new db architecture incrementally
 # Temporary feature for implementing IBC wrap/unwrap mechanism and will be removed
@@ -38,14 +73,14 @@ bitcrypto = { path = "../mm2_bitcoin/crypto" }
 blake2.workspace = true
 bytes.workspace = true
 cfg-if.workspace = true
-chain = { path = "../mm2_bitcoin/chain" }
+chain = { path = "../mm2_bitcoin/chain", default-features = false }
 chrono.workspace = true
 clap.workspace = true
-coins = { path = "../coins" }
-coins_activation = { path = "../coins_activation" }
+coins = { path = "../coins", default-features = false }
+coins_activation = { path = "../coins_activation", default-features = false }
 common = { path = "../common" }
 compatible-time.workspace = true
-crc32fast.workspace = true 
+crc32fast.workspace = true
 crossbeam.workspace = true
 crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
@@ -56,7 +91,7 @@ enum_derives = { path = "../derives/enum_derives" }
 enum-primitive-derive.workspace = true
 futures01.workspace = true
 futures = { workspace = true, features = ["compat", "async-await"] }
-gstuff.workspace = true 
+gstuff.workspace = true
 hash256-std-hasher.workspace = true
 hash-db.workspace = true
 hex.workspace = true
@@ -81,7 +116,6 @@ mm2_rpc = { path = "../mm2_rpc", features = ["rpc_facilities"] }
 mm2_state_machine = { path = "../mm2_state_machine" }
 trading_api = { path = "../trading_api" }
 num-traits.workspace = true
-parity-util-mem.workspace = true
 parking_lot = { workspace = true }
 primitives = { path = "../mm2_bitcoin/primitives" }
 primitive-types.workspace = true
@@ -106,11 +140,11 @@ sp-trie.workspace = true
 tempfile.workspace = true
 trie-db.workspace = true
 trie-root.workspace = true
-uuid.workspace = true 
+uuid.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-# TODO: Removing this causes `wasm-pack` to fail when starting a web session (even though we don't use this crate).
-# Investigate why.
+# Forces `wasm-bindgen` feature on transitive `instant` dep for WASM builds.
+# See mm2src/coins/Cargo.toml for detailed explanation.
 instant = { version = "0.1.12", features = ["wasm-bindgen"] }
 js-sys.workspace = true
 mm2_db = { path = "../mm2_db" }
@@ -128,20 +162,23 @@ rcgen.workspace = true
 rustls = { workspace = true, default-features = false }
 rustls-pemfile.workspace = true
 timed-map = { workspace = true, features = ["rustc-hash"] }
-tokio = { workspace = true, features = ["io-util", "rt-multi-thread", "net", "signal"] }
+tokio = { workspace = true, features = ["io-util", "rt-multi-thread", "net"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi.workspace = true
 
+[target.'cfg(not(any(target_arch = "wasm32", target_os = "windows")))'.dependencies]
+signal-hook-tokio = { version = "0.3", features = [ "futures-v0_3" ] }
+
 [dev-dependencies]
-coins = { path = "../coins", features = ["for-tests"] }
-coins_activation = { path = "../coins_activation", features = ["for-tests"] }
+base64.workspace = true
+coins = { path = "../coins", default-features = false, features = ["for-tests"] }
+coins_activation = { path = "../coins_activation", default-features = false, features = ["for-tests"] }
 common = { path = "../common", features = ["for-tests"] }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
 trading_api = { path = "../trading_api", features = ["for-tests"] }
 env_logger.workspace = true
 mocktopus.workspace = true
-testcontainers.workspace = true
 web3 = { workspace = true, default-features = false, features = ["http-rustls-tls"] }
 ethabi.workspace = true
 rlp.workspace = true
@@ -149,6 +186,11 @@ ethcore-transaction.workspace = true
 rustc-hex.workspace = true
 sia-rust.workspace = true
 url.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+# todo: try to use async features
+testcontainers = { workspace = true, features = ["blocking"] }
+reqwest = { workspace = true, features = ["json"] }
 
 [build-dependencies]
 chrono.workspace = true

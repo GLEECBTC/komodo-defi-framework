@@ -3,7 +3,7 @@ use super::{
 };
 use crate::coin_errors::{ValidatePaymentError, ValidatePaymentResult};
 use crate::eth::{
-    decode_contract_call, get_function_input_data, wei_from_big_decimal, EthCoin, EthCoinType, SignedEthTx,
+    decode_contract_call, get_function_input_data, u256_from_big_decimal, EthCoin, EthCoinType, SignedEthTx,
     MAKER_SWAP_V2,
 };
 use crate::{
@@ -18,7 +18,6 @@ use futures::compat::Future01CompatExt;
 use mm2_err_handle::mm_error::MmError;
 use mm2_err_handle::prelude::{MapToMmResult, MmResultExt};
 use std::convert::TryInto;
-use web3::types::TransactionId;
 
 const ETH_MAKER_PAYMENT: &str = "ethMakerPayment";
 const ERC20_MAKER_PAYMENT: &str = "erc20MakerPayment";
@@ -66,7 +65,7 @@ impl EthCoin {
             .swap_v2_contracts
             .ok_or_else(|| TransactionErr::Plain(ERRL!("Expected swap_v2_contracts to be Some, but found None")))?
             .maker_swap_v2_contract;
-        let payment_amount = try_tx_s!(wei_from_big_decimal(&args.amount, self.decimals));
+        let payment_amount = try_tx_s!(u256_from_big_decimal(&args.amount, self.decimals));
         let payment_args = {
             let taker_address = public_to_address(args.taker_pub);
             MakerPaymentArgs {
@@ -83,7 +82,7 @@ impl EthCoin {
                     payment_amount,
                     Action::Call(maker_swap_v2_contract),
                     data,
-                    U256::from(self.gas_limit_v2.maker.eth_payment),
+                    Some(U256::from(self.gas_limit_v2.maker.eth_payment)),
                 )
                 .compat()
                 .await
@@ -102,13 +101,14 @@ impl EthCoin {
                     U256::from(ZERO_VALUE),
                     Action::Call(maker_swap_v2_contract),
                     data,
-                    U256::from(self.gas_limit_v2.maker.erc20_payment),
+                    Some(U256::from(self.gas_limit_v2.maker.erc20_payment)),
                 )
                 .compat()
                 .await
             },
             EthCoinType::Nft { .. } => Err(TransactionErr::ProtocolNotSupported(ERRL!(
-                "NFT protocol is not supported for ETH and ERC20 Swaps"
+                "{} protocol is not supported for ETH and ERC20 Swaps",
+                self.coin_type
             ))),
         }
     }
@@ -122,31 +122,26 @@ impl EthCoin {
                 "NFT protocol is not supported for ETH and ERC20 Swaps".to_string(),
             ));
         }
+
         let maker_swap_v2_contract = self
             .swap_v2_contracts
             .ok_or_else(|| {
                 ValidatePaymentError::InternalError("Expected swap_v2_contracts to be Some, but found None".to_string())
             })?
             .maker_swap_v2_contract;
+
         let taker_secret_hash = args.taker_secret_hash.try_into()?;
         let maker_secret_hash = args.maker_secret_hash.try_into()?;
         validate_amount(&args.amount).map_to_mm(ValidatePaymentError::InternalError)?;
         let swap_id = self.etomic_swap_id_v2(args.time_lock, args.maker_secret_hash);
 
-        let tx_from_rpc = self
-            .transaction(TransactionId::Hash(args.maker_payment_tx.tx_hash()))
-            .await?;
-        let tx_from_rpc = tx_from_rpc.as_ref().ok_or_else(|| {
-            ValidatePaymentError::TxDoesNotExist(format!(
-                "Didn't find provided tx {:?} on ETH node",
-                args.maker_payment_tx.tx_hash()
-            ))
-        })?;
-        let maker_address = public_to_address(args.maker_pub);
-        validate_from_to_addresses(tx_from_rpc, maker_address, maker_swap_v2_contract).map_mm_err()?;
+        let tx = args.maker_payment_tx;
+        let maker_address = self.tag_address(public_to_address(args.maker_pub));
+        let contract_tagged = self.tag_address(maker_swap_v2_contract);
+        validate_from_to_addresses(tx, maker_address, contract_tagged).map_mm_err()?;
 
         let validation_args = {
-            let amount = wei_from_big_decimal(&args.amount, self.decimals).map_mm_err()?;
+            let amount = u256_from_big_decimal(&args.amount, self.decimals).map_mm_err()?;
             MakerValidationArgs {
                 swap_id,
                 amount,
@@ -156,23 +151,27 @@ impl EthCoin {
                 payment_time_lock: args.time_lock,
             }
         };
+
         match self.coin_type {
             EthCoinType::Eth => {
                 let function = MAKER_SWAP_V2.function(ETH_MAKER_PAYMENT)?;
-                let decoded = decode_contract_call(function, &tx_from_rpc.input.0)?;
-                validate_eth_maker_payment_data(&decoded, &validation_args, function, tx_from_rpc.value)?;
+                let decoded = decode_contract_call(function, tx.unsigned().data())?;
+                validate_eth_maker_payment_data(&decoded, &validation_args, function, tx.unsigned().value())?;
             },
             EthCoinType::Erc20 { token_addr, .. } => {
                 let function = MAKER_SWAP_V2.function(ERC20_MAKER_PAYMENT)?;
-                let decoded = decode_contract_call(function, &tx_from_rpc.input.0)?;
+                let decoded = decode_contract_call(function, tx.unsigned().data())?;
                 validate_erc20_maker_payment_data(&decoded, &validation_args, function, token_addr)?;
             },
             EthCoinType::Nft { .. } => {
-                return MmError::err(ValidatePaymentError::ProtocolNotSupported(
-                    "NFT protocol is not supported for ETH and ERC20 Swaps".to_string(),
-                ));
+                return MmError::err(ValidatePaymentError::ProtocolNotSupported(format!(
+                    "{} protocol is not supported for ETH and ERC20 Swaps",
+                    self.coin_type
+                )));
             },
         }
+
+        // Offline checks passed; on-chain confirmation happens later.
         Ok(())
     }
 
@@ -207,7 +206,7 @@ impl EthCoin {
                 )))
             },
         };
-        let payment_amount = try_tx_s!(wei_from_big_decimal(&args.amount, self.decimals));
+        let payment_amount = try_tx_s!(u256_from_big_decimal(&args.amount, self.decimals));
 
         let args = {
             let taker_address = public_to_address(&Public::from_slice(args.taker_pub));
@@ -226,7 +225,7 @@ impl EthCoin {
             U256::from(ZERO_VALUE),
             Action::Call(maker_swap_v2_contract),
             data,
-            U256::from(gas_limit),
+            Some(U256::from(gas_limit)),
         )
         .compat()
         .await
@@ -253,7 +252,7 @@ impl EthCoin {
             .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
 
         let maker_secret_hash = try_tx_s!(args.maker_secret_hash.try_into());
-        let payment_amount = try_tx_s!(wei_from_big_decimal(&args.amount, self.decimals));
+        let payment_amount = try_tx_s!(u256_from_big_decimal(&args.amount, self.decimals));
         let args = {
             let taker_address = public_to_address(args.taker_pub);
             MakerRefundSecretArgs {
@@ -271,7 +270,7 @@ impl EthCoin {
             U256::from(ZERO_VALUE),
             Action::Call(maker_swap_v2_contract),
             data,
-            U256::from(gas_limit),
+            Some(U256::from(gas_limit)),
         )
         .compat()
         .await
@@ -299,7 +298,7 @@ impl EthCoin {
             U256::from(ZERO_VALUE),
             Action::Call(maker_swap_v2_contract),
             data,
-            U256::from(gas_limit),
+            Some(U256::from(gas_limit)),
         )
         .compat()
         .await
@@ -385,7 +384,7 @@ impl EthCoin {
         let function = MAKER_SWAP_V2.function("spendMakerPayment")?;
         let id = self.etomic_swap_id_v2(args.time_lock, args.maker_secret_hash);
         let maker_address = public_to_address(args.maker_pub);
-        let payment_amount = wei_from_big_decimal(&args.amount, self.decimals)
+        let payment_amount = u256_from_big_decimal(&args.amount, self.decimals)
             .map_err(|e| PrepareTxDataError::Internal(e.to_string()))?;
         let data = function.encode_input(&[
             Token::FixedBytes(id),

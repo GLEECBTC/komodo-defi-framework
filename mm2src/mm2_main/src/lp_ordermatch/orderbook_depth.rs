@@ -50,12 +50,13 @@ pub async fn orderbook_depth_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u
     #[allow(clippy::unnecessary_filter_map)]
     let mut to_request_from_relay: Vec<_> = {
         let orderbook = ordermatch_ctx.orderbook.lock();
+        let subs = ordermatch_ctx.orderbook_subscriptions.read();
         req.pairs
             .into_iter()
             .filter_map(|original_pair| {
                 let orderbook_pair = ordermatch_ctx.orderbook_pair_bypass(&original_pair);
                 let topic = orderbook_topic_from_base_rel(&orderbook_pair.0, &orderbook_pair.1);
-                if orderbook.is_subscribed_to(&topic) {
+                if subs.contains_key(&topic) {
                     let asks = orderbook
                         .unordered
                         .get(&orderbook_pair)

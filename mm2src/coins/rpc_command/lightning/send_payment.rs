@@ -91,7 +91,7 @@ pub struct SendPaymentResponse {
 
 pub async fn send_payment(ctx: MmArc, req: SendPaymentReq) -> SendPaymentResult<SendPaymentResponse> {
     let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
-        MmCoinEnum::LightningCoin(c) => c,
+        MmCoinEnum::LightningCoinVariant(c) => c,
         e => return MmError::err(SendPaymentError::UnsupportedCoin(e.ticker().to_string())),
     };
     let open_channels_nodes = ln_coin.open_channels_nodes.lock().clone();

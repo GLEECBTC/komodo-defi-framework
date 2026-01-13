@@ -38,8 +38,11 @@ use crate::{
 #[cfg(not(target_arch = "wasm32"))]
 use crate::{WaitForHTLCTxSpendArgs, WithdrawFee};
 use chain::{BlockHeader, BlockHeaderBits, OutPoint};
+use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
-use common::{block_on, block_on_f01, wait_until_sec, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{
+    block_on, block_on_f01, repeatable, wait_until_sec, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY,
+};
 use crypto::{privkey::key_pair_from_seed, Bip44Chain, HDPathToAccount, RpcDerivationPath, Secp256k1Secret};
 #[cfg(not(target_arch = "wasm32"))]
 use db_common::sqlite::rusqlite::Connection;
@@ -56,7 +59,7 @@ use mm2_test_helpers::for_tests::{
 };
 use mocktopus::mocking::*;
 use rpc::v1::types::H256 as H256Json;
-use serialization::{deserialize, CoinVariant, CompactInteger, Reader};
+use serialization::{deserialize, ChainVariant, CompactInteger, Reader};
 use spv_validation::conf::{BlockHeaderValidationParams, SPVBlockHeader};
 use spv_validation::storage::BlockHeaderStorageOps;
 use spv_validation::work::DifficultyAlgorithm;
@@ -65,6 +68,7 @@ use std::convert::TryFrom;
 use std::iter;
 use std::num::NonZeroUsize;
 use std::str::FromStr;
+use std::time::Duration;
 
 #[cfg(test)]
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
@@ -72,7 +76,7 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 #[cfg(not(target_arch = "wasm32"))]
 const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
 
-pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
+pub fn electrum_client_for_test(servers: &[&str], chain_variant: ChainVariant) -> ElectrumClient {
     let ctx = MmCtxBuilder::default().into_mm_arc();
     let servers: Vec<_> = servers.iter().map(|server| json!({ "url": server })).collect();
     let req = json!({
@@ -95,9 +99,9 @@ pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
         collect_metrics: false,
     };
 
-    let servers = servers.into_iter().map(|s| json::from_value(s).unwrap()).collect();
+    let servers: Vec<ElectrumConnectionSettings> = servers.into_iter().map(|s| json::from_value(s).unwrap()).collect();
     let abortable_system = AbortableQueue::default();
-    block_on(builder.electrum_client(abortable_system, args, servers, (None, None))).unwrap()
+    block_on(builder.electrum_client(abortable_system, args, chain_variant, servers, (None, None))).unwrap()
 }
 
 /// Returned client won't work by default, requires some mocks to be usable
@@ -161,20 +165,20 @@ where
 
 #[test]
 fn test_extract_secret() {
-    let client = electrum_client_for_test(MARTY_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(MARTY_ELECTRUM_ADDRS, ChainVariant::MORTY);
     let coin = utxo_coin_for_test(client.into(), None, false);
 
     let tx_hex = hex::decode("0400008085202f890125236f423b7f585e6a86d8a6c45c6805bbd5823851a57a00f6dcd3a41dc7487500000000d8483045022100ce7246314170b7c84df41a9d987dad5b572cfca5c27ee738d2682ce147c460a402206fa477fc27bec62600b13ea8a3f81fbad1fa9adad28bc1fa5c212a12ecdccd7f01205c62072b57b6473aeee6d35270c8b56d86975e6d6d4245b25425d771239fae32004c6b630476ac3765b1752103242d9cb2168968d785f6914c494c303ff1c27ba0ad882dbc3c15cfa773ea953cac6782012088a914f95ae6f5fb6a4c4e69b00b4c1dbc0698746c0f0288210210e0f210673a2024d4021270bb711664a637bb542317ed9be5ad592475320c0cac68ffffffff0128230000000000001976a9142c445a7af3da3feb2ba7d5f2a32002c772acc1e188ac76ac3765000000000000000000000000000000").unwrap();
     let expected_secret =
         <[u8; 32]>::from_hex("5c62072b57b6473aeee6d35270c8b56d86975e6d6d4245b25425d771239fae32").unwrap();
     let secret_hash = &*dhash160(&expected_secret);
-    let secret = block_on(coin.extract_secret(secret_hash, &tx_hex, false)).unwrap();
+    let secret = block_on(coin.extract_secret(secret_hash, &tx_hex)).unwrap();
     assert_eq!(secret, expected_secret);
 }
 
 #[test]
 fn test_send_maker_spends_taker_payment_recoverable_tx() {
-    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS, ChainVariant::RICK);
     let coin = utxo_coin_for_test(client.into(), None, false);
     let tx_hex = hex::decode("0100000001de7aa8d29524906b2b54ee2e0281f3607f75662cbc9080df81d1047b78e21dbc00000000d7473044022079b6c50820040b1fbbe9251ced32ab334d33830f6f8d0bf0a40c7f1336b67d5b0220142ccf723ddabb34e542ed65c395abc1fbf5b6c3e730396f15d25c49b668a1a401209da937e5609680cb30bff4a7661364ca1d1851c2506fa80c443f00a3d3bf7365004c6b6304f62b0e5cb175210270e75970bb20029b3879ec76c4acd320a8d0589e003636264d01a7d566504bfbac6782012088a9142fb610d856c19fd57f2d0cffe8dff689074b3d8a882103f368228456c940ac113e53dad5c104cf209f2f102a409207269383b6ab9b03deac68ffffffff01d0dc9800000000001976a9146d9d2b554d768232320587df75c4338ecc8bf37d88ac40280e5c").unwrap();
     let secret = hex::decode("9da937e5609680cb30bff4a7661364ca1d1851c2506fa80c443f00a3d3bf7365").unwrap();
@@ -198,7 +202,7 @@ fn test_send_maker_spends_taker_payment_recoverable_tx() {
 
 #[test]
 fn test_generate_transaction() {
-    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS, ChainVariant::RICK);
     let coin = utxo_coin_for_test(client.into(), None, false);
     let unspents = vec![UnspentInfo {
         value: 10000000000,
@@ -292,7 +296,7 @@ fn test_generate_transaction() {
 
 #[test]
 fn test_addresses_from_script() {
-    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS, ChainVariant::RICK);
     let coin = utxo_coin_for_test(client.into(), None, false);
     // P2PKH
     let script: Script = "76a91405aab5342166f8594baf17a7d9bef5d56744332788ac".into();
@@ -481,6 +485,7 @@ fn test_wait_for_payment_spend_timeout_electrum() {
     let block_headers_storage = BlockHeaderStorage {
         inner: Box::new(SqliteBlockHeadersStorage {
             ticker: TEST_COIN_NAME.into(),
+            chain_variant: ChainVariant::Standard,
             conn: Arc::new(Mutex::new(Connection::open_in_memory().unwrap())),
         }),
     };
@@ -501,6 +506,7 @@ fn test_wait_for_payment_spend_timeout_electrum() {
         block_headers_storage,
         StreamingManager::default(),
         abortable_system,
+        ChainVariant::Standard,
     )
     .expect("Expected electrum_client_impl constructed without a problem");
     let client = UtxoRpcClientEnum::Electrum(client);
@@ -526,7 +532,7 @@ fn test_wait_for_payment_spend_timeout_electrum() {
 #[test]
 fn test_search_for_swap_tx_spend_electrum_was_spent() {
     let secret = hex::decode("a1c44607b870cd714a75d5243347fa36debcd3a91ff1f50b79f52d83238a0b2d").unwrap();
-    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS, ChainVariant::RICK);
     let coin = utxo_coin_for_test(
         client.into(),
         Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
@@ -550,7 +556,6 @@ fn test_search_for_swap_tx_spend_electrum_was_spent() {
         search_from_block: 0,
         swap_contract_address: &None,
         swap_unique_data: &[],
-        watcher_reward: false,
     };
     let found = block_on(coin.search_for_swap_tx_spend_my(search_input))
         .unwrap()
@@ -561,7 +566,7 @@ fn test_search_for_swap_tx_spend_electrum_was_spent() {
 #[test]
 fn test_search_for_swap_tx_spend_electrum_was_refunded() {
     let secret_hash = hex::decode("7a752434d4564c11b9333743122dab3a0aa21bd9").unwrap();
-    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS, ChainVariant::RICK);
     let coin = utxo_coin_for_test(
         client.into(),
         Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
@@ -585,7 +590,6 @@ fn test_search_for_swap_tx_spend_electrum_was_refunded() {
         search_from_block: 0,
         swap_contract_address: &None,
         swap_unique_data: &[],
-        watcher_reward: false,
     };
     let found = block_on(coin.search_for_swap_tx_spend_my(search_input))
         .unwrap()
@@ -934,10 +938,7 @@ fn test_withdraw_kmd_rewards_impl(
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
     assert_eq!(tx_details.fee_details, Some(expected_fee));
 
-    let expected_rewards = expected_rewards.map(|amount| KmdRewardsDetails {
-        amount,
-        claimed_by_me: true,
-    });
+    let expected_rewards = expected_rewards.map(|amount| KmdRewardsDetails { amount });
     assert_eq!(tx_details.kmd_rewards, expected_rewards);
 }
 
@@ -1017,7 +1018,7 @@ fn test_withdraw_rick_rewards_none() {
 #[test]
 fn test_utxo_lock() {
     // send several transactions concurrently to check that they are not using same inputs
-    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS, ChainVariant::RICK);
     let coin = utxo_coin_for_test(client.into(), None, false);
     let output = TransactionOutput {
         value: 1000000,
@@ -1036,7 +1037,7 @@ fn test_utxo_lock() {
 
 #[test]
 fn test_spv_proof() {
-    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS, ChainVariant::RICK);
 
     // https://doc.explorer.dexstats.info/tx/a3ebedbe20f82e43708f276152cf7dfb03a6050921c8f266e48c00ab66e891fb
     let tx_str = "0400008085202f8901e15182af2c252bcfbd58884f3bdbd4d85ed036e53cfe2fd1f904ecfea10cb9f2010000006b483045022100d2435e0c9211114271ac452dc47fd08d3d2dc4bdd484d5750ee6bbda41056d520220408bfb236b7028b6fde0e59a1b6522949131a611584cce36c3df1e934c1748630121022d7424c741213a2b9b49aebdaa10e84419e642a8db0a09e359a3d4c850834846ffffffff02a09ba104000000001976a914054407d1a2224268037cfc7ca3bc438d082bedf488acdd28ce9157ba11001976a914046922483fab8ca76b23e55e9d338605e2dbab6088ac03d63665000000000000000000000000000000";
@@ -1071,7 +1072,7 @@ fn get_tx_details_coinbase_transaction() {
     /// https://marty.explorer.dexstats.info/tx/ae3220b868c677c77f8c9bdbc49b42da512260b45af695e672b1c5090815566c
     const TX_HASH: &str = "ae3220b868c677c77f8c9bdbc49b42da512260b45af695e672b1c5090815566c";
 
-    let client = electrum_client_for_test(MARTY_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(MARTY_ELECTRUM_ADDRS, ChainVariant::MORTY);
     let coin = utxo_coin_for_test(
         client.into(),
         Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
@@ -1084,7 +1085,7 @@ fn get_tx_details_coinbase_transaction() {
 
 #[test]
 fn test_electrum_rpc_client_error() {
-    let client = electrum_client_for_test(&["electrum1.cipig.net:10060"]);
+    let client = electrum_client_for_test(&["electrum1.cipig.net:10060"], ChainVariant::Standard);
 
     let empty_hash = H256Json::default();
     let err = block_on_f01(client.get_verbose_transaction(&empty_hash)).unwrap_err();
@@ -1463,26 +1464,32 @@ fn test_generate_tx_fee_is_correct_when_dynamic_fee_is_larger_than_relay() {
 
 #[test]
 fn test_get_median_time_past_from_electrum_kmd() {
-    let client = electrum_client_for_test(&[
-        "electrum1.cipig.net:10001",
-        "electrum2.cipig.net:10001",
-        "electrum3.cipig.net:10001",
-    ]);
+    let client = electrum_client_for_test(
+        &[
+            "electrum1.cipig.net:10001",
+            "electrum2.cipig.net:10001",
+            "electrum3.cipig.net:10001",
+        ],
+        ChainVariant::Standard,
+    );
 
-    let mtp = block_on_f01(client.get_median_time_past(1773390, KMD_MTP_BLOCK_COUNT, CoinVariant::Standard)).unwrap();
+    let mtp = block_on_f01(client.get_median_time_past(1773390, KMD_MTP_BLOCK_COUNT)).unwrap();
     // the MTP is block time of 1773385 in this case
     assert_eq!(1583159915, mtp);
 }
 
 #[test]
 fn test_get_median_time_past_from_electrum_btc() {
-    let client = electrum_client_for_test(&[
-        "electrum1.cipig.net:10000",
-        "electrum2.cipig.net:10000",
-        "electrum3.cipig.net:10000",
-    ]);
+    let client = electrum_client_for_test(
+        &[
+            "electrum1.cipig.net:10000",
+            "electrum2.cipig.net:10000",
+            "electrum3.cipig.net:10000",
+        ],
+        ChainVariant::BTC,
+    );
 
-    let mtp = block_on_f01(client.get_median_time_past(632858, KMD_MTP_BLOCK_COUNT, CoinVariant::Standard)).unwrap();
+    let mtp = block_on_f01(client.get_median_time_past(632858, KMD_MTP_BLOCK_COUNT)).unwrap();
     assert_eq!(1591173041, mtp);
 }
 
@@ -1506,7 +1513,7 @@ fn test_get_median_time_past_from_native_has_median_in_get_block() {
         )
     });
 
-    let mtp = block_on_f01(client.get_median_time_past(632858, KMD_MTP_BLOCK_COUNT, CoinVariant::Standard)).unwrap();
+    let mtp = block_on_f01(client.get_median_time_past(632858, KMD_MTP_BLOCK_COUNT)).unwrap();
     assert_eq!(1591173041, mtp);
 }
 
@@ -1549,7 +1556,7 @@ fn test_get_median_time_past_from_native_does_not_have_median_in_get_block() {
         MockResult::Return(Box::new(futures01::future::ok(block)))
     });
 
-    let mtp = block_on_f01(client.get_median_time_past(632858, KMD_MTP_BLOCK_COUNT, CoinVariant::Standard)).unwrap();
+    let mtp = block_on_f01(client.get_median_time_past(632858, KMD_MTP_BLOCK_COUNT)).unwrap();
     assert_eq!(1591173041, mtp);
 }
 
@@ -1676,10 +1683,12 @@ fn test_network_info_negative_time_offset() {
     let _info: NetworkInfo = json::from_str(info_str).unwrap();
 }
 
+// TODO: Re-enable once Electrum servers are dockerized: https://github.com/KomodoPlatform/komodo-defi-framework/issues/2708
 #[test]
+#[ignore]
 fn test_unavailable_electrum_proto_version() {
     ElectrumClientImpl::try_new_arc.mock_safe(
-        |client_settings, block_headers_storage, streaming_manager, abortable_system, event_handlers| {
+        |client_settings, block_headers_storage, streaming_manager, abortable_system, event_handlers, chain_variant| {
             MockResult::Return(ElectrumClientImpl::with_protocol_version(
                 client_settings,
                 block_headers_storage,
@@ -1687,6 +1696,7 @@ fn test_unavailable_electrum_proto_version() {
                 abortable_system,
                 event_handlers,
                 OrdRange::new(1.8, 1.9).unwrap(),
+                chain_variant,
             ))
         },
     );
@@ -1756,11 +1766,13 @@ fn test_spam_rick() {
     }
 }
 
+// TODO: Re-enable once Electrum servers are dockerized: https://github.com/KomodoPlatform/komodo-defi-framework/issues/2708
 #[test]
+#[ignore]
 fn test_one_unavailable_electrum_proto_version() {
     // First mock with an unrealistically high version requirement that no server would support
     ElectrumClientImpl::try_new_arc.mock_safe(
-        |client_settings, block_headers_storage, streaming_manager, abortable_system, event_handlers| {
+        |client_settings, block_headers_storage, streaming_manager, abortable_system, event_handlers, chain_variant| {
             MockResult::Return(ElectrumClientImpl::with_protocol_version(
                 client_settings,
                 block_headers_storage,
@@ -1768,12 +1780,13 @@ fn test_one_unavailable_electrum_proto_version() {
                 abortable_system,
                 event_handlers,
                 OrdRange::new(7.4, 7.4).unwrap(),
+                chain_variant,
             ))
         },
     );
 
     // Try to connect with the high version requirement - should fail
-    let client = electrum_client_for_test(&["electrum1.cipig.net:10000"]);
+    let client = electrum_client_for_test(&["electrum1.cipig.net:10000"], ChainVariant::BTC);
     // When an electrum server doesn't support our protocol version range, it gets removed by the client,
     // wait a little bit to make sure this is the case.
     block_on(Timer::sleep(2.));
@@ -1788,7 +1801,7 @@ fn test_one_unavailable_electrum_proto_version() {
 
     // Now reset the mock to a supported version
     ElectrumClientImpl::try_new_arc.mock_safe(
-        |client_settings, block_headers_storage, streaming_manager, abortable_system, event_handlers| {
+        |client_settings, block_headers_storage, streaming_manager, abortable_system, event_handlers, chain_variant| {
             MockResult::Return(ElectrumClientImpl::with_protocol_version(
                 client_settings,
                 block_headers_storage,
@@ -1796,6 +1809,7 @@ fn test_one_unavailable_electrum_proto_version() {
                 abortable_system,
                 event_handlers,
                 OrdRange::new(1.4, 1.4).unwrap(),
+                chain_variant,
             ))
         },
     );
@@ -1843,7 +1857,9 @@ fn test_qtum_generate_pod() {
     assert_eq!(expected_res, res.to_string());
 }
 
+// TODO: Re-enable once Electrum servers are dockerized: https://github.com/KomodoPlatform/komodo-defi-framework/issues/2708
 #[test]
+#[ignore]
 fn test_qtum_add_delegation() {
     let keypair = key_pair_from_seed("asthma turtle lizard tone genuine tube hunt valley soap cloth urge alpha amazing frost faculty cycle mammal leaf normal bright topple avoid pulse buffalo").unwrap();
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110, "mature_confirmations":1});
@@ -1919,7 +1935,9 @@ fn test_qtum_add_delegation_on_already_delegating() {
     assert!(res.is_err());
 }
 
+// TODO: Re-enable once Electrum servers are dockerized: https://github.com/KomodoPlatform/komodo-defi-framework/issues/2708
 #[test]
+#[ignore]
 fn test_qtum_get_delegation_infos() {
     let keypair =
         key_pair_from_seed("federal stay trigger hour exist success game vapor become comfort action phone bright ill target wild nasty crumble dune close rare fabric hen iron").unwrap();
@@ -2084,7 +2102,7 @@ fn test_get_mature_unspent_ordered_map_from_cache_impl(
 ) {
     const TX_HASH: &str = "b43f9ed47f7b97d4766b6f1614136fa0c55b9a52c97342428333521fa13ad714";
     let tx_hash: H256Json = <[u8; 32]>::from_hex(TX_HASH).unwrap().into();
-    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS, ChainVariant::RICK);
     let mut verbose = block_on_f01(client.get_verbose_transaction(&tx_hash)).unwrap();
     verbose.confirmations = cached_confs;
     verbose.height = cached_height;
@@ -2784,7 +2802,7 @@ fn test_qtum_is_unspent_mature() {
 #[ignore]
 // TODO it fails at least when fee is 2055837 sat per kbyte, need to investigate
 fn test_get_sender_trade_fee_dynamic_tx_fee() {
-    let rpc_client = electrum_client_for_test(&["electrum1.cipig.net:10071"]);
+    let rpc_client = electrum_client_for_test(&["electrum1.cipig.net:10071"], ChainVariant::Qtum);
     let mut coin_fields = utxo_coin_fields_for_test(
         UtxoRpcClientEnum::Electrum(rpc_client),
         Some("bob passphrase max taker vol with dynamic trade fee"),
@@ -2823,7 +2841,7 @@ fn test_get_sender_trade_fee_dynamic_tx_fee() {
 // TODO: remove when we disable such old style txns
 #[test]
 fn test_validate_old_fee_tx() {
-    let rpc_client = electrum_client_for_test(MARTY_ELECTRUM_ADDRS);
+    let rpc_client = electrum_client_for_test(MARTY_ELECTRUM_ADDRS, ChainVariant::MORTY);
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Electrum(rpc_client), None, false);
     let tx_bytes = hex::decode("0400008085202f8901033aedb3c3c02fc76c15b393c7b1f638cfa6b4a1d502e00d57ad5b5305f12221000000006a473044022074879aabf38ef943eba7e4ce54c444d2d6aa93ac3e60ea1d7d288d7f17231c5002205e1671a62d8c031ac15e0e8456357e54865b7acbf49c7ebcba78058fd886b4bd012103242d9cb2168968d785f6914c494c303ff1c27ba0ad882dbc3c15cfa773ea953cffffffff0210270000000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ac4802d913000000001976a914902053231ef0541a7628c11acac40d30f2a127bd88ac008e3765000000000000000000000000000000").unwrap();
     let taker_fee_tx = coin.tx_enum_from_bytes(&tx_bytes).unwrap();
@@ -2843,7 +2861,7 @@ fn test_validate_old_fee_tx() {
 
 #[test]
 fn test_validate_fee_wrong_sender() {
-    let rpc_client = electrum_client_for_test(MARTY_ELECTRUM_ADDRS);
+    let rpc_client = electrum_client_for_test(MARTY_ELECTRUM_ADDRS, ChainVariant::MORTY);
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Electrum(rpc_client), None, false);
     // https://marty.explorer.dexstats.info/tx/99349d1c72ef396ecb39ab2989b888b02e22382249271c79cda8139825adc468
     let tx_bytes = hex::decode("0400008085202f8901033aedb3c3c02fc76c15b393c7b1f638cfa6b4a1d502e00d57ad5b5305f12221000000006a473044022074879aabf38ef943eba7e4ce54c444d2d6aa93ac3e60ea1d7d288d7f17231c5002205e1671a62d8c031ac15e0e8456357e54865b7acbf49c7ebcba78058fd886b4bd012103242d9cb2168968d785f6914c494c303ff1c27ba0ad882dbc3c15cfa773ea953cffffffff0210270000000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ac4802d913000000001976a914902053231ef0541a7628c11acac40d30f2a127bd88ac008e3765000000000000000000000000000000").unwrap();
@@ -2866,7 +2884,7 @@ fn test_validate_fee_wrong_sender() {
 
 #[test]
 fn test_validate_fee_min_block() {
-    let rpc_client = electrum_client_for_test(MARTY_ELECTRUM_ADDRS);
+    let rpc_client = electrum_client_for_test(MARTY_ELECTRUM_ADDRS, ChainVariant::MORTY);
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Electrum(rpc_client), None, false);
     // https://marty.explorer.dexstats.info/tx/99349d1c72ef396ecb39ab2989b888b02e22382249271c79cda8139825adc468
     let tx_bytes = hex::decode("0400008085202f8901033aedb3c3c02fc76c15b393c7b1f638cfa6b4a1d502e00d57ad5b5305f12221000000006a473044022074879aabf38ef943eba7e4ce54c444d2d6aa93ac3e60ea1d7d288d7f17231c5002205e1671a62d8c031ac15e0e8456357e54865b7acbf49c7ebcba78058fd886b4bd012103242d9cb2168968d785f6914c494c303ff1c27ba0ad882dbc3c15cfa773ea953cffffffff0210270000000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ac4802d913000000001976a914902053231ef0541a7628c11acac40d30f2a127bd88ac008e3765000000000000000000000000000000").unwrap();
@@ -2890,11 +2908,14 @@ fn test_validate_fee_min_block() {
 #[test]
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/857
 fn test_validate_fee_bch_70_bytes_signature() {
-    let rpc_client = electrum_client_for_test(&[
-        "electrum1.cipig.net:10055",
-        "electrum2.cipig.net:10055",
-        "electrum3.cipig.net:10055",
-    ]);
+    let rpc_client = electrum_client_for_test(
+        &[
+            "electrum1.cipig.net:10055",
+            "electrum2.cipig.net:10055",
+            "electrum3.cipig.net:10055",
+        ],
+        ChainVariant::BTC,
+    );
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Electrum(rpc_client), None, false);
     // https://blockchair.com/bitcoin-cash/transaction/ccee05a6b5bbc6f50d2a65a5a3a04690d3e2d81082ad57d3ab471189f53dd70d
     let tx_bytes = hex::decode("0100000002cae89775f264e50f14238be86a7184b7f77bfe26f54067b794c546ec5eb9c91a020000006b483045022100d6ed080f722a0637a37552382f462230cc438984bc564bdb4b7094f06cfa38fa022062304a52602df1fbb3bebac4f56e1632ad456f62d9031f4983f07e546c8ec4d8412102ae7dc4ef1b49aadeff79cfad56664105f4d114e1716bc4f930cb27dbd309e521ffffffff11f386a6fe8f0431cb84f549b59be00f05e78f4a8a926c5e023a0d5f9112e8200000000069463043021f17eb93ed20a6f2cd357eabb41a4ec6329000ddc6d5b42ecbe642c5d41b206a022026bc4920c4ce3af751283574baa8e4a3efd4dad0d8fe6ba3ddf5d75628d36fda412102ae7dc4ef1b49aadeff79cfad56664105f4d114e1716bc4f930cb27dbd309e521ffffffff0210270000000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ac57481c00000000001976a914bac11ce4cd2b1df2769c470d09b54f86df737e3c88ac035b4a60").unwrap();
@@ -2958,22 +2979,28 @@ fn firo_verbose_block_deserialize() {
 fn firo_lelantus_tx() {
     // https://explorer.firo.org/tx/06ed4b75010edcf404a315be70903473f44050c978bc37fbcee90e0b49114ba8
     let tx_hash = "06ed4b75010edcf404a315be70903473f44050c978bc37fbcee90e0b49114ba8".into();
-    let electrum = electrum_client_for_test(&[
-        "electrumx01.firo.org:50001",
-        "electrumx02.firo.org:50001",
-        "electrumx03.firo.org:50001",
-    ]);
+    let electrum = electrum_client_for_test(
+        &[
+            "electrumx01.firo.org:50001",
+            "electrumx02.firo.org:50001",
+            "electrumx03.firo.org:50001",
+        ],
+        ChainVariant::Standard,
+    );
     let _tx = block_on_f01(electrum.get_verbose_transaction(&tx_hash)).unwrap();
 }
 
 #[test]
 fn firo_lelantus_tx_details() {
     // https://explorer.firo.org/tx/06ed4b75010edcf404a315be70903473f44050c978bc37fbcee90e0b49114ba8
-    let electrum = electrum_client_for_test(&[
-        "electrumx01.firo.org:50001",
-        "electrumx02.firo.org:50001",
-        "electrumx03.firo.org:50001",
-    ]);
+    let electrum = electrum_client_for_test(
+        &[
+            "electrumx01.firo.org:50001",
+            "electrumx02.firo.org:50001",
+            "electrumx03.firo.org:50001",
+        ],
+        ChainVariant::Standard,
+    );
     let coin = utxo_coin_for_test(electrum.into(), None, false);
 
     let tx_details = get_tx_details_eq_for_both_versions(
@@ -3003,22 +3030,28 @@ fn firo_lelantus_tx_details() {
 fn firo_spark_tx() {
     // https://explorer.firo.org/tx/c50e5a3f16744ac86bacae28d9251a29bf754d250592bce16a953cd961b584d5
     let tx_hash = "c50e5a3f16744ac86bacae28d9251a29bf754d250592bce16a953cd961b584d5".into();
-    let electrum = electrum_client_for_test(&[
-        "electrumx01.firo.org:50001",
-        "electrumx02.firo.org:50001",
-        "electrumx03.firo.org:50001",
-    ]);
+    let electrum = electrum_client_for_test(
+        &[
+            "electrumx01.firo.org:50001",
+            "electrumx02.firo.org:50001",
+            "electrumx03.firo.org:50001",
+        ],
+        ChainVariant::Standard,
+    );
     let _tx = block_on_f01(electrum.get_verbose_transaction(&tx_hash)).unwrap();
 }
 
 #[test]
 fn firo_spark_tx_details() {
     // https://explorer.firo.org/tx/c50e5a3f16744ac86bacae28d9251a29bf754d250592bce16a953cd961b584d5
-    let electrum = electrum_client_for_test(&[
-        "electrumx01.firo.org:50001",
-        "electrumx02.firo.org:50001",
-        "electrumx03.firo.org:50001",
-    ]);
+    let electrum = electrum_client_for_test(
+        &[
+            "electrumx01.firo.org:50001",
+            "electrumx02.firo.org:50001",
+            "electrumx03.firo.org:50001",
+        ],
+        ChainVariant::Standard,
+    );
     let coin = utxo_coin_for_test(electrum.into(), None, false);
 
     let tx_details = get_tx_details_eq_for_both_versions(
@@ -3142,13 +3175,15 @@ fn test_generate_tx_doge_fee() {
 
 #[test]
 fn doge_mtp() {
-    let electrum = electrum_client_for_test(&[
-        "electrum1.cipig.net:10060",
-        "electrum2.cipig.net:10060",
-        "electrum3.cipig.net:10060",
-    ]);
-    let mtp = block_on_f01(electrum.get_median_time_past(3631820, NonZeroU64::new(11).unwrap(), CoinVariant::Standard))
-        .unwrap();
+    let electrum = electrum_client_for_test(
+        &[
+            "electrum1.cipig.net:10060",
+            "electrum2.cipig.net:10060",
+            "electrum3.cipig.net:10060",
+        ],
+        ChainVariant::Standard,
+    );
+    let mtp = block_on_f01(electrum.get_median_time_past(3631820, NonZeroU64::new(11).unwrap())).unwrap();
     assert_eq!(mtp, 1614849084);
 }
 
@@ -3232,100 +3267,118 @@ fn test_parse_fixed_dingo_txfee_config() {
 
 #[test]
 fn firo_mtp() {
-    let electrum = electrum_client_for_test(&[
-        "electrumx01.firo.org:50001",
-        "electrumx02.firo.org:50001",
-        "electrumx03.firo.org:50001",
-    ]);
-    let mtp = block_on_f01(electrum.get_median_time_past(356730, NonZeroU64::new(11).unwrap(), CoinVariant::Standard))
-        .unwrap();
+    let electrum = electrum_client_for_test(
+        &[
+            "electrumx01.firo.org:50001",
+            "electrumx02.firo.org:50001",
+            "electrumx03.firo.org:50001",
+        ],
+        ChainVariant::Standard,
+    );
+    let mtp = block_on_f01(electrum.get_median_time_past(356730, NonZeroU64::new(11).unwrap())).unwrap();
     assert_eq!(mtp, 1616492629);
 }
 
 #[test]
 fn verus_mtp() {
-    let electrum = electrum_client_for_test(&["el0.verus.io:17485", "el1.verus.io:17485", "el2.verus.io:17485"]);
-    let mtp = block_on_f01(electrum.get_median_time_past(1480113, NonZeroU64::new(11).unwrap(), CoinVariant::Standard))
-        .unwrap();
+    let electrum = electrum_client_for_test(
+        &["el0.verus.io:17485", "el1.verus.io:17485", "el2.verus.io:17485"],
+        ChainVariant::Standard,
+    );
+    let mtp = block_on_f01(electrum.get_median_time_past(1480113, NonZeroU64::new(11).unwrap())).unwrap();
     assert_eq!(mtp, 1618579909);
 }
 
 #[test]
 fn sys_mtp() {
-    let electrum = electrum_client_for_test(&[
-        "electrum1.cipig.net:10064",
-        "electrum2.cipig.net:10064",
-        "electrum3.cipig.net:10064",
-    ]);
-    let mtp = block_on_f01(electrum.get_median_time_past(1006678, NonZeroU64::new(11).unwrap(), CoinVariant::Standard))
-        .unwrap();
+    let electrum = electrum_client_for_test(
+        &[
+            "electrum1.cipig.net:10064",
+            "electrum2.cipig.net:10064",
+            "electrum3.cipig.net:10064",
+        ],
+        ChainVariant::Standard,
+    );
+    let mtp = block_on_f01(electrum.get_median_time_past(1006678, NonZeroU64::new(11).unwrap())).unwrap();
     assert_eq!(mtp, 1620019628);
 }
 
 #[test]
 fn btc_mtp() {
-    let electrum = electrum_client_for_test(&[
-        "electrum1.cipig.net:10000",
-        "electrum2.cipig.net:10000",
-        "electrum3.cipig.net:10000",
-    ]);
-    let mtp = block_on_f01(electrum.get_median_time_past(681659, NonZeroU64::new(11).unwrap(), CoinVariant::Standard))
-        .unwrap();
+    let electrum = electrum_client_for_test(
+        &[
+            "electrum1.cipig.net:10000",
+            "electrum2.cipig.net:10000",
+            "electrum3.cipig.net:10000",
+        ],
+        ChainVariant::BTC,
+    );
+    let mtp = block_on_f01(electrum.get_median_time_past(681659, NonZeroU64::new(11).unwrap())).unwrap();
     assert_eq!(mtp, 1620019527);
 }
 
 #[test]
 fn rvn_mtp() {
-    let electrum = electrum_client_for_test(&[
-        "electrum1.cipig.net:10051",
-        "electrum2.cipig.net:10051",
-        "electrum3.cipig.net:10051",
-    ]);
-    let mtp =
-        block_on_f01(electrum.get_median_time_past(1968120, NonZeroU64::new(11).unwrap(), CoinVariant::RVN)).unwrap();
+    let electrum = electrum_client_for_test(
+        &[
+            "electrum1.cipig.net:10051",
+            "electrum2.cipig.net:10051",
+            "electrum3.cipig.net:10051",
+        ],
+        ChainVariant::RVN,
+    );
+    let mtp = block_on_f01(electrum.get_median_time_past(1968120, NonZeroU64::new(11).unwrap())).unwrap();
     assert_eq!(mtp, 1633946264);
 }
 
 #[test]
 fn pivx_mtp() {
-    let electrum = electrum_client_for_test(&["electrum01.chainster.org:50001", "electrum02.chainster.org:50001"]);
-    let mtp =
-        block_on_f01(electrum.get_median_time_past(5014894, NonZeroU64::new(11).unwrap(), CoinVariant::PIVX)).unwrap();
+    let electrum = electrum_client_for_test(
+        &["electrum01.chainster.org:50001", "electrum02.chainster.org:50001"],
+        ChainVariant::PIVX,
+    );
+    let mtp = block_on_f01(electrum.get_median_time_past(5014894, NonZeroU64::new(11).unwrap())).unwrap();
     assert_eq!(mtp, 1754356500);
 }
 
 #[test]
 fn qtum_mtp() {
-    let electrum = electrum_client_for_test(&[
-        "electrum1.cipig.net:10050",
-        "electrum2.cipig.net:10050",
-        "electrum3.cipig.net:10050",
-    ]);
-    let mtp =
-        block_on_f01(electrum.get_median_time_past(681659, NonZeroU64::new(11).unwrap(), CoinVariant::Qtum)).unwrap();
+    let electrum = electrum_client_for_test(
+        &[
+            "electrum1.cipig.net:10050",
+            "electrum2.cipig.net:10050",
+            "electrum3.cipig.net:10050",
+        ],
+        ChainVariant::Qtum,
+    );
+    let mtp = block_on_f01(electrum.get_median_time_past(681659, NonZeroU64::new(11).unwrap())).unwrap();
     assert_eq!(mtp, 1598854128);
 }
 
 #[test]
 fn zer_mtp() {
-    let electrum = electrum_client_for_test(&[
-        "electrum1.cipig.net:10065",
-        "electrum2.cipig.net:10065",
-        "electrum3.cipig.net:10065",
-    ]);
-    let mtp = block_on_f01(electrum.get_median_time_past(1130915, NonZeroU64::new(11).unwrap(), CoinVariant::Standard))
-        .unwrap();
+    let electrum = electrum_client_for_test(
+        &[
+            "electrum1.cipig.net:10065",
+            "electrum2.cipig.net:10065",
+            "electrum3.cipig.net:10065",
+        ],
+        ChainVariant::Standard,
+    );
+    let mtp = block_on_f01(electrum.get_median_time_past(1130915, NonZeroU64::new(11).unwrap())).unwrap();
     assert_eq!(mtp, 1623240214);
 }
 
 #[test]
-#[ignore]
 fn test_tx_details_kmd_rewards() {
-    let electrum = electrum_client_for_test(&[
-        "electrum1.cipig.net:10001",
-        "electrum2.cipig.net:10001",
-        "electrum3.cipig.net:10001",
-    ]);
+    let electrum = electrum_client_for_test(
+        &[
+            "electrum1.cipig.net:10001",
+            "electrum2.cipig.net:10001",
+            "electrum3.cipig.net:10001",
+        ],
+        ChainVariant::Standard,
+    );
     let mut fields = utxo_coin_fields_for_test(electrum.into(), None, false);
     fields.conf.ticker = "KMD".to_owned();
     fields.derivation_method = DerivationMethod::SingleAddress(
@@ -3333,10 +3386,11 @@ fn test_tx_details_kmd_rewards() {
     );
     let coin = utxo_coin_from_fields(fields);
 
-    let tx_details = get_tx_details_eq_for_both_versions(
+    let mut tx_details = get_tx_details_eq_for_both_versions(
         &coin,
         "535ffa3387d3fca14f4a4d373daf7edf00e463982755afce89bc8c48d8168024",
     );
+    block_on(coin.update_kmd_rewards(&mut tx_details, &mut HashMap::new())).expect("!update_kmd_rewards");
 
     let expected_fee = TxFeeDetails::Utxo(UtxoFeeDetails {
         coin: Some("KMD".into()),
@@ -3346,25 +3400,26 @@ fn test_tx_details_kmd_rewards() {
 
     let expected_kmd_rewards = KmdRewardsDetails {
         amount: BigDecimal::from_str("0.10431954").unwrap(),
-        claimed_by_me: true,
     };
     assert_eq!(tx_details.kmd_rewards, Some(expected_kmd_rewards));
 }
 
-/// If the ticker is `KMD` AND no rewards were accrued due to a value less than 10 or for any other reasons,
-/// then `TransactionDetails::kmd_rewards` has to be `Some(0)`, not `None`.
 /// https://kmdexplorer.io/tx/f09e8894959e74c1e727ffa5a753a30bf2dc6d5d677cc1f24b7ee5bb64e32c7d
+/// If the rewards were not claimed by us (claimed by a different address than `my_address`), `kmd_rewards`
+/// should still show up in the transaction details (as it's independent of `my_address`).
 #[test]
-#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_tx_details_kmd_rewards_claimed_by_other() {
     const TX_HASH: &str = "f09e8894959e74c1e727ffa5a753a30bf2dc6d5d677cc1f24b7ee5bb64e32c7d";
 
-    let electrum = electrum_client_for_test(&[
-        "electrum1.cipig.net:10001",
-        "electrum2.cipig.net:10001",
-        "electrum3.cipig.net:10001",
-    ]);
+    let electrum = electrum_client_for_test(
+        &[
+            "electrum1.cipig.net:10001",
+            "electrum2.cipig.net:10001",
+            "electrum3.cipig.net:10001",
+        ],
+        ChainVariant::Standard,
+    );
     let mut fields = utxo_coin_fields_for_test(electrum.into(), None, false);
     fields.conf.ticker = "KMD".to_owned();
     fields.derivation_method = DerivationMethod::SingleAddress(
@@ -3372,7 +3427,8 @@ fn test_tx_details_kmd_rewards_claimed_by_other() {
     );
     let coin = utxo_coin_from_fields(fields);
 
-    let tx_details = get_tx_details_eq_for_both_versions(&coin, TX_HASH);
+    let mut tx_details = get_tx_details_eq_for_both_versions(&coin, TX_HASH);
+    block_on(coin.update_kmd_rewards(&mut tx_details, &mut HashMap::new())).expect("!update_kmd_rewards");
 
     let expected_fee = TxFeeDetails::Utxo(UtxoFeeDetails {
         coin: Some("KMD".into()),
@@ -3380,18 +3436,17 @@ fn test_tx_details_kmd_rewards_claimed_by_other() {
     });
     assert_eq!(tx_details.fee_details, Some(expected_fee));
 
-    let expected_kmd_rewards = KmdRewardsDetails {
-        amount: BigDecimal::from_str("0.00022428").unwrap(),
-        claimed_by_me: false,
-    };
-    assert_eq!(tx_details.kmd_rewards, Some(expected_kmd_rewards));
+    assert_eq!(
+        tx_details.kmd_rewards.unwrap().amount,
+        BigDecimal::from_str("0.00022428").unwrap()
+    );
 }
 
 #[test]
 fn test_tx_details_bch_no_rewards() {
     const TX_HASH: &str = "eb13d926f15cbb896e0bcc7a1a77a4ec63504e57a1524c13a7a9b80f43ecb05c";
 
-    let electrum = electrum_client_for_test(T_BCH_ELECTRUMS);
+    let electrum = electrum_client_for_test(T_BCH_ELECTRUMS, ChainVariant::BTC);
     let coin = utxo_coin_for_test(electrum.into(), None, false);
 
     let tx_details = get_tx_details_eq_for_both_versions(&coin, TX_HASH);
@@ -3408,11 +3463,14 @@ fn test_update_kmd_rewards() {
     // 535ffa3387d3fca14f4a4d373daf7edf00e463982755afce89bc8c48d8168024
     const OUTDATED_TX_DETAILS: &str = r#"{"tx_hex":"0400008085202f8901afcadb73880bc1c9e7ce96b8274c2e2a4547415e649f425f98791685be009b73020000006b483045022100b8fbb77efea482b656ad16fc53c5a01d289054c2e429bf1d7bab16c3e822a83602200b87368a95c046b2ce6d0d092185138a3f234a7eb0d7f8227b196ef32358b93f012103b1e544ce2d860219bc91314b5483421a553a7b33044659eff0be9214ed58adddffffffff01dd15c293000000001976a91483762a373935ca241d557dfce89171d582b486de88ac99fe9960000000000000000000000000000000","tx_hash":"535ffa3387d3fca14f4a4d373daf7edf00e463982755afce89bc8c48d8168024","from":["RMGJ9tRST45RnwEKHPGgBLuY3moSYP7Mhk"],"to":["RMGJ9tRST45RnwEKHPGgBLuY3moSYP7Mhk"],"total_amount":"24.68539379","spent_by_me":"24.68539379","received_by_me":"24.78970333","my_balance_change":"0.10430954","block_height":2387532,"timestamp":1620705483,"fee_details":{"type":"Utxo","amount":"-0.10430954"},"coin":"KMD","internal_id":"535ffa3387d3fca14f4a4d373daf7edf00e463982755afce89bc8c48d8168024"}"#;
 
-    let electrum = electrum_client_for_test(&[
-        "electrum1.cipig.net:10001",
-        "electrum2.cipig.net:10001",
-        "electrum3.cipig.net:10001",
-    ]);
+    let electrum = electrum_client_for_test(
+        &[
+            "electrum1.cipig.net:10001",
+            "electrum2.cipig.net:10001",
+            "electrum3.cipig.net:10001",
+        ],
+        ChainVariant::Standard,
+    );
     let mut fields = utxo_coin_fields_for_test(electrum.into(), None, false);
     fields.conf.ticker = "KMD".to_owned();
     fields.derivation_method = DerivationMethod::SingleAddress(
@@ -3426,41 +3484,6 @@ fn test_update_kmd_rewards() {
 
     let expected_rewards = KmdRewardsDetails {
         amount: BigDecimal::from_str("0.10431954").unwrap(),
-        claimed_by_me: true,
-    };
-    assert_eq!(tx_details.kmd_rewards, Some(expected_rewards));
-
-    let expected_fee_details = TxFeeDetails::Utxo(UtxoFeeDetails {
-        coin: Some("KMD".into()),
-        amount: BigDecimal::from_str("0.00001").unwrap(),
-    });
-    assert_eq!(tx_details.fee_details, Some(expected_fee_details));
-}
-
-#[test]
-fn test_update_kmd_rewards_claimed_not_by_me() {
-    // The custom 535ffa3387d3fca14f4a4d373daf7edf00e463982755afce89bc8c48d8168024 transaction with the additional 'from' address.
-    const OUTDATED_TX_DETAILS: &str = r#"{"tx_hex":"0400008085202f8901afcadb73880bc1c9e7ce96b8274c2e2a4547415e649f425f98791685be009b73020000006b483045022100b8fbb77efea482b656ad16fc53c5a01d289054c2e429bf1d7bab16c3e822a83602200b87368a95c046b2ce6d0d092185138a3f234a7eb0d7f8227b196ef32358b93f012103b1e544ce2d860219bc91314b5483421a553a7b33044659eff0be9214ed58adddffffffff01dd15c293000000001976a91483762a373935ca241d557dfce89171d582b486de88ac99fe9960000000000000000000000000000000","tx_hash":"535ffa3387d3fca14f4a4d373daf7edf00e463982755afce89bc8c48d8168024","from":["RMGJ9tRST45RnwEKHPGgBLuY3moSYP7Mhk", "RMDc4fvQeekJwrXxuaw1R2b7CTPEuVguMP"],"to":["RMGJ9tRST45RnwEKHPGgBLuY3moSYP7Mhk"],"total_amount":"24.68539379","spent_by_me":"24.68539379","received_by_me":"24.78970333","my_balance_change":"0.10430954","block_height":2387532,"timestamp":1620705483,"fee_details":{"type":"Utxo","amount":"-0.10430954"},"coin":"KMD","internal_id":"535ffa3387d3fca14f4a4d373daf7edf00e463982755afce89bc8c48d8168024"}"#;
-
-    let electrum = electrum_client_for_test(&[
-        "electrum1.cipig.net:10001",
-        "electrum2.cipig.net:10001",
-        "electrum3.cipig.net:10001",
-    ]);
-    let mut fields = utxo_coin_fields_for_test(electrum.into(), None, false);
-    fields.conf.ticker = "KMD".to_owned();
-    fields.derivation_method = DerivationMethod::SingleAddress(
-        Address::from_legacyaddress("RMGJ9tRST45RnwEKHPGgBLuY3moSYP7Mhk", &KMD_PREFIXES).unwrap(),
-    );
-    let coin = utxo_coin_from_fields(fields);
-
-    let mut input_transactions = HistoryUtxoTxMap::default();
-    let mut tx_details: TransactionDetails = json::from_str(OUTDATED_TX_DETAILS).unwrap();
-    block_on(coin.update_kmd_rewards(&mut tx_details, &mut input_transactions)).expect("!update_kmd_rewards");
-
-    let expected_rewards = KmdRewardsDetails {
-        amount: BigDecimal::from_str("0.10431954").unwrap(),
-        claimed_by_me: false,
     };
     assert_eq!(tx_details.kmd_rewards, Some(expected_rewards));
 
@@ -3836,7 +3859,7 @@ fn test_qtum_without_check_utxo_maturity() {
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
 
     let priv_key = Secp256k1Secret::from([1; 32]);
-    let coin = block_on(qtum_coin_with_priv_key(&ctx, "QTUM", &conf, &params, priv_key)).unwrap();
+    let coin = block_on(qtum_coin_with_priv_key(&ctx, "tQTUM", &conf, &params, priv_key)).unwrap();
 
     let address = Address::from_legacyaddress(
         "qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE",
@@ -3883,7 +3906,7 @@ fn test_split_qtum() {
     });
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let coin = block_on(qtum_coin_with_priv_key(&ctx, "QTUM", &conf, &params, priv_key)).unwrap();
+    let coin = block_on(qtum_coin_with_priv_key(&ctx, "tQTUM", &conf, &params, priv_key)).unwrap();
     let p2pkh_address = block_on(coin.as_ref().derivation_method.unwrap_single_addr());
     let script: Script = output_script(&p2pkh_address).expect("valid previous script must be built");
     let key_pair = coin.as_ref().priv_key_policy.activated_key_or_err().unwrap();
@@ -4311,7 +4334,7 @@ fn test_qtum_with_check_utxo_maturity_false() {
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
 
     let priv_key = Secp256k1Secret::from([1; 32]);
-    let coin = block_on(qtum_coin_with_priv_key(&ctx, "QTUM", &conf, &params, priv_key)).unwrap();
+    let coin = block_on(qtum_coin_with_priv_key(&ctx, "tQTUM", &conf, &params, priv_key)).unwrap();
 
     let address = Address::from_legacyaddress(
         "qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE",
@@ -5145,7 +5168,7 @@ fn test_electrum_balance_deserializing() {
 
 #[test]
 fn test_electrum_display_balances() {
-    let rpc_client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
+    let rpc_client = electrum_client_for_test(DOC_ELECTRUM_ADDRS, ChainVariant::RICK);
     block_on(utxo_common_tests::test_electrum_display_balances(&rpc_client));
 }
 
@@ -5153,7 +5176,7 @@ fn test_electrum_display_balances() {
 fn test_for_non_existent_tx_hex_utxo_electrum() {
     // This test shouldn't wait till timeout!
     let timeout = wait_until_sec(120);
-    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS, ChainVariant::RICK);
     let coin = utxo_coin_for_test(
         client.into(),
         Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
@@ -5238,7 +5261,7 @@ fn test_native_display_balances() {
 
 #[test]
 fn test_message_hash() {
-    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS, ChainVariant::RICK);
     let coin = utxo_coin_for_test(
         client.into(),
         Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
@@ -5252,7 +5275,7 @@ fn test_message_hash() {
 
 #[test]
 fn test_sign_verify_message() {
-    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS, ChainVariant::RICK);
     let coin = utxo_coin_for_test(
         client.into(),
         Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
@@ -5273,7 +5296,7 @@ fn test_sign_verify_message() {
 
 #[test]
 fn test_sign_verify_message_segwit() {
-    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS, ChainVariant::RICK);
     let coin = utxo_coin_for_test(
         client.into(),
         Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
@@ -5300,7 +5323,7 @@ fn test_sign_verify_message_segwit() {
 
 #[test]
 fn test_tx_enum_from_bytes() {
-    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS, ChainVariant::RICK);
     let coin = utxo_coin_for_test(client.into(), None, false);
 
     let tx_hex = hex::decode("01000000017b1eabe0209b1fe794124575ef807057c77ada2138ae4fa8d6c4de0398a14f3f00000000494830450221008949f0cb400094ad2b5eb399d59d01c14d73d8fe6e96df1a7150deb388ab8935022079656090d7f6bac4c9a94e0aad311a4268e082a725f8aeae0573fb12ff866a5f01ffffffff01f0ca052a010000001976a914cbc20a7664f2f69e5355aa427045bc15e7c6c77288ac00000000").unwrap();
@@ -5318,7 +5341,7 @@ fn test_tx_enum_from_bytes() {
 
 #[test]
 fn test_hd_utxo_tx_history() {
-    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS, ChainVariant::RICK);
     block_on(utxo_common_tests::test_hd_utxo_tx_history_impl(client));
 }
 
@@ -5415,9 +5438,36 @@ fn test_block_header_utxo_loop() {
     let loop_fut = async move { block_header_utxo_loop(weak_client, loop_handle, spv_conf.unwrap()).await };
 
     let test_fut = async move {
+        // Helper to poll until target height is reached and expected steps are consumed
+        async fn wait_for_height(
+            client: &ElectrumClient,
+            expected_steps: &Arc<Mutex<Vec<(u64, u64)>>>,
+            target_height: u64,
+        ) {
+            repeatable!(async {
+                let height = client
+                    .block_headers_storage()
+                    .get_last_block_height()
+                    .await
+                    .ok()
+                    .flatten()
+                    .unwrap_or(0);
+                let steps_empty = expected_steps.lock().unwrap().is_empty();
+                if height >= target_height && steps_empty {
+                    Ready(())
+                } else {
+                    Retry(())
+                }
+            })
+            .repeat_every(Duration::from_millis(100))
+            .with_timeout_ms(30_000)
+            .await
+            .expect("Timed out waiting for block headers to sync");
+        }
+
         *expected_steps.lock().unwrap() = vec![(2, 5), (6, 9), (10, 13), (14, 14)];
         CURRENT_BLOCK_COUNT.store(14, Ordering::Relaxed);
-        Timer::sleep(3.).await;
+        wait_for_height(&client, &expected_steps, 14).await;
         let get_headers_count = client
             .block_headers_storage()
             .get_last_block_height()
@@ -5429,7 +5479,7 @@ fn test_block_header_utxo_loop() {
 
         *expected_steps.lock().unwrap() = vec![(15, 18)];
         CURRENT_BLOCK_COUNT.store(18, Ordering::Relaxed);
-        Timer::sleep(2.).await;
+        wait_for_height(&client, &expected_steps, 18).await;
         let get_headers_count = client
             .block_headers_storage()
             .get_last_block_height()
@@ -5441,7 +5491,7 @@ fn test_block_header_utxo_loop() {
 
         *expected_steps.lock().unwrap() = vec![(19, 19)];
         CURRENT_BLOCK_COUNT.store(19, Ordering::Relaxed);
-        Timer::sleep(2.).await;
+        wait_for_height(&client, &expected_steps, 19).await;
         let get_headers_count = client
             .block_headers_storage()
             .get_last_block_height()
@@ -5463,7 +5513,6 @@ fn test_block_header_utxo_loop() {
 
             assert_eq!(header, None);
         }
-        Timer::sleep(2.).await;
     };
 
     if let Either::Left(_) = block_on(futures::future::select(loop_fut.boxed(), test_fut.boxed())) {
@@ -5533,7 +5582,7 @@ fn rick_blocker_5() -> BlockHeader {
     let header =
         "0400000028a4f1aa8be606c8bf8195b2e95d478a83314ff9ad7b017457d9e58d00d1710bb43f41db65677e3fdb83ddbd8cfb4a7ad2e110f74bc19726dc949576e003a1ecfbc2f4300c01f0b7820d00e3347c8da4ee614674376cbc45359daa54f9b5493e381b405d0f0f0f2001003cfb15008ad9f4fab1ff4076f8919f743193f007c0db28f5106e003b0000fd400500acba878991f600ed8c022758be9ff9752ef175e7530324df4d1b87f5a03ca5c2c3fce10b08743bd5ba03912703b8f305f7dd382487d437d9b1823cdc11a00f59a20b235ef57502a0a7ad6fc7d3d242e8f4477a01fb8834ac4dc6e2e40e4909f9edc0db07c0f98df40e5a61327311b005c98a727694ebaabcb366b92dda4af9e3f6e72c5461dd81d6daccbd1fca8ec17597df7585947b54deb83554859776b5bcefadfa566ff12c04ac624f9416e76beccec35694ae0ed11dc17a911f114225be62cf5b971628f364f57d8348d95fdc415b0d2a7a477ea130d3320108739edf761f85f81efd6c0e4eafa8166b05bd74af7928b0786b63ae499dba38065be13e7541b7f4e26727d0fa6887e265e09709b940ca87295ce5984de7d4058b5d340b162935fa46ee20cac955379e3c8fa1ff92fb354bb2a0fedf697b683a5875f4ed2bcef984d296b0c1e07a52920f1dd5a60140c7c1245a52ed196df3292db8bfff52923b0a8615b6a99a5fcf1e5f461f01a04b1c3bb517fe16553e1f8e8aa20bd3cc2cac6d3242a2ce373737b57cec4637907fd236e0d44d91d59533484ec23634b93645c10a858d83805d731f300aa27a162e172216d7fc21170b4d232767e4c66f9a871224f13480e89c2edb0e6e1ef5cf75d9203839cc0282fd7852319232057f30793bb5552d94ebf3ffcc67b73f44e80c3de79b9d8d7f0175939722054bc2ddfb84288dff8c7554f191d6ee1b65c40b75d4435712d4e88c64d6379ab7e578bcd8117501504faa7a3be3a6a2826fd7a3e5e9efb1d3642937f3a35be5793be8e1d4acf9dd2dcd356d6e4c7d0c8b87587b8ad901b9ce71792ae0bdae27811b52300e6809e4691bfc7f738252e7c197e228cce5fda6130f8f518e5059530b731fe8afbf51308aa8da3bd31b1d1eb22cca1a896aed281397925265cd861a7eadb80124363dec8cb508aea7c277f04b9841888dd932471349e651ce2622a59065932f463ffce6b19a975d6914336ab49394afd17dfb9a448157007ea1437b1483587bc7de0dec5103cafad76704e91e9ea2b0b9a8570b935d5c65478e7195b08161be4625b8d5fd3658e6164cf2d6898ecbf1f14945fdd75bb991a3d9ffac713a3a7a81a31a765b9c37a578976aa15e66c97c957f4651dc5fc492c2111d8724d375a8293a36e0ddcf2a01facf30401d8677611522882e1447e4c8be5fa9ad073fb3fdcc6f673981484089090fe4c05bfaae173503e0f99c7407b297852d216463924d365d26b4cd63401a46bd7ed969ddb235044eb2373645144976c7f713720c0238ade9d3aae1d2b153e82d093232d4b12b2108ec564ae0e855e09252f1434c28d90bb298ab6d1750498bf90d93c8797901911548b81af1ba185be52c0dff9c1b11812941d2d527c95c4382879298f364077710b5efd56d1bf39148aedc4fcd9e8bddb4c36a3f901dc11f9493d1fbdfe80c88fa8866c1465c939c0d71cb57e78822b5fc3023578aa2d6b9cd3ebaa54f22876b935f251183d8a68459cab30cd19bcb4e4c1e1a5a83e4687a4795dc23732e81b9f024f70db96e412831d26e61d4fa292a95648e0b614d9a148cd852df1bf26a34ea971e63f8c634133ab7b13ac8045f6d6e20af2313b38d12cb8cee54a7aba7a7cd7e8b1b5e0b0931d4665a0bb36b63f325161b571fdd4f159f470e443e9b0cfb193bf4eea5fa9715dc6132cb8ed97f7f097837471a5147d14f2066cd3dcd50460d70180a7a24e2b5b9ab20caf952d2ea1b51747afec975f76d0313a98e444f20938bf709530960f9fbf5af9857cbe3410d37f3cba10ff57642861586b7c1b1c57019602f1529df9d6e45ca2f7663519c58915e9e299d5beee73cb4553238566844f571374d3f6a247dd8ecbbc893";
 
-    BlockHeader::try_from_string_with_coin_variant(header.to_string(), "RICK".into()).unwrap()
+    BlockHeader::try_from_string_with_chain_variant(header.to_string(), ChainVariant::RICK).unwrap()
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -5551,7 +5600,7 @@ fn test_block_header_utxo_loop_with_reorg() {
     for (idx, header) in rick_headers.into_iter().enumerate() {
         rick_headers_map.insert(
             (idx + 2) as u64,
-            BlockHeader::try_from_string_with_coin_variant(header, "RICK".into()).unwrap(),
+            BlockHeader::try_from_string_with_chain_variant(header, ChainVariant::RICK).unwrap(),
         );
     }
 
@@ -5684,7 +5733,7 @@ fn test_block_header_utxo_loop_with_reorg() {
 
 #[test]
 fn test_electrum_v14_block_hash() {
-    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS, ChainVariant::RICK);
 
     // First verify BlockHeader hash implementation works correctly with a known reference block
     let headers =
@@ -5697,7 +5746,7 @@ fn test_electrum_v14_block_hash() {
         .into_iter()
         .chain(headers.hex.0)
         .collect::<Vec<_>>();
-    let headers = Reader::new_with_coin_variant(&serialized, CoinVariant::RICK)
+    let headers = Reader::new_with_chain_variant(&serialized, ChainVariant::RICK)
         .read_list::<BlockHeader>()
         .expect("Failed to deserialize headers");
 
@@ -5728,7 +5777,7 @@ fn test_electrum_v14_block_hash() {
         .into_iter()
         .chain(headers.hex.0)
         .collect::<Vec<_>>();
-    let headers = Reader::new_with_coin_variant(&serialized, CoinVariant::RICK)
+    let headers = Reader::new_with_chain_variant(&serialized, ChainVariant::RICK)
         .read_list::<BlockHeader>()
         .expect("Failed to deserialize headers");
 
@@ -5757,8 +5806,8 @@ fn test_electrum_v14_block_hash() {
 #[ignore = "This is a utility test for debugging header deserialization and must be run explicitly"]
 fn test_scan_and_deserialize_block_headers() {
     // ========================== CONFIGURATION ==========================
-    /// The ticker of the coin to test (e.g., "NMC", "CHTA", "RVN").
-    const COIN_TICKER: &str = "PIVX";
+    /// Header layout for the configured coin ticker.
+    const CHAIN_VARIANT: ChainVariant = ChainVariant::PIVX;
     /// A list of active Electrum servers for the specified coin.
     const ELECTRUM_URLS: &[&str] = &["electrum01.chainster.org:50001", "electrum02.chainster.org:50001"];
     /// The block height to start scanning from.
@@ -5769,7 +5818,7 @@ fn test_scan_and_deserialize_block_headers() {
     const CHUNK_SIZE: u64 = 100;
     // ===================================================================
 
-    let client = electrum_client_for_test(ELECTRUM_URLS);
+    let client = electrum_client_for_test(ELECTRUM_URLS, CHAIN_VARIANT);
     let mut current_height = START_HEIGHT;
 
     loop {
@@ -5796,7 +5845,7 @@ fn test_scan_and_deserialize_block_headers() {
         // This is the correct approach, inspired by your original test.
         // We create a single reader for the entire raw byte stream of concatenated headers.
         let raw_chunk_bytes = &headers_res.hex.0;
-        let mut reader = Reader::new_with_coin_variant(raw_chunk_bytes, COIN_TICKER.into());
+        let mut reader = Reader::new_with_chain_variant(raw_chunk_bytes, CHAIN_VARIANT);
 
         // We loop exactly `count` times, reading one header in each iteration.
         // The `read` method will correctly consume a variable number of bytes depending on the header's content.

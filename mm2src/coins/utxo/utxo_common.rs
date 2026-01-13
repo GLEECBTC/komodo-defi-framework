@@ -46,6 +46,7 @@ use futures::compat::Future01CompatExt;
 use futures::future::{FutureExt, TryFutureExt};
 use futures01::future::Either;
 use itertools::Itertools;
+#[cfg(feature = "utxo-walletconnect")]
 use kdf_walletconnect::WcTopic;
 use keys::bytes::Bytes;
 #[cfg(test)]
@@ -64,7 +65,7 @@ use rpc_clients::NativeClientImpl;
 use script::{Builder, Opcode, Script, ScriptAddress, TransactionInputSigner, UnsignedTransactionInput};
 use secp256k1::{PublicKey, Signature as SecpSignature};
 use serde_json::{self as json};
-use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, SERIALIZE_TRANSACTION_WITNESS};
+use serialization::{deserialize, serialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
 use std::cmp::Ordering;
 use std::collections::hash_map::{Entry, HashMap};
 use std::convert::TryFrom;
@@ -415,10 +416,10 @@ pub fn checked_address_from_str<T: UtxoCommonOps>(coin: &T, address: &str) -> Mm
     Ok(addr)
 }
 
-pub async fn get_current_mtp(coin: &UtxoCoinFields, coin_variant: CoinVariant) -> UtxoRpcResult<u32> {
+pub async fn get_current_mtp(coin: &UtxoCoinFields) -> UtxoRpcResult<u32> {
     let current_block = coin.rpc_client.get_block_count().compat().await?;
     coin.rpc_client
-        .get_median_time_past(current_block, coin.conf.mtp_block_count, coin_variant)
+        .get_median_time_past(current_block, coin.conf.mtp_block_count)
         .compat()
         .await
 }
@@ -628,7 +629,7 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
     fn make_kmd_rewards_data(coin: &T, interest: u64) -> Option<KmdRewardsDetails> {
         let rewards_amount = big_decimal_from_sat_unsigned(interest, coin.as_ref().decimals);
         if coin.supports_interest() {
-            Some(KmdRewardsDetails::claimed_by_me(rewards_amount))
+            Some(KmdRewardsDetails::new(rewards_amount))
         } else {
             None
         }
@@ -912,6 +913,7 @@ fn get_tx_fee_with_relay_fee(fee_rate: &ActualFeeRate, tx_size: u64, min_relay_f
 
 pub enum P2SHSigner {
     KeyPair(KeyPair),
+    #[cfg(feature = "utxo-walletconnect")]
     WalletConnect(WcTopic),
 }
 
@@ -927,7 +929,12 @@ impl P2SHSigner {
             PrivKeyPolicy::Trezor => Err("P2SH signing is not supported for Trezor".to_string()),
             #[cfg(target_arch = "wasm32")]
             PrivKeyPolicy::Metamask(_) => Err("P2SH signing is not supported for Metamask".to_string()),
+            #[cfg(feature = "utxo-walletconnect")]
             PrivKeyPolicy::WalletConnect { session_topic, .. } => Ok(P2SHSigner::WalletConnect(session_topic.clone())),
+            #[cfg(not(feature = "utxo-walletconnect"))]
+            PrivKeyPolicy::WalletConnect { .. } => {
+                Err("P2SH WalletConnect signing requires utxo-walletconnect feature".to_string())
+            },
         }
     }
 }
@@ -1040,6 +1047,7 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxI
             ));
             Ok(complete_tx(unsigned, vec![signed_input]))
         },
+        #[cfg(feature = "utxo-walletconnect")]
         P2SHSigner::WalletConnect(session_topic) => wallet_connect::sign_p2sh(
             coin,
             &session_topic,
@@ -3004,7 +3012,7 @@ pub async fn get_taker_watcher_reward<T: UtxoCommonOps + SwapOps + MarketCoinOps
     let is_exact_amount = reward_amount.is_some();
 
     let other_coin = match other_coin {
-        MmCoinEnum::EthCoin(coin) => coin,
+        MmCoinEnum::EthCoinVariant(coin) => coin,
         _ => {
             return Err(WatcherRewardError::InvalidCoinType(
                 "At least one coin must be Ethereum to use watcher rewards".to_string(),
@@ -4184,11 +4192,8 @@ pub async fn tx_details_by_hash<T: UtxoCommonOps>(
     //     // `fee = input_amount - actual_output_amount` or simplified `fee = input_amount - output_amount + kmd_rewards`
     //     let fee = input_amount as i64 - output_amount as i64 + kmd_rewards as i64;
     //
-    //     let my_address = &coin.as_ref().my_address;
-    //     let claimed_by_me = from_addresses.iter().all(|from| from == my_address) && to_addresses.contains(my_address);
     //     let kmd_rewards_details = KmdRewardsDetails {
     //         amount: big_decimal_from_sat_unsigned(kmd_rewards, coin.as_ref().decimals),
-    //         claimed_by_me,
     //     };
     //     (
     //         big_decimal_from_sat(fee, coin.as_ref().decimals),
@@ -4298,8 +4303,6 @@ where
 /// `actual_fee = input_amount - actual_output_amount` or `actual_fee = input_amount - output_amount + kmd_rewards`.
 /// Substitute [`TransactionDetails::fee`] to the last equation:
 /// `actual_fee = TransactionDetails::fee + kmd_rewards`
-///
-/// Note: This assumes that the KMD rewards is always claimed by us and thus sets the `claimed_by_me` field to true.
 pub async fn update_kmd_rewards<T>(
     coin: &T,
     tx_details: &mut TransactionDetails,
@@ -4337,7 +4340,7 @@ where
         }));
     }
 
-    tx_details.kmd_rewards = Some(KmdRewardsDetails::claimed_by_me(kmd_rewards));
+    tx_details.kmd_rewards = Some(KmdRewardsDetails::new(kmd_rewards));
     Ok(())
 }
 
@@ -4881,6 +4884,8 @@ where
     let expected_redeem = tx_type_with_secret_hash.redeem_script(time_lock, first_pub0, second_pub0);
     let tx_hash = tx.tx_hash_as_bytes();
 
+    // TODO: This is redundant when used in swaps v2.
+    // It will be removed if we implemented cross-publishing swap payments in swaps v1.
     let tx_from_rpc = retry_on_err!(async {
         coin.as_ref()
             .rpc_client
@@ -5523,21 +5528,6 @@ where
         )));
     }
 
-    let tx_bytes_from_rpc = coin
-        .as_ref()
-        .rpc_client
-        .get_transaction_bytes(&args.funding_tx.hash().reversed().into())
-        .compat()
-        .await
-        .map_mm_err()?;
-    let actual_tx_bytes = serialize(args.funding_tx).take();
-    if tx_bytes_from_rpc.0 != actual_tx_bytes {
-        return MmError::err(ValidateSwapV2TxError::TxBytesMismatch {
-            from_rpc: tx_bytes_from_rpc,
-            actual: actual_tx_bytes.into(),
-        });
-    }
-
     // import funding address in native mode to track funding tx spend
     let funding_address = AddressBuilder::new(
         AddressFormat::Standard,
@@ -5814,11 +5804,14 @@ fn test_check_all_utxo_inputs_signed_by_pub_overwintered() {
     use common::block_on;
 
     // We need a running electrum client for this test to test the functionality of fetching a tx from the network, parsing it, and using its input amount for sig_hash calculations.
-    let client = UtxoRpcClientEnum::Electrum(electrum_client_for_test(&[
-        "electrum3.cipig.net:10001",
-        "electrum1.cipig.net:10001",
-        "electrum2.cipig.net:10001",
-    ]));
+    let client = UtxoRpcClientEnum::Electrum(electrum_client_for_test(
+        &[
+            "electrum3.cipig.net:10001",
+            "electrum1.cipig.net:10001",
+            "electrum2.cipig.net:10001",
+        ],
+        ChainVariant::Standard,
+    ));
     let mut fields = utxo_coin_fields_for_test(client, None, false);
     fields.conf.ticker = "KMD".to_owned();
     let coin = utxo_coin_from_fields(fields);

@@ -1,6 +1,7 @@
 #![allow(deprecated)] // TODO: remove this once rusqlite is >= 0.29
 
 pub use rusqlite;
+pub use rusqlite::types::Value as SqlValue;
 pub use sql_builder;
 
 use log::debug;
@@ -326,7 +327,7 @@ pub fn run_optimization_pragmas(conn: &Connection) -> Result<(), SqlError> {
     Ok(())
 }
 
-pub fn execute_batch(statement: &'static [&str]) -> Vec<(&'static str, Vec<String>)> {
+pub fn execute_batch<T>(statement: &'static [&str]) -> Vec<(&'static str, Vec<T>)> {
     statement.iter().map(|sql| (*sql, vec![])).collect()
 }
 

@@ -219,7 +219,7 @@ impl ApiClient {
         #[cfg(feature = "test-ext-api")]
         let _guard = ApiClient::one_req_per_sec().await;
 
-        log::debug!("1inch call url={}", api_url.to_string());
+        log::debug!("1inch call url={api_url}");
         let (status_code, _, body) = slurp_url_with_headers(api_url.as_str(), ApiClient::get_headers())
             .await
             .mm_err(ApiClientError::TransportError)?;
