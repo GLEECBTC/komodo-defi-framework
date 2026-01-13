@@ -310,7 +310,7 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
         activation_request: Self::ActivationRequest,
         protocol: Self::PlatformProtocolInfo,
     ) -> Result<Self, MmError<Self::ActivationError>> {
-        // TRON doesn't support NFTs yet (TRC20 tokens are now supported for activation + balance queries)
+        // TRON doesn't support NFTs yet
         if matches!(protocol, ChainSpec::Tron { .. }) && activation_request.nft_req.is_some() {
             return MmError::err(EthActivationV2Error::UnsupportedChain {
                 chain: "TRON".to_string(),

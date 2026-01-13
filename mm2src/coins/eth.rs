@@ -209,6 +209,7 @@ use eth_swap_v2::{extract_id_from_tx_data, EthPaymentType, PaymentMethod, SpendT
 pub mod eth_utils;
 
 pub mod tron;
+use tron::TronAddress;
 
 pub mod chain_rpc;
 use self::chain_rpc::ChainRpcOps;
@@ -5044,6 +5045,111 @@ impl EthCoin {
     pub async fn get_tokens_balance_list(&self) -> Result<CoinBalanceMap, MmError<BalanceError>> {
         let my_address = self.derivation_method.single_addr_or_err().await.map_mm_err()?.inner();
         self.get_tokens_balance_list_for_address(my_address).await
+    }
+
+    /// Chain-dispatched token balance query.
+    ///
+    /// - EVM: ERC20 `balanceOf(address)` via `eth_call`
+    /// - TRON: TRC20 `balanceOf(address)` via `TronApiClient::trc20_balance_of`
+    ///
+    /// Note: Callers will be migrated to use this in subsequent commits.
+    #[allow(dead_code)]
+    pub(crate) async fn token_balance_of(
+        &self,
+        owner: Address,
+        token_contract: Address,
+    ) -> MmResult<U256, BalanceError> {
+        match ChainFamily::from(&self.chain_spec) {
+            ChainFamily::Evm => {
+                let function = ERC20_CONTRACT.function("balanceOf")?;
+                let data = function.encode_input(&[Token::Address(owner)])?;
+
+                let res = self
+                    .call_request(owner, token_contract, None, Some(data.into()), BlockNumber::Latest)
+                    .await?;
+
+                let decoded = function.decode_output(&res.0)?;
+                match decoded.first() {
+                    Some(Token::Uint(number)) => Ok(*number),
+                    other => MmError::err(BalanceError::InvalidResponse(format!(
+                        "Expected U256 as balanceOf result but got {other:?}"
+                    ))),
+                }
+            },
+            ChainFamily::Tron => {
+                let tron = self
+                    .tron_rpc()
+                    .ok_or_else(|| MmError::new(BalanceError::Internal("TRON RPC client is not initialized".into())))?;
+
+                let owner_tron = TronAddress::from(owner);
+                let contract_tron = TronAddress::from(token_contract);
+
+                tron.trc20_balance_of(&contract_tron, &owner_tron).await.map_mm_err()
+            },
+        }
+    }
+
+    /// Chain-dispatched token decimals query.
+    ///
+    /// - EVM: ERC20 `decimals()` via `eth_call`
+    /// - TRON: TRC20 `decimals()` via `TronApiClient::trc20_decimals`
+    ///
+    /// Note: Callers will be migrated to use this in subsequent commits.
+    #[allow(dead_code)]
+    pub(crate) async fn token_decimals(&self, token_contract: Address) -> MmResult<u8, Web3RpcError> {
+        match ChainFamily::from(&self.chain_spec) {
+            ChainFamily::Evm => {
+                let from = Address::default();
+
+                let function = ERC20_CONTRACT
+                    .function("decimals")
+                    .map_to_mm(|e| Web3RpcError::Internal(e.to_string()))?;
+
+                let data = function
+                    .encode_input(&[])
+                    .map_to_mm(|e| Web3RpcError::Internal(e.to_string()))?;
+
+                let res = self
+                    .call_request(from, token_contract, None, Some(data.into()), BlockNumber::Latest)
+                    .await?;
+
+                let decoded = function
+                    .decode_output(&res.0)
+                    .map_to_mm(|e| Web3RpcError::InvalidResponse(e.to_string()))?;
+
+                match decoded.first() {
+                    Some(Token::Uint(value)) => {
+                        if *value > U256::from(u8::MAX) {
+                            return MmError::err(Web3RpcError::InvalidResponse(format!(
+                                "ERC20 decimals value {value} exceeds u8 range"
+                            )));
+                        }
+                        Ok(value.as_u32() as u8)
+                    },
+                    other => MmError::err(Web3RpcError::InvalidResponse(format!(
+                        "Expected Uint as decimals() result but got {other:?}"
+                    ))),
+                }
+            },
+            ChainFamily::Tron => {
+                let tron = self.tron_rpc().ok_or_else(|| {
+                    MmError::new(Web3RpcError::Transport("TRON RPC client is not initialized".into()))
+                })?;
+
+                // TRON API requires a caller address for triggerconstantcontract.
+                let caller = self
+                    .derivation_method
+                    .single_addr_or_err()
+                    .await
+                    .map_err(|e| MmError::new(Web3RpcError::Internal(e.to_string())))?
+                    .inner();
+
+                let caller_tron = TronAddress::from(caller);
+                let contract_tron = TronAddress::from(token_contract);
+
+                tron.trc20_decimals(&contract_tron, &caller_tron).await
+            },
+        }
     }
 
     async fn get_token_balance_for_address(
