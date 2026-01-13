@@ -434,6 +434,52 @@ impl GetAccountResponse {
     }
 }
 
+/// Request body for `/wallet/triggerconstantcontract`.
+///
+/// Used to call constant (view/pure) functions on smart contracts without broadcasting.
+/// For TRC20: `balanceOf(address)`, `decimals()`, `name()`, `symbol()`.
+///
+/// Note: Uses `visible: true` so addresses serialize as Base58 (TronAddress default).
+#[derive(Serialize)]
+struct TriggerConstantContractRequest<'a> {
+    /// Caller address (required by TRON even for constant calls).
+    owner_address: &'a TronAddress,
+    /// Contract address to call.
+    contract_address: &'a TronAddress,
+    /// Function signature, e.g. "balanceOf(address)" or "decimals()".
+    function_selector: &'a str,
+    /// ABI-encoded parameters (hex string, no 0x prefix, excludes 4-byte selector).
+    parameter: &'a str,
+    /// If true, addresses are Base58 format; if false, hex with 0x41 prefix.
+    /// Must be true since TronAddress serializes to Base58.
+    visible: bool,
+}
+
+/// Response from `/wallet/triggerconstantcontract`.
+///
+/// Only includes fields we need. The full TRON `TransactionExtention` response also contains:
+/// - `transaction`: The simulated transaction object (not broadcast for constant calls)
+/// - `energy_penalty`: Additional energy penalty for certain contract patterns
+/// - `result`: Success/failure indicator (handled by `tron_error_from_value()` before deserialization)
+/// - `txid`: Transaction hash of the simulated transaction
+///
+/// Error responses are handled by `tron_error_from_value()` before deserialization.
+#[derive(Deserialize, Debug)]
+pub struct TriggerConstantContractResponse {
+    /// ABI-encoded return values (protobuf: `repeated bytes`).
+    /// TRON serializes as hex strings (no 0x prefix). For single return value functions,
+    /// this contains one element. Decoded via `hex::decode` in `parse_constant_result_u256`.
+    #[serde(default)]
+    pub constant_result: Vec<String>,
+
+    /// Estimated energy for this call (NOT actual consumption - constant calls are free).
+    ///
+    /// For constant/view functions, this is an estimation of what a state-changing call
+    /// would cost. Useful for fee estimation when implementing TRC20 `transfer()`.
+    #[serde(default)]
+    pub energy_used: Option<u64>,
+}
+
 // ============================================================================
 // High-level TRON API methods
 // ============================================================================
@@ -452,6 +498,27 @@ impl TronHttpClient {
             visible: false,
         };
         self.post("/wallet/getaccount", &request).await
+    }
+
+    /// Call a constant (view/pure) function on a smart contract.
+    ///
+    /// This is the low-level method; for TRC20-specific calls, use `TronApiClient::trc20_balance_of`
+    /// or `TronApiClient::trc20_decimals` which handle ABI encoding and node rotation.
+    pub async fn trigger_constant_contract(
+        &self,
+        owner_address: &TronAddress,
+        contract_address: &TronAddress,
+        function_selector: &str,
+        parameter: &str,
+    ) -> Web3RpcResult<TriggerConstantContractResponse> {
+        let request = TriggerConstantContractRequest {
+            owner_address,
+            contract_address,
+            function_selector,
+            parameter,
+            visible: true, // TronAddress serializes to Base58
+        };
+        self.post("/wallet/triggerconstantcontract", &request).await
     }
 }
 
@@ -529,6 +596,112 @@ impl TronApiClient {
         })
         .await
     }
+
+    /// Get TRC20 token balance for an account with node rotation.
+    ///
+    /// Calls `balanceOf(address)` on the TRC20 contract.
+    /// Returns balance as U256 (raw token units, not adjusted for decimals).
+    pub async fn trc20_balance_of(&self, contract: &TronAddress, account: &TronAddress) -> Web3RpcResult<U256> {
+        let parameter = abi_encode_address_param(account);
+        self.try_clients(|client| {
+            let contract = *contract;
+            let account = *account;
+            let param = parameter.clone();
+            async move {
+                let response = client
+                    .trigger_constant_contract(&account, &contract, "balanceOf(address)", &param)
+                    .await?;
+                parse_constant_result_u256(&response)
+            }
+        })
+        .await
+    }
+
+    /// Get TRC20 token decimals with node rotation.
+    ///
+    /// Calls `decimals()` on the TRC20 contract.
+    /// Returns decimals as u8 (typically 6 for USDT, 18 for most tokens).
+    pub async fn trc20_decimals(&self, contract: &TronAddress, caller: &TronAddress) -> Web3RpcResult<u8> {
+        self.try_clients(|client| {
+            let contract = *contract;
+            let caller = *caller;
+            async move {
+                let response = client
+                    .trigger_constant_contract(&caller, &contract, "decimals()", "")
+                    .await?;
+                let value = parse_constant_result_u256(&response)?;
+
+                // Decimals must fit in u8 (0-255)
+                if value > U256::from(255u8) {
+                    return Err(Web3RpcError::InvalidResponse(format!(
+                        "TRC20 decimals value {} exceeds u8 range",
+                        value
+                    ))
+                    .into());
+                }
+                Ok(value.as_u32() as u8)
+            }
+        })
+        .await
+    }
+}
+
+// ============================================================================
+// TRC20 ABI Helpers
+// ============================================================================
+
+/// Encode an address as a 32-byte ABI parameter (hex string, no 0x prefix).
+///
+/// For `balanceOf(address)`, the parameter is the account address encoded as:
+/// - 12 zero bytes (left padding)
+/// - 20-byte raw EVM address (from `TronAddress::to_evm_address()`)
+///
+/// Uses standard 20-byte EVM ABI encoding, NOT TRON's 21-byte format with 0x41 prefix.
+fn abi_encode_address_param(addr: &TronAddress) -> String {
+    let evm_addr = addr.to_evm_address();
+    let mut padded = [0u8; 32];
+    padded[12..32].copy_from_slice(evm_addr.as_bytes());
+    hex::encode(padded)
+}
+
+/// Parse the first constant_result element as U256.
+///
+/// TRON returns `constant_result` as `repeated bytes` (protobuf), serialized as hex strings
+/// without 0x prefix. This function decodes the hex, validates, and converts to U256.
+fn parse_constant_result_u256(response: &TriggerConstantContractResponse) -> Web3RpcResult<U256> {
+    // Empty constant_result can occur due to node-specific issues:
+    // - Node out of sync (different latest block state)
+    // - Resource limits (OutOfTimeException on overloaded nodes)
+    // - TVM configuration differences between nodes
+    // BadResponse is used to trigger rotation - another node may succeed.
+    let hex_str = response.constant_result.first().ok_or_else(|| {
+        Web3RpcError::BadResponse(
+            "TRON constant_result is empty - node may be out of sync or resource-constrained".to_string(),
+        )
+    })?;
+
+    // Decode hex string to bytes. Invalid hex from a node should trigger rotation.
+    let bytes = hex::decode(hex_str).map_err(|e| {
+        Web3RpcError::BadResponse(format!(
+            "TRON constant_result contains invalid hex '{}': {}",
+            hex_str, e
+        ))
+    })?;
+
+    // Oversized result (>32 bytes) indicates wrong return type from contract.
+    // This is probably deterministic and would fail on all nodes - InvalidResponse is used.
+    if bytes.len() > 32 {
+        return Err(Web3RpcError::InvalidResponse(format!(
+            "constant_result too large: {} bytes (max 32) - contract may return wrong type",
+            bytes.len()
+        ))
+        .into());
+    }
+
+    // Left-pad to 32 bytes and convert to U256
+    let mut padded = [0u8; 32];
+    padded[32 - bytes.len()..].copy_from_slice(&bytes[..]);
+    Ok(U256::from_big_endian(&padded))
 }
 
 // ============================================================================
