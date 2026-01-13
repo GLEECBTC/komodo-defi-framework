@@ -5047,48 +5047,6 @@ impl EthCoin {
         self.get_tokens_balance_list_for_address(my_address).await
     }
 
-    /// Chain-dispatched token balance query.
-    ///
-    /// - EVM: ERC20 `balanceOf(address)` via `eth_call`
-    /// - TRON: TRC20 `balanceOf(address)` via `TronApiClient::trc20_balance_of`
-    ///
-    /// Note: Callers will be migrated to use this in subsequent commits.
-    #[allow(dead_code)]
-    pub(crate) async fn token_balance_of(
-        &self,
-        owner: Address,
-        token_contract: Address,
-    ) -> MmResult<U256, BalanceError> {
-        match ChainFamily::from(&self.chain_spec) {
-            ChainFamily::Evm => {
-                let function = ERC20_CONTRACT.function("balanceOf")?;
-                let data = function.encode_input(&[Token::Address(owner)])?;
-
-                let res = self
-                    .call_request(owner, token_contract, None, Some(data.into()), BlockNumber::Latest)
-                    .await?;
-
-                let decoded = function.decode_output(&res.0)?;
-                match decoded.first() {
-                    Some(Token::Uint(number)) => Ok(*number),
-                    other => MmError::err(BalanceError::InvalidResponse(format!(
-                        "Expected U256 as balanceOf result but got {other:?}"
-                    ))),
-                }
-            },
-            ChainFamily::Tron => {
-                let tron = self
-                    .tron_rpc()
-                    .ok_or_else(|| MmError::new(BalanceError::Internal("TRON RPC client is not initialized".into())))?;
-
-                let owner_tron = TronAddress::from(owner);
-                let contract_tron = TronAddress::from(token_contract);
-
-                tron.trc20_balance_of(&contract_tron, &owner_tron).await.map_mm_err()
-            },
-        }
-    }
-
     /// Chain-dispatched token decimals query.
     ///
     /// - EVM: ERC20 `decimals()` via `eth_call`
@@ -5152,23 +5110,41 @@ impl EthCoin {
         }
     }
 
+    /// Chain-dispatched token balance query.
+    ///
+    /// - EVM: ERC20 `balanceOf(address)` via `eth_call`
+    /// - TRON: TRC20 `balanceOf(address)` via `TronApiClient::trc20_balance_of`
     async fn get_token_balance_for_address(
         &self,
         address: Address,
         token_address: Address,
     ) -> Result<U256, MmError<BalanceError>> {
-        let function = ERC20_CONTRACT.function("balanceOf")?;
-        let data = function.encode_input(&[Token::Address(address)])?;
-        let res = self
-            .call_request(address, token_address, None, Some(data.into()), BlockNumber::Latest)
-            .await?;
-        let decoded = function.decode_output(&res.0)?;
+        match ChainFamily::from(&self.chain_spec) {
+            ChainFamily::Evm => {
+                let function = ERC20_CONTRACT.function("balanceOf")?;
+                let data = function.encode_input(&[Token::Address(address)])?;
 
-        match decoded[0] {
-            Token::Uint(number) => Ok(number),
-            _ => {
-                let error = format!("Expected U256 as balanceOf result but got {decoded:?}");
-                MmError::err(BalanceError::InvalidResponse(error))
+                let res = self
+                    .call_request(address, token_address, None, Some(data.into()), BlockNumber::Latest)
+                    .await?;
+
+                let decoded = function.decode_output(&res.0)?;
+                match decoded.first() {
+                    Some(Token::Uint(number)) => Ok(*number),
+                    other => MmError::err(BalanceError::InvalidResponse(format!(
+                        "Expected U256 as balanceOf result but got {other:?}"
+                    ))),
+                }
+            },
+            ChainFamily::Tron => {
+                let tron = self
+                    .tron_rpc()
+                    .ok_or_else(|| MmError::new(BalanceError::Internal("TRON RPC client is not initialized".into())))?;
+
+                let owner_tron = TronAddress::from(address);
+                let contract_tron = TronAddress::from(token_address);
+
+                tron.trc20_balance_of(&contract_tron, &owner_tron).await.map_mm_err()
             },
         }
     }
