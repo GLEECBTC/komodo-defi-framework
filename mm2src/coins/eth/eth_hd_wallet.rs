@@ -72,20 +72,65 @@ impl HDAddressBalanceScanner for EthCoin {
         let raw = address.inner();
         match &self.0.chain_spec {
             ChainSpec::Tron { .. } => {
-                // TRON accounts are "used" if they exist on-chain (have balance, create_time, or permissions).
+                // TRON address usage detection.
+                //
+                // We use AccountCapsule existence check instead of transaction count because:
+                // - TRON doesn't have an account nonce like Ethereum - it uses TAPOS (Transaction
+                //   as Proof of Stake) with reference blocks for replay protection instead
+                // - There's no `eth_getTransactionCount` equivalent on TRON (it throws an error)
+                // - TRON requires an AccountCapsule to exist before ANY transaction can be made
+                // - AccountCapsule check is a single efficient API call
+                //
+                // Note on Gas-Free: TRON's "Gas-Free" USDT transfers (paying fees in USDT instead
+                // of TRX) still require the sender's account to be activated first.
+                //
+                // TODO: EIP-2612 permit edge case (applies to both EVM and TRON):
+                // If a token implements permit, an address can receive tokens, sign offline, and
+                // have a relayer call transferFrom() - without the owner making any transaction.
+                // After tokens are transferred out, the address appears unused:
+                // - EVM: account nonce = 0 (eth_getTransactionCount only counts OUTGOING txs)
+                // - TRON: no AccountCapsule, balance = 0
+                // The token contract stores a separate `nonces(owner)` that tracks permit usage,
+                // but checking it requires RPC calls to each permit-enabled token contract.
+                // Mainstream tokens (USDT, etc.) don't implement permit, so this is rare.
                 let tron_client = self
                     .0
                     .tron_rpc()
                     .ok_or_else(|| BalanceError::Internal("TRON chain_spec but no TRON rpc_client".to_string()))?;
                 let tron_addr = tron::TronAddress::from(raw);
-                tron_client.is_address_used_basic(tron_addr).await.map_err(|e| {
-                    mm2_err_handle::mm_error::MmError::new(BalanceError::Transport(e.into_inner().to_string()))
-                })
+
+                // First check: on-chain account existence via /wallet/getaccount API.
+                // Returns true if AccountCapsule exists, which happens when:
+                // - Address received TRX or TRC10 tokens (these activate the account)
+                // - Address made any transaction (requires AccountCapsule to exist first)
+                if tron_client.is_address_used_basic(tron_addr).await.map_mm_err()? {
+                    return Ok(true);
+                }
+
+                // Second check: TRC20 token balances for user-configured tokens.
+                //
+                // Edge case: TRC20 tokens can exist even if the account isn't activated on-chain.
+                // Unlike TRX/TRC10, TRC20 balances are stored in the token contract's internal
+                // mapping (not in AccountCapsule), so an address can hold TRC20 tokens before
+                // ever receiving TRX.
+                //
+                // This can happen when:
+                // - Someone sends real tokens (USDT, etc.) to a new address before it's activated
+                // - Legitimate project airdrops to addresses that haven't been used yet
+                //
+                // Note: We only query tokens the user has explicitly configured, so spam/phishing
+                // tokens (address poisoning attacks) won't trigger false positives here.
+                let token_balance_map = self.get_tokens_balance_list_for_address(raw).await?;
+                Ok(token_balance_map.values().any(|balance| !balance.get_total().is_zero()))
             },
             ChainSpec::Evm { .. } => {
-                // EVM path: Count calculates the number of transactions sent from the address whether it's for ERC20 or ETH.
-                // If the count is greater than 0, then the address is used.
-                // If the count is 0, then we check for the balance of the address to make sure there was no received transactions.
+                // EVM path: `eth_getTransactionCount` returns the account nonce - the number of
+                // OUTGOING transactions sent FROM this address (not incoming, not contract calls
+                // made by others). If count > 0, the address has sent at least one transaction.
+                // If count = 0, we fall back to balance checks to detect received-only addresses.
+                //
+                // Note: This misses the EIP-2612 permit edge case (see TODO in TRON branch above).
+                // The token contract's `nonces(owner)` is separate from this account nonce.
                 let count = self.transaction_count(raw, None).await?;
                 if count > U256::zero() {
                     return Ok(true);
@@ -175,13 +220,6 @@ impl HDWalletBalanceOps for EthCoin {
 
         let mut balances = CoinBalanceMap::new();
         balances.insert(self.ticker().to_string(), coin_balance);
-
-        // TODO: TRC20 token support - when implementing TRC20 tokens, add a TRON-specific
-        // token balance function using the TRON API (/wallet/triggerconstantcontract).
-        // Currently, get_tokens_balance_list_for_address() uses EVM eth_call which won't work for TRON.
-        if matches!(&self.0.chain_spec, ChainSpec::Tron { .. }) {
-            return Ok(balances);
-        }
 
         let token_balances = self.get_tokens_balance_list_for_address(address.inner()).await?;
         balances.extend(token_balances);

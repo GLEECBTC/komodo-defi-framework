@@ -1061,6 +1061,34 @@ This plan was validated through:
 - Swap support and contract validation for TRON
 - TRC20 token discovery (automatic detection/indexing rather than explicit activation)
 
+### 16.1 TRON Transaction Building: TAPOS vs Account Nonces
+
+**Critical difference from EVM**: TRON does **not** use account nonces for replay protection.
+
+| Aspect | EVM (Ethereum) | TRON |
+|--------|----------------|------|
+| **Replay protection** | Account nonce (sequential counter) | TAPOS (Transaction as Proof of Stake) |
+| **Transaction field** | `nonce` (from `eth_getTransactionCount`) | `ref_block_bytes` + `ref_block_hash` |
+| **Expiration** | None (nonce ordering) | `expiration` field (default: 60 seconds) |
+| **API** | `eth_getTransactionCount` | Not applicable (TRON throws error) |
+
+**TAPOS mechanism:**
+- Each TRON transaction references a recent block (`ref_block_bytes` = block height bytes, `ref_block_hash` = block hash bytes)
+- Valid reference blocks are the latest 65,536 blocks (generally use the latest solidified block)
+- Transactions expire after `expiration` time if not included in a block
+- This prevents replay on forks that don't include the referenced block
+
+**Implementation impact:**
+When implementing `withdraw` / `send_raw_tx` for TRON:
+1. Do NOT call `eth_getTransactionCount` or use EVM nonce logic
+2. Use TRON's `/wallet/getnowblock` to get the current block for `ref_block_bytes` and `ref_block_hash`
+3. Set appropriate `expiration` (default 60 seconds from block timestamp)
+4. Fee estimation uses bandwidth/energy, not gas (see TRON resource model)
+
+**References:**
+- [TRON Transaction Protocol](https://developers.tron.network/docs/tron-protocol-transaction)
+- [DeepWiki java-tron](https://deepwiki.com/tronprotocol/java-tron) - Transaction Lifecycle section
+
 ---
 
 ## 17) Tech Debt: HTTP Transport Extraction
