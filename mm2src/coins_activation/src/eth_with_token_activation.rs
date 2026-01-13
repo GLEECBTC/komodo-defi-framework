@@ -310,20 +310,12 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
         activation_request: Self::ActivationRequest,
         protocol: Self::PlatformProtocolInfo,
     ) -> Result<Self, MmError<Self::ActivationError>> {
-        // TRON doesn't support ERC20 tokens or NFTs yet
-        if matches!(protocol, ChainSpec::Tron { .. }) {
-            if !activation_request.erc20_tokens_requests.is_empty() {
-                return MmError::err(EthActivationV2Error::UnsupportedChain {
-                    chain: "TRON".to_string(),
-                    feature: "ERC20/TRC20 tokens".to_string(),
-                });
-            }
-            if activation_request.nft_req.is_some() {
-                return MmError::err(EthActivationV2Error::UnsupportedChain {
-                    chain: "TRON".to_string(),
-                    feature: "NFT".to_string(),
-                });
-            }
+        // TRON doesn't support NFTs yet (TRC20 tokens are now supported for activation + balance queries)
+        if matches!(protocol, ChainSpec::Tron { .. }) && activation_request.nft_req.is_some() {
+            return MmError::err(EthActivationV2Error::UnsupportedChain {
+                chain: "TRON".to_string(),
+                feature: "NFT".to_string(),
+            });
         }
 
         let priv_key_policy =
