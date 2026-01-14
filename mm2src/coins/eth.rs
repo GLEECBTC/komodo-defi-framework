@@ -201,7 +201,6 @@ use fee_estimation::eip1559::{
 };
 
 pub mod erc20;
-use erc20::get_token_decimals;
 
 pub(crate) mod eth_swap_v2;
 use eth_swap_v2::{extract_id_from_tx_data, EthPaymentType, PaymentMethod, SpendTxSearchParams};
@@ -5051,43 +5050,11 @@ impl EthCoin {
     ///
     /// - EVM: ERC20 `decimals()` via `eth_call`
     /// - TRON: TRC20 `decimals()` via `TronApiClient::trc20_decimals`
-    ///
-    /// Note: Callers will be migrated to use this in subsequent commits.
-    #[allow(dead_code)]
     pub(crate) async fn token_decimals(&self, token_contract: Address) -> MmResult<u8, Web3RpcError> {
         match ChainFamily::from(&self.chain_spec) {
             ChainFamily::Evm => {
-                let from = Address::default();
-
-                let function = ERC20_CONTRACT
-                    .function("decimals")
-                    .map_to_mm(|e| Web3RpcError::Internal(e.to_string()))?;
-
-                let data = function
-                    .encode_input(&[])
-                    .map_to_mm(|e| Web3RpcError::Internal(e.to_string()))?;
-
-                let res = self
-                    .call_request(from, token_contract, None, Some(data.into()), BlockNumber::Latest)
-                    .await?;
-
-                let decoded = function
-                    .decode_output(&res.0)
-                    .map_to_mm(|e| Web3RpcError::InvalidResponse(e.to_string()))?;
-
-                match decoded.first() {
-                    Some(Token::Uint(value)) => {
-                        if *value > U256::from(u8::MAX) {
-                            return MmError::err(Web3RpcError::InvalidResponse(format!(
-                                "ERC20 decimals value {value} exceeds u8 range"
-                            )));
-                        }
-                        Ok(value.as_u32() as u8)
-                    },
-                    other => MmError::err(Web3RpcError::InvalidResponse(format!(
-                        "Expected Uint as decimals() result but got {other:?}"
-                    ))),
-                }
+                let web3 = self.web3().await?;
+                erc20::get_token_decimals(&web3, token_contract).await
             },
             ChainFamily::Tron => {
                 let tron = self.tron_rpc().ok_or_else(|| {
@@ -7138,16 +7105,15 @@ pub async fn eth_coin_from_conf_and_request(
         } => {
             let token_addr = try_s!(valid_addr_from_str(&contract_address));
             let decimals = match conf["decimals"].as_u64() {
-                None | Some(0) => try_s!(
-                    get_token_decimals(
-                        web3_instances
-                            .first()
-                            .expect("web3_instances can't be empty in ETH activation")
-                            .as_ref(),
-                        token_addr
-                    )
-                    .await
-                ),
+                None | Some(0) => try_s!(erc20::get_token_decimals(
+                    web3_instances
+                        .first()
+                        .expect("web3_instances can't be empty in ETH activation")
+                        .as_ref(),
+                    token_addr
+                )
+                .await
+                .map_err(|e| e.to_string())),
                 Some(d) => d as u8,
             };
             (EthCoinType::Erc20 { platform, token_addr }, decimals)
