@@ -204,11 +204,13 @@ impl InitTokenActivationOps for EthCoin {
         let token_contract_address = self
             .erc20_token_address()
             .ok_or_else(|| EthTokenActivationError::InternalError("Token contract address is missing".to_string()))?;
+        // Format contract address chain-aware: EVM checksum (0x) or TRON Base58 (T...)
+        let token_contract_address = self.format_raw_address(token_contract_address);
 
         Ok(InitTokenActivationResult {
             ticker,
             platform_coin: self.platform_ticker().to_owned(),
-            token_contract_address: format!("{token_contract_address:#02x}"),
+            token_contract_address,
             current_block,
             required_confirmations: self.required_confirmations(),
             wallet_balance,
