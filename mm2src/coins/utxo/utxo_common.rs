@@ -1151,6 +1151,7 @@ pub async fn gen_and_sign_taker_funding_spend_preimage<T: UtxoCommonOps>(
             coin.as_ref().conf.fork_id,
         )
         .map_mm_err()?,
+        #[cfg(feature = "utxo-walletconnect")]
         P2SHSigner::WalletConnect(session_topic) => wallet_connect::sign_p2sh_get_sig_only(
             coin,
             session_topic,
@@ -1284,6 +1285,7 @@ pub async fn sign_and_send_taker_funding_spend<T: UtxoCommonOps>(
             SIGHASH_ALL,
             coin.as_ref().conf.fork_id
         )),
+        #[cfg(feature = "utxo-walletconnect")]
         P2SHSigner::WalletConnect(session_topic) => try_tx_s!(
             wallet_connect::sign_p2sh_get_sig_only(
                 coin,
@@ -1463,6 +1465,7 @@ pub async fn gen_and_sign_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOp
             coin.as_ref().conf.fork_id,
         )
         .map_mm_err()?,
+        #[cfg(feature = "utxo-walletconnect")]
         P2SHSigner::WalletConnect(session_topic) => wallet_connect::sign_p2sh_get_sig_only(
             coin,
             session_topic,
@@ -1593,6 +1596,7 @@ pub async fn sign_and_broadcast_taker_payment_spend<T: UtxoCommonOps>(
             SIGHASH_ALL,
             coin.as_ref().conf.fork_id
         )),
+        #[cfg(feature = "utxo-walletconnect")]
         P2SHSigner::WalletConnect(session_topic) => try_tx_s!(
             wallet_connect::sign_p2sh_get_sig_only(
                 coin,
