@@ -135,8 +135,9 @@ macro_rules! try_ztx_s {
 }
 
 const DEX_FEE_OVK: OutgoingViewingKey = OutgoingViewingKey([7; 32]);
-const DEX_FEE_Z_ADDR: &str = "zs1rp6426e9r6jkq2nsanl66tkd34enewrmr0uvj0zelhkcwmsy0uvxz2fhm9eu9rl3ukxvgzy2v9f";
-const DEX_BURN_Z_ADDR: &str = "zs1ntx28kyurgvsc7rxgkdhasz8p6wzv63nqpcayvnh7c4r6cs4wfkz8ztkwazjzdsxkgaq6erscyl";
+const DEX_FEE_Z_ADDR: &str = "zs18egqw99pw5846jfrqntu4neup4hjjchx874j6krmeq88yh4adws9djmuplg5hfx9f0wdsscgr5j";
+/// Burn disabled - using same address as fee address
+const DEX_BURN_Z_ADDR: &str = "zs18egqw99pw5846jfrqntu4neup4hjjchx874j6krmeq88yh4adws9djmuplg5hfx9f0wdsscgr5j";
 cfg_native!(
     #[cfg(test)]
     const DOWNLOAD_URL: &str = "https://komodoplatform.com/downloads";
