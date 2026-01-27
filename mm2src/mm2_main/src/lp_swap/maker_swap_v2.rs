@@ -474,27 +474,25 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
 
     /// Calculate dex fee while taker pub is not known yet
     fn dex_fee(&self) -> DexFee {
-        // Set DexFee::NoFee for swaps with KMD coin.
-        if self.maker_coin.ticker() == "KMD" || self.taker_coin.ticker() == "KMD" {
-            DexFee::NoFee
-        } else {
-            DexFee::new_from_taker_coin(&self.taker_coin, self.maker_coin.ticker(), &self.taker_volume)
-        }
+        // NOTE: To enable NoFee for a specific coin (e.g., GLEEC), uncomment and update:
+        // if self.maker_coin.ticker() == "GLEEC" || self.taker_coin.ticker() == "GLEEC" {
+        //     return DexFee::NoFee;
+        // }
+        DexFee::new_from_taker_coin(&self.taker_coin, self.maker_coin.ticker(), &self.taker_volume)
     }
 
     /// Calculate updated dex fee when taker pub is already received
     fn dex_fee_updated(&self, taker_pub: &[u8]) -> DexFee {
-        // Set DexFee::NoFee for swaps with KMD coin.
-        if self.maker_coin.ticker() == "KMD" || self.taker_coin.ticker() == "KMD" {
-            DexFee::NoFee
-        } else {
-            DexFee::new_with_taker_pubkey(
-                &self.taker_coin,
-                self.maker_coin.ticker(),
-                &self.taker_volume,
-                taker_pub,
-            )
-        }
+        // NOTE: To enable NoFee for a specific coin (e.g., GLEEC), uncomment and update:
+        // if self.maker_coin.ticker() == "GLEEC" || self.taker_coin.ticker() == "GLEEC" {
+        //     return DexFee::NoFee;
+        // }
+        DexFee::new_with_taker_pubkey(
+            &self.taker_coin,
+            self.maker_coin.ticker(),
+            &self.taker_volume,
+            taker_pub,
+        )
     }
 }
 

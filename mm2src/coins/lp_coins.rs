@@ -4160,7 +4160,7 @@ impl DexFee {
     /// With this fn we may calculate the max dex fee amount, when taker_pubkey is not known yet.
     pub fn new_from_taker_coin(taker_coin: &dyn MmCoin, maker_ticker: &str, trade_amount: &MmNumber) -> DexFee {
         // calc dex fee
-        let rate = Self::dex_fee_rate(taker_coin.ticker(), maker_ticker);
+        let rate = Self::dex_fee_rate();
         let dex_fee = trade_amount * &rate;
         let min_tx_amount = MmNumber::from(taker_coin.min_tx_amount());
 
@@ -4178,23 +4178,35 @@ impl DexFee {
         DexFee::Standard(dex_fee)
     }
 
-    /// Returns dex fee discount if KMD is traded
-    pub fn dex_fee_rate(base: &str, rel: &str) -> MmNumber {
-        #[cfg(any(feature = "for-tests", test))]
-        let fee_discount_tickers: &[&str] = match std::env::var("MYCOIN_FEE_DISCOUNT") {
-            Ok(_) => &["KMD", "MYCOIN"],
-            Err(_) => &["KMD"],
-        };
+    /// Returns DEX fee rate (2% flat for all trades).
+    pub fn dex_fee_rate() -> MmNumber {
+        // 2% DEX fee for all trades
+        BigRational::new(2.into(), 100.into()).into()
 
-        #[cfg(not(any(feature = "for-tests", test)))]
-        let fee_discount_tickers: &[&str] = &["KMD"];
-
-        if fee_discount_tickers.contains(&base) || fee_discount_tickers.contains(&rel) {
-            // 1/777 - 10%
-            BigRational::new(9.into(), 7770.into()).into()
-        } else {
-            BigRational::new(1.into(), 777.into()).into()
-        }
+        // --- TICKER-BASED DISCOUNT LOGIC (disabled) ---
+        // To re-enable discounts for specific tickers (e.g., GLEEC):
+        // 1. Change signature to: pub fn dex_fee_rate(base: &str, rel: &str) -> MmNumber
+        // 2. Update call sites.
+        // 3. Adapt the logic below to apply discount on top of 2% base rate.
+        //
+        // Original discount logic (used ~0.129% base, ~0.116% with KMD discount):
+        //
+        // #[cfg(any(feature = "for-tests", test))]
+        // let fee_discount_tickers: &[&str] = match std::env::var("MYCOIN_FEE_DISCOUNT") {
+        //     Ok(_) => &["KMD", "MYCOIN"],
+        //     Err(_) => &["KMD"],
+        // };
+        //
+        // #[cfg(not(any(feature = "for-tests", test)))]
+        // let fee_discount_tickers: &[&str] = &["KMD"];
+        //
+        // if fee_discount_tickers.contains(&base) || fee_discount_tickers.contains(&rel) {
+        //     // 1/777 - 10% = 9/7770
+        //     BigRational::new(9.into(), 7770.into()).into()
+        // } else {
+        //     // 1/777
+        //     BigRational::new(1.into(), 777.into()).into()
+        // }
     }
 
     /// Drops the dex fee in KMD by 25%. This cut will be burned during the taker fee payment.
