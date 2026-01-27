@@ -3485,9 +3485,12 @@ pub fn is_asset_chain(coin: &UtxoCoinFields) -> bool {
     coin.conf.asset_chain
 }
 
+/// Returns whether DEX fee should be split with burn address.
+/// Currently disabled - all fees go to DEX fee address.
+// TODO: If we ever fix this back to true we need to check negotiation version was added
 pub const fn should_burn_dex_fee() -> bool {
     false
-} // TODO: fix back to true when negotiation version added
+}
 
 pub async fn get_raw_transaction(coin: &UtxoCoinFields, req: RawTransactionRequest) -> RawTransactionResult {
     let hash = H256Json::from_str(&req.tx_hash).map_to_mm(|e| RawTransactionError::InvalidHashError(e.to_string()))?;

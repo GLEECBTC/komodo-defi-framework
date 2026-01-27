@@ -155,7 +155,9 @@ impl MarketCoinOps for TestCoin {
     }
 
     fn should_burn_directly(&self) -> bool {
-        &self.ticker == "KMD"
+        // &self.ticker == "KMD"
+        // Burn disabled - all fees go to DEX fee address
+        false
     }
 
     fn should_burn_dex_fee(&self) -> bool {
