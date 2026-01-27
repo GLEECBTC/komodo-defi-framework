@@ -443,7 +443,7 @@ fn test_watcher_validate_taker_fee_utxo() {
     let taker_pubkey = taker_coin.my_public_key().unwrap();
 
     let taker_amount = MmNumber::from((10, 1));
-    let dex_fee = DexFee::new_from_taker_coin(&taker_coin, maker_coin.ticker(), &taker_amount);
+    let dex_fee = DexFee::new_from_taker_coin(&taker_coin, &taker_amount);
 
     let taker_fee = block_on(taker_coin.send_taker_fee(dex_fee, Uuid::new_v4().as_bytes(), lock_duration)).unwrap();
 

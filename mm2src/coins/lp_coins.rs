@@ -4144,21 +4144,16 @@ impl DexFee {
     }
 
     /// Calculates DEX fee with known taker_pubkey (for some takers dexfee may be zero).
-    pub fn new_with_taker_pubkey(
-        taker_coin: &dyn MmCoin,
-        maker_ticker: &str,
-        trade_amount: &MmNumber,
-        taker_pubkey: &[u8],
-    ) -> DexFee {
+    pub fn new_with_taker_pubkey(taker_coin: &dyn MmCoin, trade_amount: &MmNumber, taker_pubkey: &[u8]) -> DexFee {
         if !taker_coin.is_privacy() && taker_coin.burn_pubkey() == taker_pubkey {
             return DexFee::NoFee; // no dex fee if the taker is the burn pubkey
         }
-        Self::new_from_taker_coin(taker_coin, maker_ticker, trade_amount)
+        Self::new_from_taker_coin(taker_coin, trade_amount)
     }
 
     /// Calculates DEX fee with a threshold based on min tx amount of the taker coin.
     /// With this fn we may calculate the max dex fee amount, when taker_pubkey is not known yet.
-    pub fn new_from_taker_coin(taker_coin: &dyn MmCoin, maker_ticker: &str, trade_amount: &MmNumber) -> DexFee {
+    pub fn new_from_taker_coin(taker_coin: &dyn MmCoin, trade_amount: &MmNumber) -> DexFee {
         // calc dex fee
         let rate = Self::dex_fee_rate();
         let dex_fee = trade_amount * &rate;
@@ -6496,9 +6491,8 @@ mod tests {
         let btc = TestCoin::new(base);
         TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
         TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.0001").into()));
-        let rel = "ETH";
         let amount = 1.into();
-        let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount);
+        let actual_fee = DexFee::new_from_taker_coin(&btc, &amount);
         let expected_fee = DexFee::WithBurn {
             fee_amount: amount.clone() / 777u64.into() * "0.75".into(),
             burn_amount: amount / 777u64.into() * "0.25".into(),
@@ -6511,9 +6505,8 @@ mod tests {
         let kmd = TestCoin::new(base);
         TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
         TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.0001").into()));
-        let rel = "ETH";
         let amount = 1.into();
-        let actual_fee = DexFee::new_from_taker_coin(&kmd, rel, &amount);
+        let actual_fee = DexFee::new_from_taker_coin(&kmd, &amount);
         let expected_fee = amount.clone() * (9, 7770).into() * MmNumber::from("0.75");
         let expected_burn_amount = amount * (9, 7770).into() * MmNumber::from("0.25");
         assert_eq!(
@@ -6531,9 +6524,8 @@ mod tests {
         let kmd = TestCoin::new(base);
         TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
         TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.00001").into()));
-        let rel = "BTC";
         let amount = (1001 * 777, 90000000).into();
-        let actual_fee = DexFee::new_from_taker_coin(&kmd, rel, &amount);
+        let actual_fee = DexFee::new_from_taker_coin(&kmd, &amount);
         assert_eq!(
             DexFee::WithBurn {
                 fee_amount: "0.00001".into(), // equals to min_tx_amount
@@ -6548,9 +6540,8 @@ mod tests {
         let btc = TestCoin::new(base);
         TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
         TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.00001").into()));
-        let rel = "KMD";
         let amount = 1.into();
-        let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount);
+        let actual_fee = DexFee::new_from_taker_coin(&btc, &amount);
         let expected_fee = DexFee::WithBurn {
             fee_amount: amount.clone() * (9, 7770).into() * "0.75".into(),
             burn_amount: amount * (9, 7770).into() * "0.25".into(),
@@ -6564,9 +6555,8 @@ mod tests {
         let btc = TestCoin::new(base);
         TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
         TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.00001").into()));
-        let rel = "KMD";
         let amount: MmNumber = "0.001".parse::<BigDecimal>().unwrap().into();
-        let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount);
+        let actual_fee = DexFee::new_from_taker_coin(&btc, &amount);
         assert_eq!(DexFee::Standard("0.00001".into()), actual_fee);
         TestCoin::should_burn_dex_fee.clear_mock();
 
@@ -6576,9 +6566,8 @@ mod tests {
         let btc = TestCoin::new(base);
         TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
         TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.00001").into()));
-        let rel = "KMD";
         let amount: MmNumber = "0.03".parse::<BigDecimal>().unwrap().into();
-        let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount);
+        let actual_fee = DexFee::new_from_taker_coin(&btc, &amount);
         assert_eq!(DexFee::Standard(amount * (9, 7770).into()), actual_fee);
         TestCoin::should_burn_dex_fee.clear_mock();
 
@@ -6587,9 +6576,8 @@ mod tests {
         let btc = TestCoin::new(base);
         TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(false));
         TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.00001").into()));
-        let rel = "BTC";
         let amount: MmNumber = "1".parse::<BigDecimal>().unwrap().into();
-        let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount);
+        let actual_fee = DexFee::new_from_taker_coin(&btc, &amount);
         assert_eq!(DexFee::Standard(amount / "777".into()), actual_fee);
         TestCoin::should_burn_dex_fee.clear_mock();
 
@@ -6597,9 +6585,8 @@ mod tests {
         let btc = TestCoin::new(base);
         TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
         TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.000001").into()));
-        let rel = "IRIS";
         let amount: MmNumber = "0.008".parse::<BigDecimal>().unwrap().into();
-        let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount);
+        let actual_fee = DexFee::new_from_taker_coin(&btc, &amount);
         let std_fee = amount / "777".into();
         let fee_amount = std_fee.clone() * "0.75".into();
         let burn_amount = std_fee - fee_amount.clone();
@@ -6619,9 +6606,8 @@ mod tests {
         TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
         TestCoin::dex_pubkey.mock_safe(|_| MockResult::Return(DEX_BURN_ADDR_RAW_PUBKEY.as_slice()));
         TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.00001").into()));
-        let rel = "KMD";
         let amount: MmNumber = "0.03".parse::<BigDecimal>().unwrap().into();
-        let actual_fee = DexFee::new_with_taker_pubkey(&btc, rel, &amount, DEX_BURN_ADDR_RAW_PUBKEY.as_slice());
+        let actual_fee = DexFee::new_with_taker_pubkey(&btc, &amount, DEX_BURN_ADDR_RAW_PUBKEY.as_slice());
         assert_eq!(DexFee::NoFee, actual_fee);
         TestCoin::should_burn_dex_fee.clear_mock();
         TestCoin::dex_pubkey.clear_mock();

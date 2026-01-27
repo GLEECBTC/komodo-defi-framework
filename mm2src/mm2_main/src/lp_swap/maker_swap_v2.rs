@@ -478,7 +478,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         // if self.maker_coin.ticker() == "GLEEC" || self.taker_coin.ticker() == "GLEEC" {
         //     return DexFee::NoFee;
         // }
-        DexFee::new_from_taker_coin(&self.taker_coin, self.maker_coin.ticker(), &self.taker_volume)
+        DexFee::new_from_taker_coin(&self.taker_coin, &self.taker_volume)
     }
 
     /// Calculate updated dex fee when taker pub is already received
@@ -487,12 +487,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         // if self.maker_coin.ticker() == "GLEEC" || self.taker_coin.ticker() == "GLEEC" {
         //     return DexFee::NoFee;
         // }
-        DexFee::new_with_taker_pubkey(
-            &self.taker_coin,
-            self.maker_coin.ticker(),
-            &self.taker_volume,
-            taker_pub,
-        )
+        DexFee::new_with_taker_pubkey(&self.taker_coin, &self.taker_volume, taker_pub)
     }
 }
 

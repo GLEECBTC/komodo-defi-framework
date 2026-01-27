@@ -809,7 +809,6 @@ impl MakerSwap {
         let taker_amount = MmNumber::from(self.taker_amount.clone());
         let dex_fee = DexFee::new_with_taker_pubkey(
             self.taker_coin.deref(),
-            &self.r().data.maker_coin,
             &taker_amount,
             self.r().other_taker_coin_htlc_pub.to_vec().as_ref(),
         );
