@@ -347,7 +347,7 @@ fn test_validate_fee() {
     // wrong dex address
     <Qrc20Coin as SwapOps>::dex_pubkey.mock_safe(|_| {
         MockResult::Return(Box::leak(Box::new(
-            hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc05").unwrap(),
+            hex::decode("0348685437335ec43ba6211caf848576ca3d34abbe9e089f861471b4ed9ee9bbd0").unwrap(),
         )))
     });
     let err = block_on(coin.validate_fee(ValidateFeeArgs {
@@ -1141,7 +1141,7 @@ fn test_send_contract_calls_recoverable_tx() {
 
     let tx = TransactionEnum::UtxoTx("010000000160fd74b5714172f285db2b36f0b391cd6883e7291441631c8b18f165b0a4635d020000006a47304402205d409e141111adbc4f185ae856997730de935ac30a0d2b1ccb5a6c4903db8171022024fc59bbcfdbba283556d7eeee4832167301dc8e8ad9739b7865f67b9676b226012103693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9ffffffff020000000000000000625403a08601012844a9059cbb000000000000000000000000ca1e04745e8ca0c60d8c5881531d51bec470743f00000000000000000000000000000000000000000000000000000000000f424014d362e096e873eb7907e205fadc6175c6fec7bc44c200ada205000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88acfe967d5f".into());
 
-    let fee_addr = hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc05").unwrap();
+    let fee_addr = hex::decode("0348685437335ec43ba6211caf848576ca3d34abbe9e089f861471b4ed9ee9bbd0").unwrap();
     let to_address = coin.contract_address_from_raw_pubkey(&fee_addr).unwrap();
     let amount = BigDecimal::try_from(0.2).unwrap();
     let amount = u256_from_big_decimal(&amount, coin.utxo.decimals).unwrap();
