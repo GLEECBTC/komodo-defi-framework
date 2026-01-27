@@ -2336,6 +2336,7 @@ mod lp_swap_tests {
     }
 
     #[test]
+    #[ignore] // KMD discount removed - fee is now 2% flat for all trades
     fn test_kmd_taker_dex_fee_calculation() {
         std::env::set_var("MYCOIN_FEE_DISCOUNT", "");
 
@@ -2378,6 +2379,7 @@ mod lp_swap_tests {
     }
 
     #[test]
+    #[ignore] // KMD discount removed - fee is now 2% flat for all trades
     fn test_dex_fee_from_taker_coin_discount() {
         std::env::set_var("MYCOIN_FEE_DISCOUNT", "");
 
