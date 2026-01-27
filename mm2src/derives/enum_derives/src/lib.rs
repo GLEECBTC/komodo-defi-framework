@@ -144,7 +144,6 @@ pub fn derive(input: TokenStream) -> TokenStream {
 ///     Polygon,
 /// }
 ///
-///#[test]
 ///fn test_enum_variant_list() {
 ///    let all_chains = Chain::variant_list();
 ///    assert_eq!(all_chains, vec![
