@@ -140,9 +140,9 @@ impl HttpStatusCode for MyError {
 
 ```rust
 // DEX fee addresses
-pub const DEX_FEE_ADDR_PUBKEY: &str = "03bc2c7ba671...";
-pub const DEX_BURN_ADDR_PUBKEY: &str = "0369aa10c061...";
-
+pub const DEX_FEE_ADDR_PUBKEY: &str = "0348685437...";
+pub const DEX_BURN_ADDR_PUBKEY: &str = "0348685437..."; // Same as fee (burn disabled)
+```
 // Satoshis conversion
 pub const SATOSHIS: u64 = 100_000_000;
 pub fn sat_to_f(sat: u64) -> f64;
