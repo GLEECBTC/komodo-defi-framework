@@ -3487,6 +3487,7 @@ pub fn is_asset_chain(coin: &UtxoCoinFields) -> bool {
 
 /// Returns whether DEX fee should be split with burn address.
 /// Currently disabled - all fees go to DEX fee address.
+// TODO: If we ever change this back to true, we need to check negotiation version was added
 pub const fn should_burn_dex_fee() -> bool {
     false
 }
