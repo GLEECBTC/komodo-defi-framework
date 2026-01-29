@@ -2335,11 +2335,12 @@ mod lp_swap_tests {
         let _: SavedSwap = json::from_str(include_str!("for_tests/iris_nimda_rick_maker_swap.json")).unwrap();
     }
 
+    /// Tests WithBurn fee calculation when burn is enabled via mocking.
+    /// Verifies that all coins use the same 2% flat fee rate (no KMD discount).
+    ///
+    /// TODO: Add discount test cases when fee discounts are implemented for GLEEC.
     #[test]
-    #[ignore] // KMD discount removed - fee is now 2% flat for all trades
-    fn test_kmd_taker_dex_fee_calculation() {
-        std::env::set_var("MYCOIN_FEE_DISCOUNT", "");
-
+    fn test_with_burn_fee_calculation() {
         let kmd = coins::TestCoin::new("KMD");
         TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
         let (kmd_fee_amount, kmd_burn_amount) = match DexFee::new_from_taker_coin(&kmd, &MmNumber::from(6150)) {
@@ -2369,20 +2370,25 @@ mod lp_swap_tests {
         };
         TestCoin::should_burn_dex_fee.clear_mock();
 
-        let expected_mycoin_total_fee = &kmd_fee_amount / &MmNumber::from("0.75");
-        let expected_kmd_burn_amount = &expected_mycoin_total_fee - &kmd_fee_amount;
-
+        // All coins should have the same fee rate (2% flat, no discounts)
         assert_eq!(kmd_fee_amount, mycoin_fee_amount);
-        assert_eq!(expected_kmd_burn_amount, kmd_burn_amount);
-        // assuming for TestCoin dust is zero
-        assert_eq!(mycoin_burn_amount, kmd_burn_amount);
+        assert_eq!(kmd_burn_amount, mycoin_burn_amount);
+
+        // Verify fee/burn split: 75% fee, 25% burn
+        let total_fee = &kmd_fee_amount + &kmd_burn_amount;
+        let expected_fee = &total_fee * &MmNumber::from("0.75");
+        let expected_burn = &total_fee * &MmNumber::from("0.25");
+        assert_eq!(kmd_fee_amount, expected_fee);
+        assert_eq!(kmd_burn_amount, expected_burn);
     }
 
+    /// Tests that all coins have the same fee rate (no discounts).
+    /// Previously tested MYCOIN_FEE_DISCOUNT env var giving 10% discount.
+    /// Now verifies uniform 2% rate for all coins.
+    ///
+    /// TODO: Add discount test when fee discounts are implemented for GLEEC.
     #[test]
-    #[ignore] // KMD discount removed - fee is now 2% flat for all trades
-    fn test_dex_fee_from_taker_coin_discount() {
-        std::env::set_var("MYCOIN_FEE_DISCOUNT", "");
-
+    fn test_uniform_fee_rate_no_discounts() {
         let mycoin = coins::TestCoin::new("MYCOIN");
         TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
         let (mycoin_taker_fee, mycoin_burn_amount) = match DexFee::new_from_taker_coin(&mycoin, &MmNumber::from(6150)) {
@@ -2411,8 +2417,10 @@ mod lp_swap_tests {
                 } => (fee_amount, burn_amount),
             };
         TestCoin::should_burn_dex_fee.clear_mock();
-        assert_eq!(testcoin_taker_fee * MmNumber::from("0.90"), mycoin_taker_fee);
-        assert_eq!(testcoin_burn_amount * MmNumber::from("0.90"), mycoin_burn_amount);
+
+        // All coins should have the same fee (no discounts anymore)
+        assert_eq!(testcoin_taker_fee, mycoin_taker_fee);
+        assert_eq!(testcoin_burn_amount, mycoin_burn_amount);
     }
 
     #[test]
