@@ -4394,7 +4394,7 @@ pub mod tests {
     use common::{block_on, wait_until_ms, DEX_FEE_ADDR_RAW_PUBKEY};
     use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse};
     use crypto::privkey::key_pair_from_seed;
-    use mm2_test_helpers::for_tests::DEX_FEE_ADDR_RAW_PUBKEY_LEGACY;
+    use mm2_test_helpers::for_tests::{DEX_BURN_ADDR_RAW_PUBKEY_LEGACY, DEX_FEE_ADDR_RAW_PUBKEY_LEGACY};
     use mocktopus::mocking::{MockResult, Mockable};
     use std::{mem::discriminant, num::NonZeroUsize};
 
@@ -4937,14 +4937,16 @@ pub mod tests {
     }
 
     // This test uses historical tx fixtures sent to the OLD dex fee/burn addresses.
-    // Mock dex_pubkey to return legacy pubkey for historical tx fixture validation.
+    // Mock dex_pubkey and burn_pubkey to return legacy pubkeys for historical tx fixture validation.
     #[test]
     fn validate_taker_fee_with_burn_test() {
         const NUCLEUS_TEST_SEED: &str = "nucleus test seed";
 
-        // Mock dex_pubkey to return legacy pubkey for historical tx fixtures
+        // Mock dex_pubkey and burn_pubkey to return legacy pubkeys for historical tx fixtures
         <TendermintCoin as SwapOps>::dex_pubkey
             .mock_safe(|_| MockResult::Return(DEX_FEE_ADDR_RAW_PUBKEY_LEGACY.as_slice()));
+        <TendermintCoin as SwapOps>::burn_pubkey
+            .mock_safe(|_| MockResult::Return(DEX_BURN_ADDR_RAW_PUBKEY_LEGACY.as_slice()));
 
         let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
         let conf = TendermintConf {
@@ -5007,6 +5009,7 @@ pub mod tests {
         // Clean up mocks
         TendermintCoin::request_tx.clear_mock();
         <TendermintCoin as SwapOps>::dex_pubkey.clear_mock();
+        <TendermintCoin as SwapOps>::burn_pubkey.clear_mock();
     }
 
     #[test]

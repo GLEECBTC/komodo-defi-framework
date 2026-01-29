@@ -30,7 +30,7 @@ const GITHUB_CLIENT_USER_AGENT: &str = "mm2";
 /// Used to test WithBurn validation with different fee and burn addresses.
 const DEX_FEE_Z_ADDR_LEGACY: &str = "zs1rp6426e9r6jkq2nsanl66tkd34enewrmr0uvj0zelhkcwmsy0uvxz2fhm9eu9rl3ukxvgzy2v9f";
 /// Legacy DEX burn z-address for unit test fixtures.
-const DEX_BURN_Z_ADDR_LEGACY: &str = "zs1w6nkameazc5gujm69350syl5w8tgvyaphums3pw8eytzy5knj9kdg0wnkmnh8kzlwydxqhczkel";
+const DEX_BURN_Z_ADDR_LEGACY: &str = "zs1ntx28kyurgvsc7rxgkdhasz8p6wzv63nqpcayvnh7c4r6cs4wfkz8ztkwazjzdsxkgaq6erscyl";
 
 /// Download zcash params from komodo repo
 async fn fetch_and_save_params(param: &str, fname: &Path) -> Result<(), String> {

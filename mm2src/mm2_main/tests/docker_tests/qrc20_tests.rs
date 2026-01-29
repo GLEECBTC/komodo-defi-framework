@@ -999,7 +999,8 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
     let _taker_payment_tx = block_on(coin.send_taker_payment(taker_payment_args)).expect("!send_taker_payment");
 
     let my_balance = block_on_f01(coin.my_spendable_balance()).expect("!my_balance");
-    let tolerance = BigDecimal::from_str("0.001").unwrap();
+    // Tolerance increased to accommodate 2% dex fee rate (larger fee amount affects gas estimation gaps)
+    let tolerance = BigDecimal::from_str("0.002").unwrap();
     assert!(
         my_balance < tolerance,
         "NOT AN ERROR, but it would be better if the balance remained near zero. \
