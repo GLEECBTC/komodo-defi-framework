@@ -367,15 +367,19 @@ fn test_watcher_spends_maker_payment_utxo_utxo() {
 
     let acoin_volume = BigDecimal::from_str("50").unwrap();
     let bcoin_volume = BigDecimal::from_str("2").unwrap();
+    // DEX fee is 2% of taker volume (acoin_volume), paid by Alice (taker)
+    let dex_fee = &acoin_volume * BigDecimal::from_str("0.02").unwrap();
 
+    // Alice spends acoin_volume + dex_fee (as taker, she pays the DEX fee in the taker coin)
     assert_eq!(
         balances.alice_acoin_balance_after.round(0),
-        balances.alice_acoin_balance_before - acoin_volume.clone()
+        balances.alice_acoin_balance_before.clone() - acoin_volume.clone() - dex_fee
     );
     assert_eq!(
         balances.alice_bcoin_balance_after.round(0),
         balances.alice_bcoin_balance_before + bcoin_volume.clone()
     );
+    // Bob receives acoin_volume (no fee on his side)
     assert_eq!(
         balances.bob_acoin_balance_after.round(0),
         balances.bob_acoin_balance_before + acoin_volume
@@ -406,10 +410,16 @@ fn test_watcher_refunds_taker_payment_utxo() {
         Some(60),
     );
 
+    // Alice's a_coin (MYCOIN1) balance is reduced by the DEX fee.
+    // The taker fee is non-refundable even when the swap is refunded.
+    // DEX fee is 2% of acoin_volume (50 MYCOIN1) = 1 MYCOIN1
+    let acoin_volume = BigDecimal::from_str("50").unwrap();
+    let dex_fee = &acoin_volume * BigDecimal::from_str("0.02").unwrap();
     assert_eq!(
         balances.alice_acoin_balance_after.round(0),
-        balances.alice_acoin_balance_before
+        balances.alice_acoin_balance_before.clone() - dex_fee
     );
+    // Alice's b_coin (MYCOIN) balance should be unchanged - she got her taker payment refunded
     assert_eq!(balances.alice_bcoin_balance_after, balances.alice_bcoin_balance_before);
 }
 

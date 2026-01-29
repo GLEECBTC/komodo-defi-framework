@@ -7,6 +7,7 @@ use keys::Address;
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_number::bigdecimal::Zero;
 use mm2_test_helpers::electrums::tqtum_electrums;
+use mm2_test_helpers::for_tests::DEX_FEE_ADDR_RAW_PUBKEY_LEGACY;
 use rpc::v1::types::ToTxHash;
 use std::convert::TryFrom;
 use std::mem::discriminant;
@@ -321,6 +322,7 @@ fn test_wait_for_confirmations_excepted() {
 #[test]
 fn test_validate_fee() {
     // priv_key of qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG
+    // TODO: Update test fixtures with transactions to new DEX fee address once swaps exist
 
     use common::DEX_FEE_ADDR_RAW_PUBKEY;
     let priv_key = [
@@ -330,10 +332,14 @@ fn test_validate_fee() {
     let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
 
     // QRC20 transfer tx "f97d3a43dbea0993f1b7a6a299377d4ee164c84935a1eb7d835f70c9429e6a1d"
+    // This tx was sent to the OLD dex fee address, so we mock dex_pubkey to return the legacy address
     let tx = TransactionEnum::UtxoTx("010000000160fd74b5714172f285db2b36f0b391cd6883e7291441631c8b18f165b0a4635d020000006a47304402205d409e141111adbc4f185ae856997730de935ac30a0d2b1ccb5a6c4903db8171022024fc59bbcfdbba283556d7eeee4832167301dc8e8ad9739b7865f67b9676b226012103693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9ffffffff020000000000000000625403a08601012844a9059cbb000000000000000000000000ca1e04745e8ca0c60d8c5881531d51bec470743f00000000000000000000000000000000000000000000000000000000000f424014d362e096e873eb7907e205fadc6175c6fec7bc44c200ada205000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88acfe967d5f".into());
     let sender_pub = hex::decode("03693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9").unwrap();
 
     let amount = BigDecimal::from_str("0.01").unwrap();
+
+    // Mock to use legacy fee address for this historical tx fixture
+    <Qrc20Coin as SwapOps>::dex_pubkey.mock_safe(|_| MockResult::Return(DEX_FEE_ADDR_RAW_PUBKEY_LEGACY.as_slice()));
 
     let result = block_on(coin.validate_fee(ValidateFeeArgs {
         fee_tx: &tx,
@@ -344,12 +350,12 @@ fn test_validate_fee() {
     }));
     assert!(result.is_ok());
 
-    // wrong dex address
-    <Qrc20Coin as SwapOps>::dex_pubkey.mock_safe(|_| {
-        MockResult::Return(Box::leak(Box::new(
-            hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc05").unwrap(),
-        )))
-    });
+    // wrong dex address - use a completely different pubkey
+    let wrong_pubkey: &'static [u8] = &[
+        3, 188, 44, 123, 166, 113, 186, 228, 166, 252, 131, 82, 68, 201, 118, 43, 65, 100, 123, 152, 39, 212, 120, 10,
+        137, 169, 73, 185, 132, 168, 221, 204, 5,
+    ];
+    <Qrc20Coin as SwapOps>::dex_pubkey.mock_safe(move |_| MockResult::Return(wrong_pubkey));
     let err = block_on(coin.validate_fee(ValidateFeeArgs {
         fee_tx: &tx,
         expected_sender: &sender_pub,
@@ -364,7 +370,9 @@ fn test_validate_fee() {
         ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("QRC20 Fee tx was sent to wrong address")),
         _ => panic!("Expected `WrongPaymentTx` wrong receiver address, found {:?}", err),
     }
-    <Qrc20Coin as SwapOps>::dex_pubkey.clear_mock();
+
+    // Restore legacy mock for remaining tests with the historical tx fixture
+    <Qrc20Coin as SwapOps>::dex_pubkey.mock_safe(|_| MockResult::Return(DEX_FEE_ADDR_RAW_PUBKEY_LEGACY.as_slice()));
 
     let err = block_on(coin.validate_fee(ValidateFeeArgs {
         fee_tx: &tx,
@@ -413,6 +421,8 @@ fn test_validate_fee() {
         },
         _ => panic!("Expected `WrongPaymentTx` invalid fee value, found {:?}", err),
     }
+
+    <Qrc20Coin as SwapOps>::dex_pubkey.clear_mock();
 
     // QTUM tx "8a51f0ffd45f34974de50f07c5bf2f0949da4e88433f8f75191953a442cf9310"
     let tx = TransactionEnum::UtxoTx("020000000113640281c9332caeddd02a8dd0d784809e1ad87bda3c972d89d5ae41f5494b85010000006a47304402207c5c904a93310b8672f4ecdbab356b65dd869a426e92f1064a567be7ccfc61ff02203e4173b9467127f7de4682513a21efb5980e66dbed4da91dff46534b8e77c7ef012102baefe72b3591de2070c0da3853226b00f082d72daa417688b61cb18c1d543d1afeffffff020001b2c4000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88acbc4dd20c2f0000001976a9144208fa7be80dcf972f767194ad365950495064a488ac76e70800".into());

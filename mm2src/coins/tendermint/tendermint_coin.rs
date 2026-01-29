@@ -4394,6 +4394,7 @@ pub mod tests {
     use common::{block_on, wait_until_ms, DEX_FEE_ADDR_RAW_PUBKEY};
     use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse};
     use crypto::privkey::key_pair_from_seed;
+    use mm2_test_helpers::for_tests::DEX_FEE_ADDR_RAW_PUBKEY_LEGACY;
     use mocktopus::mocking::{MockResult, Mockable};
     use std::{mem::discriminant, num::NonZeroUsize};
 
@@ -4735,8 +4736,14 @@ pub mod tests {
         assert_eq!(hex::encode_upper(hash.0), expected_spend_hash);
     }
 
+    // TODO: Update test fixtures with transactions to new DEX fee address once swaps exist.
+    // This test uses historical tx fixtures sent to the OLD dex fee address.
+    // We mock dex_pubkey() to return the legacy pubkey for address derivation.
     #[test]
     fn validate_taker_fee_test() {
+        // Mock dex_pubkey to return legacy pubkey for historical tx fixtures
+        <TendermintCoin as SwapOps>::dex_pubkey
+            .mock_safe(|_| MockResult::Return(DEX_FEE_ADDR_RAW_PUBKEY_LEGACY.as_slice()));
         let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
 
         let protocol_conf = get_iris_protocol();
@@ -4926,11 +4933,18 @@ pub mod tests {
         )
         .unwrap();
         TendermintCoin::request_tx.clear_mock();
+        <TendermintCoin as SwapOps>::dex_pubkey.clear_mock();
     }
 
+    // This test uses historical tx fixtures sent to the OLD dex fee/burn addresses.
+    // Mock dex_pubkey to return legacy pubkey for historical tx fixture validation.
     #[test]
     fn validate_taker_fee_with_burn_test() {
         const NUCLEUS_TEST_SEED: &str = "nucleus test seed";
+
+        // Mock dex_pubkey to return legacy pubkey for historical tx fixtures
+        <TendermintCoin as SwapOps>::dex_pubkey
+            .mock_safe(|_| MockResult::Return(DEX_FEE_ADDR_RAW_PUBKEY_LEGACY.as_slice()));
 
         let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
         let conf = TendermintConf {
@@ -4989,6 +5003,10 @@ pub mod tests {
             .compat(),
         )
         .unwrap();
+
+        // Clean up mocks
+        TendermintCoin::request_tx.clear_mock();
+        <TendermintCoin as SwapOps>::dex_pubkey.clear_mock();
     }
 
     #[test]

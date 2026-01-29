@@ -168,6 +168,16 @@ pub const TAKER_ERROR_EVENTS: [&str; 17] = [
     "TakerPaymentRefundFinished",
 ];
 
+/// Legacy DEX fee public key - used in tests to validate historical transactions
+/// that were sent to the old fee address before the fee update.
+pub const DEX_FEE_ADDR_PUBKEY_LEGACY: &str = "03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc06";
+
+lazy_static! {
+    /// Legacy DEX fee raw pubkey bytes for test fixtures
+    pub static ref DEX_FEE_ADDR_RAW_PUBKEY_LEGACY: Vec<u8> =
+        hex::decode(DEX_FEE_ADDR_PUBKEY_LEGACY).expect("DEX_FEE_ADDR_PUBKEY_LEGACY is expected to be a hexadecimal string");
+}
+
 pub const RICK: &str = "RICK";
 pub const RICK_ELECTRUM_ADDRS: &[&str] = &[
     "electrum1.cipig.net:10017",

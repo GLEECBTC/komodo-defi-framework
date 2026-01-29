@@ -2710,7 +2710,7 @@ fn test_v2_eth_eth_kickstart_impl(base: &str, rel: &str, maker_price: f64, taker
         rel,
         &alice_rel_balance_0.balance,
         &alice_rel_balance_1.balance,
-        volume * (1.0 + 1.0 / 777.0),
+        volume * 1.02, // 2% DEX fee
         Some(taker_price),
         "sell",
     );
