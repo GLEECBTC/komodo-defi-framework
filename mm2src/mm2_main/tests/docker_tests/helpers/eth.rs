@@ -25,7 +25,7 @@ use crypto::Secp256k1Secret;
 use ethabi::Token;
 use ethereum_types::{H160 as H160Eth, U256};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
-use mm2_test_helpers::for_tests::{erc20_dev_conf, eth_dev_conf};
+use mm2_test_helpers::for_tests::{erc20_dev_conf, eth_dev_conf, usdt_dev_conf};
 use mm2_test_helpers::get_passphrase;
 use serde_json::json;
 use std::sync::{Mutex, OnceLock};
@@ -85,6 +85,8 @@ static GETH_ERC721_CONTRACT: OnceLock<H160Eth> = OnceLock::new();
 static GETH_ERC1155_CONTRACT: OnceLock<H160Eth> = OnceLock::new();
 /// NFT Maker Swap V2 contract address on Geth dev node
 static GETH_NFT_MAKER_SWAP_V2: OnceLock<H160Eth> = OnceLock::new();
+/// USDT contract address on Geth dev node (non-standard ERC20 for SafeERC20 testing)
+static GETH_USDT_CONTRACT: OnceLock<H160Eth> = OnceLock::new();
 
 /// Geth RPC URL
 pub static GETH_RPC_URL: &str = "http://127.0.0.1:8545";
@@ -119,6 +121,11 @@ pub const NFT_MAKER_SWAP_V2_BYTES: &str =
 pub const MAKER_SWAP_V2_BYTES: &str = include_str!("../../../../mm2_test_helpers/contract_bytes/maker_swap_v2_bytes");
 /// https://github.com/KomodoPlatform/etomic-swap/blob/7d4eafd4a408188a95aee78a41f0bf5f9116ffa2/contracts/EtomicSwapTakerV2.sol
 pub const TAKER_SWAP_V2_BYTES: &str = include_str!("../../../../mm2_test_helpers/contract_bytes/taker_swap_v2_bytes");
+/// Real USDT mainnet contract bytecode from Etherscan for SafeERC20 testing.
+/// This is a non-standard ERC20 where transfer/transferFrom return void instead of bool.
+pub const USDT_CONTRACT_BYTES: &str = include_str!("../../../../mm2_test_helpers/contract_bytes/usdt_contract_bytes");
+/// USDT ABI from Etherscan - note the non-standard outputs:[] for transfer/transferFrom
+pub const USDT_ABI: &str = include_str!("../../../../mm2_test_helpers/dummy_files/usdt_abi.json");
 
 /// Geth dev chain ID used for testing
 pub const GETH_DEV_CHAIN_ID: u64 = 1337;
@@ -199,9 +206,23 @@ pub fn geth_nft_maker_swap_v2() -> Address {
         .expect("GETH_NFT_MAKER_SWAP_V2 not initialized - call init_geth_node() first")
 }
 
+/// Get the USDT contract address.
+/// Panics if called before `init_geth_node()`.
+pub fn geth_usdt_contract() -> Address {
+    *GETH_USDT_CONTRACT
+        .get()
+        .expect("GETH_USDT_CONTRACT not initialized - call init_geth_node() first")
+}
+
 /// Return ERC20 dev token contract address in checksum format
 pub fn erc20_contract_checksum() -> String {
     checksum_address(&format!("{:02x}", erc20_contract()))
+}
+
+/// Return USDT contract address in checksum format
+#[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-watchers-eth"))]
+pub fn usdt_contract_checksum() -> String {
+    checksum_address(&format!("{:02x}", geth_usdt_contract()))
 }
 
 /// Return swap contract address in checksum format (with 0x prefix)
@@ -310,6 +331,22 @@ pub fn fill_erc20(to_addr: Address, amount: U256) {
     let erc20 = Contract::from_json(GETH_WEB3.eth(), erc20_contract(), ERC20_ABI.as_bytes()).unwrap();
 
     let tx_hash = block_on(erc20.call(
+        "transfer",
+        (Token::Address(to_addr), Token::Uint(amount)),
+        geth_account(),
+        Options::default(),
+    ))
+    .unwrap();
+    wait_for_confirmation(tx_hash);
+}
+
+/// Fill an address with USDT tokens from the Geth coinbase account.
+/// Note: USDT's transfer() doesn't return a value, so we use the USDT ABI.
+pub fn fill_usdt(to_addr: Address, amount: U256) {
+    let _guard = GETH_NONCE_LOCK.lock().unwrap();
+    let usdt = Contract::from_json(GETH_WEB3.eth(), geth_usdt_contract(), USDT_ABI.as_bytes()).unwrap();
+
+    let tx_hash = block_on(usdt.call(
         "transfer",
         (Token::Address(to_addr), Token::Uint(amount)),
         geth_account(),
@@ -428,6 +465,72 @@ pub fn erc20_coin_with_random_privkey(swap_contract_address: Address) -> EthCoin
     fill_erc20(my_address, U256::from(10000000000u64));
 
     erc20_coin
+}
+
+/// Creates USDT protocol coin supplied with 1 ETH and 100 USDT.
+/// Uses the real USDT contract (non-standard ERC20) for SafeERC20 testing.
+#[cfg(any(feature = "docker-tests-eth", feature = "docker-tests-watchers-eth"))]
+pub fn usdt_coin_with_random_privkey(swap_contract_address: Address) -> EthCoin {
+    let secret = random_secp256k1_secret();
+
+    // Register platform ETH coin if not already registered by another parallel test, so platform_coin() lookups work.
+    if block_on(lp_coinfind(&MM_CTX, "ETH")).ok().flatten().is_none() {
+        let eth_conf = eth_dev_conf();
+        let eth_req = json!({
+            "method": "enable",
+            "coin": "ETH",
+            "swap_contract_address": swap_contract_address,
+            "urls": [GETH_RPC_URL],
+        });
+        let platform_coin = block_on(eth_coin_from_conf_and_request(
+            &MM_CTX,
+            "ETH",
+            &eth_conf,
+            &eth_req,
+            CoinProtocol::ETH {
+                chain_id: GETH_DEV_CHAIN_ID,
+            },
+            PrivKeyBuildPolicy::IguanaPrivKey(secret),
+        ))
+        .unwrap();
+        let coins_ctx = CoinsContext::from_ctx(&MM_CTX).unwrap();
+        // Ignore error if another parallel test already registered the platform
+        let _ = block_on(coins_ctx.add_platform_with_tokens(platform_coin.into(), vec![], None));
+    }
+
+    // Now create the USDT token
+    let usdt_conf = usdt_dev_conf(&usdt_contract_checksum());
+    let req = json!({
+        "method": "enable",
+        "coin": "USDT",
+        "swap_contract_address": swap_contract_address,
+        "urls": [GETH_RPC_URL],
+    });
+
+    let usdt_coin = block_on(eth_coin_from_conf_and_request(
+        &MM_CTX,
+        "USDT",
+        &usdt_conf,
+        &req,
+        CoinProtocol::ERC20 {
+            platform: "ETH".to_string(),
+            contract_address: usdt_contract_checksum(),
+        },
+        PrivKeyBuildPolicy::IguanaPrivKey(secret),
+    ))
+    .unwrap();
+
+    let my_address = match usdt_coin.derivation_method() {
+        DerivationMethod::SingleAddress(addr) => addr.inner(),
+        _ => panic!("Expected single address"),
+    };
+
+    // 1 ETH for gas
+    fill_eth(my_address, U256::from(10).pow(U256::from(18)));
+    // 100 USDT (6 decimals)
+    fill_usdt(my_address, U256::from(100_000_000u64));
+
+    usdt_coin
 }
 
 /// Fills the private key's public address with ETH and ERC20 tokens
@@ -874,6 +977,47 @@ pub fn init_geth_node() {
     GETH_ERC1155_CONTRACT
         .set(geth_erc1155_contract)
         .expect("GETH_ERC1155_CONTRACT already initialized");
+
+    // Deploy USDT contract (non-standard ERC20 for SafeERC20 testing).
+    // Note: USDT bytecode already includes constructor args for initialSupply=100000 USDT,
+    // name="Tether USD", symbol="USDT", decimals=6.
+    let tx_request_deploy_usdt = TransactionRequest {
+        from: geth_account,
+        to: None,
+        // Explicit gas limit for large contract deployment
+        gas: Some(U256::from(8_000_000u64)),
+        gas_price: None,
+        value: None,
+        data: Some(hex::decode(USDT_CONTRACT_BYTES).unwrap().into()),
+        nonce: None,
+        condition: None,
+        transaction_type: None,
+        access_list: None,
+        max_fee_per_gas: None,
+        max_priority_fee_per_gas: None,
+    };
+    let deploy_usdt_tx_hash = block_on(GETH_WEB3.eth().send_transaction(tx_request_deploy_usdt)).unwrap();
+    log!("Sent USDT deploy transaction {:?}", deploy_usdt_tx_hash);
+
+    let geth_usdt_contract = loop {
+        let deploy_usdt_tx_receipt = match block_on(GETH_WEB3.eth().transaction_receipt(deploy_usdt_tx_hash)) {
+            Ok(receipt) => receipt,
+            Err(_) => {
+                thread::sleep(Duration::from_millis(100));
+                continue;
+            },
+        };
+
+        if let Some(receipt) = deploy_usdt_tx_receipt {
+            let addr = receipt.contract_address.unwrap();
+            log!("GETH_USDT_CONTRACT {:?}", addr);
+            break addr;
+        }
+        thread::sleep(Duration::from_millis(100));
+    };
+    GETH_USDT_CONTRACT
+        .set(geth_usdt_contract)
+        .expect("GETH_USDT_CONTRACT already initialized");
 
     let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
     let alice_keypair = key_pair_from_seed(&alice_passphrase).unwrap();
