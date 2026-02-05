@@ -2784,14 +2784,12 @@ fn send_and_spend_usdt_maker_payment_impl(swap_txfee_policy: SwapGasFeePolicy) {
     let secret_hash_owned = dhash160(secret);
     let secret_hash = secret_hash_owned.as_slice();
 
-    // Note: USDT has 6 decimals, so amount 1 = 0.000001 USDT
-    // We use a larger amount to be meaningful
     let send_payment_args = SendPaymentArgs {
         time_lock_duration: 1000,
         time_lock,
         other_pubkey: &taker_pubkey,
         secret_hash,
-        amount: BigDecimal::from_str("10").unwrap(), // 10 USDT
+        amount: BigDecimal::from_str("10").unwrap(),
         swap_contract_address: &Some(swap_contract().as_bytes().into()),
         swap_unique_data: &[],
         payment_instructions: &None,
