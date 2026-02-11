@@ -6221,7 +6221,7 @@ fn test_enable_utxo_with_enable_hd() {
         block_on(get_new_address(&mm_hd_0, "BTC-segwit", 77, Some(Bip44Chain::External)));
     }
     let account_balance: HDAccountBalanceResponse =
-        block_on(account_balance(&mm_hd_0, "BTC-segwit", 77, Bip44Chain::External));
+        block_on(account_balance(&mm_hd_0, "BTC-segwit", 77, Bip44Chain::External, None));
     assert_eq!(
         account_balance.addresses[7].address,
         "bc1q0dxnd7afj997a40j86a8a6dq3xs3dwm7rkzams"

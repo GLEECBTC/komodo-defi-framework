@@ -5062,12 +5062,15 @@ impl EthCoin {
                 })?;
 
                 // TRON API requires a caller address for triggerconstantcontract.
+                // Prefer the wallet's enabled address; fall back to the token contract
+                // address (which is guaranteed to exist on-chain) for HD wallets where
+                // no single address is pre-selected.
                 let caller = self
                     .derivation_method
-                    .single_addr_or_err()
+                    .single_addr()
                     .await
-                    .map_err(|e| MmError::new(Web3RpcError::Internal(e.to_string())))?
-                    .inner();
+                    .map(|a| a.inner())
+                    .unwrap_or(token_contract);
 
                 let caller_tron = TronAddress::from(caller);
                 let contract_tron = TronAddress::from(token_contract);
