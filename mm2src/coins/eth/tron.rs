@@ -6,6 +6,7 @@
 mod address;
 pub mod api;
 pub(crate) mod proto;
+pub mod tx_builder;
 
 /// Integration tests using real TRON testnet (Nile).
 /// These tests require network access and are gated behind the `tron-network-tests` feature.
