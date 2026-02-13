@@ -6,6 +6,7 @@
 mod address;
 pub mod api;
 pub(crate) mod proto;
+pub(crate) mod sign;
 pub mod tx_builder;
 
 /// Integration tests using real TRON testnet (Nile).
