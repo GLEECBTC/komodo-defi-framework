@@ -36,9 +36,10 @@ use http::Uri;
 use mm2_p2p::Keypair;
 use proxy_signature::RawMessage;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as Json;
 use serde_json::{self as json};
+use std::convert::TryInto;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -356,6 +357,15 @@ struct GetNowBlockRequest {}
 /// Response from `/wallet/getnowblock`.
 #[derive(Deserialize, Debug)]
 pub struct GetNowBlockResponse {
+    /// Computed block identifier (not in protobuf — added by the HTTP servlet layer).
+    /// First 8 bytes duplicate the block number (big-endian) for sortability; remaining 24 bytes
+    /// are from SHA256 of `block_header.raw_data`. We only need bytes `[8..16]` for TAPOS
+    /// (`ref_block_hash`); the block number itself comes from `block_header.raw_data.number`.
+    /// Deserialized from a 64-char hex string; `None` if absent.
+    /// See [`generateBlockId`](https://github.com/tronprotocol/java-tron/blob/1e35f79/common/src/main/java/org/tron/common/utils/Sha256Hash.java#L252-L258).
+    #[serde(default, rename = "blockID", deserialize_with = "deserialize_opt_block_id")]
+    pub block_id: Option<[u8; 32]>,
+    /// Block header containing raw block data (number, timestamp, etc.).
     #[serde(default)]
     pub block_header: Option<BlockHeader>,
 }
@@ -366,11 +376,51 @@ pub struct BlockHeader {
     pub raw_data: BlockRawData,
 }
 
-/// Raw block data containing the block number.
+/// Raw block data from a TRON block header.
 #[derive(Deserialize, Debug)]
 pub struct BlockRawData {
     /// Block height.
     pub number: i64,
+    /// Block timestamp in milliseconds since epoch.
+    #[serde(default)]
+    pub timestamp: i64,
+}
+
+/// Deserialize an optional hex string into `Option<[u8; 32]>`.
+///
+/// Handles TRON's `blockID` field: a 64-char hex string (no `0x` prefix).
+/// Returns `None` if the field is absent (via `#[serde(default)]`).
+/// Returns an error if the hex is invalid or not exactly 32 bytes.
+fn deserialize_opt_block_id<'de, D>(deserializer: D) -> Result<Option<[u8; 32]>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let Some(hex_str) = Option::<String>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+    let hex_str = hex_str.strip_prefix("0x").unwrap_or(&hex_str);
+    let bytes = hex::decode(hex_str).map_err(serde::de::Error::custom)?;
+    let arr: [u8; 32] = bytes
+        .try_into()
+        .map_err(|v: Vec<u8>| serde::de::Error::custom(format!("blockID must be 32 bytes, got {}", v.len())))?;
+    Ok(Some(arr))
+}
+
+/// Validated block data needed for TAPOS (Transaction as Proof of Stake) reference.
+///
+/// TRON transactions include a reference to a recent block (TAPOS) for replay protection:
+/// - `ref_block_bytes`: last 2 bytes of `number` (big-endian) → `number.to_be_bytes()[6..8]`
+/// - `ref_block_hash`: bytes 8..16 of `block_id` (the SHA256 portion)
+///
+/// TAPOS validity window is 65,536 blocks (~54 hours).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TaposBlockData {
+    /// Block height.
+    pub number: u64,
+    /// Full 32-byte block identifier.
+    pub block_id: [u8; 32],
+    /// Block timestamp in milliseconds since epoch.
+    pub timestamp: i64,
 }
 
 /// Request body for `/wallet/getaccount`.
@@ -492,6 +542,38 @@ impl TronHttpClient {
         self.post("/wallet/getnowblock", &GetNowBlockRequest {}).await
     }
 
+    /// Get validated block data for TAPOS transaction references.
+    ///
+    /// Calls `/wallet/getnowblock` and validates that `blockID`, block number, and timestamp
+    /// are all present and sane. Returns `BadResponse` (retryable) for missing/invalid data.
+    pub async fn get_block_for_tapos(&self) -> Web3RpcResult<TaposBlockData> {
+        let response = self.get_now_block().await?;
+        let block_header = response.block_header.ok_or_else(|| {
+            Web3RpcError::BadResponse("TRON node returned getnowblock without block_header".to_string())
+        })?;
+        let block_id = response
+            .block_id
+            .ok_or_else(|| Web3RpcError::BadResponse("TRON node returned getnowblock without blockID".to_string()))?;
+        let number = block_header.raw_data.number;
+        if number < 0 {
+            return Err(Web3RpcError::BadResponse(format!(
+                "TRON node returned invalid negative block number: {number}"
+            ))
+            .into());
+        }
+        let timestamp = block_header.raw_data.timestamp;
+        if timestamp <= 0 {
+            return Err(
+                Web3RpcError::BadResponse(format!("TRON node returned invalid block timestamp: {timestamp}")).into(),
+            );
+        }
+        Ok(TaposBlockData {
+            number: number as u64,
+            block_id,
+            timestamp,
+        })
+    }
+
     /// Get account information for a TRON address.
     pub async fn get_account(&self, address: &TronAddress) -> Web3RpcResult<GetAccountResponse> {
         let request = GetAccountRequest {
@@ -588,6 +670,12 @@ impl TronApiClient {
         Err(last_retryable
             .unwrap_or_else(|| Web3RpcError::Transport("All TRON nodes unreachable".to_string()))
             .into())
+    }
+
+    /// Get validated block data for TAPOS with node rotation.
+    pub async fn get_block_for_tapos(&self) -> Web3RpcResult<TaposBlockData> {
+        self.try_clients(|client| async move { client.get_block_for_tapos().await })
+            .await
     }
 
     /// Get account information with node rotation.
@@ -772,5 +860,51 @@ impl ChainRpcOps for TronApiClient {
 impl std::fmt::Debug for TronApiClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TronApiClient").finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verifies the custom `blockID` hex deserializer parses correctly and that the
+    /// block number embedded in `blockID[0..8]` matches `block_header.raw_data.number`.
+    /// Test data: Nile testnet block [54242114](https://nile.tronscan.org/#/block/54242114).
+    #[test]
+    fn parse_getnowblock_and_tapos_derivation() {
+        let json = r#"{
+            "blockID": "00000000033bab42567444cc8af3dbaeb5cf26b514b7e90b9a23424ea8392641",
+            "block_header": {
+                "raw_data": {
+                    "number": 54242114,
+                    "timestamp": 1738799040000
+                }
+            }
+        }"#;
+        let resp: GetNowBlockResponse = serde_json::from_str(json).unwrap();
+
+        let block_id = resp.block_id.expect("block_id should be Some");
+        let header = resp.block_header.expect("block_header should be Some");
+        assert_eq!(header.raw_data.number, 54_242_114);
+        assert_eq!(header.raw_data.timestamp, 1_738_799_040_000);
+
+        // Block number embedded in blockID[0..8] matches block_header
+        let number_from_id = u64::from_be_bytes(block_id[..8].try_into().unwrap());
+        assert_eq!(number_from_id, 54_242_114);
+    }
+
+    /// Non-hex `blockID` must fail deserialization (triggers `BadResponse` → node rotation).
+    #[test]
+    fn parse_getnowblock_rejects_invalid_block_id_hex() {
+        let json = r#"{ "blockID": "not_valid_hex!!", "block_header": { "raw_data": { "number": 1 } } }"#;
+        assert!(serde_json::from_str::<GetNowBlockResponse>(json).is_err());
+    }
+
+    /// `blockID` that isn't exactly 32 bytes must fail deserialization.
+    #[test]
+    fn parse_getnowblock_rejects_wrong_length_block_id() {
+        // 31 bytes (62 hex chars) — too short
+        let json = r#"{ "blockID": "00000000033bab42e37d025dc14e9ebc26e8f6cb6b6e26e08d2bf2db29c3b4", "block_header": { "raw_data": { "number": 1 } } }"#;
+        assert!(serde_json::from_str::<GetNowBlockResponse>(json).is_err());
     }
 }

@@ -14,7 +14,7 @@ pub(crate) mod proto;
 mod api_integration_tests;
 
 pub use address::Address as TronAddress;
-pub use api::{TronApiClient, TronHttpClient, TronHttpNode};
+pub use api::{TaposBlockData, TronApiClient, TronHttpClient, TronHttpNode};
 
 use ethereum_types::U256;
 use serde::{Deserialize, Serialize};

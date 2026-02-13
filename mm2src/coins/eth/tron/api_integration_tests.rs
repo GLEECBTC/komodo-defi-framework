@@ -38,6 +38,7 @@ use ethereum_types::Address as EthAddress;
 use http::Uri;
 use mm2_test_helpers::for_tests::{TRON_NILE_NODES, TRON_TESTNET_KNOWN_ADDRESS};
 use rand::RngCore;
+use std::convert::TryInto;
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_test::*;
@@ -224,6 +225,29 @@ async fn test_balance_native_impl() {
     );
 }
 
+async fn test_get_block_for_tapos_impl() {
+    let client = tron_nile_api_client();
+    let tapos = client.get_block_for_tapos().await.unwrap();
+
+    assert!(
+        tapos.number > 1_000_000,
+        "Nile testnet should have more than 1M blocks, got {}",
+        tapos.number
+    );
+    assert!(
+        tapos.timestamp > 0,
+        "Block timestamp should be positive, got {}",
+        tapos.timestamp
+    );
+
+    // blockID first 8 bytes encode the block number in big-endian
+    let number_from_id = u64::from_be_bytes(tapos.block_id[..8].try_into().unwrap());
+    assert_eq!(
+        number_from_id, tapos.number,
+        "Block number in blockID should match block_header.raw_data.number"
+    );
+}
+
 // ============================================================================
 // Cross-Platform Integration Tests
 // ============================================================================
@@ -246,6 +270,10 @@ cross_test!(tron_nile_is_address_used_unused, {
 
 cross_test!(tron_nile_balance_native, {
     test_balance_native_impl().await;
+});
+
+cross_test!(tron_nile_get_block_for_tapos, {
+    test_get_block_for_tapos_impl().await;
 });
 
 // ============================================================================
