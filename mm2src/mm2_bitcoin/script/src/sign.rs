@@ -8,8 +8,10 @@ use chain::{
 use crypto::{dhash256, sha256};
 use hash::{H256, H512};
 use keys::KeyPair;
+use ser::ChainVariant;
 use ser::Stream;
 use serde::Deserialize;
+use std::collections::BTreeSet;
 use std::convert::TryInto;
 use {Builder, Script};
 
@@ -165,6 +167,7 @@ pub struct TransactionInputSigner {
     pub posv: bool,
     pub str_d_zeel: Option<String>,
     pub hash_algo: SignerHashAlgo,
+    pub chain_variant: ChainVariant,
     pub v_extra_payload: Option<Vec<u8>>,
 }
 
@@ -189,6 +192,7 @@ impl From<Transaction> for TransactionInputSigner {
             posv: t.posv,
             str_d_zeel: t.str_d_zeel,
             hash_algo: t.tx_hash_algo.into(),
+            chain_variant: ChainVariant::Standard,
             v_extra_payload: t.v_extra_payload,
         }
     }
@@ -244,7 +248,11 @@ impl TransactionInputSigner {
         let sighash = Sighash::from_u32(sigversion, sighashtype);
         match sigversion {
             SignatureVersion::ForkId if sighash.fork_id => {
-                self.signature_hash_fork_id(input_index, input_amount, script_pubkey, sighashtype, sighash)
+                if self.chain_variant.is_rxd() {
+                    self.signature_hash_fork_id_rxd(input_index, input_amount, script_pubkey, sighashtype, sighash)
+                } else {
+                    self.signature_hash_fork_id(input_index, input_amount, script_pubkey, sighashtype, sighash)
+                }
             },
             SignatureVersion::Base | SignatureVersion::ForkId => {
                 self.signature_hash_original(input_index, script_pubkey, sighashtype, sighash)
@@ -435,6 +443,43 @@ impl TransactionInputSigner {
         self.signature_hash_witness0(input_index, input_amount, script_pubkey, sighashtype, sighash)
     }
 
+    fn signature_hash_fork_id_rxd(
+        &self,
+        input_index: usize,
+        input_amount: u64,
+        script_pubkey: &Script,
+        sighashtype: u32,
+        sighash: Sighash,
+    ) -> H256 {
+        if input_index >= self.inputs.len() {
+            return 1u8.into();
+        }
+
+        if sighash.base == SighashBase::Single && input_index >= self.outputs.len() {
+            return 1u8.into();
+        }
+
+        let hash_prevouts = compute_hash_prevouts(sighash, &self.inputs);
+        let hash_sequence = compute_hash_sequence(sighash, &self.inputs);
+        let hash_output_hashes = compute_hash_output_hashes_rxd(sighash, input_index, &self.outputs);
+        let hash_outputs = compute_hash_outputs(sighash, input_index, &self.outputs);
+
+        let mut stream = Stream::default();
+        stream.append(&self.version);
+        stream.append(&hash_prevouts);
+        stream.append(&hash_sequence);
+        stream.append(&self.inputs[input_index].previous_output);
+        stream.append_list(script_pubkey);
+        stream.append(&input_amount);
+        stream.append(&self.inputs[input_index].sequence);
+        stream.append(&hash_output_hashes);
+        stream.append(&hash_outputs);
+        stream.append(&self.lock_time);
+        stream.append(&sighashtype);
+        let out = stream.out();
+        dhash256(&out)
+    }
+
     /// https://github.com/zcash/zips/blob/master/zip-0243.rst#notes
     /// This method doesn't cover all possible Sighash combinations so it doesn't fully match the
     /// specification, however I don't need other cases yet as BarterDEX marketmaker always uses
@@ -613,6 +658,126 @@ fn compute_hash_outputs(sighash: Sighash, input_index: usize, outputs: &[Transac
         },
         _ => 0u8.into(),
     }
+}
+
+fn compute_hash_output_hashes_rxd(sighash: Sighash, input_index: usize, outputs: &[TransactionOutput]) -> H256 {
+    let mut stream = Stream::default();
+
+    match sighash.base {
+        SighashBase::All => {
+            for output in outputs {
+                append_output_data_summary_rxd(&mut stream, output);
+            }
+        },
+        SighashBase::Single if input_index < outputs.len() => {
+            append_output_data_summary_rxd(&mut stream, &outputs[input_index]);
+        },
+        _ => return 0u8.into(),
+    }
+
+    sha256(&stream.out())
+}
+
+fn append_output_data_summary_rxd(stream: &mut Stream, output: &TransactionOutput) {
+    let script_pubkey_hash = sha256(output.script_pubkey.as_ref());
+    let sorted_push_refs = sorted_push_refs_rxd(output.script_pubkey.as_ref());
+    let total_refs: u32 = sorted_push_refs.len() as u32;
+    let refs_hash = if sorted_push_refs.is_empty() {
+        0u8.into()
+    } else {
+        let refs_concat: Vec<u8> = sorted_push_refs.into_iter().flatten().collect();
+        sha256(&refs_concat)
+    };
+
+    stream.append(&output.value);
+    stream.append(&script_pubkey_hash);
+    stream.append(&total_refs);
+    stream.append(&refs_hash);
+}
+
+fn sorted_push_refs_rxd(script_pubkey: &[u8]) -> Vec<[u8; 36]> {
+    const OP_PUSHDATA1: u8 = 0x4c;
+    const OP_PUSHDATA2: u8 = 0x4d;
+    const OP_PUSHDATA4: u8 = 0x4e;
+    const OP_PUSHINPUTREF: u8 = 0xd0;
+    const OP_REQUIREINPUTREF: u8 = 0xd1;
+    const OP_DISALLOWPUSHINPUTREF: u8 = 0xd2;
+    const OP_DISALLOWPUSHINPUTREFSIBLING: u8 = 0xd3;
+    const OP_PUSHINPUTREFSINGLETON: u8 = 0xd8;
+
+    let mut refs = BTreeSet::new();
+    let mut pos = 0usize;
+
+    while pos < script_pubkey.len() {
+        let opcode = script_pubkey[pos];
+        pos += 1;
+
+        match opcode {
+            0x01..=0x4b => {
+                let push_len = opcode as usize;
+                if pos + push_len > script_pubkey.len() {
+                    break;
+                }
+                pos += push_len;
+            },
+            OP_PUSHDATA1 => {
+                if pos + 1 > script_pubkey.len() {
+                    break;
+                }
+                let push_len = script_pubkey[pos] as usize;
+                pos += 1;
+                if pos + push_len > script_pubkey.len() {
+                    break;
+                }
+                pos += push_len;
+            },
+            OP_PUSHDATA2 => {
+                if pos + 2 > script_pubkey.len() {
+                    break;
+                }
+                let push_len = u16::from_le_bytes([script_pubkey[pos], script_pubkey[pos + 1]]) as usize;
+                pos += 2;
+                if pos + push_len > script_pubkey.len() {
+                    break;
+                }
+                pos += push_len;
+            },
+            OP_PUSHDATA4 => {
+                if pos + 4 > script_pubkey.len() {
+                    break;
+                }
+                let push_len = u32::from_le_bytes([
+                    script_pubkey[pos],
+                    script_pubkey[pos + 1],
+                    script_pubkey[pos + 2],
+                    script_pubkey[pos + 3],
+                ]) as usize;
+                pos += 4;
+                if pos + push_len > script_pubkey.len() {
+                    break;
+                }
+                pos += push_len;
+            },
+            OP_PUSHINPUTREF
+            | OP_PUSHINPUTREFSINGLETON
+            | OP_REQUIREINPUTREF
+            | OP_DISALLOWPUSHINPUTREF
+            | OP_DISALLOWPUSHINPUTREFSIBLING => {
+                if pos + 36 > script_pubkey.len() {
+                    break;
+                }
+                if opcode == OP_PUSHINPUTREF || opcode == OP_PUSHINPUTREFSINGLETON {
+                    let mut reference = [0u8; 36];
+                    reference.copy_from_slice(&script_pubkey[pos..pos + 36]);
+                    refs.insert(reference);
+                }
+                pos += 36;
+            },
+            _ => (),
+        }
+    }
+
+    refs.into_iter().collect()
 }
 
 fn blake_2b_256_personal(input: &[u8], personal: &[u8]) -> Result<H256, String> {

@@ -913,6 +913,7 @@ impl UtxoCoinFields {
             posv: self.conf.is_posv,
             str_d_zeel,
             hash_algo: self.tx_hash_algo.into(),
+            chain_variant: self.conf.chain_variant,
             v_extra_payload: None,
         }
     }

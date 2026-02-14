@@ -1017,6 +1017,7 @@ async fn p2sh_spending_tx_preimage<T: UtxoCommonOps>(
         posv: coin.as_ref().conf.is_posv,
         str_d_zeel,
         hash_algo,
+        chain_variant: coin.as_ref().conf.chain_variant,
         v_extra_payload: None,
     })
 }
