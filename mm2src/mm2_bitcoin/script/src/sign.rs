@@ -796,7 +796,8 @@ fn blake_2b_256_personal(input: &[u8], personal: &[u8]) -> Result<H256, String> 
 #[cfg(test)]
 mod tests {
     use super::{
-        blake_2b_256_personal, Sighash, SighashBase, SignatureVersion, TransactionInputSigner, UnsignedTransactionInput,
+        blake_2b_256_personal, ChainVariant, Sighash, SighashBase, SignatureVersion, TransactionInputSigner,
+        UnsignedTransactionInput,
     };
     use bytes::Bytes;
     use chain::{OutPoint, Transaction, TransactionOutput};
@@ -864,6 +865,7 @@ mod tests {
             zcash: false,
             posv: false,
             str_d_zeel: None,
+            chain_variant: ChainVariant::Standard,
             hash_algo: SignerHashAlgo::DSHA256,
             v_extra_payload: None,
         };
@@ -917,6 +919,7 @@ mod tests {
             zcash: false,
             posv: true,
             str_d_zeel: None,
+            chain_variant: ChainVariant::Standard,
             hash_algo: SignerHashAlgo::DSHA256,
             v_extra_payload: None,
         };
