@@ -675,18 +675,18 @@ fn compute_hash_output_hashes_rxd(sighash: Sighash, input_index: usize, outputs:
         _ => return 0u8.into(),
     }
 
-    sha256(&stream.out())
+    dhash256(&stream.out())
 }
 
 fn append_output_data_summary_rxd(stream: &mut Stream, output: &TransactionOutput) {
-    let script_pubkey_hash = sha256(output.script_pubkey.as_ref());
+    let script_pubkey_hash = dhash256(output.script_pubkey.as_ref());
     let sorted_push_refs = sorted_push_refs_rxd(output.script_pubkey.as_ref());
     let total_refs: u32 = sorted_push_refs.len() as u32;
     let refs_hash = if sorted_push_refs.is_empty() {
         0u8.into()
     } else {
         let refs_concat: Vec<u8> = sorted_push_refs.into_iter().flatten().collect();
-        sha256(&refs_concat)
+        dhash256(&refs_concat)
     };
 
     stream.append(&output.value);
