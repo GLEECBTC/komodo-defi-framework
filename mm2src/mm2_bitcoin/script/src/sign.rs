@@ -8,7 +8,6 @@ use chain::{
 use crypto::{dhash256, sha256};
 use hash::{H256, H512};
 use keys::KeyPair;
-use ser::ChainVariant;
 use ser::Stream;
 use serde::Deserialize;
 use std::collections::BTreeSet;
@@ -31,6 +30,8 @@ pub enum SignatureVersion {
     WitnessV0,
     #[serde(rename = "fork_id")]
     ForkId,
+    #[serde(rename = "fork_id_rxd")]
+    ForkIdRxd,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -81,7 +82,7 @@ impl Sighash {
     pub fn is_defined(version: SignatureVersion, u: u32) -> bool {
         // reset anyone_can_pay && fork_id (if applicable) bits
         let u = match version {
-            SignatureVersion::ForkId => u & !(0x40 | 0x80),
+            SignatureVersion::ForkId | SignatureVersion::ForkIdRxd => u & !(0x40 | 0x80),
             _ => u & !(0x80),
         };
 
@@ -92,7 +93,7 @@ impl Sighash {
     /// Creates Sighash from any u, even if is_defined() == false
     pub fn from_u32(version: SignatureVersion, u: u32) -> Self {
         let anyone_can_pay = (u & 0x80) == 0x80;
-        let fork_id = version == SignatureVersion::ForkId && (u & 0x40) == 0x40;
+        let fork_id = matches!(version, SignatureVersion::ForkId | SignatureVersion::ForkIdRxd) && (u & 0x40) == 0x40;
         let base = match u & 0x1f {
             2 => SighashBase::None,
             3 => SighashBase::Single,
@@ -167,7 +168,6 @@ pub struct TransactionInputSigner {
     pub posv: bool,
     pub str_d_zeel: Option<String>,
     pub hash_algo: SignerHashAlgo,
-    pub chain_variant: ChainVariant,
     pub v_extra_payload: Option<Vec<u8>>,
 }
 
@@ -192,7 +192,6 @@ impl From<Transaction> for TransactionInputSigner {
             posv: t.posv,
             str_d_zeel: t.str_d_zeel,
             hash_algo: t.tx_hash_algo.into(),
-            chain_variant: ChainVariant::Standard,
             v_extra_payload: t.v_extra_payload,
         }
     }
@@ -248,13 +247,12 @@ impl TransactionInputSigner {
         let sighash = Sighash::from_u32(sigversion, sighashtype);
         match sigversion {
             SignatureVersion::ForkId if sighash.fork_id => {
-                if self.chain_variant.is_rxd() {
-                    self.signature_hash_fork_id_rxd(input_index, input_amount, script_pubkey, sighashtype, sighash)
-                } else {
-                    self.signature_hash_fork_id(input_index, input_amount, script_pubkey, sighashtype, sighash)
-                }
+                self.signature_hash_fork_id(input_index, input_amount, script_pubkey, sighashtype, sighash)
             },
-            SignatureVersion::Base | SignatureVersion::ForkId => {
+            SignatureVersion::ForkIdRxd if sighash.fork_id => {
+                self.signature_hash_fork_id_rxd(input_index, input_amount, script_pubkey, sighashtype, sighash)
+            },
+            SignatureVersion::Base | SignatureVersion::ForkId | SignatureVersion::ForkIdRxd => {
                 self.signature_hash_original(input_index, script_pubkey, sighashtype, sighash)
             },
             SignatureVersion::WitnessV0 => {
@@ -796,7 +794,7 @@ fn blake_2b_256_personal(input: &[u8], personal: &[u8]) -> Result<H256, String> 
 #[cfg(test)]
 mod tests {
     use super::{
-        blake_2b_256_personal, ChainVariant, Sighash, SighashBase, SignatureVersion, TransactionInputSigner,
+        blake_2b_256_personal, Sighash, SighashBase, SignatureVersion, TransactionInputSigner,
         UnsignedTransactionInput,
     };
     use bytes::Bytes;
@@ -804,7 +802,7 @@ mod tests {
     use hash::{H160, H256};
     use keys::{
         prefixes::{BTC_PREFIXES, T_BTC_PREFIXES},
-        Address, AddressHashEnum, Private,
+        Address, AddressHashEnum, Private, Public, Signature,
     };
     use script::Script;
     use ser::deserialize;
@@ -865,7 +863,6 @@ mod tests {
             zcash: false,
             posv: false,
             str_d_zeel: None,
-            chain_variant: ChainVariant::Standard,
             hash_algo: SignerHashAlgo::DSHA256,
             v_extra_payload: None,
         };
@@ -919,7 +916,6 @@ mod tests {
             zcash: false,
             posv: true,
             str_d_zeel: None,
-            chain_variant: ChainVariant::Standard,
             hash_algo: SignerHashAlgo::DSHA256,
             v_extra_payload: None,
         };
@@ -960,6 +956,49 @@ mod tests {
         assert!(Sighash::is_defined(SignatureVersion::ForkId, 0x00000081));
         assert!(Sighash::is_defined(SignatureVersion::ForkId, 0x000000C2));
         assert!(Sighash::is_defined(SignatureVersion::ForkId, 0x00000043));
+
+        assert!(Sighash::is_defined(SignatureVersion::ForkIdRxd, 0x00000081));
+        assert!(Sighash::is_defined(SignatureVersion::ForkIdRxd, 0x000000C2));
+        assert!(Sighash::is_defined(SignatureVersion::ForkIdRxd, 0x00000043));
+    }
+
+    #[test]
+    fn test_rxd_forkid_sighash_vector() {
+        const SPEND_TX_HEX: &str = "0100000002502d0525588143dee5d3857b6b901805fb4ec53cca16b374f25bf8c3e12644ee010000006a47304402204715bf639b322d08cfabb2b1b7af1ba8b6b3d571a3629a2ae5faa39b8483942f0220424747e9e1cda6e034501171292fac690da050d5221cbfd318d880eb9701405541210275c802fa50d9a1f2b89c7e43b74c77e8826209b8aa79ed144c6768b9a6f262a1ffffffff457a0a555e6fbdaf5e5f2c241847026e1cf38ee3f523ebcd0dc27683fdcd4c55000000006a47304402200be359814746c94556d80fae90f02cc9bcff50a60a1a87dadce7579eb986d783022028f7d7a39561fbacde025a91b41b6279d4ffda991d9ef69804bde990f663c1df41210275c802fa50d9a1f2b89c7e43b74c77e8826209b8aa79ed144c6768b9a6f262a1ffffffff0300ca9a3b0000000017a914cf53278b47afd12ffd864a00090b6df471d22a16870000000000000000166a14bddadc147d635060f518c7d59e481090dc066f8bdb1ae329010000001976a914d4466bdfcc471b6207a108289b847d562044539288acd8c89169";
+        const INPUT_INDEX: usize = 0;
+        const INPUT_AMOUNT_SATS: u64 = 998_119_699;
+        const PREVOUT_SCRIPT_CODE_HEX: &str = "76a914d4466bdfcc471b6207a108289b847d562044539288ac";
+        const SIGHASH_U32: u32 = 0x41;
+        const DER_SIGNATURE_HEX: &str =
+            "304402204715bf639b322d08cfabb2b1b7af1ba8b6b3d571a3629a2ae5faa39b8483942f0220424747e9e1cda6e034501171292fac690da050d5221cbfd318d880eb97014055";
+        const PUBKEY_HEX: &str = "0275c802fa50d9a1f2b89c7e43b74c77e8826209b8aa79ed144c6768b9a6f262a1";
+        const EXPECTED_SIGHASH_HEX: &str = "201a2654d0ed04643080bbdda4acdf40a3d31a6a2e0c486270476fd3c6409187";
+
+        let tx: Transaction = SPEND_TX_HEX.into();
+        let mut signer: TransactionInputSigner = tx.into();
+        signer.inputs[INPUT_INDEX].amount = INPUT_AMOUNT_SATS;
+
+        let script_code: Script = PREVOUT_SCRIPT_CODE_HEX.into();
+        let sighash = signer.signature_hash(
+            INPUT_INDEX,
+            INPUT_AMOUNT_SATS,
+            &script_code,
+            SignatureVersion::ForkIdRxd,
+            SIGHASH_U32,
+        );
+
+        let signature: Signature = DER_SIGNATURE_HEX.into();
+        let pubkey_bytes: Bytes = PUBKEY_HEX.into();
+        let pubkey = Public::from_slice(&pubkey_bytes).expect("valid compressed pubkey");
+
+        assert!(pubkey.verify(&sighash, &signature).expect("signature verification should not error"));
+
+        let expected_sighash: H256 = EXPECTED_SIGHASH_HEX.into();
+        assert_eq!(
+            sighash, expected_sighash,
+            "RXD sighash mismatch: computed {}, expected {}",
+            sighash, expected_sighash
+        );
     }
 
     #[test]
