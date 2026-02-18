@@ -268,9 +268,7 @@ impl<'a> UtxoConfBuilder<'a> {
     }
 
     fn signature_version(&self) -> SignatureVersion {
-        let default_signature_version = if self.conf["protocol"]["chain_variant"].as_str() == Some("RXD") {
-            SignatureVersion::ForkIdRxd
-        } else if self.ticker == "BCH" || self.fork_id() != 0 {
+        let default_signature_version = if self.ticker == "BCH" || self.fork_id() != 0 {
             SignatureVersion::ForkId
         } else {
             SignatureVersion::Base
@@ -281,7 +279,6 @@ impl<'a> UtxoConfBuilder<'a> {
     fn fork_id(&self) -> u32 {
         let default_fork_id = match self.ticker {
             "BCH" => "0x40",
-            _ if self.conf["protocol"]["chain_variant"].as_str() == Some("RXD") => "0x40",
             _ => "0x0",
         };
         let hex_string = self.conf["fork_id"].as_str().unwrap_or(default_fork_id);
