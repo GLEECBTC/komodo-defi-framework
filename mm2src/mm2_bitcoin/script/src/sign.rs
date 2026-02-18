@@ -713,21 +713,21 @@ fn sorted_push_refs_rxd(script_pubkey: &[u8]) -> Vec<[u8; 36]> {
         match opcode {
             0x01..=0x4b => {
                 let push_len = opcode as usize;
-                if pos + push_len > script_pubkey.len() {
-                    break;
+                match pos.checked_add(push_len) {
+                    Some(end) if end <= script_pubkey.len() => pos = end,
+                    _ => break,
                 }
-                pos += push_len;
             },
             OP_PUSHDATA1 => {
-                if pos + 1 > script_pubkey.len() {
+                if pos >= script_pubkey.len() {
                     break;
                 }
                 let push_len = script_pubkey[pos] as usize;
                 pos += 1;
-                if pos + push_len > script_pubkey.len() {
-                    break;
+                match pos.checked_add(push_len) {
+                    Some(end) if end <= script_pubkey.len() => pos = end,
+                    _ => break,
                 }
-                pos += push_len;
             },
             OP_PUSHDATA2 => {
                 if pos + 2 > script_pubkey.len() {
@@ -735,10 +735,10 @@ fn sorted_push_refs_rxd(script_pubkey: &[u8]) -> Vec<[u8; 36]> {
                 }
                 let push_len = u16::from_le_bytes([script_pubkey[pos], script_pubkey[pos + 1]]) as usize;
                 pos += 2;
-                if pos + push_len > script_pubkey.len() {
-                    break;
+                match pos.checked_add(push_len) {
+                    Some(end) if end <= script_pubkey.len() => pos = end,
+                    _ => break,
                 }
-                pos += push_len;
             },
             OP_PUSHDATA4 => {
                 if pos + 4 > script_pubkey.len() {
@@ -751,10 +751,10 @@ fn sorted_push_refs_rxd(script_pubkey: &[u8]) -> Vec<[u8; 36]> {
                     script_pubkey[pos + 3],
                 ]) as usize;
                 pos += 4;
-                if pos + push_len > script_pubkey.len() {
-                    break;
+                match pos.checked_add(push_len) {
+                    Some(end) if end <= script_pubkey.len() => pos = end,
+                    _ => break,
                 }
-                pos += push_len;
             },
             OP_PUSHINPUTREF
             | OP_PUSHINPUTREFSINGLETON
@@ -991,7 +991,9 @@ mod tests {
         let pubkey_bytes: Bytes = PUBKEY_HEX.into();
         let pubkey = Public::from_slice(&pubkey_bytes).expect("valid compressed pubkey");
 
-        assert!(pubkey.verify(&sighash, &signature).expect("signature verification should not error"));
+        assert!(pubkey
+            .verify(&sighash, &signature)
+            .expect("signature verification should not error"));
 
         let expected_sighash: H256 = EXPECTED_SIGHASH_HEX.into();
         assert_eq!(

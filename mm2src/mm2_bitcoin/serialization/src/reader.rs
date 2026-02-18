@@ -92,7 +92,6 @@ impl ChainVariant {
     pub fn is_pivx(&self) -> bool {
         matches!(self, ChainVariant::PIVX)
     }
-
 }
 
 impl TryFrom<&str> for ChainVariant {
