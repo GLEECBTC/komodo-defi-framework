@@ -794,7 +794,7 @@ fn blake_2b_256_personal(input: &[u8], personal: &[u8]) -> Result<H256, String> 
 #[cfg(test)]
 mod tests {
     use super::{
-        blake_2b_256_personal, Sighash, SighashBase, SignatureVersion, TransactionInputSigner,
+        blake_2b_256_personal, sorted_push_refs_rxd, Sighash, SighashBase, SignatureVersion, TransactionInputSigner,
         UnsignedTransactionInput,
     };
     use bytes::Bytes;
@@ -999,6 +999,32 @@ mod tests {
             "RXD sighash mismatch: computed {}, expected {}",
             sighash, expected_sighash
         );
+    }
+
+    #[test]
+    fn test_sorted_push_refs_rxd_extracts_and_sorts_push_refs() {
+        const OP_PUSHINPUTREF: u8 = 0xd0;
+        const OP_REQUIREINPUTREF: u8 = 0xd1;
+        const OP_PUSHINPUTREFSINGLETON: u8 = 0xd8;
+
+        let ref_a = [0x11u8; 36];
+        let ref_b = [0x22u8; 36];
+        let ref_ignored = [0x33u8; 36];
+
+        let mut script_pubkey = Vec::new();
+        script_pubkey.extend_from_slice(&[0x51]);
+        script_pubkey.push(OP_PUSHINPUTREF);
+        script_pubkey.extend_from_slice(&ref_b);
+        script_pubkey.push(OP_REQUIREINPUTREF);
+        script_pubkey.extend_from_slice(&ref_ignored);
+        script_pubkey.push(OP_PUSHINPUTREFSINGLETON);
+        script_pubkey.extend_from_slice(&ref_a);
+        script_pubkey.push(OP_PUSHINPUTREF);
+        script_pubkey.extend_from_slice(&ref_a);
+
+        let refs = sorted_push_refs_rxd(&script_pubkey);
+
+        assert_eq!(refs, vec![ref_a, ref_b]);
     }
 
     #[test]
