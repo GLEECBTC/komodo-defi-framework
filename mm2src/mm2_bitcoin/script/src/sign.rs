@@ -659,21 +659,21 @@ fn compute_hash_outputs(sighash: Sighash, input_index: usize, outputs: &[Transac
 }
 
 fn compute_hash_output_hashes_rxd(sighash: Sighash, input_index: usize, outputs: &[TransactionOutput]) -> H256 {
-    let mut stream = Stream::default();
-
     match sighash.base {
         SighashBase::All => {
+            let mut stream = Stream::default();
             for output in outputs {
                 append_output_data_summary_rxd(&mut stream, output);
             }
+            dhash256(&stream.out())
         },
         SighashBase::Single if input_index < outputs.len() => {
+            let mut stream = Stream::default();
             append_output_data_summary_rxd(&mut stream, &outputs[input_index]);
+            dhash256(&stream.out())
         },
-        _ => return 0u8.into(),
+        SighashBase::Single | SighashBase::None => 0u8.into(),
     }
-
-    dhash256(&stream.out())
 }
 
 fn append_output_data_summary_rxd(stream: &mut Stream, output: &TransactionOutput) {
@@ -764,7 +764,7 @@ fn sorted_push_refs_rxd(script_pubkey: &[u8]) -> Vec<[u8; 36]> {
                 if pos + 36 > script_pubkey.len() {
                     break;
                 }
-                if opcode == OP_PUSHINPUTREF || opcode == OP_PUSHINPUTREFSINGLETON {
+                if matches!(opcode, OP_PUSHINPUTREF | OP_PUSHINPUTREFSINGLETON) {
                     let mut reference = [0u8; 36];
                     reference.copy_from_slice(&script_pubkey[pos..pos + 36]);
                     refs.insert(reference);
