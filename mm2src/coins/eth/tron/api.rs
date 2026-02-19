@@ -26,7 +26,7 @@
 //!
 //! See `docs/plans/chain-rpc-client-refactor.md` for the full refactoring plan.
 
-use super::fee::TronChainPrices;
+use super::fee::{TronAccountResources, TronChainPrices};
 use super::TronAddress;
 use crate::eth::{Web3RpcError, Web3RpcResult};
 
@@ -426,8 +426,8 @@ pub struct TaposBlockData {
 
 /// Request body for `/wallet/getaccount`.
 #[derive(Serialize)]
-struct GetAccountRequest {
-    address: String,
+struct GetAccountRequest<'a> {
+    address: &'a TronAddress,
     visible: bool,
 }
 
@@ -551,6 +551,66 @@ struct ChainParameterEntry {
     key: String,
     /// Some chain parameters are boolean-like flags and omit `value` in JSON.
     value: Option<i64>,
+}
+
+/// Request body for `/wallet/getaccountresource`.
+#[derive(Serialize)]
+struct GetAccountResourceRequest<'a> {
+    address: &'a TronAddress,
+    visible: bool,
+}
+
+/// Intermediate serde struct for `/wallet/getaccountresource` response.
+///
+/// Maps the 6 proto fields we need from `AccountResourceMessage`. TRON's proto3 JSON
+/// serialization preserves the original proto field names verbatim, resulting in mixed
+/// casing (lowerCamelCase for `freeNet*`, PascalCase for `Net*`/`Energy*`).
+///
+/// All fields use `#[serde(default)]` because proto3 JSON omits zero-value fields.
+/// An empty `{}` response (unactivated account) deserializes to all zeros.
+#[derive(Debug, Deserialize)]
+struct AccountResourceResponse {
+    #[serde(default, rename = "freeNetUsed")]
+    free_net_used: u64,
+    #[serde(default, rename = "freeNetLimit")]
+    free_net_limit: u64,
+    #[serde(default, rename = "NetUsed")]
+    net_used: u64,
+    #[serde(default, rename = "NetLimit")]
+    net_limit: u64,
+    #[serde(default, rename = "EnergyUsed")]
+    energy_used: u64,
+    #[serde(default, rename = "EnergyLimit")]
+    energy_limit: u64,
+}
+
+impl From<AccountResourceResponse> for TronAccountResources {
+    fn from(r: AccountResourceResponse) -> Self {
+        TronAccountResources {
+            free_net_used: r.free_net_used,
+            free_net_limit: r.free_net_limit,
+            net_used: r.net_used,
+            net_limit: r.net_limit,
+            energy_used: r.energy_used,
+            energy_limit: r.energy_limit,
+        }
+    }
+}
+
+/// Request body for `/wallet/broadcasthex`.
+#[derive(Serialize)]
+struct BroadcastHexRequest<'a> {
+    transaction: &'a str,
+}
+
+/// Response from `/wallet/broadcasthex` on success.
+///
+/// Error responses (`result: false`) are intercepted by `tron_error_from_value()` before
+/// deserialization, so this struct only captures the success-path field.
+/// `txid` is always present — it is computed from the transaction hash before broadcast.
+#[derive(Debug, Deserialize)]
+pub struct BroadcastHexResponse {
+    pub txid: String,
 }
 
 /// Request body for transaction lookup by hash.
@@ -688,11 +748,7 @@ impl TronHttpClient {
 
     /// Get account information for a TRON address.
     pub async fn get_account(&self, address: &TronAddress) -> Web3RpcResult<GetAccountResponse> {
-        let request = GetAccountRequest {
-            // Use hex format with 0x41 prefix for the API
-            address: address.to_hex(),
-            visible: false,
-        };
+        let request = GetAccountRequest { address, visible: true };
         self.post("/wallet/getaccount", &request).await
     }
 
@@ -712,7 +768,7 @@ impl TronHttpClient {
             contract_address,
             function_selector,
             parameter,
-            visible: true, // TronAddress serializes to Base58
+            visible: true,
         };
         self.post("/wallet/triggerconstantcontract", &request).await
     }
@@ -726,6 +782,24 @@ impl TronHttpClient {
             .post("/wallet/getchainparameters", &GetChainParametersRequest {})
             .await?;
         parse_chain_prices_sun(&response)
+    }
+
+    /// Get account resource usage and limits.
+    ///
+    /// Returns `TronAccountResources` with bandwidth and energy quotas.
+    /// Empty `{}` responses (unactivated accounts) produce all-zero resources.
+    pub async fn get_account_resource(&self, address: &TronAddress) -> Web3RpcResult<TronAccountResources> {
+        let request = GetAccountResourceRequest { address, visible: true };
+        let response: AccountResourceResponse = self.post("/wallet/getaccountresource", &request).await?;
+        Ok(response.into())
+    }
+
+    /// Broadcast a signed transaction (hex-encoded protobuf bytes).
+    ///
+    /// Error responses (`result: false`) are handled by `tron_error_from_value()` in `post()`.
+    pub async fn broadcast_hex(&self, tx_hex: &str) -> Web3RpcResult<BroadcastHexResponse> {
+        self.post("/wallet/broadcasthex", &BroadcastHexRequest { transaction: tx_hex })
+            .await
     }
 
     /// Get raw transaction by hash.
@@ -877,6 +951,25 @@ impl TronApiClient {
     pub async fn get_chain_prices(&self) -> Web3RpcResult<TronChainPrices> {
         self.try_clients(|client| async move { client.get_chain_prices().await })
             .await
+    }
+
+    /// Get account resource usage and limits with node rotation.
+    pub async fn get_account_resource(&self, address: &TronAddress) -> Web3RpcResult<TronAccountResources> {
+        self.try_clients(|client| {
+            let addr = *address;
+            async move { client.get_account_resource(&addr).await }
+        })
+        .await
+    }
+
+    /// Broadcast a signed transaction (hex-encoded protobuf bytes) with node rotation.
+    pub async fn broadcast_hex(&self, tx_hex: &str) -> Web3RpcResult<BroadcastHexResponse> {
+        let tx_hex = tx_hex.to_owned();
+        self.try_clients(|client| {
+            let hex = tx_hex.clone();
+            async move { client.broadcast_hex(&hex).await }
+        })
+        .await
     }
 
     /// Get raw transaction by hash with node rotation.
@@ -1126,5 +1219,59 @@ mod tests {
         let prices = parse_chain_prices_sun(&response).unwrap();
         assert_eq!(prices.bandwidth_price_sun, 1000);
         assert_eq!(prices.energy_price_sun, 100);
+    }
+
+    /// Verifies that all 6 mixed-case field renames map correctly to `TronAccountResources`.
+    /// Extra fields (TotalNetLimit, etc.) are silently ignored as expected.
+    #[test]
+    fn parse_account_resource_canonical_response() {
+        let json = r#"{
+            "freeNetUsed": 100,
+            "freeNetLimit": 600,
+            "NetUsed": 30,
+            "NetLimit": 500,
+            "EnergyUsed": 200,
+            "EnergyLimit": 1000,
+            "TotalNetLimit": 43200000000,
+            "TotalNetWeight": 84593524300,
+            "TotalEnergyCurrentLimit": 50000000000,
+            "TotalEnergyWeight": 12345678
+        }"#;
+
+        let response: AccountResourceResponse = serde_json::from_str(json).unwrap();
+        let resources: TronAccountResources = response.into();
+        assert_eq!(resources.free_net_used, 100);
+        assert_eq!(resources.free_net_limit, 600);
+        assert_eq!(resources.net_used, 30);
+        assert_eq!(resources.net_limit, 500);
+        assert_eq!(resources.energy_used, 200);
+        assert_eq!(resources.energy_limit, 1000);
+    }
+
+    /// Empty `{}` (unactivated account / proto3 zero-omission) produces all-zero resources.
+    #[test]
+    fn parse_account_resource_empty_response() {
+        let response: AccountResourceResponse = serde_json::from_str("{}").unwrap();
+        let resources: TronAccountResources = response.into();
+        assert_eq!(resources, TronAccountResources::default());
+    }
+
+    /// `tron_error_from_value` catches `result: false` before deserialization,
+    /// so `BroadcastHexResponse` only needs to handle success responses.
+    #[test]
+    fn broadcast_hex_error_response_caught_by_tron_error_from_value() {
+        let json = r#"{
+            "result": false,
+            "code": "SIGERROR",
+            "message": "Validate signature error",
+            "txid": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
+        }"#;
+
+        let value: Json = serde_json::from_str(json).unwrap();
+        let error = tron_error_from_value(&value);
+        assert!(error.is_some(), "Error should be detected");
+        let error = error.unwrap();
+        assert_eq!(error.code.as_deref(), Some("SIGERROR"));
+        assert!(!error.is_retryable());
     }
 }

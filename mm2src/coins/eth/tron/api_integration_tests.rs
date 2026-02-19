@@ -283,16 +283,6 @@ cross_test!(tron_nile_get_block_for_tapos, {
 
 use serde::{Deserialize, Serialize};
 
-/// Request for /wallet/triggerconstantcontract endpoint.
-#[derive(Serialize)]
-struct TriggerConstantContractRequest {
-    owner_address: String,
-    contract_address: String,
-    function_selector: String,
-    parameter: String,
-    visible: bool,
-}
-
 /// Create a single TronHttpClient for error tests (no rotation needed).
 fn tron_nile_single_client() -> TronHttpClient {
     let uri = tron_nile_urls()
@@ -314,18 +304,19 @@ async fn test_error_nested_result_detection_impl() {
     // {"result": {"result": false, "code": "CONTRACT_VALIDATE_ERROR", "message": "..."}}
     let client = tron_nile_single_client();
 
-    let request = TriggerConstantContractRequest {
-        // Use a valid but non-contract address as owner
-        owner_address: TRON_TESTNET_KNOWN_ADDRESS.to_string(),
-        // Use a random address that is definitely not a contract
-        contract_address: random_tron_address().to_base58(),
-        function_selector: "balanceOf(address)".to_string(),
-        parameter: "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
-        visible: true,
-    };
+    let owner = parse_tron_address(TRON_TESTNET_KNOWN_ADDRESS);
+    // Use a random address that is definitely not a contract
+    let non_contract = random_tron_address();
 
-    // Our error detection should now catch the nested result error
-    let result: Result<serde_json::Value, _> = client.post("/wallet/triggerconstantcontract", &request).await;
+    // Uses the public trigger_constant_contract method (same post() + error detection path)
+    let result = client
+        .trigger_constant_contract(
+            &owner,
+            &non_contract,
+            "balanceOf(address)",
+            "0000000000000000000000000000000000000000000000000000000000000001",
+        )
+        .await;
 
     // Should be an error because our error detection catches nested {"result": {"result": false, ...}}
     assert!(result.is_err(), "Expected error for non-existent contract");
@@ -538,4 +529,51 @@ cross_test!(tron_nile_retry_on_transport_failure, {
 
 cross_test!(tron_nile_all_nodes_failing_returns_transport_error, {
     test_all_nodes_failing_returns_transport_error_impl().await;
+});
+
+// ============================================================================
+// Account Resource Tests
+// ============================================================================
+
+async fn test_get_account_resource_known_address_impl() {
+    let client = tron_nile_api_client();
+    let address = parse_tron_address(TRON_TESTNET_KNOWN_ADDRESS);
+
+    let resources = client
+        .get_account_resource(&address)
+        .await
+        .expect("getaccountresource should succeed for known address");
+
+    // Known testnet address should have at least the free bandwidth limit
+    assert!(
+        resources.free_net_limit > 0,
+        "Known address should have non-zero freeNetLimit, got {}",
+        resources.free_net_limit
+    );
+}
+
+async fn test_get_account_resource_unactivated_address_impl() {
+    let client = tron_nile_api_client();
+    let address = random_tron_address();
+
+    let resources = client
+        .get_account_resource(&address)
+        .await
+        .expect("getaccountresource should succeed for unactivated address (empty {} response)");
+
+    // Unactivated address returns empty {} which deserializes to all zeros
+    assert_eq!(resources.free_net_used, 0);
+    assert_eq!(resources.free_net_limit, 0);
+    assert_eq!(resources.net_used, 0);
+    assert_eq!(resources.net_limit, 0);
+    assert_eq!(resources.energy_used, 0);
+    assert_eq!(resources.energy_limit, 0);
+}
+
+cross_test!(tron_nile_get_account_resource_known_address, {
+    test_get_account_resource_known_address_impl().await;
+});
+
+cross_test!(tron_nile_get_account_resource_unactivated_address, {
+    test_get_account_resource_unactivated_address_impl().await;
 });

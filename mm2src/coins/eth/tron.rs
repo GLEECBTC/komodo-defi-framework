@@ -17,7 +17,7 @@ pub mod tx_builder;
 mod api_integration_tests;
 
 pub use address::Address as TronAddress;
-pub use api::{TaposBlockData, TronApiClient, TronHttpClient, TronHttpNode};
+pub use api::{BroadcastHexResponse, TaposBlockData, TronApiClient, TronHttpClient, TronHttpNode};
 
 use serde::{Deserialize, Serialize};
 
