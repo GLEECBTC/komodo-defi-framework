@@ -26,6 +26,7 @@
 //!
 //! See `docs/plans/chain-rpc-client-refactor.md` for the full refactoring plan.
 
+use super::fee::TronChainPrices;
 use super::TronAddress;
 use crate::eth::{Web3RpcError, Web3RpcResult};
 
@@ -532,6 +533,117 @@ pub struct TriggerConstantContractResponse {
     pub energy_used: Option<u64>,
 }
 
+/// Request body for `/wallet/getchainparameters`.
+#[derive(Serialize)]
+struct GetChainParametersRequest {}
+
+/// Response from `/wallet/getchainparameters`.
+///
+/// The HTTP API uses camelCase `chainParameter` in live responses.
+#[derive(Clone, Debug, Deserialize)]
+struct GetChainParametersResponse {
+    #[serde(rename = "chainParameter", alias = "chain_parameter")]
+    chain_parameter: Vec<ChainParameterEntry>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct ChainParameterEntry {
+    key: String,
+    /// Some chain parameters are boolean-like flags and omit `value` in JSON.
+    value: Option<i64>,
+}
+
+/// Request body for transaction lookup by hash.
+#[derive(Serialize)]
+struct TxByIdRequest<'a> {
+    value: &'a str,
+}
+
+/// Response from `/wallet/gettransactionbyid`.
+#[derive(Debug, Deserialize)]
+pub struct GetTransactionByIdResponse {
+    #[serde(rename = "txID")]
+    pub tx_id: String,
+    pub raw_data: TronTxRawData,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TronTxRawData {
+    pub contract: Vec<TronTxContract>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TronTxContract {
+    #[serde(rename = "type")]
+    pub contract_type: String,
+    pub parameter: TronTxContractParameter,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TronTxContractParameter {
+    pub value: TronTxContractValue,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TronTxContractValue {
+    pub contract_address: Option<String>,
+    pub data: Option<String>,
+}
+
+/// Response from `/wallet/gettransactioninfobyid`.
+#[derive(Debug, Deserialize)]
+pub struct GetTransactionInfoByIdResponse {
+    pub id: String,
+    #[serde(rename = "blockNumber")]
+    pub block_number: u64,
+    pub receipt: TronTxReceipt,
+    #[serde(default)]
+    pub fee: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TronTxReceipt {
+    #[serde(default)]
+    pub energy_usage_total: u64,
+    #[serde(default)]
+    pub net_fee: u64,
+    #[serde(default)]
+    pub energy_fee: u64,
+    pub result: String,
+}
+
+fn parse_chain_prices_sun(chain_params: &GetChainParametersResponse) -> Web3RpcResult<TronChainPrices> {
+    let mut bandwidth_price_sun = None;
+    let mut energy_price_sun = None;
+
+    for param in &chain_params.chain_parameter {
+        match param.key.as_str() {
+            "getTransactionFee" => bandwidth_price_sun = param.value.and_then(|v| v.try_into().ok()),
+            "getEnergyFee" => energy_price_sun = param.value.and_then(|v| v.try_into().ok()),
+            _ => {},
+        }
+    }
+
+    let bandwidth_price_sun = bandwidth_price_sun.ok_or_else(|| {
+        Web3RpcError::BadResponse("Missing or invalid getTransactionFee in getchainparameters response".to_owned())
+    })?;
+    let energy_price_sun = energy_price_sun.ok_or_else(|| {
+        Web3RpcError::BadResponse("Missing or invalid getEnergyFee in getchainparameters response".to_owned())
+    })?;
+
+    if bandwidth_price_sun == 0 || energy_price_sun == 0 {
+        return Err(Web3RpcError::BadResponse(
+            "Invalid chain prices: getTransactionFee/getEnergyFee must be greater than zero".to_owned(),
+        )
+        .into());
+    }
+
+    Ok(TronChainPrices {
+        bandwidth_price_sun,
+        energy_price_sun,
+    })
+}
+
 // ============================================================================
 // High-level TRON API methods
 // ============================================================================
@@ -603,6 +715,29 @@ impl TronHttpClient {
             visible: true, // TronAddress serializes to Base58
         };
         self.post("/wallet/triggerconstantcontract", &request).await
+    }
+
+    /// Fetch TRON chain fee prices from `/wallet/getchainparameters`.
+    ///
+    /// Returns `BadResponse` (retryable) when required fee parameters are missing, malformed,
+    /// negative, or zero so callers can rotate to the next node.
+    pub async fn get_chain_prices(&self) -> Web3RpcResult<TronChainPrices> {
+        let response: GetChainParametersResponse = self
+            .post("/wallet/getchainparameters", &GetChainParametersRequest {})
+            .await?;
+        parse_chain_prices_sun(&response)
+    }
+
+    /// Get raw transaction by hash.
+    pub async fn get_transaction_by_id(&self, tx_id: &str) -> Web3RpcResult<GetTransactionByIdResponse> {
+        self.post("/wallet/gettransactionbyid", &TxByIdRequest { value: tx_id })
+            .await
+    }
+
+    /// Get transaction execution info/receipt by hash.
+    pub async fn get_transaction_info_by_id(&self, tx_id: &str) -> Web3RpcResult<GetTransactionInfoByIdResponse> {
+        self.post("/wallet/gettransactioninfobyid", &TxByIdRequest { value: tx_id })
+            .await
     }
 }
 
@@ -731,6 +866,35 @@ impl TronApiClient {
                 }
                 Ok(value.as_u32() as u8)
             }
+        })
+        .await
+    }
+
+    /// Fetch validated TRON chain fee prices with node rotation.
+    ///
+    /// Invalid fee parameter payloads are treated as retryable (`BadResponse`) and trigger
+    /// fallback to the next node.
+    pub async fn get_chain_prices(&self) -> Web3RpcResult<TronChainPrices> {
+        self.try_clients(|client| async move { client.get_chain_prices().await })
+            .await
+    }
+
+    /// Get raw transaction by hash with node rotation.
+    pub async fn get_transaction_by_id(&self, tx_id: &str) -> Web3RpcResult<GetTransactionByIdResponse> {
+        let tx_id = tx_id.to_owned();
+        self.try_clients(|client| {
+            let tx_id = tx_id.clone();
+            async move { client.get_transaction_by_id(&tx_id).await }
+        })
+        .await
+    }
+
+    /// Get transaction execution info/receipt by hash with node rotation.
+    pub async fn get_transaction_info_by_id(&self, tx_id: &str) -> Web3RpcResult<GetTransactionInfoByIdResponse> {
+        let tx_id = tx_id.to_owned();
+        self.try_clients(|client| {
+            let tx_id = tx_id.clone();
+            async move { client.get_transaction_info_by_id(&tx_id).await }
         })
         .await
     }
@@ -906,5 +1070,61 @@ mod tests {
         // 31 bytes (62 hex chars) — too short
         let json = r#"{ "blockID": "00000000033bab42e37d025dc14e9ebc26e8f6cb6b6e26e08d2bf2db29c3b4", "block_header": { "raw_data": { "number": 1 } } }"#;
         assert!(serde_json::from_str::<GetNowBlockResponse>(json).is_err());
+    }
+
+    #[test]
+    fn parse_chain_prices_accepts_valid_parameters() {
+        let response = GetChainParametersResponse {
+            chain_parameter: vec![
+                ChainParameterEntry {
+                    key: "getTransactionFee".to_owned(),
+                    value: Some(1000),
+                },
+                ChainParameterEntry {
+                    key: "getEnergyFee".to_owned(),
+                    value: Some(100),
+                },
+            ],
+        };
+
+        let prices = parse_chain_prices_sun(&response).unwrap();
+        assert_eq!(prices.bandwidth_price_sun, 1000);
+        assert_eq!(prices.energy_price_sun, 100);
+    }
+
+    #[test]
+    fn parse_chain_prices_rejects_zero_values_as_retryable_bad_response() {
+        let response = GetChainParametersResponse {
+            chain_parameter: vec![
+                ChainParameterEntry {
+                    key: "getTransactionFee".to_owned(),
+                    value: Some(0),
+                },
+                ChainParameterEntry {
+                    key: "getEnergyFee".to_owned(),
+                    value: Some(100),
+                },
+            ],
+        };
+
+        let err = parse_chain_prices_sun(&response).unwrap_err().into_inner();
+        assert!(matches!(err, Web3RpcError::BadResponse(_)));
+        assert!(err.is_retryable());
+    }
+
+    #[test]
+    fn parse_getchainparameters_handles_entries_without_value_field() {
+        let json = r#"{
+            "chainParameter": [
+                { "key": "getAllowUpdateAccountName" },
+                { "key": "getTransactionFee", "value": 1000 },
+                { "key": "getEnergyFee", "value": 100 }
+            ]
+        }"#;
+
+        let response: GetChainParametersResponse = serde_json::from_str(json).unwrap();
+        let prices = parse_chain_prices_sun(&response).unwrap();
+        assert_eq!(prices.bandwidth_price_sun, 1000);
+        assert_eq!(prices.energy_price_sun, 100);
     }
 }

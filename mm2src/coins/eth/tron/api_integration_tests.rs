@@ -295,7 +295,10 @@ struct TriggerConstantContractRequest {
 
 /// Create a single TronHttpClient for error tests (no rotation needed).
 fn tron_nile_single_client() -> TronHttpClient {
-    let uri: Uri = TRON_NILE_NODES[0].parse().expect("Invalid TRON API URL");
+    let uri = tron_nile_urls()
+        .into_iter()
+        .next()
+        .expect("At least one TRON node expected");
     TronHttpClient::new(
         TronHttpNode {
             uri,
@@ -398,6 +401,82 @@ cross_test!(tron_nile_error_invalid_endpoint, {
 
 cross_test!(tron_nile_error_empty_response_handling, {
     test_error_empty_response_handling_impl().await;
+});
+
+// ============================================================================
+// Fee Validation Tests (TRC20)
+// ============================================================================
+
+const NILE_KNOWN_TRC20_TX_HASH: &str = "b4eaf9c10802e20ad757c701fca45616c71fa68c84dea4110f6772005a480fa4";
+const NILE_KNOWN_TRC20_BLOCK_NUMBER: u64 = 64_844_180;
+const NILE_KNOWN_TRC20_CONTRACT_ADDRESS: &str = "41eca9bc828a3005b9a3b909f2cc5c2a54794de05f";
+const NILE_KNOWN_TRC20_TRANSFER_SELECTOR: &str = "a9059cbb";
+const NILE_KNOWN_TRC20_FEE_SUN: u64 = 345_000;
+
+async fn test_known_trc20_tx_fee_receipt_impl() {
+    let client = tron_nile_single_client();
+
+    let tx = client
+        .get_transaction_by_id(NILE_KNOWN_TRC20_TX_HASH)
+        .await
+        .expect("Known TRC20 transaction should be available on Nile");
+    assert_eq!(tx.tx_id, NILE_KNOWN_TRC20_TX_HASH);
+
+    let first_contract = tx
+        .raw_data
+        .contract
+        .first()
+        .expect("Known TRC20 transaction should contain at least one contract");
+
+    assert_eq!(first_contract.contract_type, "TriggerSmartContract");
+    assert_eq!(
+        first_contract.parameter.value.contract_address.as_deref(),
+        Some(NILE_KNOWN_TRC20_CONTRACT_ADDRESS)
+    );
+
+    let data = first_contract
+        .parameter
+        .value
+        .data
+        .as_deref()
+        .expect("TriggerSmartContract data must be present");
+    assert!(
+        data.starts_with(NILE_KNOWN_TRC20_TRANSFER_SELECTOR),
+        "Expected TRC20 transfer selector prefix {}, got {}",
+        NILE_KNOWN_TRC20_TRANSFER_SELECTOR,
+        data
+    );
+
+    let tx_info = client
+        .get_transaction_info_by_id(NILE_KNOWN_TRC20_TX_HASH)
+        .await
+        .expect("Known TRC20 transaction info should be available on Nile");
+    assert_eq!(tx_info.id, NILE_KNOWN_TRC20_TX_HASH);
+    assert_eq!(tx_info.block_number, NILE_KNOWN_TRC20_BLOCK_NUMBER);
+    assert_eq!(tx_info.receipt.result, "SUCCESS");
+    assert!(tx_info.receipt.energy_usage_total > 0);
+    assert_eq!(tx_info.receipt.energy_fee, 0);
+    assert_eq!(tx_info.receipt.net_fee, NILE_KNOWN_TRC20_FEE_SUN);
+    assert_eq!(tx_info.fee.unwrap_or_default(), NILE_KNOWN_TRC20_FEE_SUN);
+}
+
+async fn test_chain_fee_parameters_are_present_and_valid_impl() {
+    let client = tron_nile_api_client();
+    let chain_prices = client
+        .get_chain_prices()
+        .await
+        .expect("getchainparameters should be available and valid on Nile");
+
+    assert!(chain_prices.bandwidth_price_sun > 0);
+    assert!(chain_prices.energy_price_sun > 0);
+}
+
+cross_test!(tron_nile_known_trc20_tx_fee_receipt, {
+    test_known_trc20_tx_fee_receipt_impl().await;
+});
+
+cross_test!(tron_nile_chain_fee_parameters_are_present_and_valid, {
+    test_chain_fee_parameters_are_present_and_valid_impl().await;
 });
 
 // ============================================================================
