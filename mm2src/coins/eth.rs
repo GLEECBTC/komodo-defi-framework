@@ -208,7 +208,7 @@ use eth_swap_v2::{extract_id_from_tx_data, EthPaymentType, PaymentMethod, SpendT
 pub mod eth_utils;
 
 pub mod tron;
-use tron::TronAddress;
+use tron::{normalize_tron_raw_tx_hex, validate_tron_raw_tx_len, TronAddress};
 
 pub mod chain_rpc;
 use self::chain_rpc::ChainRpcOps;
@@ -2617,6 +2617,21 @@ impl WatcherOps for EthCoin {
 #[async_trait]
 impl WatcherOps for EthCoin {}
 
+/// Broadcasts a hex-encoded TRON transaction via the TRON API client with node rotation.
+fn tron_broadcast_hex_fut(coin: EthCoin, tx_hex: String) -> Box<dyn Future<Item = String, Error = String> + Send> {
+    let fut = async move {
+        let tron = coin
+            .0
+            .tron_rpc()
+            .ok_or_else(|| ERRL!("TRON RPC client is not initialized"))?;
+        tron.broadcast_hex(&tx_hex)
+            .await
+            .map(|resp| resp.txid)
+            .map_err(|e| ERRL!("TRON broadcast_hex failed: {}", e.into_inner()))
+    };
+    Box::new(fut.boxed().compat())
+}
+
 #[async_trait]
 #[cfg_attr(test, mockable)]
 impl MarketCoinOps for EthCoin {
@@ -2779,35 +2794,46 @@ impl MarketCoinOps for EthCoin {
     }
 
     fn send_raw_tx(&self, mut tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
-        if tx.starts_with("0x") {
-            tx = &tx[2..];
+        match ChainFamily::from(&self.chain_spec) {
+            ChainFamily::Evm => {
+                if tx.starts_with("0x") {
+                    tx = &tx[2..];
+                }
+                let bytes = try_fus!(hex::decode(tx));
+                let coin = self.clone();
+                let fut = async move {
+                    coin.send_raw_transaction(bytes.into())
+                        .await
+                        .map(|res| format!("{res:02x}")) // TODO: add 0x hash (use unified hash format for eth wherever it is returned)
+                        .map_err(|e| ERRL!("{}", e))
+                };
+                Box::new(fut.boxed().compat())
+            },
+            ChainFamily::Tron => {
+                let tx_hex = try_fus!(normalize_tron_raw_tx_hex(tx));
+                tron_broadcast_hex_fut(self.clone(), tx_hex)
+            },
         }
-        let bytes = try_fus!(hex::decode(tx));
-
-        let coin = self.clone();
-
-        let fut = async move {
-            coin.send_raw_transaction(bytes.into())
-                .await
-                .map(|res| format!("{res:02x}")) // TODO: add 0x hash (use unified hash format for eth wherever it is returned)
-                .map_err(|e| ERRL!("{}", e))
-        };
-
-        Box::new(fut.boxed().compat())
     }
 
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
-        let coin = self.clone();
-
-        let tx = tx.to_owned();
-        let fut = async move {
-            coin.send_raw_transaction(tx.into())
-                .await
-                .map(|res| format!("{res:02x}"))
-                .map_err(|e| ERRL!("{}", e))
-        };
-
-        Box::new(fut.boxed().compat())
+        match ChainFamily::from(&self.chain_spec) {
+            ChainFamily::Evm => {
+                let coin = self.clone();
+                let tx = tx.to_owned();
+                let fut = async move {
+                    coin.send_raw_transaction(tx.into())
+                        .await
+                        .map(|res| format!("{res:02x}"))
+                        .map_err(|e| ERRL!("{}", e))
+                };
+                Box::new(fut.boxed().compat())
+            },
+            ChainFamily::Tron => {
+                try_fus!(validate_tron_raw_tx_len(tx.len()));
+                tron_broadcast_hex_fut(self.clone(), hex::encode(tx))
+            },
+        }
     }
 
     async fn sign_raw_tx(&self, args: &SignRawTransactionRequest) -> RawTransactionResult {

@@ -30,3 +30,77 @@ pub enum Network {
     Shasta,
     Nile,
 }
+
+/// Hard cap on TRON raw transaction size to prevent oversized-input DoS.
+/// Typical TRON transactions are a few hundred bytes; 256 KiB is generous.
+pub const MAX_TRON_RAW_TX_BYTES: usize = 256 * 1024;
+
+/// Strips optional `0x`/`0X` prefix and validates the hex string for TRON broadcast.
+///
+/// Checks: non-empty, bounded length, even character count, ASCII hex digits only.
+pub fn normalize_tron_raw_tx_hex(input: &str) -> Result<String, String> {
+    let s = input
+        .strip_prefix("0x")
+        .or_else(|| input.strip_prefix("0X"))
+        .unwrap_or(input);
+
+    if s.is_empty() {
+        return Err("TRON raw transaction hex is empty".to_owned());
+    }
+    if s.len() > MAX_TRON_RAW_TX_BYTES * 2 {
+        return Err(format!(
+            "TRON raw transaction hex too large: {} chars (max {})",
+            s.len(),
+            MAX_TRON_RAW_TX_BYTES * 2,
+        ));
+    }
+    if !s.len().is_multiple_of(2) {
+        return Err("TRON raw transaction hex has odd length".to_owned());
+    }
+    if !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err("TRON raw transaction hex contains non-hex characters".to_owned());
+    }
+    Ok(s.to_owned())
+}
+
+/// Validates that TRON raw transaction bytes are non-empty and within the size limit.
+pub fn validate_tron_raw_tx_len(len: usize) -> Result<(), String> {
+    if len == 0 {
+        return Err("TRON raw transaction bytes are empty".to_owned());
+    }
+    if len > MAX_TRON_RAW_TX_BYTES {
+        return Err(format!(
+            "TRON raw transaction too large: {} bytes (max {})",
+            len, MAX_TRON_RAW_TX_BYTES,
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod raw_tx_validation_tests {
+    use super::*;
+
+    #[test]
+    fn normalize_tron_raw_tx_hex_validates_input() {
+        // Valid inputs: strips 0x/0X prefix, accepts bare hex
+        assert_eq!(normalize_tron_raw_tx_hex("0xabcd").unwrap(), "abcd");
+        assert_eq!(normalize_tron_raw_tx_hex("0Xabcd").unwrap(), "abcd");
+        assert_eq!(normalize_tron_raw_tx_hex("abcd1234").unwrap(), "abcd1234");
+
+        // Rejections: empty, prefix-only, odd length, non-hex, oversized
+        assert!(normalize_tron_raw_tx_hex("").is_err());
+        assert!(normalize_tron_raw_tx_hex("0x").is_err());
+        assert!(normalize_tron_raw_tx_hex("abc").is_err());
+        assert!(normalize_tron_raw_tx_hex("abcg").is_err());
+        let oversized = "ab".repeat(MAX_TRON_RAW_TX_BYTES + 1);
+        assert!(normalize_tron_raw_tx_hex(&oversized).is_err());
+    }
+
+    #[test]
+    fn validate_tron_raw_tx_len_validates_bounds() {
+        assert!(validate_tron_raw_tx_len(0).is_err());
+        assert!(validate_tron_raw_tx_len(1000).is_ok());
+        assert!(validate_tron_raw_tx_len(MAX_TRON_RAW_TX_BYTES + 1).is_err());
+    }
+}
