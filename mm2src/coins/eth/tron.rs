@@ -9,6 +9,7 @@ pub mod fee;
 pub(crate) mod proto;
 pub(crate) mod sign;
 pub mod tx_builder;
+pub mod withdraw;
 
 /// Integration tests using real TRON testnet (Nile).
 /// These tests require network access and are gated behind the `tron-network-tests` feature.
@@ -19,9 +20,18 @@ mod api_integration_tests;
 pub use address::Address as TronAddress;
 pub use api::{BroadcastHexResponse, TaposBlockData, TronApiClient, TronHttpClient, TronHttpNode};
 
+use ethabi::Token;
+use ethereum_types::U256;
 use serde::{Deserialize, Serialize};
 
 pub const TRX_DECIMALS: u8 = 6;
+
+/// Build ABI tokens for a TRC20 `transfer(address,uint256)` call.
+///
+/// Shared by `tx_builder` (full ABI encoding with selector) and `api` (parameter-only encoding).
+pub(crate) fn trc20_transfer_tokens(recipient: &TronAddress, amount: U256) -> [Token; 2] {
+    [Token::Address(recipient.to_evm_address()), Token::Uint(amount)]
+}
 
 /// Represents TRON chain/network.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -75,6 +85,29 @@ pub fn validate_tron_raw_tx_len(len: usize) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+/// Shared test fixtures for TRON unit tests.
+#[cfg(test)]
+pub(super) mod test_fixtures {
+    use super::api::TaposBlockData;
+
+    pub const TEST_FROM_HEX: &str = "4123b00d15c601b30613bf5a3b2f72527c79cc08b6";
+    pub const TEST_TO_HEX: &str = "418840e6c55b9ada326d211d818c34a994aeced808";
+
+    /// Nile testnet block 64,687,673 — used as TAPOS source in golden vector tests.
+    pub fn nile_block_64687673() -> TaposBlockData {
+        TaposBlockData {
+            number: 64_687_673,
+            block_id: {
+                let bytes = hex::decode("0000000003db0e39901ce5715271b601b1c57055f5d8fa6a9fe3505eee560308").unwrap();
+                let mut arr = [0u8; 32];
+                arr.copy_from_slice(&bytes);
+                arr
+            },
+            timestamp: 1_770_522_369_000,
+        }
+    }
 }
 
 #[cfg(test)]

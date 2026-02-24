@@ -27,7 +27,7 @@
 //! See `docs/plans/chain-rpc-client-refactor.md` for the full refactoring plan.
 
 use super::fee::{TronAccountResources, TronChainPrices};
-use super::TronAddress;
+use super::{trc20_transfer_tokens, TronAddress};
 use crate::eth::{Web3RpcError, Web3RpcResult};
 
 use common::{APPLICATION_JSON, PROXY_REQUEST_EXPIRATION_SEC, X_AUTH_PAYLOAD};
@@ -199,7 +199,7 @@ pub struct TronHttpNode {
 pub struct TronHttpClient {
     pub node: TronHttpNode,
     /// Keypair for signing requests to komodo proxy nodes.
-    pub proxy_sign_keypair: Option<Arc<Keypair>>,
+    proxy_sign_keypair: Option<Arc<Keypair>>,
 }
 
 impl TronHttpClient {
@@ -208,6 +208,21 @@ impl TronHttpClient {
             node,
             proxy_sign_keypair,
         }
+    }
+
+    /// Builds the proxy signature JSON string for komodo proxy nodes.
+    /// Returns `None` when this node is not a proxy.
+    fn proxy_sign_json(&self, uri: &Uri, body_len: usize) -> Web3RpcResult<Option<String>> {
+        if !self.node.komodo_proxy {
+            return Ok(None);
+        }
+        let keypair = self.proxy_sign_keypair.as_ref().ok_or_else(|| {
+            Web3RpcError::Internal("Proxy node requires signing keypair but none provided".to_string())
+        })?;
+        let proxy_sign = RawMessage::sign(keypair, uri, body_len, PROXY_REQUEST_EXPIRATION_SEC)
+            .map_err(|e| Web3RpcError::Internal(format!("Proxy signing failed: {e}")))?;
+        let json_str = json::to_string(&proxy_sign).map_err(|e| Web3RpcError::Internal(e.to_string()))?;
+        Ok(Some(json_str))
     }
 
     /// Send a POST request to the TRON API.
@@ -266,21 +281,10 @@ impl TronHttpClient {
         req.headers_mut()
             .insert(CONTENT_TYPE, HeaderValue::from_static(APPLICATION_JSON));
 
-        // Add proxy signature if using komodo proxy
-        if self.node.komodo_proxy {
-            let keypair = self.proxy_sign_keypair.as_ref().ok_or_else(|| {
-                Web3RpcError::Internal("Proxy node requires signing keypair but none provided".to_string())
-            })?;
-
-            let proxy_sign = RawMessage::sign(keypair, uri, body.len(), PROXY_REQUEST_EXPIRATION_SEC)
-                .map_err(|e| Web3RpcError::Internal(format!("Proxy signing failed: {e}")))?;
-
-            let proxy_sign_json = json::to_string(&proxy_sign).map_err(|e| Web3RpcError::Internal(e.to_string()))?;
-
-            let header_value = proxy_sign_json
+        if let Some(proxy_json) = self.proxy_sign_json(uri, body.len())? {
+            let header_value = proxy_json
                 .parse()
                 .map_err(|e| Web3RpcError::Internal(format!("Invalid proxy header value: {e}")))?;
-
             req.headers_mut().insert(X_AUTH_PAYLOAD, header_value);
         }
 
@@ -317,18 +321,8 @@ impl TronHttpClient {
             .header(ACCEPT.as_str(), APPLICATION_JSON)
             .header(CONTENT_TYPE.as_str(), APPLICATION_JSON);
 
-        // Add proxy signature if using komodo proxy
-        if self.node.komodo_proxy {
-            let keypair = self.proxy_sign_keypair.as_ref().ok_or_else(|| {
-                Web3RpcError::Internal("Proxy node requires signing keypair but none provided".to_string())
-            })?;
-
-            let proxy_sign = RawMessage::sign(keypair, uri, body.len(), PROXY_REQUEST_EXPIRATION_SEC)
-                .map_err(|e| Web3RpcError::Internal(format!("Proxy signing failed: {e}")))?;
-
-            let proxy_sign_json = json::to_string(&proxy_sign).map_err(|e| Web3RpcError::Internal(e.to_string()))?;
-
-            request = request.header(X_AUTH_PAYLOAD, &proxy_sign_json);
+        if let Some(proxy_json) = self.proxy_sign_json(uri, body.len())? {
+            request = request.header(X_AUTH_PAYLOAD, &proxy_json);
         }
 
         let (status_code, response_str) = match Box::pin(request.request_str()).timeout(TRON_API_TIMEOUT).await {
@@ -385,6 +379,26 @@ pub struct BlockRawData {
     /// Block timestamp in milliseconds since epoch.
     #[serde(default)]
     pub timestamp: i64,
+}
+
+impl GetNowBlockResponse {
+    /// Validate the response and return the block header with a non-negative block number.
+    ///
+    /// Faulty node validation: missing `block_header` or negative block number means this node
+    /// returned bad data. Returns `BadResponse` (retryable) to trigger rotation to another node.
+    fn validated_header(&self) -> Web3RpcResult<(&BlockHeader, u64)> {
+        let header = self.block_header.as_ref().ok_or_else(|| {
+            Web3RpcError::BadResponse("TRON node returned getnowblock without block_header".to_string())
+        })?;
+        let number = header.raw_data.number;
+        if number < 0 {
+            return Err(Web3RpcError::BadResponse(format!(
+                "TRON node returned invalid negative block number: {number}"
+            ))
+            .into());
+        }
+        Ok((header, number as u64))
+    }
 }
 
 /// Deserialize an optional hex string into `Option<[u8; 32]>`.
@@ -720,27 +734,18 @@ impl TronHttpClient {
     /// are all present and sane. Returns `BadResponse` (retryable) for missing/invalid data.
     pub async fn get_block_for_tapos(&self) -> Web3RpcResult<TaposBlockData> {
         let response = self.get_now_block().await?;
-        let block_header = response.block_header.ok_or_else(|| {
-            Web3RpcError::BadResponse("TRON node returned getnowblock without block_header".to_string())
-        })?;
+        let (header, number) = response.validated_header()?;
         let block_id = response
             .block_id
             .ok_or_else(|| Web3RpcError::BadResponse("TRON node returned getnowblock without blockID".to_string()))?;
-        let number = block_header.raw_data.number;
-        if number < 0 {
-            return Err(Web3RpcError::BadResponse(format!(
-                "TRON node returned invalid negative block number: {number}"
-            ))
-            .into());
-        }
-        let timestamp = block_header.raw_data.timestamp;
+        let timestamp = header.raw_data.timestamp;
         if timestamp <= 0 {
             return Err(
                 Web3RpcError::BadResponse(format!("TRON node returned invalid block timestamp: {timestamp}")).into(),
             );
         }
         Ok(TaposBlockData {
-            number: number as u64,
+            number,
             block_id,
             timestamp,
         })
@@ -991,6 +996,55 @@ impl TronApiClient {
         })
         .await
     }
+
+    /// Call a constant (view/pure) function on a smart contract with node rotation.
+    pub async fn trigger_constant_contract(
+        &self,
+        owner_address: &TronAddress,
+        contract_address: &TronAddress,
+        function_selector: &str,
+        parameter: &str,
+    ) -> Web3RpcResult<TriggerConstantContractResponse> {
+        let owner = *owner_address;
+        let contract = *contract_address;
+        let selector = function_selector.to_owned();
+        let param = parameter.to_owned();
+        self.try_clients(move |client| {
+            let selector = selector.clone();
+            let param = param.clone();
+            async move {
+                client
+                    .trigger_constant_contract(&owner, &contract, &selector, &param)
+                    .await
+            }
+        })
+        .await
+    }
+
+    /// Estimate energy required for a TRC20 `transfer(address,uint256)` call.
+    ///
+    /// ABI-encodes the transfer parameters and calls `trigger_constant_contract`.
+    /// Returns the `energy_used` from the response. If `energy_used` is missing or zero,
+    /// returns `BadResponse` to trigger node rotation.
+    pub async fn estimate_trc20_transfer_energy(
+        &self,
+        owner: &TronAddress,
+        contract: &TronAddress,
+        recipient: &TronAddress,
+        amount: U256,
+    ) -> Web3RpcResult<u64> {
+        let params_hex = abi_encode_trc20_transfer_params(recipient, amount);
+        let response = self
+            .trigger_constant_contract(owner, contract, "transfer(address,uint256)", &params_hex)
+            .await?;
+        match response.energy_used {
+            Some(energy) if energy > 0 => Ok(energy),
+            _ => Err(Web3RpcError::BadResponse(
+                "trigger_constant_contract returned no energy_used for TRC20 transfer estimation".to_owned(),
+            )
+            .into()),
+        }
+    }
 }
 
 // ============================================================================
@@ -1009,6 +1063,18 @@ fn abi_encode_address_param(addr: &TronAddress) -> String {
     let mut padded = [0u8; 32];
     padded[12..32].copy_from_slice(evm_addr.as_bytes());
     hex::encode(padded)
+}
+
+/// Encode TRC20 `transfer(address,uint256)` parameters as a hex string (no 0x prefix).
+///
+/// The parameters are ABI-encoded as two 32-byte slots:
+/// - recipient address (left-padded to 32 bytes, 20-byte EVM format)
+/// - amount as uint256
+///
+/// The function selector is NOT included — TRON's `function_selector` field handles that.
+fn abi_encode_trc20_transfer_params(recipient: &TronAddress, amount: U256) -> String {
+    let tokens = trc20_transfer_tokens(recipient, amount);
+    hex::encode(ethabi::encode(&tokens))
 }
 
 /// Parse the first constant_result element as U256.
@@ -1068,20 +1134,8 @@ impl ChainRpcOps for TronApiClient {
     async fn current_block(&self) -> Result<u64, Self::Error> {
         self.try_clients(|client| async move {
             let response = client.get_now_block().await?;
-            // Faulty node validation: missing block_header means this node returned bad data.
-            // Use BadResponse to trigger rotation to another node.
-            let block_header = response.block_header.ok_or_else(|| {
-                Web3RpcError::BadResponse("TRON node returned getnowblock without block_header".to_string())
-            })?;
-            let block_number = block_header.raw_data.number;
-            // Faulty node validation: negative block number is invalid data from this node.
-            if block_number < 0 {
-                return Err(Web3RpcError::BadResponse(format!(
-                    "TRON node returned invalid negative block number: {block_number}"
-                ))
-                .into());
-            }
-            Ok(block_number as u64)
+            let (_header, number) = response.validated_header()?;
+            Ok(number)
         })
         .await
     }

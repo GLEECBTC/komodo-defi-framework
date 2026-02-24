@@ -7,12 +7,13 @@ use super::proto::{
     Any, ContractType, TransactionContract, TransactionRaw, TransferContract, TriggerSmartContract,
     TYPE_URL_TRANSFER_CONTRACT, TYPE_URL_TRIGGER_SMART_CONTRACT,
 };
-use super::{TaposBlockData, TronAddress};
+use super::{trc20_transfer_tokens, TaposBlockData, TronAddress};
 use crate::eth::ERC20_CONTRACT;
-use common::now_ms;
-use ethabi::Token;
 use ethereum_types::U256;
 use prost::Message;
+
+/// Default transaction expiration window (60 seconds from block timestamp).
+const TX_EXPIRATION_MS: i64 = 60_000;
 
 /// Extract TAPOS reference fields from a recent block.
 ///
@@ -31,7 +32,23 @@ pub fn tron_addr_bytes(addr: &TronAddress) -> Vec<u8> {
     addr.as_bytes().to_vec()
 }
 
+/// Wrap a protobuf-encoded contract into a `TransactionContract` with `permission_id: 0`.
+pub(super) fn wrap_contract(contract_type: ContractType, type_url: &str, value: Vec<u8>) -> TransactionContract {
+    TransactionContract {
+        r#type: contract_type as i32,
+        parameter: Some(Any {
+            type_url: type_url.to_string(),
+            value,
+        }),
+        permission_id: 0,
+    }
+}
+
 /// Build an unsigned TRX (native) transfer transaction.
+///
+/// Timestamp and expiration are derived from `block_data`:
+/// - `timestamp` = block timestamp (not validated by java-tron; matches TronWeb)
+/// - `expiration` = block timestamp + 60s
 pub fn build_trx_transfer(
     from: &TronAddress,
     to: &TronAddress,
@@ -45,28 +62,26 @@ pub fn build_trx_transfer(
         to_address: tron_addr_bytes(to),
         amount: amount_sun,
     };
-    let any = Any {
-        type_url: TYPE_URL_TRANSFER_CONTRACT.to_string(),
-        value: transfer.encode_to_vec(),
-    };
-    let contract = TransactionContract {
-        r#type: ContractType::TransferContract as i32,
-        parameter: Some(any),
-        permission_id: 0,
-    };
+    let contract = wrap_contract(
+        ContractType::TransferContract,
+        TYPE_URL_TRANSFER_CONTRACT,
+        transfer.encode_to_vec(),
+    );
 
     TransactionRaw {
         ref_block_bytes,
         ref_block_hash,
-        expiration: block_data.timestamp + 60_000,
+        expiration: block_data.timestamp.saturating_add(TX_EXPIRATION_MS),
         data: Vec::new(),
         contract: vec![contract],
-        timestamp: now_ms() as i64,
+        timestamp: block_data.timestamp,
         fee_limit: 0,
     }
 }
 
 /// Build an unsigned TRC20 `transfer(address,uint256)` transaction.
+///
+/// Timestamp and expiration are derived from `block_data` (same policy as TRX transfers).
 pub fn build_trc20_transfer(
     from: &TronAddress,
     contract_addr: &TronAddress,
@@ -85,23 +100,19 @@ pub fn build_trc20_transfer(
         call_token_value: 0,
         token_id: 0,
     };
-    let any = Any {
-        type_url: TYPE_URL_TRIGGER_SMART_CONTRACT.to_string(),
-        value: trigger.encode_to_vec(),
-    };
-    let contract = TransactionContract {
-        r#type: ContractType::TriggerSmartContract as i32,
-        parameter: Some(any),
-        permission_id: 0,
-    };
+    let contract = wrap_contract(
+        ContractType::TriggerSmartContract,
+        TYPE_URL_TRIGGER_SMART_CONTRACT,
+        trigger.encode_to_vec(),
+    );
 
     Ok(TransactionRaw {
         ref_block_bytes,
         ref_block_hash,
-        expiration: block_data.timestamp + 60_000,
+        expiration: block_data.timestamp.saturating_add(TX_EXPIRATION_MS),
         data: Vec::new(),
         contract: vec![contract],
-        timestamp: now_ms() as i64,
+        timestamp: block_data.timestamp,
         fee_limit,
     })
 }
@@ -112,12 +123,14 @@ pub fn build_trc20_transfer(
 /// to a 20-byte EVM address (0x41 prefix stripped) for standard ABI encoding.
 fn abi_encode_trc20_transfer(recipient: &TronAddress, amount: U256) -> Result<Vec<u8>, ethabi::Error> {
     let function = ERC20_CONTRACT.function("transfer")?;
-    function.encode_input(&[Token::Address(recipient.to_evm_address()), Token::Uint(amount)])
+    let tokens = trc20_transfer_tokens(recipient, amount);
+    function.encode_input(&tokens)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::eth::tron::test_fixtures::{nile_block_64687673, TEST_FROM_HEX, TEST_TO_HEX};
     use prost::Message;
 
     /// Golden vector: verify builder output matches a real broadcast Nile TRX transfer.
@@ -126,21 +139,15 @@ mod tests {
     fn build_trx_transfer_golden_vector() {
         // Real Nile tx: 1000 SUN from 4123b0...08b6 to 418840...d808
         // TAPOS source: block 64687673 (blockID: 0000000003db0e39901ce5715271b601...)
-        let block_data = TaposBlockData {
-            number: 64_687_673,
-            block_id: {
-                let bytes = hex::decode("0000000003db0e39901ce5715271b601b1c57055f5d8fa6a9fe3505eee560308").unwrap();
-                let mut arr = [0u8; 32];
-                arr.copy_from_slice(&bytes);
-                arr
-            },
-            timestamp: 1_770_522_369_000,
-        };
-        let from = TronAddress::from_hex("4123b00d15c601b30613bf5a3b2f72527c79cc08b6").unwrap();
-        let to = TronAddress::from_hex("418840e6c55b9ada326d211d818c34a994aeced808").unwrap();
+        let block_data = nile_block_64687673();
+        let from = TronAddress::from_hex(TEST_FROM_HEX).unwrap();
+        let to = TronAddress::from_hex(TEST_TO_HEX).unwrap();
 
         let mut raw = build_trx_transfer(&from, &to, 1000, &block_data);
-        // Override dynamic fields to match the real tx values.
+        // Verify timestamp/expiration derived from block_data
+        assert_eq!(raw.timestamp, block_data.timestamp);
+        assert_eq!(raw.expiration, block_data.timestamp + TX_EXPIRATION_MS);
+        // Override to match the real broadcast tx values for golden vector comparison.
         raw.timestamp = 1_770_522_424_709;
         raw.expiration = 1_770_522_483_000;
 
@@ -171,7 +178,10 @@ mod tests {
         let fee_limit = 2_172_000i64;
 
         let mut raw = build_trc20_transfer(&from, &contract_addr, &recipient, amount, fee_limit, &block_data).unwrap();
-        // Override dynamic fields to match the real tx values.
+        // Verify timestamp/expiration derived from block_data
+        assert_eq!(raw.timestamp, block_data.timestamp);
+        assert_eq!(raw.expiration, block_data.timestamp + TX_EXPIRATION_MS);
+        // Override to match the real broadcast tx values for golden vector comparison.
         raw.timestamp = 1_770_972_831_784;
         raw.expiration = 1_770_972_891_000;
 

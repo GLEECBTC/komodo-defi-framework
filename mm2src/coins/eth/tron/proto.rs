@@ -8,9 +8,6 @@
 //! and must match the upstream TRON protocol exactly — signatures and transaction
 //! IDs are computed over the raw protobuf bytes.
 
-// All types in this module will be used by upcoming tx_builder, sign, and fee modules.
-#![allow(dead_code)]
-
 /// Type URL for `TransferContract` (native TRX transfer).
 pub const TYPE_URL_TRANSFER_CONTRACT: &str = "type.googleapis.com/protocol.TransferContract";
 
@@ -132,6 +129,7 @@ pub struct Transaction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::eth::tron::tx_builder::wrap_contract;
     use prost::Message;
 
     /// Dummy 21-byte TRON address (0x41 prefix + 20 bytes filled with `fill`).
@@ -215,14 +213,11 @@ mod tests {
             to_address: dummy_tron_address(0xBB),
             amount: 10_000_000,
         };
-        let contract = TransactionContract {
-            r#type: ContractType::TransferContract as i32,
-            parameter: Some(Any {
-                type_url: TYPE_URL_TRANSFER_CONTRACT.to_string(),
-                value: transfer.encode_to_vec(),
-            }),
-            permission_id: 0,
-        };
+        let contract = wrap_contract(
+            ContractType::TransferContract,
+            TYPE_URL_TRANSFER_CONTRACT,
+            transfer.encode_to_vec(),
+        );
 
         let original = TransactionRaw {
             ref_block_bytes: vec![0x12, 0x34],
@@ -245,14 +240,11 @@ mod tests {
             to_address: dummy_tron_address(0xBB),
             amount: 1_000_000,
         };
-        let contract = TransactionContract {
-            r#type: ContractType::TransferContract as i32,
-            parameter: Some(Any {
-                type_url: TYPE_URL_TRANSFER_CONTRACT.to_string(),
-                value: transfer.encode_to_vec(),
-            }),
-            permission_id: 0,
-        };
+        let contract = wrap_contract(
+            ContractType::TransferContract,
+            TYPE_URL_TRANSFER_CONTRACT,
+            transfer.encode_to_vec(),
+        );
         let raw = TransactionRaw {
             ref_block_bytes: vec![0x56, 0x78],
             ref_block_hash: vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08],
@@ -290,14 +282,11 @@ mod tests {
             call_token_value: 0,
             token_id: 0,
         };
-        let contract = TransactionContract {
-            r#type: ContractType::TriggerSmartContract as i32,
-            parameter: Some(Any {
-                type_url: TYPE_URL_TRIGGER_SMART_CONTRACT.to_string(),
-                value: trigger.encode_to_vec(),
-            }),
-            permission_id: 0,
-        };
+        let contract = wrap_contract(
+            ContractType::TriggerSmartContract,
+            TYPE_URL_TRIGGER_SMART_CONTRACT,
+            trigger.encode_to_vec(),
+        );
         let raw = TransactionRaw {
             ref_block_bytes: vec![0xAB, 0xCD],
             ref_block_hash: vec![0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80],

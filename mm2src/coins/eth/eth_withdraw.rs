@@ -2,6 +2,11 @@ use super::{
     u256_from_big_decimal, u256_to_big_decimal, ChainSpec, ChainTaggedAddress, EthCoinType, EthDerivationMethod,
     EthPrivKeyPolicy, Public, WithdrawError, WithdrawRequest, WithdrawResult, ERC20_CONTRACT, H256,
 };
+use crate::eth::tron::sign::sign_tron_transaction;
+use crate::eth::tron::withdraw::{
+    build_tron_trc20_withdraw, build_tron_trx_withdraw, validate_tron_fee_policy, TronWithdrawContext,
+};
+use crate::eth::tron::TronAddress;
 use crate::eth::wallet_connect::WcEthTxParams;
 use crate::eth::{
     calc_total_fee, get_eth_gas_details_from_withdraw_fee, tx_builder_with_pay_for_gas_option,
@@ -10,9 +15,10 @@ use crate::eth::{
 };
 use crate::hd_wallet::{DisplayAddress, HDAddressSelector, HDCoinWithdrawOps, HDWalletOps, WithdrawSenderAddress};
 use crate::rpc_command::init_withdraw::{WithdrawInProgressStatus, WithdrawTaskHandleShared};
+use crate::BigDecimal;
 use crate::{
     BytesJson, CoinWithDerivationMethod, EthCoin, GetWithdrawSenderAddress, PrivKeyPolicy, TransactionData,
-    TransactionDetails,
+    TransactionDetails, TxFeeDetails,
 };
 use async_trait::async_trait;
 use bip32::DerivationPath;
@@ -28,10 +34,17 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::map_mm_error::MapMmError;
 use mm2_err_handle::mm_error::MmResult;
 use mm2_err_handle::prelude::{MapToMmResult, MmError, MmResultExt, OrMmError};
+use prost::Message;
 use std::ops::Deref;
 use std::sync::Arc;
 #[cfg(target_arch = "wasm32")]
 use web3::types::TransactionRequest;
+
+/// Format an `H256` tx hash as a lowercase hex string.
+fn format_tx_hash(hash: H256) -> String {
+    let bytes = BytesJson::from(hash.0.to_vec());
+    format!("{bytes:02x}")
+}
 
 /// `EthWithdraw` trait provides methods for withdrawing Ethereum and ERC20 tokens.
 /// This allows different implementations of withdrawal logic for different types of wallets.
@@ -60,6 +73,53 @@ where
         derivation_path: &DerivationPath,
         unsigned_tx: &TransactionWrapper,
     ) -> Result<SignedEthTx, MmError<WithdrawError>>;
+
+    /// Assembles the final `TransactionDetails` from a signed transaction.
+    ///
+    /// Shared by both EVM and TRON withdraw paths to avoid duplicating the
+    /// spent/received calculation and struct construction.
+    #[allow(clippy::result_large_err)]
+    fn build_transaction_details(
+        &self,
+        from_tagged: &ChainTaggedAddress,
+        to_tagged: &ChainTaggedAddress,
+        tx: TransactionData,
+        amount: ethabi::ethereum_types::U256,
+        total_fee: &BigDecimal,
+        fee_details: TxFeeDetails,
+    ) -> WithdrawResult {
+        let coin = self.coin();
+
+        let amount_decimal = u256_to_big_decimal(amount, coin.decimals).map_mm_err()?;
+        let mut spent_by_me = amount_decimal.clone();
+        let received_by_me = if to_tagged.inner() == from_tagged.inner() {
+            amount_decimal.clone()
+        } else {
+            0.into()
+        };
+        // For native coins (ETH / TRX), the fee is paid from the same balance.
+        if coin.coin_type == EthCoinType::Eth {
+            spent_by_me += total_fee;
+        }
+
+        Ok(TransactionDetails {
+            to: vec![to_tagged.display_address()],
+            from: vec![from_tagged.display_address()],
+            total_amount: amount_decimal,
+            my_balance_change: &received_by_me - &spent_by_me,
+            spent_by_me,
+            received_by_me,
+            tx,
+            block_height: 0,
+            fee_details: Some(fee_details),
+            coin: coin.ticker.clone(),
+            internal_id: vec![].into(),
+            timestamp: now_sec(),
+            kmd_rewards: None,
+            transaction_type: Default::default(),
+            memo: None,
+        })
+    }
 
     /// - This returns `ChainTaggedAddress` so user-facing formatting is always chain-aware (EVM checksum vs TRON base58).
     /// - Convert to raw with `.inner()` when performing RPC calls / tx building.
@@ -147,15 +207,11 @@ where
         match coin.priv_key_policy {
             EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. } => {
                 let key_pair = self.get_key_pair(req)?;
-                let chain_id = match coin.chain_spec {
-                    ChainSpec::Evm { chain_id } => chain_id,
-                    // Todo: Tron have different transaction signing algorithm, we should probably have a trait abstracting both
-                    ChainSpec::Tron { .. } => {
-                        return MmError::err(WithdrawError::InternalError(
-                            "Tron is not supported for withdraw yet".to_owned(),
-                        ))
-                    },
-                };
+                let chain_id = coin.chain_spec.chain_id().ok_or_else(|| {
+                    WithdrawError::InternalError(
+                        "sign_withdraw_tx must not be called for TRON; use TRON branch in build()".to_owned(),
+                    )
+                })?;
                 let signed = unsigned_tx.sign(key_pair.secret(), Some(chain_id))?;
                 let bytes = rlp::encode(&signed);
 
@@ -219,10 +275,141 @@ where
         }
     }
 
+    /// Builds a TRON withdrawal transaction.
+    ///
+    /// Handles the full TRON withdraw pipeline: fee policy validation, TRON RPC calls
+    /// for TAPOS + resources + prices, tx building, signing, and fee details construction.
+    async fn build_tron_withdraw(
+        &self,
+        from_tagged: ChainTaggedAddress,
+        to_tagged: ChainTaggedAddress,
+    ) -> WithdrawResult {
+        let coin = self.coin();
+        let ticker = &coin.ticker;
+        let req = self.request();
+
+        // 1. Validate TRON-specific request constraints
+        validate_tron_fee_policy(&req.fee)?;
+        if req.memo.is_some() {
+            return MmError::err(WithdrawError::UnsupportedError(
+                "Memo is not yet supported for TRON withdraw (TRON charges 1 TRX burn fee for memo)".to_owned(),
+            ));
+        }
+
+        // 2. Validate key policy (only Iguana/HDWallet supported for TRON MVP)
+        match coin.priv_key_policy {
+            EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. } => {},
+            EthPrivKeyPolicy::Trezor => {
+                return MmError::err(WithdrawError::UnsupportedError(
+                    "Trezor is not supported for TRON withdraw".to_owned(),
+                ))
+            },
+            EthPrivKeyPolicy::WalletConnect { .. } => {
+                return MmError::err(WithdrawError::UnsupportedError(
+                    "WalletConnect is not supported for TRON withdraw".to_owned(),
+                ))
+            },
+            #[cfg(target_arch = "wasm32")]
+            EthPrivKeyPolicy::Metamask(_) => {
+                return MmError::err(WithdrawError::UnsupportedError(
+                    "MetaMask is not supported for TRON withdraw".to_owned(),
+                ))
+            },
+        }
+
+        // 3. Get TRON RPC client and fetch balance
+        let tron = coin
+            .0
+            .tron_rpc()
+            .ok_or_else(|| WithdrawError::InternalError("TRON RPC client is not initialized".to_owned()))?;
+
+        let my_balance = coin.address_balance(from_tagged).compat().await.map_mm_err()?;
+        let my_balance_dec = u256_to_big_decimal(my_balance, coin.decimals).map_mm_err()?;
+
+        if req.max && my_balance.is_zero() {
+            return MmError::err(WithdrawError::ZeroBalanceToWithdrawMax);
+        }
+
+        let amount_base_units = if req.max {
+            my_balance
+        } else {
+            let amount = u256_from_big_decimal(&req.amount, coin.decimals).map_mm_err()?;
+            if amount > my_balance {
+                let required_dec = u256_to_big_decimal(amount, coin.decimals).map_mm_err()?;
+                return MmError::err(WithdrawError::NotSufficientBalance {
+                    coin: ticker.to_owned(),
+                    available: my_balance_dec,
+                    required: required_dec,
+                });
+            }
+            amount
+        };
+
+        // 4. Convert addresses to TRON format
+        let from_tron = TronAddress::from(from_tagged.inner());
+        let to_tron = TronAddress::from(to_tagged.inner());
+
+        // 5. Fetch TAPOS block data (timestamp/expiration are derived inside the tx builders).
+        let block_data = tron.get_block_for_tapos().await.map_mm_err()?;
+
+        // 6. Fetch account resources and chain prices.
+        let resources = tron.get_account_resource(&from_tron).await.map_mm_err()?;
+        let prices = tron.get_chain_prices().await.map_mm_err()?;
+
+        // 7. Build tx, estimate fees — branching on coin type
+        let withdraw_ctx = TronWithdrawContext {
+            from: &from_tron,
+            to: &to_tron,
+            block_data: &block_data,
+            resources,
+            prices,
+            fee_coin: ticker,
+        };
+        let (raw, tron_fee_details, final_amount) = match &coin.coin_type {
+            EthCoinType::Eth => {
+                build_tron_trx_withdraw(&withdraw_ctx, amount_base_units, my_balance, &my_balance_dec, req.max)?
+            },
+            EthCoinType::Erc20 {
+                token_addr, platform, ..
+            } => {
+                let contract_tron = TronAddress::from(*token_addr);
+                let trc20_ctx = TronWithdrawContext {
+                    fee_coin: platform.as_str(),
+                    ..withdraw_ctx
+                };
+                build_tron_trc20_withdraw(&trc20_ctx, tron, &contract_tron, amount_base_units).await?
+            },
+            EthCoinType::Nft { .. } => {
+                return MmError::err(WithdrawError::ProtocolNotSupported(
+                    "NFT withdraw is not supported for TRON".to_owned(),
+                ))
+            },
+        };
+
+        // 8. Sign the transaction
+        let key_pair = self.get_key_pair(req)?;
+        let (tx_hash, signed_tx) =
+            sign_tron_transaction(&raw, key_pair.secret()).map_to_mm(|e| WithdrawError::SigningError(e.to_string()))?;
+        let signed_tx_bytes = BytesJson::from(signed_tx.encode_to_vec());
+
+        // 9. Build TransactionDetails
+        self.on_finishing()?;
+        let tx = TransactionData::new_signed(signed_tx_bytes, format_tx_hash(tx_hash));
+        let total_fee = tron_fee_details.total_fee.clone();
+        self.build_transaction_details(
+            &from_tagged,
+            &to_tagged,
+            tx,
+            final_amount,
+            &total_fee,
+            tron_fee_details.into(),
+        )
+    }
+
     /// Builds the withdrawal transaction and returns the transaction details.
     async fn build(self) -> WithdrawResult {
         let coin = self.coin();
-        let ticker = coin.deref().ticker.clone();
+        let ticker = coin.ticker.clone();
         let req = self.request().clone();
 
         let to_tagged = coin
@@ -232,6 +419,13 @@ where
 
         self.on_generating_transaction()?;
 
+        // ── TRON withdraw: early-return branch ──
+        // TRON uses TAPOS + protobuf + bandwidth/energy fees instead of nonce + RLP + gas.
+        if let ChainSpec::Tron { .. } = coin.chain_spec {
+            return self.build_tron_withdraw(from_tagged, to_tagged).await;
+        }
+
+        // ── EVM withdraw: existing path (unchanged) ──
         let my_balance = coin.address_balance(from_tagged).compat().await.map_mm_err()?;
         let my_balance_dec = u256_to_big_decimal(my_balance, coin.decimals).map_mm_err()?;
 
@@ -366,13 +560,11 @@ where
                 };
 
                 let (tx, bytes) = if req.broadcast {
-                    self.coin()
-                        .wc_send_tx(&wc, params)
+                    coin.wc_send_tx(&wc, params)
                         .await
                         .mm_err(|err| WithdrawError::SigningError(err.to_string()))?
                 } else {
-                    self.coin()
-                        .wc_sign_tx(&wc, params)
+                    coin.wc_sign_tx(&wc, params)
                         .await
                         .mm_err(|err| WithdrawError::SigningError(err.to_string()))?
                 };
@@ -382,37 +574,10 @@ where
         };
 
         self.on_finishing()?;
-        let tx_hash_bytes = BytesJson::from(tx_hash.0.to_vec());
-        let tx_hash_str = format!("{tx_hash_bytes:02x}");
-
-        let amount_decimal = u256_to_big_decimal(wei_amount, coin.decimals).map_mm_err()?;
-        let mut spent_by_me = amount_decimal.clone();
-        let received_by_me = if to_tagged.inner() == from_tagged.inner() {
-            amount_decimal.clone()
-        } else {
-            0.into()
-        };
         let fee_details = EthTxFeeDetails::new(gas, pay_for_gas_option, fee_coin).map_mm_err()?;
-        if coin.coin_type == EthCoinType::Eth {
-            spent_by_me += &fee_details.total_fee;
-        }
-        Ok(TransactionDetails {
-            to: vec![to_tagged.display_address()],
-            from: vec![from_tagged.display_address()],
-            total_amount: amount_decimal,
-            my_balance_change: &received_by_me - &spent_by_me,
-            spent_by_me,
-            received_by_me,
-            tx: TransactionData::new_signed(tx_hex, tx_hash_str),
-            block_height: 0,
-            fee_details: Some(fee_details.into()),
-            coin: coin.ticker.clone(),
-            internal_id: vec![].into(),
-            timestamp: now_sec(),
-            kmd_rewards: None,
-            transaction_type: Default::default(),
-            memo: None,
-        })
+        let total_fee = fee_details.total_fee.clone();
+        let tx = TransactionData::new_signed(tx_hex, format_tx_hash(tx_hash));
+        self.build_transaction_details(&from_tagged, &to_tagged, tx, wei_amount, &total_fee, fee_details.into())
     }
 }
 
@@ -465,15 +630,11 @@ impl EthWithdraw for InitEthWithdraw {
         let sign_processor = TrezorRpcTaskProcessor::new(self.task_handle.clone(), trezor_statuses);
         let sign_processor = Arc::new(sign_processor);
         let mut trezor_session = hw_ctx.trezor(sign_processor).await.map_mm_err()?;
-        let chain_id = match coin.chain_spec {
-            ChainSpec::Evm { chain_id } => chain_id,
-            // Todo: Add support for Tron signing with Trezor
-            ChainSpec::Tron { .. } => {
-                return MmError::err(WithdrawError::InternalError(
-                    "Tron is not supported for withdraw yet".to_owned(),
-                ))
-            },
-        };
+        // Todo: Add support for Tron signing with Trezor
+        let chain_id = coin
+            .chain_spec
+            .chain_id()
+            .ok_or_else(|| WithdrawError::InternalError("Tron is not supported for withdraw yet".to_owned()))?;
         let unverified_tx = trezor_session
             .sign_eth_tx(derivation_path, unsigned_tx, chain_id)
             .await

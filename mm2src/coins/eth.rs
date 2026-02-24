@@ -1418,15 +1418,11 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
     if !eth_coin.is_tx_type_supported(&tx_type) {
         return MmError::err(WithdrawError::TxTypeNotSupported);
     }
-    let chain_id = match eth_coin.chain_spec {
-        ChainSpec::Evm { chain_id } => chain_id,
-        // Todo: Add support for Tron NFTs
-        ChainSpec::Tron { .. } => {
-            return MmError::err(WithdrawError::InternalError(
-                "Tron is not supported for withdraw_erc1155 yet".to_owned(),
-            ))
-        },
-    };
+    // Todo: Add support for Tron NFTs
+    let chain_id = eth_coin
+        .chain_spec
+        .chain_id()
+        .ok_or_else(|| WithdrawError::InternalError("Tron is not supported for withdraw_erc1155 yet".to_owned()))?;
     let tx_builder = UnSignedEthTxBuilder::new(tx_type, nonce, gas, Action::Call(call_addr), eth_value, data);
     let tx_builder = tx_builder_with_pay_for_gas_option(&eth_coin, tx_builder, &pay_for_gas_option)?;
     let tx = tx_builder
@@ -1535,15 +1531,11 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
         .build()
         .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
     let secret = eth_coin.priv_key_policy.activated_key_or_err().map_mm_err()?.secret();
-    let chain_id = match eth_coin.chain_spec {
-        ChainSpec::Evm { chain_id } => chain_id,
-        // Todo: Add support for Tron NFTs
-        ChainSpec::Tron { .. } => {
-            return MmError::err(WithdrawError::InternalError(
-                "Tron is not supported for withdraw_erc721 yet".to_owned(),
-            ))
-        },
-    };
+    // Todo: Add support for Tron NFTs
+    let chain_id = eth_coin
+        .chain_spec
+        .chain_id()
+        .ok_or_else(|| WithdrawError::InternalError("Tron is not supported for withdraw_erc721 yet".to_owned()))?;
     let signed = tx.sign(secret, Some(chain_id))?;
     let signed_bytes = rlp::encode(&signed);
     let fee_details = EthTxFeeDetails::new(gas, pay_for_gas_option, fee_coin).map_mm_err()?;
@@ -2773,14 +2765,18 @@ impl MarketCoinOps for EthCoin {
     }
 
     fn platform_coin_balance(&self) -> BalanceFut<BigDecimal> {
-        match (&self.coin_type, &self.0.chain_spec) {
-            (EthCoinType::Eth, _) => Box::new(self.my_balance().map(|b| b.spendable)),
-            (EthCoinType::Erc20 { .. } | EthCoinType::Nft { .. }, ChainSpec::Evm { .. }) => Box::new(
-                self.eth_balance()
-                    .and_then(|result| u256_to_big_decimal(result, ETH_DECIMALS).map_mm_err()),
-            ),
-            (_, ChainSpec::Tron { .. }) => {
-                let fut = async { MmError::err(BalanceError::Internal("TRC20 tokens not supported yet!".into())) };
+        match &self.coin_type {
+            // Platform coin (ETH / TRX): own balance is the platform balance.
+            EthCoinType::Eth => Box::new(self.my_balance().map(|b| b.spendable)),
+            // Token: fetch the native platform balance (ETH or TRX).
+            EthCoinType::Erc20 { .. } | EthCoinType::Nft { .. } => {
+                let decimals = self.native_decimals();
+                let coin = self.clone();
+                let fut = async move {
+                    let my_address = coin.derivation_method.single_addr_or_err().await.map_mm_err()?.inner();
+                    let balance = coin.native_balance(my_address).await?;
+                    u256_to_big_decimal(balance, decimals).map_mm_err()
+                };
                 Box::new(fut.boxed().compat())
             },
         }
@@ -3078,15 +3074,11 @@ async fn sign_transaction_with_keypair(
     let tx_builder = tx_builder_with_pay_for_gas_option(coin, tx_builder, pay_for_gas_option)
         .map_err(|e| TransactionErr::Plain(e.get_inner().to_string()))?;
     let tx = tx_builder.build()?;
-    let chain_id = match coin.chain_spec {
-        ChainSpec::Evm { chain_id } => chain_id,
-        // Todo: Add Tron signing logic
-        ChainSpec::Tron { .. } => {
-            return Err(TransactionErr::Plain(
-                "Tron is not supported for sign_transaction_with_keypair yet".into(),
-            ))
-        },
-    };
+    // Todo: Add Tron signing logic
+    let chain_id = coin
+        .chain_spec
+        .chain_id()
+        .ok_or_else(|| TransactionErr::Plain("Tron is not supported for sign_transaction_with_keypair yet".into()))?;
     let signed_tx = tx.sign(key_pair.secret(), Some(chain_id))?;
 
     Ok((signed_tx, web3_instances_with_latest_nonce))
@@ -4983,7 +4975,6 @@ impl EthCoin {
     fn address_balance(&self, address: ChainTaggedAddress) -> BalanceFut<U256> {
         let coin = self.clone();
         let fut = async move {
-            // Route by coin's chain spec, not by address.family()
             let coin_family = ChainFamily::from(&coin.0.chain_spec);
 
             // Strict mismatch check - address must be tagged for the same chain
@@ -4996,39 +4987,13 @@ impl EthCoin {
             }
 
             let raw = address.inner();
-            match coin_family {
-                ChainFamily::Tron => {
-                    let tron_client = coin
-                        .0
-                        .tron_rpc()
-                        .ok_or_else(|| BalanceError::Internal("TRON chain but no TRON rpc_client".to_string()))?;
-                    tron_client
-                        .balance_native(tron::TronAddress::from(raw))
-                        .await
-                        .map_err(|e| BalanceError::Transport(e.into_inner().to_string()).into())
-                },
-                ChainFamily::Evm => match coin.coin_type {
-                    EthCoinType::Eth => Ok(coin.balance(raw, Some(BlockNumber::Latest)).await?),
-                    EthCoinType::Erc20 { ref token_addr, .. } => {
-                        let function = ERC20_CONTRACT.function("balanceOf")?;
-                        let data = function.encode_input(&[Token::Address(raw)])?;
-                        let res = coin
-                            .call_request(raw, *token_addr, None, Some(data.into()), BlockNumber::Latest)
-                            .await?;
-                        let decoded = function.decode_output(&res.0)?;
-                        match decoded[0] {
-                            Token::Uint(number) => Ok(number),
-                            _ => {
-                                let error = format!("Expected U256 as balanceOf result but got {decoded:?}");
-                                MmError::err(BalanceError::InvalidResponse(error))
-                            },
-                        }
-                    },
-                    EthCoinType::Nft { .. } => MmError::err(BalanceError::Internal(format!(
-                        "{} is not supported yet!",
-                        coin.coin_type
-                    ))),
-                },
+            match &coin.coin_type {
+                EthCoinType::Eth => coin.native_balance(raw).await,
+                EthCoinType::Erc20 { token_addr, .. } => coin.get_token_balance_for_address(raw, *token_addr).await,
+                EthCoinType::Nft { .. } => MmError::err(BalanceError::Internal(format!(
+                    "{} is not supported yet!",
+                    coin.coin_type
+                ))),
             }
         };
         Box::new(fut.boxed().compat())
@@ -5283,15 +5248,31 @@ impl EthCoin {
         }
     }
 
-    fn eth_balance(&self) -> BalanceFut<U256> {
-        let coin = self.clone();
-        let fut = async move {
-            let my_address = coin.derivation_method.single_addr_or_err().await.map_mm_err()?.inner();
-            coin.balance(my_address, Some(BlockNumber::Latest))
+    /// Returns the native platform balance (ETH or TRX) for the given raw address.
+    async fn native_balance(&self, address: Address) -> MmResult<U256, BalanceError> {
+        match ChainFamily::from(&self.0.chain_spec) {
+            ChainFamily::Evm => self
+                .balance(address, Some(BlockNumber::Latest))
                 .await
-                .map_to_mm(BalanceError::from)
-        };
-        Box::new(fut.boxed().compat())
+                .map_to_mm(BalanceError::from),
+            ChainFamily::Tron => {
+                let tron = self
+                    .0
+                    .tron_rpc()
+                    .or_mm_err(|| BalanceError::Internal("TRON chain but no TRON rpc_client".to_string()))?;
+                tron.balance_native(tron::TronAddress::from(address))
+                    .await
+                    .map_err(|e| BalanceError::Transport(e.into_inner().to_string()).into())
+            },
+        }
+    }
+
+    /// Returns the decimals of the native platform coin (ETH=18, TRX=6).
+    fn native_decimals(&self) -> u8 {
+        match &self.0.chain_spec {
+            ChainSpec::Evm { .. } => ETH_DECIMALS,
+            ChainSpec::Tron { .. } => tron::TRX_DECIMALS,
+        }
     }
 
     pub(crate) async fn call_request(

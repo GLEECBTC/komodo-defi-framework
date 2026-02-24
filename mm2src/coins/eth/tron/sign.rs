@@ -3,9 +3,6 @@
 //! TRON signs the SHA256 hash of `TransactionRaw` protobuf bytes and stores
 //! signatures as `r(32) || s(32) || v(1)` where `v` must be 0 or 1.
 //!
-//! This module is intentionally introduced before withdraw integration,
-//! so this should be removed once TRON withdraw is implemented.
-#![allow(dead_code)]
 
 use super::proto::{Transaction, TransactionRaw};
 use bitcrypto::sha256;

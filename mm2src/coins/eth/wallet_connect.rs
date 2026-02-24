@@ -1,5 +1,5 @@
 /// https://docs.reown.com/advanced/multichain/rpc-reference/ethereum-rpc
-use super::{ChainSpec, EthCoin, EthPrivKeyPolicy};
+use super::{EthCoin, EthPrivKeyPolicy};
 
 use crate::common::Future01CompatExt;
 use crate::hd_wallet::AddrToString;
@@ -105,15 +105,12 @@ impl WalletConnectOps for EthCoin {
 
     async fn wc_chain_id(&self, wc: &WalletConnectCtx) -> Result<WcChainId, Self::Error> {
         let session_topic = self.session_topic()?;
-        let chain_id = match self.chain_spec {
-            ChainSpec::Evm { chain_id } => chain_id,
-            // Todo: Add Tron signing logic
-            ChainSpec::Tron { .. } => {
-                return Err(MmError::new(EthWalletConnectError::InternalError(
-                    "Tron is not supported for this action yet".into(),
-                )))
-            },
-        };
+        // Todo: Add Tron signing logic
+        let chain_id = self.chain_spec.chain_id().ok_or_else(|| {
+            MmError::new(EthWalletConnectError::InternalError(
+                "Tron is not supported for this action yet".into(),
+            ))
+        })?;
         let chain_id = WcChainId::new_eip155(chain_id.to_string());
         wc.validate_update_active_chain_id(session_topic, &chain_id)
             .await

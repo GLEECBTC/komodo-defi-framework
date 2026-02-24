@@ -160,8 +160,9 @@ fn sun_to_trx_decimal(sun: u64) -> BigDecimal {
 
 #[cfg(test)]
 mod tests {
-    use super::super::proto::{Any, ContractType, TransactionContract, TYPE_URL_TRANSFER_CONTRACT};
     use super::*;
+    use crate::eth::tron::proto::{ContractType, TransactionContract, TYPE_URL_TRANSFER_CONTRACT};
+    use crate::eth::tron::tx_builder::wrap_contract;
 
     fn sample_raw() -> TransactionRaw {
         TransactionRaw {
@@ -176,14 +177,7 @@ mod tests {
     }
 
     fn sample_contract() -> TransactionContract {
-        TransactionContract {
-            r#type: ContractType::TransferContract as i32,
-            parameter: Some(Any {
-                type_url: TYPE_URL_TRANSFER_CONTRACT.to_string(),
-                value: vec![1],
-            }),
-            permission_id: 0,
-        }
+        wrap_contract(ContractType::TransferContract, TYPE_URL_TRANSFER_CONTRACT, vec![1])
     }
 
     #[test]
