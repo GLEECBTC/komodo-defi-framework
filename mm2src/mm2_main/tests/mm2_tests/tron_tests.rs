@@ -1,15 +1,21 @@
-//! TRON activation integration tests
+//! TRON integration tests
 //!
 //! Run with: cargo test --test mm2_tests_main --features tron-network-tests tron_
 
-use coins::eth::tron::TronAddress;
+use coins::eth::tron::{TronAddress, TronApiClient, TronHttpClient, TronHttpNode};
+use coins::TxFeeDetails;
 use common::block_on;
+use mm2_number::bigdecimal::BigDecimal;
 use mm2_test_helpers::for_tests::{
-    account_balance, enable_erc20_token_v2, enable_trx_with_tokens, get_new_address, task_enable_trx,
-    task_enable_trx_with_tokens, trc20_usdt_nile_conf, trx_conf, MarketMakerIt, Mm2TestConf, Mm2TestConfForSwap,
-    TRON_NILE_NODES, TRON_NILE_TRC20_USDT_CONTRACT, TRON_NILE_TRC20_USDT_TICKER,
+    account_balance, enable_erc20_token_v2, enable_trx_with_tokens, get_new_address, my_balance, send_raw_transaction,
+    task_enable_trx, task_enable_trx_with_tokens, trc20_usdt_nile_conf, trx_conf, withdraw_v1, MarketMakerIt,
+    Mm2TestConf, Mm2TestConfForSwap, TRON_NILE_NODES, TRON_NILE_TRC20_USDT_CONTRACT, TRON_NILE_TRC20_USDT_TICKER,
+    TRON_WITHDRAW_TEST_PASSPHRASE,
 };
-use mm2_test_helpers::structs::{Bip44Chain, EnableCoinBalanceMap, EthWithTokensActivationResult, HDAccountAddressId};
+use mm2_test_helpers::structs::{
+    Bip44Chain, EnableCoinBalanceMap, EthWithTokensActivationResult, HDAccountAddressId, TransactionDetails,
+};
+use std::str::FromStr;
 
 /// Test mnemonic for used-but-zero-balance scenario.
 /// Index 0: TSqB9tqfaQ1DYSdMCbVSLPzQsaNVjeu9hq (funded ~1777.8 TRX)
@@ -512,8 +518,8 @@ fn test_trx_hd_scanning_detects_used_but_zero_balance_address() {
     );
     let spendable0 = &account0.addresses[0].balance.get("TRX").unwrap().spendable;
     assert!(
-        *spendable0 > 1700.into(),
-        "Expected index 0 to have ~1777.8 TRX, got {:?}",
+        *spendable0 > 100.into(),
+        "Expected index 0 to have a funded TRX balance (public testnet mnemonic, balance may decrease over time), got {:?}",
         spendable0
     );
 
@@ -728,5 +734,439 @@ fn test_trc20_hd_gap_scanning() {
         );
     }
 
+    block_on(mm.stop()).unwrap();
+}
+
+// =============================================================================
+// TRON Withdraw Integration Tests (Nile)
+// =============================================================================
+
+/// Withdraw addresses for TRON_WITHDRAW_TEST_PASSPHRASE on Nile testnet.
+const TRON_WITHDRAW_ADDR_INDEX_0: &str = "TDcxD6E5wTzvqCJd4RfkGfw9NkCBdvYcV9";
+const TRON_WITHDRAW_ADDR_INDEX_1: &str = "TW9RqU6bTJnM4quyRbvTwm3xfSHgk718qU";
+/// Iguana mode address for TRON_WITHDRAW_TEST_PASSPHRASE.
+const TRON_WITHDRAW_IGUANA_ADDR: &str = "TP7AtLenmsyLpVdKvKzCdHTyDcQgYYzK4i";
+
+fn withdraw_from_index(index: u32) -> HDAccountAddressId {
+    HDAccountAddressId {
+        account_id: 0,
+        chain: Bip44Chain::External,
+        address_id: index,
+    }
+}
+
+/// Extract the total fee from a withdraw's fee_details, asserting it's `TxFeeDetails::Tron`.
+fn tron_total_fee(tx: &TransactionDetails) -> BigDecimal {
+    let fee: TxFeeDetails = serde_json::from_value(tx.fee_details.clone()).unwrap();
+    match fee {
+        TxFeeDetails::Tron(tron_fee) => tron_fee.total_fee,
+        other => panic!("Expected TxFeeDetails::Tron, got {:?}", other),
+    }
+}
+
+/// Build a standalone [`TronApiClient`] from [`TRON_NILE_NODES`] for on-chain verification.
+fn nile_api_client() -> TronApiClient {
+    let clients = TRON_NILE_NODES
+        .iter()
+        .map(|url| {
+            TronHttpClient::new(
+                TronHttpNode {
+                    uri: url.parse().expect("valid Nile node URL"),
+                    komodo_proxy: false,
+                },
+                None,
+            )
+        })
+        .collect();
+    TronApiClient::new(clients)
+}
+
+/// Query Nile testnet to verify a broadcast transaction exists on-chain.
+/// Uses [`TronApiClient`] with node rotation/failover.
+fn verify_tx_on_nile(tx_hash: &str) {
+    // Brief pause for tx propagation to Nile full nodes.
+    std::thread::sleep(std::time::Duration::from_secs(3));
+
+    let tx_hash_hex = tx_hash.strip_prefix("0x").unwrap_or(tx_hash);
+    let client = nile_api_client();
+    let resp =
+        block_on(client.get_transaction_by_id(tx_hash_hex)).expect("get_transaction_by_id failed on all Nile nodes");
+    assert_eq!(
+        resp.tx_id.to_lowercase(),
+        tx_hash_hex.to_lowercase(),
+        "Nile txID should match our tx_hash"
+    );
+}
+
+/// Test TRX withdraw + broadcast (iguana mode).
+#[test]
+fn test_trx_withdraw_and_send() {
+    let coins = serde_json::json!([trx_conf()]);
+    let conf = Mm2TestConf::seednode(TRON_WITHDRAW_TEST_PASSPHRASE, &coins);
+    let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
+
+    block_on(enable_trx_with_tokens(&mm, TRON_NILE_NODES, &[]));
+
+    // Pre-withdraw balance sanity check
+    let balance_before = block_on(my_balance(&mm, "TRX"));
+    assert_eq!(balance_before.coin, "TRX");
+    assert!(balance_before.balance > BigDecimal::from(1), "Need > 1 TRX to withdraw");
+
+    let tx_details = block_on(withdraw_v1(&mm, "TRX", TRON_WITHDRAW_ADDR_INDEX_0, "1", None));
+
+    // Exact amounts and addresses
+    assert_eq!(tx_details.coin, "TRX");
+    assert_eq!(tx_details.total_amount, BigDecimal::from(1));
+    assert_eq!(tx_details.from, vec![TRON_WITHDRAW_IGUANA_ADDR.to_owned()]);
+    assert_eq!(tx_details.to, vec![TRON_WITHDRAW_ADDR_INDEX_0.to_owned()]);
+    assert_eq!(tx_details.received_by_me, BigDecimal::default());
+
+    // TRX native: fee is deducted from same balance → spent_by_me = amount + fee
+    let fee = tron_total_fee(&tx_details);
+    assert_eq!(tx_details.spent_by_me, &tx_details.total_amount + &fee);
+    assert_eq!(
+        tx_details.my_balance_change,
+        &tx_details.received_by_me - &tx_details.spent_by_me
+    );
+
+    let send_result = block_on(send_raw_transaction(&mm, "TRX", &tx_details.tx_hex));
+    assert_eq!(send_result["tx_hash"].as_str().unwrap(), tx_details.tx_hash);
+
+    verify_tx_on_nile(&tx_details.tx_hash);
+
+    block_on(mm.stop()).unwrap();
+}
+
+/// Test TRC20 USDT withdraw + broadcast (iguana mode).
+#[test]
+fn test_trc20_withdraw_and_send() {
+    let coins = serde_json::json!([trx_conf(), trc20_usdt_nile_conf()]);
+    let conf = Mm2TestConf::seednode(TRON_WITHDRAW_TEST_PASSPHRASE, &coins);
+    let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
+
+    block_on(enable_trx_with_tokens(
+        &mm,
+        TRON_NILE_NODES,
+        &[TRON_NILE_TRC20_USDT_TICKER],
+    ));
+
+    // Pre-withdraw balance sanity checks
+    let trx_balance = block_on(my_balance(&mm, "TRX"));
+    assert!(trx_balance.balance > BigDecimal::from(0), "Need TRX for fees");
+    let token_balance = block_on(my_balance(&mm, TRON_NILE_TRC20_USDT_TICKER));
+    assert!(token_balance.balance >= BigDecimal::from(1), "Need >= 1 USDT");
+
+    let tx_details = block_on(withdraw_v1(
+        &mm,
+        TRON_NILE_TRC20_USDT_TICKER,
+        TRON_WITHDRAW_ADDR_INDEX_0,
+        "1",
+        None,
+    ));
+
+    // Exact amounts and addresses
+    assert_eq!(tx_details.coin, TRON_NILE_TRC20_USDT_TICKER);
+    assert_eq!(tx_details.total_amount, BigDecimal::from(1));
+    assert_eq!(tx_details.from, vec![TRON_WITHDRAW_IGUANA_ADDR.to_owned()]);
+    assert_eq!(tx_details.to, vec![TRON_WITHDRAW_ADDR_INDEX_0.to_owned()]);
+    assert_eq!(tx_details.received_by_me, BigDecimal::default());
+
+    // TRC20: fee is paid in TRX, not the token → spent_by_me = amount, balance_change = -amount
+    assert_eq!(tx_details.spent_by_me, tx_details.total_amount.clone());
+    assert_eq!(
+        tx_details.my_balance_change,
+        &tx_details.received_by_me - &tx_details.spent_by_me
+    );
+
+    let fee: TxFeeDetails = serde_json::from_value(tx_details.fee_details.clone()).unwrap();
+    match fee {
+        TxFeeDetails::Tron(ref tron_fee) => {
+            assert!(tron_fee.energy_used > 0, "TRC20 transfer should use energy");
+            assert_eq!(tron_fee.coin, "TRX", "Fees should be paid in TRX");
+        },
+        other => panic!("Expected TxFeeDetails::Tron, got {:?}", other),
+    }
+
+    let send_result = block_on(send_raw_transaction(
+        &mm,
+        TRON_NILE_TRC20_USDT_TICKER,
+        &tx_details.tx_hex,
+    ));
+    assert_eq!(send_result["tx_hash"].as_str().unwrap(), tx_details.tx_hash);
+
+    verify_tx_on_nile(&tx_details.tx_hash);
+
+    block_on(mm.stop()).unwrap();
+}
+
+/// Test TRX withdraw max (iguana mode). Does NOT broadcast to preserve test wallet balance.
+#[test]
+fn test_trx_withdraw_max() {
+    let coins = serde_json::json!([trx_conf()]);
+    let conf = Mm2TestConf::seednode(TRON_WITHDRAW_TEST_PASSPHRASE, &coins);
+    let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
+
+    block_on(enable_trx_with_tokens(&mm, TRON_NILE_NODES, &[]));
+
+    // Capture balance before max withdraw
+    let balance_before = block_on(my_balance(&mm, "TRX"));
+    assert!(balance_before.balance > BigDecimal::from(0), "Need TRX balance");
+
+    let withdraw = block_on(mm.rpc(&serde_json::json!({
+        "userpass": mm.userpass,
+        "method": "withdraw",
+        "coin": "TRX",
+        "to": TRON_WITHDRAW_ADDR_INDEX_0,
+        "max": true,
+    })))
+    .unwrap();
+    assert!(withdraw.0.is_success(), "Max withdraw failed: {}", withdraw.1);
+
+    let tx_details: TransactionDetails = serde_json::from_str(&withdraw.1).unwrap();
+
+    // Exact addresses
+    assert_eq!(tx_details.coin, "TRX");
+    assert_eq!(tx_details.from, vec![TRON_WITHDRAW_IGUANA_ADDR.to_owned()]);
+    assert_eq!(tx_details.to, vec![TRON_WITHDRAW_ADDR_INDEX_0.to_owned()]);
+    assert_eq!(tx_details.received_by_me, BigDecimal::default());
+
+    // Max withdraw: total_amount + fee = balance (fee comes from same coin)
+    let fee = tron_total_fee(&tx_details);
+    assert!(fee > BigDecimal::from(0), "Max withdraw should have non-zero fee");
+    assert!(tx_details.total_amount > BigDecimal::from(0));
+    assert_eq!(tx_details.spent_by_me, &tx_details.total_amount + &fee);
+    assert_eq!(
+        tx_details.my_balance_change,
+        &tx_details.received_by_me - &tx_details.spent_by_me
+    );
+
+    // Do NOT broadcast — would drain the test wallet.
+    block_on(mm.stop()).unwrap();
+}
+
+/// Test TRX withdraw from HD wallet (index 1).
+#[test]
+fn test_trx_withdraw_hd() {
+    let coins = serde_json::json!([trx_conf()]);
+    let conf = Mm2TestConf::seednode_with_hd_account(TRON_WITHDRAW_TEST_PASSPHRASE, &coins);
+    let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
+
+    block_on(task_enable_trx_with_tokens(
+        &mm,
+        TRON_NILE_NODES,
+        &[],
+        180,
+        Some(withdraw_from_index(1)),
+    ))
+    .expect("TRX HD activation should succeed");
+
+    let tx_details = block_on(withdraw_v1(
+        &mm,
+        "TRX",
+        TRON_WITHDRAW_ADDR_INDEX_0,
+        "0.5",
+        Some(withdraw_from_index(1)),
+    ));
+
+    // Exact amounts and addresses
+    assert_eq!(tx_details.coin, "TRX");
+    assert_eq!(tx_details.total_amount, BigDecimal::from_str("0.5").unwrap());
+    assert_eq!(tx_details.from, vec![TRON_WITHDRAW_ADDR_INDEX_1.to_owned()]);
+    assert_eq!(tx_details.to, vec![TRON_WITHDRAW_ADDR_INDEX_0.to_owned()]);
+    assert_eq!(tx_details.received_by_me, BigDecimal::default());
+
+    // TRX native: fee deducted from same balance
+    let fee = tron_total_fee(&tx_details);
+    assert_eq!(tx_details.spent_by_me, &tx_details.total_amount + &fee);
+    assert_eq!(
+        tx_details.my_balance_change,
+        &tx_details.received_by_me - &tx_details.spent_by_me
+    );
+
+    let send_result = block_on(send_raw_transaction(&mm, "TRX", &tx_details.tx_hex));
+    assert_eq!(send_result["tx_hash"].as_str().unwrap(), tx_details.tx_hash);
+
+    verify_tx_on_nile(&tx_details.tx_hash);
+
+    block_on(mm.stop()).unwrap();
+}
+
+/// Test TRC20 USDT withdraw from HD wallet (index 1).
+#[test]
+fn test_trc20_withdraw_hd() {
+    let coins = serde_json::json!([trx_conf(), trc20_usdt_nile_conf()]);
+    let conf = Mm2TestConf::seednode_with_hd_account(TRON_WITHDRAW_TEST_PASSPHRASE, &coins);
+    let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
+
+    block_on(task_enable_trx_with_tokens(
+        &mm,
+        TRON_NILE_NODES,
+        &[TRON_NILE_TRC20_USDT_TICKER],
+        180,
+        Some(withdraw_from_index(1)),
+    ))
+    .expect("TRX+TRC20 HD activation should succeed");
+
+    let tx_details = block_on(withdraw_v1(
+        &mm,
+        TRON_NILE_TRC20_USDT_TICKER,
+        TRON_WITHDRAW_ADDR_INDEX_0,
+        "0.5",
+        Some(withdraw_from_index(1)),
+    ));
+
+    // Exact amounts and addresses
+    assert_eq!(tx_details.coin, TRON_NILE_TRC20_USDT_TICKER);
+    assert_eq!(tx_details.total_amount, BigDecimal::from_str("0.5").unwrap());
+    assert_eq!(tx_details.from, vec![TRON_WITHDRAW_ADDR_INDEX_1.to_owned()]);
+    assert_eq!(tx_details.to, vec![TRON_WITHDRAW_ADDR_INDEX_0.to_owned()]);
+    assert_eq!(tx_details.received_by_me, BigDecimal::default());
+
+    // TRC20: fee is paid in TRX, not the token → spent_by_me = amount, balance_change = -amount
+    assert_eq!(tx_details.spent_by_me, tx_details.total_amount.clone());
+    assert_eq!(
+        tx_details.my_balance_change,
+        &tx_details.received_by_me - &tx_details.spent_by_me
+    );
+
+    let fee: TxFeeDetails = serde_json::from_value(tx_details.fee_details.clone()).unwrap();
+    match fee {
+        TxFeeDetails::Tron(ref tron_fee) => {
+            assert!(tron_fee.energy_used > 0, "TRC20 transfer should use energy");
+            assert_eq!(tron_fee.coin, "TRX", "Fees should be paid in TRX");
+        },
+        other => panic!("Expected TxFeeDetails::Tron, got {:?}", other),
+    }
+
+    let send_result = block_on(send_raw_transaction(
+        &mm,
+        TRON_NILE_TRC20_USDT_TICKER,
+        &tx_details.tx_hex,
+    ));
+    assert_eq!(send_result["tx_hash"].as_str().unwrap(), tx_details.tx_hash);
+
+    verify_tx_on_nile(&tx_details.tx_hash);
+
+    block_on(mm.stop()).unwrap();
+}
+
+/// Test TRX withdraw from unfunded HD address (index 2) fails with insufficient balance.
+#[test]
+fn test_trx_withdraw_insufficient_balance() {
+    let coins = serde_json::json!([trx_conf()]);
+    let conf = Mm2TestConf::seednode_with_hd_account(TRON_WITHDRAW_TEST_PASSPHRASE, &coins);
+    let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
+
+    block_on(task_enable_trx_with_tokens(
+        &mm,
+        TRON_NILE_NODES,
+        &[],
+        180,
+        Some(withdraw_from_index(2)),
+    ))
+    .expect("TRX HD activation should succeed");
+
+    let withdraw = block_on(mm.rpc(&serde_json::json!({
+        "userpass": mm.userpass,
+        "method": "withdraw",
+        "coin": "TRX",
+        "to": TRON_WITHDRAW_ADDR_INDEX_0,
+        "amount": "1",
+        "from": withdraw_from_index(2),
+    })))
+    .unwrap();
+
+    assert!(
+        !withdraw.0.is_success(),
+        "Withdraw from unfunded address should fail, got: {}",
+        withdraw.1
+    );
+    assert!(
+        withdraw.1.contains("Not enough TRX") || withdraw.1.contains("NotSufficientBalance"),
+        "Error should mention insufficient balance, got: {}",
+        withdraw.1
+    );
+
+    block_on(mm.stop()).unwrap();
+}
+
+/// Test TRX fee details structure — validate all fields present and correct (no broadcast).
+#[test]
+fn test_trx_fee_details_structure() {
+    let coins = serde_json::json!([trx_conf()]);
+    let conf = Mm2TestConf::seednode(TRON_WITHDRAW_TEST_PASSPHRASE, &coins);
+    let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
+
+    block_on(enable_trx_with_tokens(&mm, TRON_NILE_NODES, &[]));
+
+    let tx_details = block_on(withdraw_v1(&mm, "TRX", TRON_WITHDRAW_ADDR_INDEX_0, "0.1", None));
+
+    // Exact amounts and addresses
+    assert_eq!(tx_details.coin, "TRX");
+    assert_eq!(tx_details.total_amount, BigDecimal::from_str("0.1").unwrap());
+    assert_eq!(tx_details.from, vec![TRON_WITHDRAW_IGUANA_ADDR.to_owned()]);
+    assert_eq!(tx_details.to, vec![TRON_WITHDRAW_ADDR_INDEX_0.to_owned()]);
+    assert_eq!(tx_details.received_by_me, BigDecimal::default());
+
+    // TRX native: spent_by_me = amount + fee
+    let total_fee = tron_total_fee(&tx_details);
+    assert_eq!(tx_details.spent_by_me, &tx_details.total_amount + &total_fee);
+    assert_eq!(
+        tx_details.my_balance_change,
+        &tx_details.received_by_me - &tx_details.spent_by_me
+    );
+
+    // Validate fee_details has all expected fields with correct types
+    let fee_json = &tx_details.fee_details;
+    assert_eq!(fee_json["type"].as_str().unwrap(), "Tron", "fee type should be Tron");
+    assert_eq!(fee_json["coin"].as_str().unwrap(), "TRX", "fee coin should be TRX");
+    assert!(
+        fee_json["bandwidth_used"].as_u64().is_some(),
+        "bandwidth_used should be a number"
+    );
+    assert!(
+        fee_json["bandwidth_used"].as_u64().unwrap() > 0,
+        "bandwidth_used should be > 0"
+    );
+    assert_eq!(
+        fee_json["energy_used"].as_u64().unwrap(),
+        0,
+        "energy_used should be 0 for TRX transfer"
+    );
+    assert!(
+        fee_json["bandwidth_fee"].is_string(),
+        "bandwidth_fee should be a string (BigDecimal)"
+    );
+    assert_eq!(
+        fee_json["energy_fee"].as_str().unwrap(),
+        "0.000000",
+        "energy_fee should be zero with fixed 6-decimal scale"
+    );
+    assert!(
+        fee_json["total_fee"].is_string(),
+        "total_fee should be a string (BigDecimal)"
+    );
+
+    // total_fee should equal bandwidth_fee for a TRX transfer (no energy)
+    assert_eq!(
+        fee_json["total_fee"].as_str().unwrap(),
+        fee_json["bandwidth_fee"].as_str().unwrap(),
+        "total_fee should equal bandwidth_fee for TRX transfer"
+    );
+
+    // Also validate via typed deserialization
+    let fee: TxFeeDetails = serde_json::from_value(fee_json.clone()).unwrap();
+    match fee {
+        TxFeeDetails::Tron(tron_fee) => {
+            assert_eq!(tron_fee.coin, "TRX");
+            assert!(tron_fee.bandwidth_used > 0);
+            assert_eq!(tron_fee.energy_used, 0);
+            assert_eq!(tron_fee.energy_fee, 0.into());
+            assert_eq!(tron_fee.total_fee, tron_fee.bandwidth_fee);
+        },
+        other => panic!("Expected TxFeeDetails::Tron, got {:?}", other),
+    }
+
+    // Do NOT broadcast — pure structure validation.
     block_on(mm.stop()).unwrap();
 }

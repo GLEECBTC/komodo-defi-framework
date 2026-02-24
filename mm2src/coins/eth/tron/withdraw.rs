@@ -180,15 +180,20 @@ pub async fn build_tron_trc20_withdraw(
 mod tests {
     use super::*;
     use crate::eth::tron::fee::estimate_trx_transfer_fee;
+    #[cfg(not(target_arch = "wasm32"))]
     use crate::eth::tron::sign::sign_tron_transaction;
     use crate::eth::tron::test_fixtures::{nile_block_64687673, TEST_FROM_HEX, TEST_TO_HEX};
     use crate::eth::tron::tx_builder::build_trx_transfer;
     use crate::eth::tron::TronAddress;
+    use common::cross_test;
     use mm2_number::bigdecimal::BigDecimal;
+    #[cfg(not(target_arch = "wasm32"))]
     use prost::Message;
 
-    #[test]
-    fn validate_tron_fee_policy_rejects_evm_gas_options() {
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::*;
+
+    cross_test!(validate_tron_fee_policy_rejects_evm_gas_options, {
         // None (auto) is accepted
         assert!(validate_tron_fee_policy(&None).is_ok());
 
@@ -215,8 +220,9 @@ mod tests {
         });
         let err = validate_tron_fee_policy(&utxo).unwrap_err().into_inner();
         assert!(matches!(err, WithdrawError::InvalidFeePolicy(_)));
-    }
+    });
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn tron_signed_protobuf_bytes_are_not_valid_rlp() {
         // Build a deterministic TRON transaction
@@ -246,8 +252,7 @@ mod tests {
         assert!(rlp_result.is_err(), "TRON protobuf bytes must not decode as EVM RLP");
     }
 
-    #[test]
-    fn trx_max_withdraw_deducts_fee_and_returns_consistent_details() {
+    cross_test!(trx_max_withdraw_deducts_fee_and_returns_consistent_details, {
         let from = TronAddress::from_hex(TEST_FROM_HEX).unwrap();
         let to = TronAddress::from_hex(TEST_TO_HEX).unwrap();
         let block_data = nile_block_64687673();
@@ -281,10 +286,9 @@ mod tests {
         let tx = tx_with_placeholder_signature(&raw);
         let recomputed = estimate_trx_transfer_fee(&tx, resources, prices, "TRX");
         assert_eq!(fee_details, recomputed, "fee_details must match the final raw tx");
-    }
+    });
 
-    #[test]
-    fn trx_non_max_withdraw_rejects_insufficient_balance() {
+    cross_test!(trx_non_max_withdraw_rejects_insufficient_balance, {
         let from = TronAddress::from_hex(TEST_FROM_HEX).unwrap();
         let to = TronAddress::from_hex(TEST_TO_HEX).unwrap();
         let block_data = nile_block_64687673();
@@ -311,5 +315,5 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().into_inner();
         assert!(matches!(err, WithdrawError::NotSufficientBalance { .. }));
-    }
+    });
 }

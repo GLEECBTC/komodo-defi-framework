@@ -265,7 +265,7 @@ pub const BCHD_TESTNET_URLS: &[&str] = &["https://bchd-testnet.greyh.at:18335"];
 
 /// TRON Nile testnet RPC nodes.
 /// Nile is recommended over Shasta for more flexibility with RPC providers.
-pub const TRON_NILE_NODES: &[&str] = &["https://nile.trongrid.io"];
+pub const TRON_NILE_NODES: &[&str] = &["https://api.nileex.io", "https://nile.trongrid.io"];
 
 /// Known TRON testnet address that is always "activated" (zero address equivalent).
 /// This is the TRON network foundation address on testnet that has activity.
@@ -282,6 +282,13 @@ pub const TRON_NILE_TRC20_USDT_CONTRACT: &str = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkA
 
 /// TRC20 test token ticker for tests.
 pub const TRON_NILE_TRC20_USDT_TICKER: &str = "USDT-TRC20-NILE";
+
+/// Mnemonic used by TRON withdraw integration tests (Nile).
+/// Index 0: TDcxD6E5wTzvqCJd4RfkGfw9NkCBdvYcV9 (50 TRX + 10 USDT)
+/// Index 1: TW9RqU6bTJnM4quyRbvTwm3xfSHgk718qU (20 TRX + 5 USDT)
+/// Index 2: TVK3ruiuNxN4sRJtSThDW7PGHrwYPYQ1UC (unfunded)
+pub const TRON_WITHDRAW_TEST_PASSPHRASE: &str =
+    "inject night leg month assume task power city until switch movie develop";
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]

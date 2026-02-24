@@ -70,10 +70,14 @@ pub fn sign_tron_transaction(raw: &TransactionRaw, secret: &Secret) -> Result<(H
 #[cfg(test)]
 mod tests {
     use super::*;
+    use common::cross_test;
     use ethereum_types::H256;
     use ethkey::{public_to_address, verify_address, KeyPair, Signature};
     use prost::Message;
     use std::str::FromStr;
+
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::*;
 
     /// Golden TRON TransferContract `raw_data_hex` fixture from TRON developer docs:
     /// https://developers.tron.network/docs/tron-protocol-transaction
@@ -108,27 +112,31 @@ mod tests {
         TransactionRaw::decode(raw_bytes.as_slice()).unwrap()
     }
 
-    #[test]
-    fn test_sign_tron_transaction_verifies_signer_and_rejects_tampered_digest() {
-        let raw = decode_golden_transfer_raw();
-        let key_pair = KeyPair::from_secret_slice(&[1u8; 32]).expect("valid test key pair");
-        let expected_address = public_to_address(key_pair.public());
+    cross_test!(
+        test_sign_tron_transaction_verifies_signer_and_rejects_tampered_digest,
+        {
+            let raw = decode_golden_transfer_raw();
+            let key_pair = KeyPair::from_secret_slice(&[1u8; 32]).expect("valid test key pair");
+            let expected_address = public_to_address(key_pair.public());
 
-        let (tx_id, signed) = sign_tron_transaction(&raw, key_pair.secret()).unwrap();
-        assert_eq!(tx_id, tron_tx_id_from_raw(&raw));
-        assert_eq!(tx_id, H256::from_slice(&hex::decode(GOLDEN_TRANSFER_TXID_HEX).unwrap()));
+            let (tx_id, signed) = sign_tron_transaction(&raw, key_pair.secret()).unwrap();
+            assert_eq!(tx_id, tron_tx_id_from_raw(&raw));
+            assert_eq!(tx_id, H256::from_slice(&hex::decode(GOLDEN_TRANSFER_TXID_HEX).unwrap()));
 
-        assert_eq!(signed.raw_data, Some(raw.clone()));
-        assert_eq!(signed.signature.len(), 1);
-        assert_eq!(signed.signature[0].len(), 65);
-        assert!(signed.signature[0][64] <= 1);
+            assert_eq!(signed.raw_data, Some(raw.clone()));
+            assert_eq!(signed.signature.len(), 1);
+            assert_eq!(signed.signature[0].len(), 65);
+            assert!(signed.signature[0][64] <= 1);
 
-        let signature = Signature::from_str(&hex::encode(&signed.signature[0])).expect("valid signature hex");
-        assert!(verify_address(&expected_address, &signature, &tx_id).expect("verification should execute"));
+            let signature = Signature::from_str(&hex::encode(&signed.signature[0])).expect("valid signature hex");
+            assert!(verify_address(&expected_address, &signature, &tx_id).expect("verification should execute"));
 
-        let mut tampered_raw = raw.clone();
-        tampered_raw.timestamp += 1;
-        let tampered_tx_id = tron_tx_id_from_raw(&tampered_raw);
-        assert!(!verify_address(&expected_address, &signature, &tampered_tx_id).expect("verification should execute"));
-    }
+            let mut tampered_raw = raw.clone();
+            tampered_raw.timestamp += 1;
+            let tampered_tx_id = tron_tx_id_from_raw(&tampered_raw);
+            assert!(
+                !verify_address(&expected_address, &signature, &tampered_tx_id).expect("verification should execute")
+            );
+        }
+    );
 }

@@ -1,3 +1,8 @@
+//! Unified fee details enum across all supported blockchain protocols.
+//!
+//! `TxFeeDetails` serializes with a `"type"` tag for outbound JSON, but deserializes
+//! as untagged to accept responses without the discriminator field.
+
 use crate::eth::tron::fee::TronTxFeeDetails;
 use crate::eth::EthTxFeeDetails;
 use crate::qrc20::Qrc20FeeDetails;

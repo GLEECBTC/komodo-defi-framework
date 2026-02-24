@@ -131,12 +131,15 @@ fn abi_encode_trc20_transfer(recipient: &TronAddress, amount: U256) -> Result<Ve
 mod tests {
     use super::*;
     use crate::eth::tron::test_fixtures::{nile_block_64687673, TEST_FROM_HEX, TEST_TO_HEX};
+    use common::cross_test;
     use prost::Message;
 
-    /// Golden vector: verify builder output matches a real broadcast Nile TRX transfer.
-    /// Source: https://nile.tronscan.org/#/transaction/ebd91b4138365e7d8d71d9ce3704f3889614e7316c20ab449011fe4dbc67f0a4
-    #[test]
-    fn build_trx_transfer_golden_vector() {
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::*;
+
+    // Golden vector: verify builder output matches a real broadcast Nile TRX transfer.
+    // Source: https://nile.tronscan.org/#/transaction/ebd91b4138365e7d8d71d9ce3704f3889614e7316c20ab449011fe4dbc67f0a4
+    cross_test!(build_trx_transfer_golden_vector, {
         // Real Nile tx: 1000 SUN from 4123b0...08b6 to 418840...d808
         // TAPOS source: block 64687673 (blockID: 0000000003db0e39901ce5715271b601...)
         let block_data = nile_block_64687673();
@@ -153,12 +156,11 @@ mod tests {
 
         let expected_hex = "0a020e392208901ce5715271b60140b8b2f4dac3335a66080112620a2d747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e5472616e73666572436f6e747261637412310a154123b00d15c601b30613bf5a3b2f72527c79cc08b61215418840e6c55b9ada326d211d818c34a994aeced80818e8077085ebf0dac333";
         assert_eq!(hex::encode(raw.encode_to_vec()), expected_hex);
-    }
+    });
 
-    /// Golden vector: verify builder output matches a real broadcast Nile TRC20 transfer.
-    /// Source: https://nile.tronscan.org/#/transaction/f0cd35cfdafa93c67c3ee652df3d8995f1eed42814f6a225c6d767e280db3444
-    #[test]
-    fn build_trc20_transfer_golden_vector() {
+    // Golden vector: verify builder output matches a real broadcast Nile TRC20 transfer.
+    // Source: https://nile.tronscan.org/#/transaction/f0cd35cfdafa93c67c3ee652df3d8995f1eed42814f6a225c6d767e280db3444
+    cross_test!(build_trc20_transfer_golden_vector, {
         // Real Nile tx: TRC20 transfer of 2,380,000 units
         // TAPOS source: block 64837309 (blockID: 0000000003dd56bde31bf1375e25873d...)
         let block_data = TaposBlockData {
@@ -187,5 +189,5 @@ mod tests {
 
         let expected_hex = "0a0256bd2208e31bf1375e25873d40f88ed7b1c5335aae01081f12a9010a31747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e54726967676572536d617274436f6e747261637412740a15413c5568f418ee30c71f61813a23ef1f92fb1c434c121541eca9bc828a3005b9a3b909f2cc5c2a54794de05f2244a9059cbb0000000000000000000000003ed853b5cddf63533c4e6703b27feb34ff9063b300000000000000000000000000000000000000000000000000000000002450e070a8c0d3b1c5339001e0c88401";
         assert_eq!(hex::encode(raw.encode_to_vec()), expected_hex);
-    }
+    });
 }

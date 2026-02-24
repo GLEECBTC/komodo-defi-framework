@@ -130,7 +130,11 @@ pub struct Transaction {
 mod tests {
     use super::*;
     use crate::eth::tron::tx_builder::wrap_contract;
+    use common::cross_test;
     use prost::Message;
+
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::*;
 
     /// Dummy 21-byte TRON address (0x41 prefix + 20 bytes filled with `fill`).
     fn dummy_tron_address(fill: u8) -> Vec<u8> {
@@ -143,8 +147,7 @@ mod tests {
     // Roundtrip encode/decode tests
     // -----------------------------------------------------------------------
 
-    #[test]
-    fn any_roundtrip() {
+    cross_test!(any_roundtrip, {
         let original = Any {
             type_url: TYPE_URL_TRANSFER_CONTRACT.to_string(),
             value: vec![1, 2, 3, 4],
@@ -152,10 +155,9 @@ mod tests {
         let bytes = original.encode_to_vec();
         let decoded = Any::decode(bytes.as_slice()).unwrap();
         assert_eq!(original, decoded);
-    }
+    });
 
-    #[test]
-    fn transfer_contract_roundtrip() {
+    cross_test!(transfer_contract_roundtrip, {
         let original = TransferContract {
             owner_address: dummy_tron_address(0xAA),
             to_address: dummy_tron_address(0xBB),
@@ -164,10 +166,9 @@ mod tests {
         let bytes = original.encode_to_vec();
         let decoded = TransferContract::decode(bytes.as_slice()).unwrap();
         assert_eq!(original, decoded);
-    }
+    });
 
-    #[test]
-    fn trigger_smart_contract_roundtrip() {
+    cross_test!(trigger_smart_contract_roundtrip, {
         let original = TriggerSmartContract {
             owner_address: dummy_tron_address(0xAA),
             contract_address: dummy_tron_address(0xCC),
@@ -179,10 +180,9 @@ mod tests {
         let bytes = original.encode_to_vec();
         let decoded = TriggerSmartContract::decode(bytes.as_slice()).unwrap();
         assert_eq!(original, decoded);
-    }
+    });
 
-    #[test]
-    fn transaction_contract_with_nested_any_roundtrip() {
+    cross_test!(transaction_contract_with_nested_any_roundtrip, {
         let transfer = TransferContract {
             owner_address: dummy_tron_address(0xAA),
             to_address: dummy_tron_address(0xBB),
@@ -204,10 +204,9 @@ mod tests {
         // Also verify the nested Any.value decodes back to the original TransferContract.
         let inner = TransferContract::decode(decoded.parameter.unwrap().value.as_slice()).unwrap();
         assert_eq!(inner.amount, 5_000_000);
-    }
+    });
 
-    #[test]
-    fn transaction_raw_non_sequential_tags_roundtrip() {
+    cross_test!(transaction_raw_non_sequential_tags_roundtrip, {
         let transfer = TransferContract {
             owner_address: dummy_tron_address(0xAA),
             to_address: dummy_tron_address(0xBB),
@@ -231,10 +230,9 @@ mod tests {
         let bytes = original.encode_to_vec();
         let decoded = TransactionRaw::decode(bytes.as_slice()).unwrap();
         assert_eq!(original, decoded);
-    }
+    });
 
-    #[test]
-    fn full_transaction_roundtrip() {
+    cross_test!(full_transaction_roundtrip, {
         let transfer = TransferContract {
             owner_address: dummy_tron_address(0xAA),
             to_address: dummy_tron_address(0xBB),
@@ -265,10 +263,9 @@ mod tests {
         let bytes = original.encode_to_vec();
         let decoded = Transaction::decode(bytes.as_slice()).unwrap();
         assert_eq!(original, decoded);
-    }
+    });
 
-    #[test]
-    fn trigger_smart_contract_transaction_roundtrip() {
+    cross_test!(trigger_smart_contract_transaction_roundtrip, {
         let trigger = TriggerSmartContract {
             owner_address: dummy_tron_address(0xAA),
             contract_address: dummy_tron_address(0xCC),
@@ -304,16 +301,14 @@ mod tests {
         let bytes = original.encode_to_vec();
         let decoded = Transaction::decode(bytes.as_slice()).unwrap();
         assert_eq!(original, decoded);
-    }
+    });
 
-    #[test]
-    fn contract_type_values() {
+    cross_test!(contract_type_values, {
         assert_eq!(ContractType::TransferContract as i32, 1);
         assert_eq!(ContractType::TriggerSmartContract as i32, 31);
-    }
+    });
 
-    #[test]
-    fn default_transaction_raw_has_zero_fee_limit() {
+    cross_test!(default_transaction_raw_has_zero_fee_limit, {
         let raw = TransactionRaw::default();
         assert_eq!(raw.fee_limit, 0);
         assert_eq!(raw.expiration, 0);
@@ -321,7 +316,7 @@ mod tests {
         assert!(raw.contract.is_empty());
         assert!(raw.ref_block_bytes.is_empty());
         assert!(raw.ref_block_hash.is_empty());
-    }
+    });
 
     // -----------------------------------------------------------------------
     // Golden vector tests — real TRON transactions from developer docs.
@@ -329,10 +324,9 @@ mod tests {
     // produced by TRON nodes, ensuring field tags and types are correct.
     // -----------------------------------------------------------------------
 
-    /// Golden vector: TransferContract (native TRX transfer).
-    /// Source: https://developers.tron.network/docs/tron-protocol-transaction
-    #[test]
-    fn golden_vector_transfer_contract() {
+    // Golden vector: TransferContract (native TRX transfer).
+    // Source: https://developers.tron.network/docs/tron-protocol-transaction
+    cross_test!(golden_vector_transfer_contract, {
         let raw_data_hex = concat!(
             "0a020add",                               // ref_block_bytes: 0add
             "22086c2763abadf9ed29",                   // ref_block_hash: 6c2763abadf9ed29
@@ -384,12 +378,11 @@ mod tests {
 
         // Re-encode must produce identical bytes (canonical protobuf encoding).
         assert_eq!(raw.encode_to_vec(), raw_bytes);
-    }
+    });
 
-    /// Golden vector: TriggerSmartContract (TRC20 token transfer).
-    /// Source: https://developers.tron.network/docs/smart-contract-deployment-and-invocation
-    #[test]
-    fn golden_vector_trigger_smart_contract() {
+    // Golden vector: TriggerSmartContract (TRC20 token transfer).
+    // Source: https://developers.tron.network/docs/smart-contract-deployment-and-invocation
+    cross_test!(golden_vector_trigger_smart_contract, {
         let raw_data_hex = concat!(
             "0a021c51",                                 // ref_block_bytes: 1c51
             "220874912b480b7b887c",                     // ref_block_hash: 74912b480b7b887c
@@ -455,5 +448,5 @@ mod tests {
 
         // Re-encode must produce identical bytes (canonical protobuf encoding).
         assert_eq!(raw.encode_to_vec(), raw_bytes);
-    }
+    });
 }

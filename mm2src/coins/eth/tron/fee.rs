@@ -1,3 +1,9 @@
+//! TRON fee estimation for bandwidth and energy costs.
+//!
+//! Bandwidth is charged per byte of serialized transaction; energy is charged per
+//! unit consumed by smart contract execution (TRC20 transfers). Both are priced in
+//! SUN and converted to TRX at the current chain rate.
+
 use super::proto::{Transaction, TransactionRaw};
 use super::TRX_DECIMALS;
 use mm2_number::bigdecimal::BigDecimal;
@@ -19,6 +25,10 @@ const RESULT_BYTES_OVERHEAD_PER_CONTRACT: u64 = 64;
 /// TRON signatures are 65 bytes (`r || s || v`), used here as estimation placeholder.
 const PLACEHOLDER_SIGNATURE_LEN: usize = 65;
 
+/// Fee breakdown for a TRON transaction.
+///
+/// All monetary fields (`bandwidth_fee`, `energy_fee`, `total_fee`) are in TRX (not SUN).
+/// Resource fields (`bandwidth_used`, `energy_used`) are in native units (bytes / energy units).
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TronTxFeeDetails {
     pub coin: String,
@@ -163,6 +173,10 @@ mod tests {
     use super::*;
     use crate::eth::tron::proto::{ContractType, TransactionContract, TYPE_URL_TRANSFER_CONTRACT};
     use crate::eth::tron::tx_builder::wrap_contract;
+    use common::cross_test;
+
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::*;
 
     fn sample_raw() -> TransactionRaw {
         TransactionRaw {
@@ -180,35 +194,34 @@ mod tests {
         wrap_contract(ContractType::TransferContract, TYPE_URL_TRANSFER_CONTRACT, vec![1])
     }
 
-    #[test]
-    fn bandwidth_estimation_uses_encoded_tx_size_plus_result_buffer() {
+    cross_test!(bandwidth_estimation_uses_encoded_tx_size_plus_result_buffer, {
         let tx = tx_with_placeholder_signature(&sample_raw());
         let expected = tx.encoded_len() as u64 + RESULT_BYTES_OVERHEAD_PER_CONTRACT;
         assert_eq!(estimate_bandwidth(&tx), expected);
-    }
+    });
 
-    #[test]
-    fn bandwidth_estimation_scales_with_contract_count() {
+    cross_test!(bandwidth_estimation_scales_with_contract_count, {
         let mut raw = sample_raw();
         raw.contract = vec![sample_contract(), sample_contract()];
 
         let tx = tx_with_placeholder_signature(&raw);
         let expected = tx.encoded_len() as u64 + RESULT_BYTES_OVERHEAD_PER_CONTRACT * 2;
         assert_eq!(estimate_bandwidth(&tx), expected);
-    }
+    });
 
-    #[test]
-    fn bandwidth_estimation_defaults_to_single_contract_overhead_when_raw_is_missing() {
-        let tx = Transaction {
-            raw_data: None,
-            signature: Vec::new(),
-        };
+    cross_test!(
+        bandwidth_estimation_defaults_to_single_contract_overhead_when_raw_is_missing,
+        {
+            let tx = Transaction {
+                raw_data: None,
+                signature: Vec::new(),
+            };
 
-        assert_eq!(estimate_bandwidth(&tx), RESULT_BYTES_OVERHEAD_PER_CONTRACT);
-    }
+            assert_eq!(estimate_bandwidth(&tx), RESULT_BYTES_OVERHEAD_PER_CONTRACT);
+        }
+    );
 
-    #[test]
-    fn trx_fee_is_zero_when_bandwidth_is_fully_available() {
+    cross_test!(trx_fee_is_zero_when_bandwidth_is_fully_available, {
         let tx = tx_with_placeholder_signature(&sample_raw());
         let bandwidth_used = estimate_bandwidth(&tx);
         let resources = TronAccountResources {
@@ -230,10 +243,9 @@ mod tests {
         assert_eq!(details.bandwidth_fee, BigDecimal::from(0));
         assert_eq!(details.energy_fee, BigDecimal::from(0));
         assert_eq!(details.total_fee, BigDecimal::from(0));
-    }
+    });
 
-    #[test]
-    fn trc20_fee_calculation_handles_bandwidth_and_energy_deficits() {
+    cross_test!(trc20_fee_calculation_handles_bandwidth_and_energy_deficits, {
         let tx = tx_with_placeholder_signature(&sample_raw());
         let bandwidth_used = estimate_bandwidth(&tx);
         let resources = TronAccountResources {
@@ -262,10 +274,9 @@ mod tests {
         assert_eq!(details.bandwidth_fee, sun_to_trx_decimal(expected_bw_fee_sun));
         assert_eq!(details.energy_fee, sun_to_trx_decimal(expected_energy_fee_sun));
         assert_eq!(details.total_fee, sun_to_trx_decimal(expected_total_fee_sun));
-    }
+    });
 
-    #[test]
-    fn fee_calculation_saturates_on_large_inputs() {
+    cross_test!(fee_calculation_saturates_on_large_inputs, {
         let tx = tx_with_placeholder_signature(&sample_raw());
         let resources = TronAccountResources::default();
         let prices = TronChainPrices {
@@ -277,15 +288,14 @@ mod tests {
         assert_eq!(details.bandwidth_fee, sun_to_trx_decimal(u64::MAX));
         assert_eq!(details.energy_fee, sun_to_trx_decimal(u64::MAX));
         assert_eq!(details.total_fee, sun_to_trx_decimal(u64::MAX));
-    }
+    });
 
-    /// Verifies that `sun_to_trx_decimal` preserves a fixed 6-digit scale in
-    /// the internal `BigDecimal` representation. This guards against replacing
-    /// `BigDecimal::new` with division, which would normalize whole-number
-    /// results (e.g. 1 TRX becomes `(1, 0)` instead of `(1_000_000, 6)`),
-    /// breaking consistent serialization.
-    #[test]
-    fn sun_to_trx_decimal_uses_fixed_six_decimal_scale() {
+    // Verifies that `sun_to_trx_decimal` preserves a fixed 6-digit scale in
+    // the internal `BigDecimal` representation. This guards against replacing
+    // `BigDecimal::new` with division, which would normalize whole-number
+    // results (e.g. 1 TRX becomes `(1, 0)` instead of `(1_000_000, 6)`),
+    // breaking consistent serialization.
+    cross_test!(sun_to_trx_decimal_uses_fixed_six_decimal_scale, {
         let one_sun = sun_to_trx_decimal(1);
         let one_trx = sun_to_trx_decimal(1_000_000);
 
@@ -298,5 +308,5 @@ mod tests {
         // Whole TRX value must still be stored as (1_000_000, 6), not normalized to (1, 0).
         assert_eq!(one_trx_int, BigInt::from(1_000_000u64));
         assert_eq!(one_trx_scale, i64::from(TRX_DECIMALS));
-    }
+    });
 }
