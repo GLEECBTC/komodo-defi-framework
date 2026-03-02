@@ -5061,10 +5061,15 @@ impl EthCoin {
                     MmError::new(Web3RpcError::Transport("TRON RPC client is not initialized".into()))
                 })?;
 
-                // TRON API requires a caller address for triggerconstantcontract.
-                // Prefer the wallet's enabled address; fall back to the token contract
-                // address (which is guaranteed to exist on-chain) for HD wallets where
-                // no single address is pre-selected.
+                // triggerconstantcontract requires an owner_address that becomes msg.sender
+                // in the TVM. For decimals() the caller is irrelevant (pure function), but
+                // we use the wallet address when available for consistency with other constant
+                // calls that may check msg.sender (e.g. access control).
+                //
+                // single_addr() returns None in HD mode when the enabled address hasn't been
+                // derived yet (e.g. account not populated, or token init runs before HD scan
+                // completes). unwrap_or falls back to the contract address which is guaranteed
+                // to exist on-chain.
                 let caller = self
                     .derivation_method
                     .single_addr()

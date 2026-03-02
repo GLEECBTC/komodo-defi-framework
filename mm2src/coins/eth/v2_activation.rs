@@ -334,15 +334,21 @@ impl From<PrivKeyPolicyNotAllowed> for EthTokenActivationError {
     }
 }
 
+// TODO: The activation error chain is convoluted. `Web3RpcError` converts to
+// `EthTokenActivationError`, which converts to `InitTokensAsMmCoinsError` /
+// `InitErc20Error` / `EnableTokenError` / `EthActivationV2Error`, yet nearly every
+// variant (Transport, ClientConnectionFailed, CouldNotFetchBalance) collapses to
+// the same final `Transport` error. Meanwhile `ClientConnectionFailed` is never
+// constructed anywhere in the codebase, and the intermediate `InitTokensAsMmCoinsError`
+// maps it to `CouldNotFetchBalance` (different from `Transport`) only for
+// `platform_coin_with_tokens.rs` to merge them back into `Transport` one hop later.
+// This whole chain should be flattened in a future error-handling refactor.
 impl From<Web3RpcError> for EthTokenActivationError {
     fn from(e: Web3RpcError) -> Self {
         match e {
-            // Connection-level failures
-            Web3RpcError::Transport(msg) | Web3RpcError::Timeout(msg) => {
-                EthTokenActivationError::ClientConnectionFailed(msg)
-            },
-            // Got a response but it was malformed/invalid/rejected
-            Web3RpcError::BadResponse(msg)
+            Web3RpcError::Transport(msg)
+            | Web3RpcError::Timeout(msg)
+            | Web3RpcError::BadResponse(msg)
             | Web3RpcError::InvalidResponse(msg)
             | Web3RpcError::RemoteError { message: msg, .. } => EthTokenActivationError::Transport(msg),
             // Internal/configuration errors

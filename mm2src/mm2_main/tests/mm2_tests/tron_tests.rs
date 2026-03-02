@@ -18,20 +18,15 @@ const TRON_USED_ZERO_BALANCE_PASSPHRASE: &str =
     "top wonder island doctor gesture velvet local media begin impose soccer radar";
 
 /// BOB_HD_PASSPHRASE address at index 10 - funded with TRC20 USDT only (no TRX).
-/// This is BEYOND the last TRX-funded address (index 7), making it the definitive proof
-/// that TRC20-only detection works during HD wallet gap scanning.
+/// Beyond the last TRX-funded address (index 7), used to verify TRC20-only detection
+/// during HD wallet gap scanning.
 const BOB_HD_TRC20_ONLY_ADDRESS_INDEX_10: &str = "THng6CmEwpJqu5GJN6TabY2sRicKqJPS25";
 
 /// Test TRX + TRC20 activation works via enable_eth_with_tokens (immediate mode).
 /// Also validates TRC20 token balance propagation in HD wallet structure.
 #[test]
 fn test_trx_activation_immediate() {
-    // Validate TRC20 contract address format
-    assert!(
-        TRON_NILE_TRC20_USDT_CONTRACT.starts_with('T'),
-        "Expected TRC20 contract address to be Base58 (starts with 'T'), got: {}",
-        TRON_NILE_TRC20_USDT_CONTRACT
-    );
+    // Validate TRC20 contract address constant (from_base58 checks the 0x41 prefix that encodes to 'T')
     TronAddress::from_base58(TRON_NILE_TRC20_USDT_CONTRACT).expect("Invalid TRC20 Base58 contract address constant");
 
     let coins = serde_json::json!([trx_conf(), trc20_usdt_nile_conf()]);
@@ -77,12 +72,7 @@ fn test_trx_activation_immediate() {
 /// Also validates TRC20 token balance propagation in HD wallet structure.
 #[test]
 fn test_trx_activation_task_based() {
-    // Validate TRC20 contract address format
-    assert!(
-        TRON_NILE_TRC20_USDT_CONTRACT.starts_with('T'),
-        "Expected TRC20 contract address to be Base58 (starts with 'T'), got: {}",
-        TRON_NILE_TRC20_USDT_CONTRACT
-    );
+    // Validate TRC20 contract address constant (from_base58 checks the 0x41 prefix that encodes to 'T')
     TronAddress::from_base58(TRON_NILE_TRC20_USDT_CONTRACT).expect("Invalid TRC20 Base58 contract address constant");
 
     let coins = serde_json::json!([trx_conf(), trc20_usdt_nile_conf()]);
@@ -244,7 +234,10 @@ fn test_trx_get_new_address_rpc_hd() {
     );
 
     // Test account_balance includes the new address.
-    // Use limit=50 because TRC20 scanning extends known addresses beyond the default page size (10).
+    // During HD activation the scanner walks addresses up to the gap limit (default 20) checking
+    // both TRX account existence and TRC20 balances via is_address_used(). This means the wallet
+    // can have 20+ known addresses after activation. account_balance defaults to page size 10,
+    // so we pass limit=50 to ensure the newly generated address is included in the response.
     let bal = block_on(account_balance(&mm, "TRX", 0, Bip44Chain::External, Some(50)));
     let found = bal.addresses.iter().any(|a| a.address == addr1.new_address.address);
     assert!(
@@ -667,23 +660,22 @@ fn test_trc20_hd_activation_with_path() {
 
 /// Test TRC20-only address detection during HD gap scanning.
 ///
-/// This is the DEFINITIVE proof that TRC20 detection works:
-/// - Index 10 has TRC20 USDT only (no TRX) and is BEYOND the last TRX-funded address (index 7)
-/// - If TRC20 detection didn't work, index 10 would have an empty balance like indices 8-9
-/// - The fact that index 10 has a non-empty balance with TRC20 proves `is_address_used()` detected it
+/// Index 10 holds only TRC20 USDT (no TRX) and sits beyond the last TRX-funded address (index 7).
+/// If `is_address_used()` didn't check TRC20 balances, the scanner would treat index 10 as empty.
 ///
 /// Funding setup (BOB_HD_PASSPHRASE on Nile testnet):
 /// - Index 0, 1, 7: TRX (native balance)
 /// - Index 10: TRC20 USDT only (5 USDT, no TRX)
-/// - Index 8, 9: Nothing (true gap addresses)
+/// - Index 8, 9: Nothing (gap addresses)
 #[test]
 fn test_trc20_hd_gap_scanning() {
     let coins = serde_json::json!([trx_conf(), trc20_usdt_nile_conf()]);
     let conf = Mm2TestConf::seednode_with_hd_account(Mm2TestConfForSwap::BOB_HD_PASSPHRASE, &coins);
     let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
 
-    // Request address index 15 to trigger gap scanning that includes index 10
-    // Use 120s timeout since scanning 16 addresses with TRC20 checks takes time
+    // Activate at index 0 and let gap scanning (limit=20) discover all used addresses.
+    // The scanner walks forward from 0; after the last TRX address (7), it continues for
+    // up to 20 consecutive unused addresses. Index 10 falls within that window.
     let result = block_on(task_enable_trx_with_tokens(
         &mm,
         TRON_NILE_NODES,
@@ -692,7 +684,7 @@ fn test_trc20_hd_gap_scanning() {
         Some(HDAccountAddressId {
             account_id: 0,
             chain: Bip44Chain::External,
-            address_id: 15,
+            address_id: 0,
         }),
     ))
     .expect("Expected TRX+TRC20 HD activation to succeed");

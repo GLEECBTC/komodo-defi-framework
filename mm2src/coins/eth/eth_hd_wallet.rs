@@ -100,9 +100,8 @@ impl HDAddressBalanceScanner for EthCoin {
                 let tron_addr = tron::TronAddress::from(raw);
 
                 // First check: on-chain account existence via /wallet/getaccount API.
-                // Returns true if AccountCapsule exists, which happens when:
-                // - Address received TRX or TRC10 tokens (these activate the account)
-                // - Address made any transaction (requires AccountCapsule to exist first)
+                // Returns true if the account's on-chain record (TRON calls this "AccountCapsule")
+                // exists. Created when the address receives TRX or TRC10 tokens.
                 if tron_client.is_address_used_basic(tron_addr).await.map_mm_err()? {
                     return Ok(true);
                 }
@@ -111,7 +110,7 @@ impl HDAddressBalanceScanner for EthCoin {
                 //
                 // Edge case: TRC20 tokens can exist even if the account isn't activated on-chain.
                 // Unlike TRX/TRC10, TRC20 balances are stored in the token contract's internal
-                // mapping (not in AccountCapsule), so an address can hold TRC20 tokens before
+                // mapping (not in the account's on-chain record), so an address can hold TRC20 tokens before
                 // ever receiving TRX.
                 //
                 // This can happen when:

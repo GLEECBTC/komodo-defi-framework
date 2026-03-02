@@ -455,9 +455,12 @@ struct TriggerConstantContractRequest<'a> {
     visible: bool,
 }
 
-/// Response from `/wallet/triggerconstantcontract`.
+/// Partial response from TRON's `triggerconstantcontract` endpoint.
 ///
-/// Only includes fields we need. The full TRON `TransactionExtention` response also contains:
+/// The endpoint returns a `TransactionExtention` protobuf message containing the
+/// full simulated transaction, logs, and execution results. We only deserialize the
+/// fields needed for fee estimation (`energy_used`) and balance queries (`constant_result`)
+/// and omit:
 /// - `transaction`: The simulated transaction object (not broadcast for constant calls)
 /// - `energy_penalty`: Additional energy penalty for certain contract patterns
 /// - `result`: Success/failure indicator (handled by `tron_error_from_value()` before deserialization)
@@ -472,10 +475,9 @@ pub struct TriggerConstantContractResponse {
     #[serde(default)]
     pub constant_result: Vec<String>,
 
-    /// Estimated energy for this call (NOT actual consumption - constant calls are free).
-    ///
-    /// For constant/view functions, this is an estimation of what a state-changing call
-    /// would cost. Useful for fee estimation when implementing TRC20 `transfer()`.
+    /// Energy consumed by the TVM simulation (constant calls execute in a sandbox
+    /// without broadcasting, so this is precise, not a rough estimate).
+    /// Used to predict the fee for the actual TRC20 `transfer()` transaction.
     #[serde(default)]
     pub energy_used: Option<u64>,
 }
