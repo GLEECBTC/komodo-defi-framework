@@ -98,7 +98,7 @@ pub struct TransactionRaw {
     /// Bytes 8..16 of the block ID (TAPOS).
     #[prost(bytes = "vec", tag = "4")]
     pub ref_block_hash: prost::alloc::vec::Vec<u8>,
-    /// Transaction expiration time in milliseconds since epoch.
+    /// Transaction expiration time in milliseconds since Unix epoch.
     #[prost(int64, tag = "8")]
     pub expiration: i64,
     /// Optional memo/data field.
@@ -107,7 +107,7 @@ pub struct TransactionRaw {
     /// One or more contracts (typically exactly one).
     #[prost(message, repeated, tag = "11")]
     pub contract: prost::alloc::vec::Vec<TransactionContract>,
-    /// Transaction creation time in milliseconds since epoch.
+    /// Transaction creation time in milliseconds since Unix epoch.
     #[prost(int64, tag = "14")]
     pub timestamp: i64,
     /// Maximum TRX (in SUN) willing to spend on energy. 0 for native TRX transfers.
