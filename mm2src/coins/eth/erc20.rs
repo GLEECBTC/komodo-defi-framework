@@ -1,12 +1,11 @@
 use super::{ERC20_PROTOCOL_TYPE, ETH_PROTOCOL_TYPE};
 use crate::eth::web3_transport::Web3Transport;
-use crate::eth::{EthCoin, ERC20_CONTRACT};
+use crate::eth::{EthCoin, Web3RpcError, ERC20_CONTRACT};
 use crate::{CoinsContext, MarketCoinOps, MmCoinEnum, Ticker};
 use ethabi::Token;
 use ethereum_types::Address;
-use futures_util::TryFutureExt;
 use mm2_core::mm_ctx::MmArc;
-use mm2_err_handle::mm_error::MmResult;
+use mm2_err_handle::prelude::*;
 use std::str::FromStr;
 use web3::types::{BlockId, BlockNumber, CallRequest};
 use web3::{Transport, Web3};
@@ -15,9 +14,13 @@ async fn call_erc20_function<T: Transport>(
     web3: &Web3<T>,
     token_addr: Address,
     function_name: &str,
-) -> Result<Vec<Token>, String> {
-    let function = try_s!(ERC20_CONTRACT.function(function_name));
-    let data = try_s!(function.encode_input(&[]));
+) -> MmResult<Vec<Token>, Web3RpcError> {
+    let function = ERC20_CONTRACT
+        .function(function_name)
+        .map_to_mm(|e| Web3RpcError::Internal(e.to_string()))?;
+    let data = function
+        .encode_input(&[])
+        .map_to_mm(|e| Web3RpcError::Internal(e.to_string()))?;
     let request = CallRequest {
         from: Some(Address::default()),
         to: Some(token_addr),
@@ -31,25 +34,34 @@ async fn call_erc20_function<T: Transport>(
     let res = web3
         .eth()
         .call(request, Some(BlockId::Number(BlockNumber::Latest)))
-        .map_err(|e| ERRL!("{}", e))
-        .await?;
-    function.decode_output(&res.0).map_err(|e| ERRL!("{}", e))
+        .await
+        .map_to_mm(|e| Web3RpcError::Transport(e.to_string()))?;
+    function
+        .decode_output(&res.0)
+        .map_to_mm(|e| Web3RpcError::InvalidResponse(e.to_string()))
 }
 
-pub(crate) async fn get_token_decimals(web3: &Web3<Web3Transport>, token_addr: Address) -> Result<u8, String> {
+pub(crate) async fn get_token_decimals(web3: &Web3<Web3Transport>, token_addr: Address) -> MmResult<u8, Web3RpcError> {
     let tokens = call_erc20_function(web3, token_addr, "decimals").await?;
     let Some(token) = tokens.into_iter().next() else {
-        return ERR!("No value returned from decimals() call");
+        return MmError::err(Web3RpcError::InvalidResponse(
+            "No value returned from decimals() call".to_string(),
+        ));
     };
     let Token::Uint(dec) = token else {
-        return ERR!("Expected Uint token for decimals, got {:?}", token);
+        return MmError::err(Web3RpcError::InvalidResponse(format!(
+            "Expected Uint token for decimals, got {:?}",
+            token
+        )));
     };
     Ok(dec.as_u64() as u8)
 }
 
 async fn get_token_symbol(coin: &EthCoin, token_addr: Address) -> Result<String, String> {
     let web3 = try_s!(coin.web3().await);
-    let tokens = call_erc20_function(&web3, token_addr, "symbol").await?;
+    let tokens = call_erc20_function(&web3, token_addr, "symbol")
+        .await
+        .map_err(|e| e.to_string())?;
     let Some(token) = tokens.into_iter().next() else {
         return ERR!("No value returned from symbol() call");
     };
@@ -68,7 +80,7 @@ pub struct Erc20TokenInfo {
 pub async fn get_erc20_token_info(coin: &EthCoin, token_addr: Address) -> Result<Erc20TokenInfo, String> {
     let symbol = get_token_symbol(coin, token_addr).await?;
     let web3 = try_s!(coin.web3().await);
-    let decimals = get_token_decimals(&web3, token_addr).await?;
+    let decimals = get_token_decimals(&web3, token_addr).await.map_err(|e| e.to_string())?;
     Ok(Erc20TokenInfo { symbol, decimals })
 }
 

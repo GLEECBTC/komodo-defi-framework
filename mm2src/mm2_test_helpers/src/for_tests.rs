@@ -275,6 +275,14 @@ pub const TRON_TESTNET_KNOWN_ADDRESS: &str = "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb
 /// TRX ticker constant for tests.
 pub const TRX_TICKER: &str = "TRX";
 
+/// TRC20 test token contract on TRON Nile testnet.
+/// This is a test USDT contract deployed on Nile for testing purposes.
+/// Contract: TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf (Nile test USDT)
+pub const TRON_NILE_TRC20_USDT_CONTRACT: &str = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf";
+
+/// TRC20 test token ticker for tests.
+pub const TRON_NILE_TRC20_USDT_TICKER: &str = "USDT-TRC20-NILE";
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum TypedRpcResponse<T> {
@@ -1031,6 +1039,26 @@ pub fn trx_conf() -> Json {
             "type": "TRX",
             "protocol_data": {
                 "network": "Nile"
+            }
+        }
+    })
+}
+
+/// TRC20 USDT test token config for Nile testnet.
+/// Uses the same derivation path as TRX since tokens share the platform's addresses.
+pub fn trc20_usdt_nile_conf() -> Json {
+    json!({
+        "coin": TRON_NILE_TRC20_USDT_TICKER,
+        "name": "usdt_trc20_nile",
+        "fname": "USDT (TRC20 Nile)",
+        "mm2": 1,
+        "wallet_only": true,
+        "derivation_path": "m/44'/195'",
+        "protocol": {
+            "type": "TRC20",
+            "protocol_data": {
+                "platform": "TRX",
+                "contract_address": TRON_NILE_TRC20_USDT_CONTRACT
             }
         }
     })
@@ -3739,9 +3767,10 @@ pub async fn task_enable_eth_with_tokens(
     }
 }
 
-/// Immediate TRX activation helper using the enable RPC.
-pub async fn enable_trx(mm: &MarketMakerIt, nodes: &[&str]) -> Json {
+/// Immediate TRX activation helper with optional TRC20 tokens.
+pub async fn enable_trx_with_tokens(mm: &MarketMakerIt, nodes: &[&str], tokens: &[&str]) -> Json {
     let nodes: Vec<_> = nodes.iter().map(|url| json!({ "url": url })).collect();
+    let erc20_tokens_requests: Vec<_> = tokens.iter().map(|ticker| json!({ "ticker": ticker })).collect();
     let enable = mm
         .rpc(&json!({
             "userpass": mm.userpass,
@@ -3751,7 +3780,7 @@ pub async fn enable_trx(mm: &MarketMakerIt, nodes: &[&str]) -> Json {
                 "ticker": "TRX",
                 "mm2": 1,
                 "nodes": nodes,
-                "erc20_tokens_requests": []
+                "erc20_tokens_requests": erc20_tokens_requests
             }
         }))
         .await
@@ -3765,15 +3794,31 @@ pub async fn enable_trx(mm: &MarketMakerIt, nodes: &[&str]) -> Json {
     json::from_str(&enable.1).unwrap()
 }
 
-/// TRX task init helper (typed).
+/// Immediate TRX activation helper using the enable RPC (no tokens).
+pub async fn enable_trx(mm: &MarketMakerIt, nodes: &[&str]) -> Json {
+    enable_trx_with_tokens(mm, nodes, &[]).await
+}
+
+/// TRX task init helper with optional TRC20 tokens (typed).
+/// Internally calls the shared `task::enable_eth::init` endpoint.
+pub async fn task_enable_trx_with_tokens_init(
+    mm: &MarketMakerIt,
+    nodes: &[&str],
+    tokens: &[&str],
+    path_to_address: Option<HDAccountAddressId>,
+) -> RpcV2Response<InitTaskResult> {
+    let init = task_enable_eth_with_tokens_init(mm, "TRX", tokens, None, nodes, path_to_address).await;
+    json::from_value(init).unwrap()
+}
+
+/// TRX task init helper (typed, no tokens).
 /// Internally calls the shared `task::enable_eth::init` endpoint.
 pub async fn task_enable_trx_init(
     mm: &MarketMakerIt,
     nodes: &[&str],
     path_to_address: Option<HDAccountAddressId>,
 ) -> RpcV2Response<InitTaskResult> {
-    let init = task_enable_eth_with_tokens_init(mm, "TRX", &[], None, nodes, path_to_address).await;
-    json::from_value(init).unwrap()
+    task_enable_trx_with_tokens_init(mm, nodes, &[], path_to_address).await
 }
 
 /// TRX task status helper (typed).
@@ -3783,14 +3828,15 @@ pub async fn task_enable_trx_status(mm: &MarketMakerIt, task_id: u64) -> RpcV2Re
     json::from_value(status).unwrap()
 }
 
-/// Task-based TRX activation helper.
-pub async fn task_enable_trx(
+/// Task-based TRX activation helper with optional TRC20 tokens.
+pub async fn task_enable_trx_with_tokens(
     mm: &MarketMakerIt,
     nodes: &[&str],
+    tokens: &[&str],
     timeout_sec: u64,
     path_to_address: Option<HDAccountAddressId>,
 ) -> Result<EthWithTokensActivationResult, TaskEnableError> {
-    let init = task_enable_trx_init(mm, nodes, path_to_address).await;
+    let init = task_enable_trx_with_tokens_init(mm, nodes, tokens, path_to_address).await;
     let timeout_at = wait_until_ms(timeout_sec * 1000);
 
     loop {
@@ -3809,6 +3855,16 @@ pub async fn task_enable_trx(
             InitEthWithTokensStatus::InProgress(_) => Timer::sleep(1.).await,
         }
     }
+}
+
+/// Task-based TRX activation helper (no tokens).
+pub async fn task_enable_trx(
+    mm: &MarketMakerIt,
+    nodes: &[&str],
+    timeout_sec: u64,
+    path_to_address: Option<HDAccountAddressId>,
+) -> Result<EthWithTokensActivationResult, TaskEnableError> {
+    task_enable_trx_with_tokens(mm, nodes, &[], timeout_sec, path_to_address).await
 }
 
 async fn init_erc20_token(
@@ -4241,16 +4297,21 @@ pub async fn account_balance(
     coin: &str,
     account_index: u32,
     chain: Bip44Chain,
+    limit: Option<usize>,
 ) -> HDAccountBalanceResponse {
+    let mut params = json!({
+        "coin": coin,
+        "account_index": account_index,
+        "chain": chain
+    });
+    if let Some(limit) = limit {
+        params["limit"] = json!(limit);
+    }
     let request = json!({
         "userpass": mm.userpass,
         "method": "account_balance",
         "mmrpc": "2.0",
-        "params": {
-            "coin": coin,
-            "account_index": account_index,
-            "chain": chain
-        }
+        "params": params
     });
 
     let request = mm.rpc(&request).await.unwrap();

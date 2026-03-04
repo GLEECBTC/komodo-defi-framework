@@ -201,7 +201,6 @@ use fee_estimation::eip1559::{
 };
 
 pub mod erc20;
-use erc20::get_token_decimals;
 
 pub(crate) mod eth_swap_v2;
 use eth_swap_v2::{extract_id_from_tx_data, EthPaymentType, PaymentMethod, SpendTxSearchParams};
@@ -209,6 +208,7 @@ use eth_swap_v2::{extract_id_from_tx_data, EthPaymentType, PaymentMethod, SpendT
 pub mod eth_utils;
 
 pub mod tron;
+use tron::TronAddress;
 
 pub mod chain_rpc;
 use self::chain_rpc::ChainRpcOps;
@@ -5046,23 +5046,80 @@ impl EthCoin {
         self.get_tokens_balance_list_for_address(my_address).await
     }
 
+    /// Chain-dispatched token decimals query.
+    ///
+    /// - EVM: ERC20 `decimals()` via `eth_call`
+    /// - TRON: TRC20 `decimals()` via `TronApiClient::trc20_decimals`
+    pub(crate) async fn token_decimals(&self, token_contract: Address) -> MmResult<u8, Web3RpcError> {
+        match ChainFamily::from(&self.chain_spec) {
+            ChainFamily::Evm => {
+                let web3 = self.web3().await?;
+                erc20::get_token_decimals(&web3, token_contract).await
+            },
+            ChainFamily::Tron => {
+                let tron = self.tron_rpc().ok_or_else(|| {
+                    MmError::new(Web3RpcError::Transport("TRON RPC client is not initialized".into()))
+                })?;
+
+                // triggerconstantcontract requires an owner_address that becomes msg.sender
+                // in the TVM. For decimals() the caller is irrelevant (pure function), but
+                // we use the wallet address when available for consistency with other constant
+                // calls that may check msg.sender (e.g. access control).
+                //
+                // single_addr() returns None in HD mode when the enabled address hasn't been
+                // derived yet (e.g. account not populated, or token init runs before HD scan
+                // completes). unwrap_or falls back to the contract address which is guaranteed
+                // to exist on-chain.
+                let caller = self
+                    .derivation_method
+                    .single_addr()
+                    .await
+                    .map(|a| a.inner())
+                    .unwrap_or(token_contract);
+
+                let caller_tron = TronAddress::from(caller);
+                let contract_tron = TronAddress::from(token_contract);
+
+                tron.trc20_decimals(&contract_tron, &caller_tron).await
+            },
+        }
+    }
+
+    /// Chain-dispatched token balance query.
+    ///
+    /// - EVM: ERC20 `balanceOf(address)` via `eth_call`
+    /// - TRON: TRC20 `balanceOf(address)` via `TronApiClient::trc20_balance_of`
     async fn get_token_balance_for_address(
         &self,
         address: Address,
         token_address: Address,
     ) -> Result<U256, MmError<BalanceError>> {
-        let function = ERC20_CONTRACT.function("balanceOf")?;
-        let data = function.encode_input(&[Token::Address(address)])?;
-        let res = self
-            .call_request(address, token_address, None, Some(data.into()), BlockNumber::Latest)
-            .await?;
-        let decoded = function.decode_output(&res.0)?;
+        match ChainFamily::from(&self.chain_spec) {
+            ChainFamily::Evm => {
+                let function = ERC20_CONTRACT.function("balanceOf")?;
+                let data = function.encode_input(&[Token::Address(address)])?;
 
-        match decoded[0] {
-            Token::Uint(number) => Ok(number),
-            _ => {
-                let error = format!("Expected U256 as balanceOf result but got {decoded:?}");
-                MmError::err(BalanceError::InvalidResponse(error))
+                let res = self
+                    .call_request(address, token_address, None, Some(data.into()), BlockNumber::Latest)
+                    .await?;
+
+                let decoded = function.decode_output(&res.0)?;
+                match decoded.first() {
+                    Some(Token::Uint(number)) => Ok(*number),
+                    other => MmError::err(BalanceError::InvalidResponse(format!(
+                        "Expected U256 as balanceOf result but got {other:?}"
+                    ))),
+                }
+            },
+            ChainFamily::Tron => {
+                let tron = self
+                    .tron_rpc()
+                    .ok_or_else(|| MmError::new(BalanceError::Internal("TRON RPC client is not initialized".into())))?;
+
+                let owner_tron = TronAddress::from(address);
+                let contract_tron = TronAddress::from(token_address);
+
+                tron.trc20_balance_of(&contract_tron, &owner_tron).await.map_mm_err()
             },
         }
     }
@@ -7056,16 +7113,15 @@ pub async fn eth_coin_from_conf_and_request(
         } => {
             let token_addr = try_s!(valid_addr_from_str(&contract_address));
             let decimals = match conf["decimals"].as_u64() {
-                None | Some(0) => try_s!(
-                    get_token_decimals(
-                        web3_instances
-                            .first()
-                            .expect("web3_instances can't be empty in ETH activation")
-                            .as_ref(),
-                        token_addr
-                    )
-                    .await
-                ),
+                None | Some(0) => try_s!(erc20::get_token_decimals(
+                    web3_instances
+                        .first()
+                        .expect("web3_instances can't be empty in ETH activation")
+                        .as_ref(),
+                    token_addr
+                )
+                .await
+                .map_err(|e| e.to_string())),
                 Some(d) => d as u8,
             };
             (EthCoinType::Erc20 { platform, token_addr }, decimals)

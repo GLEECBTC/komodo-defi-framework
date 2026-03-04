@@ -1,5 +1,5 @@
 use super::*;
-use crate::eth::erc20::{get_enabled_erc20_by_platform_and_contract, get_token_decimals};
+use crate::eth::erc20::get_enabled_erc20_by_platform_and_contract;
 use crate::eth::eth_utils::nonce_sequencer::PerNetNonceLocks;
 use crate::eth::wallet_connect::eth_request_wc_personal_sign;
 use crate::eth::web3_transport::http_transport::HttpTransport;
@@ -334,6 +334,35 @@ impl From<PrivKeyPolicyNotAllowed> for EthTokenActivationError {
     }
 }
 
+// TODO: The activation error chain is convoluted. `Web3RpcError` converts to
+// `EthTokenActivationError`, which converts to `InitTokensAsMmCoinsError` /
+// `InitErc20Error` / `EnableTokenError` / `EthActivationV2Error`, yet nearly every
+// variant (Transport, ClientConnectionFailed, CouldNotFetchBalance) collapses to
+// the same final `Transport` error. Meanwhile `ClientConnectionFailed` is never
+// constructed anywhere in the codebase, and the intermediate `InitTokensAsMmCoinsError`
+// maps it to `CouldNotFetchBalance` (different from `Transport`) only for
+// `platform_coin_with_tokens.rs` to merge them back into `Transport` one hop later.
+// This whole chain should be flattened in a future error-handling refactor.
+impl From<Web3RpcError> for EthTokenActivationError {
+    fn from(e: Web3RpcError) -> Self {
+        match e {
+            Web3RpcError::Transport(msg)
+            | Web3RpcError::Timeout(msg)
+            | Web3RpcError::BadResponse(msg)
+            | Web3RpcError::InvalidResponse(msg)
+            | Web3RpcError::RemoteError { message: msg, .. } => EthTokenActivationError::Transport(msg),
+            // Internal/configuration errors
+            Web3RpcError::Internal(msg)
+            | Web3RpcError::InvalidGasApiConfig(msg)
+            | Web3RpcError::ProtocolNotSupported(msg)
+            | Web3RpcError::NumConversError(msg) => EthTokenActivationError::InternalError(msg),
+            Web3RpcError::NoSuchCoin { coin } => {
+                EthTokenActivationError::InternalError(format!("No such coin: {coin}"))
+            },
+        }
+    }
+}
+
 impl From<GenerateSignedMessageError> for EthTokenActivationError {
     fn from(e: GenerateSignedMessageError) -> Self {
         match e {
@@ -480,15 +509,7 @@ impl EthCoin {
         }
 
         let decimals = match token_conf["decimals"].as_u64() {
-            None | Some(0) => get_token_decimals(
-                &self
-                    .web3()
-                    .await
-                    .map_err(|e| EthTokenActivationError::ClientConnectionFailed(e.to_string()))?,
-                protocol.token_addr,
-            )
-            .await
-            .map_err(EthTokenActivationError::InternalError)?,
+            None | Some(0) => self.token_decimals(protocol.token_addr).await.map_mm_err()?,
             Some(d) => d as u8,
         };
 

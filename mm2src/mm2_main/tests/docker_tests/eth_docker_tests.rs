@@ -2284,7 +2284,7 @@ fn test_eth_erc20_hd() {
         "0x4249E165a68E4FF9C41B1C3C3b4245c30ecB43CC"
     );
     // Make sure that the address is also added to tokens
-    let account_balance = block_on(account_balance(&mm_hd, "ERC20DEV", 0, Bip44Chain::External));
+    let account_balance = block_on(account_balance(&mm_hd, "ERC20DEV", 0, Bip44Chain::External, None));
     assert_eq!(
         account_balance.addresses[2].address,
         "0x4249E165a68E4FF9C41B1C3C3b4245c30ecB43CC"

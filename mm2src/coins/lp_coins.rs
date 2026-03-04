@@ -4913,7 +4913,11 @@ pub enum CoinProtocol {
     TRX {
         network: eth::tron::Network,
     },
-    // Todo: Add TRC20, Do we need to support TRC10?
+    TRC20 {
+        platform: String,
+        contract_address: String,
+    },
+    // Todo: Do we need to support TRC10?
     SLPTOKEN {
         platform: String,
         token_id: H256Json,
@@ -4968,6 +4972,7 @@ impl CoinProtocol {
         match self {
             CoinProtocol::QRC20 { platform, .. }
             | CoinProtocol::ERC20 { platform, .. }
+            | CoinProtocol::TRC20 { platform, .. }
             | CoinProtocol::SLPTOKEN { platform, .. }
             | CoinProtocol::NFT { platform, .. } => Some(platform),
             CoinProtocol::TENDERMINTTOKEN(info) => Some(&info.platform),
@@ -4989,9 +4994,9 @@ impl CoinProtocol {
     /// Returns the contract address associated with the coin, if any.
     pub fn contract_address(&self) -> Option<String> {
         match self {
-            CoinProtocol::QRC20 { contract_address, .. } | CoinProtocol::ERC20 { contract_address, .. } => {
-                Some(contract_address.clone())
-            },
+            CoinProtocol::QRC20 { contract_address, .. }
+            | CoinProtocol::ERC20 { contract_address, .. }
+            | CoinProtocol::TRC20 { contract_address, .. } => Some(contract_address.clone()),
             CoinProtocol::SLPTOKEN { .. }
             | CoinProtocol::UTXO { .. }
             | CoinProtocol::QTUM
@@ -5353,6 +5358,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         CoinProtocol::ZHTLC { .. } => return ERR!("ZHTLC protocol is not supported by lp_coininit"),
         CoinProtocol::NFT { .. } => return ERR!("NFT protocol is not supported by lp_coininit"),
         CoinProtocol::TRX { .. } => return ERR!("TRX protocol is not supported by lp_coininit"),
+        CoinProtocol::TRC20 { .. } => return ERR!("TRC20 protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::LIGHTNING { .. } => return ERR!("Lightning protocol is not supported by lp_coininit"),
         CoinProtocol::SIA => {
@@ -5970,7 +5976,7 @@ pub fn address_by_coin_conf_and_pubkey_str(
         CoinProtocol::ERC20 { .. } | CoinProtocol::ETH { .. } | CoinProtocol::NFT { .. } => {
             eth::addr_from_pubkey_str(pubkey)
         },
-        CoinProtocol::TRX { .. } => {
+        CoinProtocol::TRX { .. } | CoinProtocol::TRC20 { .. } => {
             let pubkey_hex = pubkey.strip_prefix("0x").unwrap_or(pubkey);
             let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| ERRL!("{}", e))?;
             let raw_addr = eth::addr_from_raw_pubkey(&pubkey_bytes)?;
