@@ -80,10 +80,8 @@ pub fn build_tron_trx_withdraw(
     // Iteratively estimate fee and adjust amount until stable.
     // Non-max: runs once — amount is fixed, just checks balance sufficiency.
     // Max: converges in 1-2 iterations — fee depends on tx size (varint-encoded
-    // amount), so changing the amount can change the fee. The `>=` (not `==`)
-    // break prevents infinite oscillation at varint boundaries, where reducing
-    // the amount lowers the fee but increasing it raises the fee back. This may
-    // leave up to 1 bandwidth byte of dust (~1000 SUN) in that rare edge case.
+    // amount), so changing the amount can change the fee. May leave up to 1
+    // bandwidth byte of dust (~1000 SUN) at varint boundaries.
     loop {
         // Estimate fee for the current transaction
         let tx = tx_with_placeholder_signature(&raw);
