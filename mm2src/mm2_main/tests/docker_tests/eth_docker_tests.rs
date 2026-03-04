@@ -2,11 +2,13 @@ use super::helpers::env::random_secp256k1_secret;
 use super::helpers::eth::{
     erc20_coin_with_random_privkey, erc20_contract, erc20_contract_checksum, eth_coin_with_random_privkey,
     eth_coin_with_random_privkey_using_urls, fill_erc20, fill_eth, geth_account, geth_erc1155_contract,
-    geth_erc721_contract, geth_maker_swap_v2, geth_nft_maker_swap_v2, geth_taker_swap_v2, swap_contract,
-    swap_contract_checksum, GETH_DEV_CHAIN_ID, GETH_NONCE_LOCK, GETH_RPC_URL, GETH_WEB3, MM_CTX, MM_CTX1,
+    geth_erc721_contract, geth_maker_swap_v2, geth_nft_maker_swap_v2, geth_taker_swap_v2, geth_usdt_contract,
+    swap_contract, swap_contract_checksum, usdt_coin_with_random_privkey, GETH_DEV_CHAIN_ID, GETH_NONCE_LOCK,
+    GETH_RPC_URL, GETH_WEB3, MM_CTX, MM_CTX1,
 };
 use crate::common::Future01CompatExt;
 use bitcrypto::{dhash160, sha256};
+use coins::eth::erc20::get_erc20_token_info;
 use coins::eth::gas_limit::ETH_MAX_TRADE_GAS;
 use coins::eth::v2_activation::{eth_coin_from_conf_and_request_v2, EthActivationV2Request, EthNode};
 use coins::eth::{
@@ -2758,4 +2760,207 @@ fn verify_locked_amount(mm: &MarketMakerIt, role: &str, coin: &str) {
     let locked = block_on(get_locked_amount(mm, coin));
     log!("{} {} locked amount: {:?}", role, coin, locked.locked_amount);
     assert_eq!(locked.coin, coin);
+}
+
+// ================================
+// USDT (Non-Standard ERC20) Tests
+// ================================
+// These tests verify that SafeERC20 in the V1 EtomicSwap contract
+// correctly handles USDT's non-standard transfer/transferFrom functions
+// which don't return a boolean value.
+
+fn send_and_spend_usdt_maker_payment_impl(swap_txfee_policy: SwapGasFeePolicy) {
+    let maker_usdt_coin = usdt_coin_with_random_privkey(swap_contract());
+    let taker_usdt_coin = usdt_coin_with_random_privkey(swap_contract());
+
+    assert!(block_on(maker_usdt_coin.set_swap_gas_fee_policy(swap_txfee_policy.clone())).is_ok());
+    assert!(block_on(taker_usdt_coin.set_swap_gas_fee_policy(swap_txfee_policy)).is_ok());
+
+    let time_lock = now_sec() + 1000;
+    let maker_pubkey = maker_usdt_coin.derive_htlc_pubkey(&[]);
+    let taker_pubkey = taker_usdt_coin.derive_htlc_pubkey(&[]);
+    let secret = &[2; 32];
+    let secret_hash_owned = dhash160(secret);
+    let secret_hash = secret_hash_owned.as_slice();
+
+    let send_payment_args = SendPaymentArgs {
+        time_lock_duration: 1000,
+        time_lock,
+        other_pubkey: &taker_pubkey,
+        secret_hash,
+        amount: BigDecimal::from_str("10").unwrap(),
+        swap_contract_address: &Some(swap_contract().as_bytes().into()),
+        swap_unique_data: &[],
+        payment_instructions: &None,
+        watcher_reward: None,
+        wait_for_confirmation_until: now_sec() + 60,
+    };
+    let usdt_maker_payment = block_on(maker_usdt_coin.send_maker_payment(send_payment_args)).unwrap();
+    log!(
+        "USDT maker payment tx hash {:02x}",
+        usdt_maker_payment.tx_hash_as_bytes()
+    );
+
+    let confirm_input = ConfirmPaymentInput {
+        payment_tx: usdt_maker_payment.tx_hex(),
+        confirmations: 1,
+        requires_nota: false,
+        wait_until: now_sec() + 60,
+        check_every: 1,
+    };
+    block_on_f01(taker_usdt_coin.wait_for_confirmations(confirm_input)).unwrap();
+
+    let spend_args = SpendPaymentArgs {
+        other_payment_tx: &usdt_maker_payment.tx_hex(),
+        time_lock,
+        other_pubkey: &maker_pubkey,
+        secret,
+        secret_hash,
+        swap_contract_address: &Some(swap_contract().as_bytes().into()),
+        swap_unique_data: &[],
+        watcher_reward: false,
+    };
+    let payment_spend = block_on(taker_usdt_coin.send_taker_spends_maker_payment(spend_args)).unwrap();
+    log!("USDT payment spend tx hash {:02x}", payment_spend.tx_hash_as_bytes());
+
+    let confirm_input = ConfirmPaymentInput {
+        payment_tx: payment_spend.tx_hex(),
+        confirmations: 1,
+        requires_nota: false,
+        wait_until: now_sec() + 60,
+        check_every: 1,
+    };
+    block_on_f01(taker_usdt_coin.wait_for_confirmations(confirm_input)).unwrap();
+
+    let search_input = SearchForSwapTxSpendInput {
+        time_lock,
+        other_pub: &taker_pubkey,
+        secret_hash,
+        tx: &usdt_maker_payment.tx_hex(),
+        search_from_block: 0,
+        swap_contract_address: &Some(swap_contract().as_bytes().into()),
+        swap_unique_data: &[],
+    };
+    let search_tx = block_on(maker_usdt_coin.search_for_swap_tx_spend_my(search_input))
+        .unwrap()
+        .unwrap();
+
+    let expected = FoundSwapTxSpend::Spent(payment_spend);
+    assert_eq!(expected, search_tx);
+}
+
+#[test]
+fn send_and_spend_usdt_maker_payment_legacy_gas_policy() {
+    send_and_spend_usdt_maker_payment_impl(SwapGasFeePolicy::Legacy);
+}
+
+#[test]
+fn send_and_spend_usdt_maker_payment_priority_fee() {
+    send_and_spend_usdt_maker_payment_impl(SwapGasFeePolicy::Medium);
+}
+
+fn send_and_refund_usdt_maker_payment_impl(swap_txfee_policy: SwapGasFeePolicy) {
+    let usdt_coin = usdt_coin_with_random_privkey(swap_contract());
+    assert!(block_on(usdt_coin.set_swap_gas_fee_policy(swap_txfee_policy)).is_ok());
+
+    // Use a past time_lock to allow immediate refund
+    let time_lock = now_sec() - 100;
+    let other_pubkey = &[
+        0x02, 0xc6, 0x6e, 0x7d, 0x89, 0x66, 0xb5, 0xc5, 0x55, 0xaf, 0x58, 0x05, 0x98, 0x9d, 0xa9, 0xfb, 0xf8, 0xdb,
+        0x95, 0xe1, 0x56, 0x31, 0xce, 0x35, 0x8c, 0x3a, 0x17, 0x10, 0xc9, 0x62, 0x67, 0x90, 0x63,
+    ];
+    let secret_hash = &[1; 20];
+
+    let send_payment_args = SendPaymentArgs {
+        time_lock_duration: 100,
+        time_lock,
+        other_pubkey,
+        secret_hash,
+        amount: BigDecimal::from_str("10").unwrap(), // 10 USDT
+        swap_contract_address: &Some(swap_contract().as_bytes().into()),
+        swap_unique_data: &[],
+        payment_instructions: &None,
+        watcher_reward: None,
+        wait_for_confirmation_until: now_sec() + 60,
+    };
+    let usdt_maker_payment = block_on(usdt_coin.send_maker_payment(send_payment_args)).unwrap();
+    log!(
+        "USDT maker payment tx hash {:02x}",
+        usdt_maker_payment.tx_hash_as_bytes()
+    );
+
+    let confirm_input = ConfirmPaymentInput {
+        payment_tx: usdt_maker_payment.tx_hex(),
+        confirmations: 1,
+        requires_nota: false,
+        wait_until: now_sec() + 60,
+        check_every: 1,
+    };
+    block_on_f01(usdt_coin.wait_for_confirmations(confirm_input)).unwrap();
+
+    let refund_args = RefundPaymentArgs {
+        payment_tx: &usdt_maker_payment.tx_hex(),
+        time_lock,
+        other_pubkey,
+        tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
+            maker_secret_hash: secret_hash,
+        },
+        swap_contract_address: &Some(swap_contract().as_bytes().into()),
+        swap_unique_data: &[],
+        watcher_reward: false,
+    };
+    let payment_refund = block_on(usdt_coin.send_maker_refunds_payment(refund_args)).unwrap();
+    log!("USDT payment refund tx hash {:02x}", payment_refund.tx_hash_as_bytes());
+
+    let confirm_input = ConfirmPaymentInput {
+        payment_tx: payment_refund.tx_hex(),
+        confirmations: 1,
+        requires_nota: false,
+        wait_until: now_sec() + 60,
+        check_every: 1,
+    };
+    block_on_f01(usdt_coin.wait_for_confirmations(confirm_input)).unwrap();
+
+    let search_input = SearchForSwapTxSpendInput {
+        time_lock,
+        other_pub: other_pubkey,
+        secret_hash,
+        tx: &usdt_maker_payment.tx_hex(),
+        search_from_block: 0,
+        swap_contract_address: &Some(swap_contract().as_bytes().into()),
+        swap_unique_data: &[],
+    };
+    let search_tx = block_on(usdt_coin.search_for_swap_tx_spend_my(search_input))
+        .unwrap()
+        .unwrap();
+
+    let expected = FoundSwapTxSpend::Refunded(payment_refund);
+    assert_eq!(expected, search_tx);
+}
+
+#[test]
+fn send_and_refund_usdt_maker_payment_legacy_gas_policy() {
+    send_and_refund_usdt_maker_payment_impl(SwapGasFeePolicy::Legacy);
+}
+
+#[test]
+fn send_and_refund_usdt_maker_payment_priority_fee() {
+    send_and_refund_usdt_maker_payment_impl(SwapGasFeePolicy::Medium);
+}
+
+/// Test that get_erc20_token_info correctly fetches USDT token info from chain,
+/// verifying that the non-standard decimals() return type (uint256 instead of uint8) is handled.
+/// This is critical because USDT's decimals() returns uint256, not the standard uint8.
+#[test]
+fn test_usdt_get_token_info() {
+    // Use ETH coin as web3 provider to query the USDT contract
+    let eth_coin = eth_coin_with_random_privkey(swap_contract());
+    let usdt_address = geth_usdt_contract();
+
+    // Call get_erc20_token_info which internally calls decimals() on the contract
+    // This verifies that the uint256 return type from USDT's decimals() is correctly parsed
+    let token_info = block_on(get_erc20_token_info(&eth_coin, usdt_address)).unwrap();
+
+    assert_eq!(token_info.symbol, "USDT");
+    assert_eq!(token_info.decimals, 6);
 }

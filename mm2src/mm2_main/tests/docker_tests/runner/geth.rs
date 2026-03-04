@@ -4,8 +4,8 @@ use super::{DockerTestMode, DockerTestRunner};
 
 use crate::docker_tests::helpers::eth::{
     erc20_contract, geth_account, geth_docker_node, geth_erc1155_contract, geth_erc721_contract, geth_maker_swap_v2,
-    geth_nft_maker_swap_v2, geth_taker_swap_v2, init_geth_node, swap_contract, wait_for_geth_node_ready,
-    watchers_swap_contract,
+    geth_nft_maker_swap_v2, geth_taker_swap_v2, geth_usdt_contract, init_geth_node, swap_contract,
+    wait_for_geth_node_ready, watchers_swap_contract,
 };
 
 pub(super) fn setup(runner: &mut DockerTestRunner) {
@@ -32,4 +32,5 @@ pub(super) fn setup(runner: &mut DockerTestRunner) {
     let _ = geth_erc721_contract();
     let _ = geth_erc1155_contract();
     let _ = geth_nft_maker_swap_v2();
+    let _ = geth_usdt_contract();
 }

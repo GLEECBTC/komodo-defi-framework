@@ -962,6 +962,26 @@ pub fn erc20_dev_conf(contract_address: &str) -> Json {
     })
 }
 
+/// USDT token configuration used for dockerized Geth dev node.
+/// Uses 6 decimals like real mainnet USDT.
+pub fn usdt_dev_conf(contract_address: &str) -> Json {
+    json!({
+        "coin": "USDT",
+        "name": "usdt",
+        "mm2": 1,
+        "decimals": 6,
+        "derivation_path": "m/44'/60'",
+        "protocol": {
+            "type": "ERC20",
+            "protocol_data": {
+                "platform": "ETH",
+                "contract_address": contract_address,
+            }
+        },
+        "max_eth_tx_type": 2
+    })
+}
+
 /// ERC20 token configuration used for dockerized tests on Sepolia
 pub fn sepolia_erc20_dev_conf(contract_address: &str) -> Json {
     let mut conf = erc20_dev_conf(contract_address);
