@@ -435,6 +435,8 @@ pub struct TaposBlockData {
 #[derive(Serialize)]
 struct GetAccountRequest<'a> {
     address: &'a TronAddress,
+    /// When `true`, addresses in request/response use Base58Check format (`T...`);
+    /// when `false`, hex format (`41...`).
     visible: bool,
 }
 
