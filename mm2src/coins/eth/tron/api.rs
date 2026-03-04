@@ -658,6 +658,7 @@ pub struct TronTxContractValue {
 }
 
 /// Response from `/wallet/gettransactioninfobyid`.
+/// Request struct: [`TxByIdRequest`] (shared with `gettransactionbyid`).
 #[derive(Debug, Deserialize)]
 pub struct GetTransactionInfoByIdResponse {
     pub id: String,
