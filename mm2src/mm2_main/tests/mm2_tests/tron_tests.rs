@@ -129,7 +129,6 @@ fn test_trx_activation_node_failover() {
             assert!(r.current_block > 0);
             assert!(!r.eth_addresses_infos.is_empty(), "Expected at least one address");
             for addr in r.eth_addresses_infos.keys() {
-                assert!(addr.starts_with('T'), "Expected base58 TRON address, got {}", addr);
                 TronAddress::from_base58(addr).expect("Invalid base58check TRON address");
             }
         },
@@ -174,11 +173,6 @@ fn test_trx_hd_activation_with_path() {
         .expect("Expected account 0 in HD wallet balance");
     let addr0 = &account0.addresses[0].address;
 
-    assert!(
-        addr0.starts_with('T'),
-        "TRON address should start with 'T', got: {}",
-        addr0
-    );
     TronAddress::from_base58(addr0).expect("Invalid base58check TRON address");
 
     block_on(mm.stop()).unwrap();
@@ -208,7 +202,6 @@ fn test_trx_get_new_address_rpc_hd() {
 
     // Test get_new_address for TRX
     let addr1 = block_on(get_new_address(&mm, "TRX", 0, Some(Bip44Chain::External)));
-    assert!(addr1.new_address.address.starts_with('T'));
     TronAddress::from_base58(&addr1.new_address.address)
         .expect("Invalid base58check TRON address returned by get_new_address");
 
@@ -395,7 +388,6 @@ fn test_trx_hd_multiple_account_ids_account_77() {
         Bip44Chain::External => (),
         Bip44Chain::Internal => panic!("Expected External chain for account 77, index 7"),
     };
-    assert!(addr7.address.starts_with('T'));
     TronAddress::from_base58(&addr7.address).expect("Invalid base58check TRON address for account 77, index 7");
 
     // Validate TRC20 token balance is present at address 7
@@ -550,11 +542,6 @@ fn test_trx_hd_scanning_detects_used_but_zero_balance_address() {
 /// Test TRC20 activation via enable_erc20_token_v2 after TRX is already active.
 #[test]
 fn test_trc20_activation_after_platform() {
-    assert!(
-        TRON_NILE_TRC20_USDT_CONTRACT.starts_with('T'),
-        "Expected TRC20 contract address to be Base58 (starts with 'T'), got: {}",
-        TRON_NILE_TRC20_USDT_CONTRACT
-    );
     TronAddress::from_base58(TRON_NILE_TRC20_USDT_CONTRACT).expect("Invalid TRC20 Base58 contract address constant");
 
     let coins = serde_json::json!([trx_conf(), trc20_usdt_nile_conf()]);
@@ -571,11 +558,6 @@ fn test_trc20_activation_after_platform() {
         "Expected platform_coin to be TRX"
     );
 
-    assert!(
-        token_activation.token_contract_address.starts_with('T'),
-        "Expected token_contract_address to be Base58 (starts with 'T'), got: {}",
-        token_activation.token_contract_address
-    );
     TronAddress::from_base58(&token_activation.token_contract_address)
         .expect("Invalid base58check TRC20 contract address returned in activation result");
 
@@ -597,11 +579,6 @@ fn test_trc20_activation_after_platform() {
 /// Test TRC20 HD activation with specific derivation path.
 #[test]
 fn test_trc20_hd_activation_with_path() {
-    assert!(
-        TRON_NILE_TRC20_USDT_CONTRACT.starts_with('T'),
-        "Expected TRC20 contract address to be Base58 (starts with 'T'), got: {}",
-        TRON_NILE_TRC20_USDT_CONTRACT
-    );
     TronAddress::from_base58(TRON_NILE_TRC20_USDT_CONTRACT).expect("Invalid TRC20 Base58 contract address constant");
 
     let coins = serde_json::json!([trx_conf(), trc20_usdt_nile_conf()]);
@@ -631,11 +608,6 @@ fn test_trc20_hd_activation_with_path() {
         "Expected platform_coin to be TRX"
     );
 
-    assert!(
-        token_activation.token_contract_address.starts_with('T'),
-        "Expected token_contract_address to be Base58 (starts with 'T'), got: {}",
-        token_activation.token_contract_address
-    );
     TronAddress::from_base58(&token_activation.token_contract_address)
         .expect("Invalid base58check TRC20 contract address returned in activation result");
 
