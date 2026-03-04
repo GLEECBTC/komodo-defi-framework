@@ -2342,6 +2342,9 @@ pub struct WithdrawRequest {
     /// Currently, this flag is used by ETH/ERC20 coins activated with MetaMask/WalletConnect(Some wallets e.g Metamask) **only**.
     #[serde(default)]
     broadcast: bool,
+    /// Transaction expiration window in seconds. Currently only used by TRON (default 60s),
+    /// but can be expanded to any protocol that supports transaction expiry.
+    pub expiration_seconds: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]

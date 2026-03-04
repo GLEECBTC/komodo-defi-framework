@@ -364,6 +364,7 @@ where
             resources,
             prices,
             fee_coin: ticker,
+            expiration_seconds: req.expiration_seconds,
         };
         let (raw, tron_fee_details, final_amount) = match &coin.coin_type {
             EthCoinType::Eth => {

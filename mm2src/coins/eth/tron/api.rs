@@ -1195,8 +1195,14 @@ mod tests {
     /// Non-hex `blockID` must fail deserialization (triggers `BadResponse` → node rotation).
     #[test]
     fn parse_getnowblock_rejects_invalid_block_id_hex() {
-        let json = r#"{ "blockID": "not_valid_hex!!", "block_header": { "raw_data": { "number": 1 } } }"#;
-        assert!(serde_json::from_str::<GetNowBlockResponse>(json).is_err());
+        let json = r#"{ "blockID": "zz00000000000000000000000000000000000000000000000000000000000000", "block_header": { "raw_data": { "number": 1 } } }"#;
+        let err = serde_json::from_str::<GetNowBlockResponse>(json).unwrap_err();
+        assert!(err.is_data(), "Expected data error for invalid hex, got: {}", err);
+        assert!(
+            err.to_string().contains("Invalid character"),
+            "Expected hex parse error, got: {}",
+            err
+        );
     }
 
     /// `blockID` that isn't exactly 32 bytes must fail deserialization.
@@ -1204,7 +1210,13 @@ mod tests {
     fn parse_getnowblock_rejects_wrong_length_block_id() {
         // 31 bytes (62 hex chars) — too short
         let json = r#"{ "blockID": "00000000033bab42e37d025dc14e9ebc26e8f6cb6b6e26e08d2bf2db29c3b4", "block_header": { "raw_data": { "number": 1 } } }"#;
-        assert!(serde_json::from_str::<GetNowBlockResponse>(json).is_err());
+        let err = serde_json::from_str::<GetNowBlockResponse>(json).unwrap_err();
+        assert!(err.is_data(), "Expected data error for wrong length, got: {}", err);
+        assert!(
+            err.to_string().contains("blockID must be 32 bytes"),
+            "Expected length error, got: {}",
+            err
+        );
     }
 
     #[test]

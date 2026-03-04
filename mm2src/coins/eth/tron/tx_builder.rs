@@ -13,7 +13,7 @@ use ethereum_types::U256;
 use prost::Message;
 
 /// Default transaction expiration window (60 seconds from block timestamp).
-const TX_EXPIRATION_MS: i64 = 60_000;
+const DEFAULT_TX_EXPIRATION_MS: i64 = 60_000;
 
 /// Extract TAPOS reference fields from a recent block.
 ///
@@ -48,14 +48,18 @@ pub(super) fn wrap_contract(contract_type: ContractType, type_url: &str, value: 
 ///
 /// Timestamp and expiration are derived from `block_data`:
 /// - `timestamp` = block timestamp (not validated by java-tron; matches TronWeb)
-/// - `expiration` = block timestamp + 60s
+/// - `expiration` = block timestamp + `expiration_sec` (converted to ms)
 pub fn build_trx_transfer(
     from: &TronAddress,
     to: &TronAddress,
     amount_sun: i64,
     block_data: &TaposBlockData,
+    expiration_seconds: Option<u64>,
 ) -> TransactionRaw {
     let (ref_block_bytes, ref_block_hash) = tapos_from_block(block_data.number, &block_data.block_id);
+    let expiration_ms = expiration_seconds
+        .map(|s| (s as i64).saturating_mul(1000))
+        .unwrap_or(DEFAULT_TX_EXPIRATION_MS);
 
     let transfer = TransferContract {
         owner_address: tron_addr_bytes(from),
@@ -71,7 +75,7 @@ pub fn build_trx_transfer(
     TransactionRaw {
         ref_block_bytes,
         ref_block_hash,
-        expiration: block_data.timestamp.saturating_add(TX_EXPIRATION_MS),
+        expiration: block_data.timestamp.saturating_add(expiration_ms),
         data: Vec::new(),
         contract: vec![contract],
         timestamp: block_data.timestamp,
@@ -89,8 +93,12 @@ pub fn build_trc20_transfer(
     amount: U256,
     fee_limit: i64,
     block_data: &TaposBlockData,
+    expiration_seconds: Option<u64>,
 ) -> Result<TransactionRaw, ethabi::Error> {
     let (ref_block_bytes, ref_block_hash) = tapos_from_block(block_data.number, &block_data.block_id);
+    let expiration_ms = expiration_seconds
+        .map(|s| (s as i64).saturating_mul(1000))
+        .unwrap_or(DEFAULT_TX_EXPIRATION_MS);
 
     let trigger = TriggerSmartContract {
         owner_address: tron_addr_bytes(from),
@@ -109,7 +117,7 @@ pub fn build_trc20_transfer(
     Ok(TransactionRaw {
         ref_block_bytes,
         ref_block_hash,
-        expiration: block_data.timestamp.saturating_add(TX_EXPIRATION_MS),
+        expiration: block_data.timestamp.saturating_add(expiration_ms),
         data: Vec::new(),
         contract: vec![contract],
         timestamp: block_data.timestamp,
@@ -146,10 +154,10 @@ mod tests {
         let from = TronAddress::from_hex(TEST_FROM_HEX).unwrap();
         let to = TronAddress::from_hex(TEST_TO_HEX).unwrap();
 
-        let mut raw = build_trx_transfer(&from, &to, 1000, &block_data);
+        let mut raw = build_trx_transfer(&from, &to, 1000, &block_data, None);
         // Verify timestamp/expiration derived from block_data
         assert_eq!(raw.timestamp, block_data.timestamp);
-        assert_eq!(raw.expiration, block_data.timestamp + TX_EXPIRATION_MS);
+        assert_eq!(raw.expiration, block_data.timestamp + DEFAULT_TX_EXPIRATION_MS);
         // Override to match the real broadcast tx values for golden vector comparison.
         raw.timestamp = 1_770_522_424_709;
         raw.expiration = 1_770_522_483_000;
@@ -179,10 +187,11 @@ mod tests {
         let amount = U256::from(2_380_000u64);
         let fee_limit = 2_172_000i64;
 
-        let mut raw = build_trc20_transfer(&from, &contract_addr, &recipient, amount, fee_limit, &block_data).unwrap();
+        let mut raw =
+            build_trc20_transfer(&from, &contract_addr, &recipient, amount, fee_limit, &block_data, None).unwrap();
         // Verify timestamp/expiration derived from block_data
         assert_eq!(raw.timestamp, block_data.timestamp);
-        assert_eq!(raw.expiration, block_data.timestamp + TX_EXPIRATION_MS);
+        assert_eq!(raw.expiration, block_data.timestamp + DEFAULT_TX_EXPIRATION_MS);
         // Override to match the real broadcast tx values for golden vector comparison.
         raw.timestamp = 1_770_972_831_784;
         raw.expiration = 1_770_972_891_000;

@@ -31,6 +31,8 @@ pub struct TronWithdrawContext<'a> {
     pub resources: TronAccountResources,
     pub prices: TronChainPrices,
     pub fee_coin: &'a str,
+    /// Transaction expiration window in seconds. `None` uses the protocol default (60s).
+    pub expiration_seconds: Option<u64>,
 }
 
 /// Reject EVM gas fee policies for TRON. TRON always auto-estimates fees.
@@ -73,7 +75,7 @@ pub fn build_tron_trx_withdraw(
     let mut amount_sun_i64: i64 = amount_sun
         .try_into()
         .map_to_mm(|_| WithdrawError::InternalError(format!("amount {amount_sun} exceeds i64::MAX")))?;
-    let mut raw = build_trx_transfer(ctx.from, ctx.to, amount_sun_i64, ctx.block_data);
+    let mut raw = build_trx_transfer(ctx.from, ctx.to, amount_sun_i64, ctx.block_data, ctx.expiration_seconds);
 
     // Iteratively estimate fee and adjust amount until stable.
     // Non-max: runs once — amount is fixed, just checks balance sufficiency.
@@ -120,7 +122,7 @@ pub fn build_tron_trx_withdraw(
         amount_sun_i64 = amount_sun
             .try_into()
             .map_to_mm(|_| WithdrawError::InternalError(format!("amount {amount_sun} exceeds i64::MAX")))?;
-        raw = build_trx_transfer(ctx.from, ctx.to, amount_sun_i64, ctx.block_data);
+        raw = build_trx_transfer(ctx.from, ctx.to, amount_sun_i64, ctx.block_data, ctx.expiration_seconds);
     }
 }
 
@@ -152,6 +154,7 @@ pub async fn build_tron_trc20_withdraw(
         amount_base_units,
         fee_limit_i64,
         ctx.block_data,
+        ctx.expiration_seconds,
     )
     .map_to_mm(|e| WithdrawError::InternalError(format!("TRC20 ABI encoding failed: {e}")))?;
 
@@ -238,7 +241,7 @@ mod tests {
         };
         let from = TronAddress::from_hex(TEST_FROM_HEX).unwrap();
         let to = TronAddress::from_hex(TEST_TO_HEX).unwrap();
-        let raw = build_trx_transfer(&from, &to, 1_000_000, &block_data);
+        let raw = build_trx_transfer(&from, &to, 1_000_000, &block_data, None);
 
         // Sign with a deterministic test key
         let secret = ethkey::Secret::from_slice(&[1u8; 32]).expect("valid test secret");
@@ -272,6 +275,7 @@ mod tests {
             resources,
             prices,
             fee_coin: "TRX",
+            expiration_seconds: None,
         };
         let (raw, fee_details, final_amount) =
             build_tron_trx_withdraw(&ctx, balance, balance, &balance_dec, true).unwrap();
@@ -309,6 +313,7 @@ mod tests {
             resources,
             prices,
             fee_coin: "TRX",
+            expiration_seconds: None,
         };
         let result = build_tron_trx_withdraw(&ctx, amount, balance, &balance_dec, false);
 
