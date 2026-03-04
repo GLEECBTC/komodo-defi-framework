@@ -1,6 +1,6 @@
 //! TRON withdrawal pipeline.
 //!
-//! Free functions that build, estimate fees for, and prepare TRON withdrawal
+//! Standalone functions that build, estimate fees for, and prepare TRON withdrawal
 //! transactions (TRX native and TRC20 token). Signing and `TransactionDetails`
 //! assembly happen in the calling `EthWithdraw` trait (see `eth_withdraw.rs`).
 
