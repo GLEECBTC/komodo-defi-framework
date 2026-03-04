@@ -2770,7 +2770,6 @@ fn verify_locked_amount(mm: &MarketMakerIt, role: &str, coin: &str) {
 // which don't return a boolean value.
 
 fn send_and_spend_usdt_maker_payment_impl(swap_txfee_policy: SwapGasFeePolicy) {
-    thread::sleep(Duration::from_secs(7));
     let maker_usdt_coin = usdt_coin_with_random_privkey(swap_contract());
     let taker_usdt_coin = usdt_coin_with_random_privkey(swap_contract());
 
@@ -2861,7 +2860,6 @@ fn send_and_spend_usdt_maker_payment_priority_fee() {
 }
 
 fn send_and_refund_usdt_maker_payment_impl(swap_txfee_policy: SwapGasFeePolicy) {
-    thread::sleep(Duration::from_secs(10));
     let usdt_coin = usdt_coin_with_random_privkey(swap_contract());
     assert!(block_on(usdt_coin.set_swap_gas_fee_policy(swap_txfee_policy)).is_ok());
 
