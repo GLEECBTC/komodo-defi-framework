@@ -1634,9 +1634,9 @@ fn test_max_taker_vol_swap() {
     .unwrap();
     assert!(rc.0.is_success(), "!max_taker_vol: {}", rc.1);
     let vol: MaxTakerVolResponse = serde_json::from_str(&rc.1).unwrap();
-    // With 2% fee rate: max_vol = (balance - tx_fee) / 1.02
-    // balance = 50, tx_fee varies, so max_vol ≈ 49.02
-    let expected_vol = MmNumber::from((4999999481u64, 102000000u64));
+    // With 1% fee rate (MYCOIN_FEE_DISCOUNT): max_vol = (balance - tx_fee) / 1.01
+    // balance = 50, tx_fee varies, so max_vol ≈ 49.50
+    let expected_vol = MmNumber::from((4999999481u64, 101000000u64));
 
     let actual_vol = MmNumber::from(vol.result.clone());
     log!("actual vol {}", actual_vol.to_decimal());
