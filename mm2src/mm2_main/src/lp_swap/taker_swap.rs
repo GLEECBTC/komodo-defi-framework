@@ -1063,6 +1063,7 @@ impl TakerSwap {
         let stage = FeeApproxStage::StartSwap;
         let dex_fee = DexFee::new_with_taker_pubkey(
             self.taker_coin.deref(),
+            self.maker_coin.ticker(),
             &self.taker_amount,
             &self.my_taker_coin_htlc_pub().0,
         );
@@ -1400,6 +1401,7 @@ impl TakerSwap {
         }
         let dex_fee = DexFee::new_with_taker_pubkey(
             self.taker_coin.deref(),
+            &self.r().data.maker_coin,
             &self.taker_amount,
             &self.my_taker_coin_htlc_pub().0,
         );
@@ -2543,6 +2545,7 @@ impl AtomicSwap for TakerSwap {
         // if taker fee is not sent yet it must be virtually locked
         let taker_fee = DexFee::new_with_taker_pubkey(
             self.taker_coin.deref(),
+            &self.r().data.maker_coin,
             &self.taker_amount,
             &self.my_taker_coin_htlc_pub().0,
         );
@@ -2687,6 +2690,7 @@ pub async fn taker_swap_trade_preimage(
 
     let dex_fee = DexFee::new_with_taker_pubkey(
         my_coin.deref(),
+        other_coin_ticker,
         &my_coin_volume,
         &my_coin.derive_htlc_pubkey(&[]), // passing empty unique_data because we need only the permanent pubkey here (not derived from the unique data)
     );
@@ -2765,9 +2769,8 @@ pub async fn taker_swap_trade_preimage(
 #[derive(Deserialize)]
 struct MaxTakerVolRequest {
     coin: String,
-    /// Deprecated: Previously used for KMD discount calculation.
-    /// Fee is now 2% flat for all trades. Kept for backward compatibility.
-    #[allow(dead_code)]
+    /// Used for GLEEC fee discount calculation.
+    /// When trading with GLEEC, the fee rate is 1% instead of 2%.
     trade_with: Option<String>,
 }
 
@@ -2778,7 +2781,8 @@ pub async fn max_taker_vol(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
         Ok(None) => return ERR!("No such coin: {}", req.coin),
         Err(err) => return ERR!("!lp_coinfind({}): {}", req.coin, err),
     };
-    let fut = calc_max_taker_vol(&ctx, &coin, FeeApproxStage::TradePreimageMax);
+    let other_coin = req.trade_with.as_ref().unwrap_or(&req.coin);
+    let fut = calc_max_taker_vol(&ctx, &coin, other_coin, FeeApproxStage::TradePreimageMax);
     let max_vol = match fut.await {
         Ok(max_vol) => max_vol,
         Err(e) if e.get_inner().not_sufficient_balance() => {
@@ -2851,7 +2855,12 @@ pub async fn max_taker_vol(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
 /// ```
 /// can be solved as in the first case.
 ///
-pub async fn calc_max_taker_vol(ctx: &MmArc, coin: &MmCoinEnum, stage: FeeApproxStage) -> CheckBalanceResult<MmNumber> {
+pub async fn calc_max_taker_vol(
+    ctx: &MmArc,
+    coin: &MmCoinEnum,
+    other_coin: &str,
+    stage: FeeApproxStage,
+) -> CheckBalanceResult<MmNumber> {
     let my_coin = coin.ticker();
     let balance: MmNumber = coin.my_spendable_balance().compat().await.map_mm_err()?.into();
     let locked = get_locked_amount(ctx, my_coin);
@@ -2867,7 +2876,7 @@ pub async fn calc_max_taker_vol(ctx: &MmArc, coin: &MmCoinEnum, stage: FeeApprox
     let max_vol = if my_coin == max_trade_fee.coin {
         // second case
         let max_possible_2 = &max_possible - &max_trade_fee.amount;
-        let max_dex_fee = DexFee::new_from_taker_coin(coin.deref(), &max_possible_2); // taker_pubkey is not known yet so we get max dex fee to calc max volume
+        let max_dex_fee = DexFee::new_from_taker_coin(coin.deref(), other_coin, &max_possible_2); // taker_pubkey is not known yet so we get max dex fee to calc max volume
         let max_fee_to_send_taker_fee = coin
             .get_fee_to_send_taker_fee(max_dex_fee.clone(), stage)
             .await
@@ -2883,7 +2892,7 @@ pub async fn calc_max_taker_vol(ctx: &MmArc, coin: &MmCoinEnum, stage: FeeApprox
             max_dex_fee.total_spend_amount().to_fraction(),
             max_fee_to_send_taker_fee.amount.to_fraction()
         );
-        max_taker_vol_from_available(min_max_possible, &min_tx_amount)
+        max_taker_vol_from_available(min_max_possible, my_coin, other_coin, &min_tx_amount)
             .mm_err(|e| CheckBalanceError::from_max_taker_vol_error(e, my_coin.to_owned(), locked.to_decimal()))?
     } else {
         // first case
@@ -2892,7 +2901,7 @@ pub async fn calc_max_taker_vol(ctx: &MmArc, coin: &MmCoinEnum, stage: FeeApprox
             balance.to_fraction(),
             locked.to_fraction()
         );
-        max_taker_vol_from_available(max_possible, &min_tx_amount)
+        max_taker_vol_from_available(max_possible, my_coin, other_coin, &min_tx_amount)
             .mm_err(|e| CheckBalanceError::from_max_taker_vol_error(e, my_coin.to_owned(), locked.to_decimal()))?
     };
     // do not check if `max_vol < min_tx_amount`, because it is checked within `max_taker_vol_from_available` already
@@ -2908,9 +2917,11 @@ pub struct MaxTakerVolumeLessThanDust {
 #[allow(clippy::result_large_err)]
 pub fn max_taker_vol_from_available(
     available: MmNumber,
+    base: &str,
+    rel: &str,
     min_tx_amount: &MmNumber,
 ) -> Result<MmNumber, MmError<MaxTakerVolumeLessThanDust>> {
-    let dex_fee_rate = DexFee::dex_fee_rate();
+    let dex_fee_rate = DexFee::dex_fee_rate(base, rel);
     let threshold_coef = &(&MmNumber::from(1) + &dex_fee_rate) / &dex_fee_rate;
     let max_vol = if available > min_tx_amount * &threshold_coef {
         available / (MmNumber::from(1) + dex_fee_rate)
@@ -2934,7 +2945,7 @@ pub async fn create_taker_swap_default_params(
     volume: MmNumber,
     stage: FeeApproxStage,
 ) -> CheckBalanceResult<TakerSwapPreparedParams> {
-    let dex_fee = DexFee::new_from_taker_coin(my_coin, &volume); // taker_pubkey is not known yet so we get max dexfee to estimate max swap amount
+    let dex_fee = DexFee::new_from_taker_coin(my_coin, other_coin.ticker(), &volume); // taker_pubkey is not known yet so we get max dexfee to estimate max swap amount
     let fee_to_send_dex_fee = my_coin
         .get_fee_to_send_taker_fee(dex_fee.clone(), stage)
         .await
@@ -3366,19 +3377,17 @@ mod taker_swap_tests {
         assert!(!swap.is_recoverable());
     }
 
-    /// Tests max_taker_vol_from_available with 2% flat fee rate.
+    /// Tests max_taker_vol_from_available with 2% standard fee rate and 1% GLEEC discount rate.
     ///
-    /// With 2% fee rate:
+    /// With 2% fee rate (standard):
     /// - fee = max(vol * 0.02, min_tx_amount)
     /// - available = vol + fee
+    /// - boundary: vol * 0.02 == min_tx_amount => vol == 0.0005 => available == 0.00051
     ///
-    /// Note: Prior to the 2% flat fee rate change, this test had KMD-specific
-    /// test cases because KMD had a discounted fee rate (9/7770 vs 1/777).
-    /// The KMD discount was removed, so all coins now use the same 2% rate
-    /// and the KMD-specific test paths were removed.
-    ///
-    /// TODO: When GLEEC discount (50% off) is implemented, restore coin-specific
-    /// test paths similar to the original `is_kmd` pattern.
+    /// With 1% fee rate (GLEEC discount):
+    /// - fee = max(vol * 0.01, min_tx_amount)
+    /// - available = vol + fee
+    /// - boundary: vol * 0.01 == min_tx_amount => vol == 0.001 => available == 0.00101
     #[test]
     fn test_max_taker_vol_from_available() {
         let min_tx_amount = MmNumber::from("0.00001");
@@ -3393,21 +3402,21 @@ mod taker_swap_tests {
             ("99999999999999999999999999999999999999999999999999999", false),
             ("0.00051000000000000000000000000000000000000000000000002", false),
             ("0.00051000000000000000000000000000000000000000000000001", false),
-            // TODO: Enable GLEEC tests when discount is implemented (1% rate, boundary at 0.00101)
-            // ("0.00102", true),
-            // ("0.00101000000000000000000000000000000000000000000000001", true),
+            // GLEEC discount (1% rate, boundary at 0.00101)
+            ("0.00102", true),
+            ("0.00101000000000000000000000000000000000000000000000001", true),
         ];
         for (available, is_gleec) in source {
             let available = MmNumber::from(available);
             // no matter base or rel is GLEEC
-            let base = if is_gleec { "GLEEC" } else { "RICK" };
-            let max_taker_vol =
-                max_taker_vol_from_available(available.clone(), &min_tx_amount).expect("!max_taker_vol_from_available");
+            let base = if is_gleec { "RICK" } else { "MORTY" };
+            let max_taker_vol = max_taker_vol_from_available(available.clone(), "RICK", "MORTY", &min_tx_amount)
+                .expect("!max_taker_vol_from_available");
 
             let coin = TestCoin::new(base);
             let mock_min_tx_amount = min_tx_amount.clone();
             TestCoin::min_tx_amount.mock_safe(move |_| MockResult::Return(mock_min_tx_amount.clone().into()));
-            let dex_fee = DexFee::new_from_taker_coin(&coin, &max_taker_vol).total_spend_amount();
+            let dex_fee = DexFee::new_from_taker_coin(&coin, "MORTY", &max_taker_vol).total_spend_amount();
             assert!(min_tx_amount < dex_fee);
             assert!(min_tx_amount <= max_taker_vol);
             assert_eq!(max_taker_vol + dex_fee, available);
@@ -3415,9 +3424,9 @@ mod taker_swap_tests {
 
         // For these `availables` the dex_fee must be the same as min_tx_amount
         let source = vec![
-            // TODO: Enable GLEEC tests when discount is implemented (1% rate, boundary at 0.00101)
-            // ("0.00101", true),
-            // ("0.00100999999999999999999999999999999999999999999999999", true),
+            // GLEEC discount (1% rate, boundary at 0.00101)
+            ("0.00101", true),
+            ("0.00100999999999999999999999999999999999999999999999999", true),
             ("0.00051", false),
             ("0.00050999999999999999999999999999999999999999999999999", false),
             ("0.0003", false),
@@ -3427,13 +3436,13 @@ mod taker_swap_tests {
             let available = MmNumber::from(available);
             // no matter base or rel is GLEEC
             let base = if is_gleec { "GLEEC" } else { "RICK" };
-            let max_taker_vol =
-                max_taker_vol_from_available(available.clone(), &min_tx_amount).expect("!max_taker_vol_from_available");
+            let max_taker_vol = max_taker_vol_from_available(available.clone(), base, "MORTY", &min_tx_amount)
+                .expect("!max_taker_vol_from_available");
 
             let coin = TestCoin::new(base);
             let mock_min_tx_amount = min_tx_amount.clone();
             TestCoin::min_tx_amount.mock_safe(move |_| MockResult::Return(mock_min_tx_amount.clone().into()));
-            let dex_fee = DexFee::new_from_taker_coin(&coin, &max_taker_vol).fee_amount();
+            let dex_fee = DexFee::new_from_taker_coin(&coin, "MORTY", &max_taker_vol).fee_amount(); // returns Standard dex_fee (default for TestCoin)
             println!(
                 "available={:?} max_taker_vol={:?} dex_fee={:?}",
                 available.to_decimal(),
@@ -3445,9 +3454,9 @@ mod taker_swap_tests {
             assert_eq!(max_taker_vol + dex_fee, available);
         }
 
-        // These `availables` must return an error (not enough for min vol + min fee)
+        // These `availables` must return an error
         let availables = vec![
-            "0.00002", // exactly 2*min - vol would be min but that leaves nothing for fee
+            "0.00002",
             "0.000019",
             "0.000011",
             "0.00001000000000000000000000000000000000000000000000001",
@@ -3459,7 +3468,7 @@ mod taker_swap_tests {
         ];
         for available in availables {
             let available = MmNumber::from(available);
-            max_taker_vol_from_available(available.clone(), &min_tx_amount)
+            max_taker_vol_from_available(available.clone(), "GLEEC", "MORTY", &min_tx_amount)
                 .expect_err("!max_taker_vol_from_available success but should be error");
         }
 
