@@ -54,6 +54,7 @@ use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_number::bigdecimal::{BigDecimal, Signed};
 use mm2_number::MmNumber;
 use mm2_test_helpers::electrums::doc_electrums;
+use mm2_test_helpers::for_tests::DEX_FEE_ADDR_RAW_PUBKEY_LEGACY;
 use mm2_test_helpers::for_tests::{
     electrum_servers_rpc, mm_ctx_with_custom_db, DOC_ELECTRUM_ADDRS, MARTY_ELECTRUM_ADDRS, T_BCH_ELECTRUMS,
 };
@@ -2837,16 +2838,22 @@ fn test_get_sender_trade_fee_dynamic_tx_fee() {
     assert_eq!(fee1, fee3);
 }
 
-// validate an old tx with no output with the burn account
-// TODO: remove when we disable such old style txns
+// Validate an old tx sent to the legacy DEX fee address (no burn output).
+// TODO: Update test fixtures with transactions to new DEX fee address once swaps exist
 #[test]
 fn test_validate_old_fee_tx() {
     let rpc_client = electrum_client_for_test(MARTY_ELECTRUM_ADDRS, ChainVariant::MORTY);
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Electrum(rpc_client), None, false);
+    // This tx was sent to the OLD dex fee address, so we mock dex_pubkey to return the legacy address
     let tx_bytes = hex::decode("0400008085202f8901033aedb3c3c02fc76c15b393c7b1f638cfa6b4a1d502e00d57ad5b5305f12221000000006a473044022074879aabf38ef943eba7e4ce54c444d2d6aa93ac3e60ea1d7d288d7f17231c5002205e1671a62d8c031ac15e0e8456357e54865b7acbf49c7ebcba78058fd886b4bd012103242d9cb2168968d785f6914c494c303ff1c27ba0ad882dbc3c15cfa773ea953cffffffff0210270000000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ac4802d913000000001976a914902053231ef0541a7628c11acac40d30f2a127bd88ac008e3765000000000000000000000000000000").unwrap();
     let taker_fee_tx = coin.tx_enum_from_bytes(&tx_bytes).unwrap();
     let amount: MmNumber = "0.0001".parse::<BigDecimal>().unwrap().into();
     let dex_fee = DexFee::Standard(amount);
+
+    // Mock to use legacy fee address for this historical tx fixture
+    <UtxoStandardCoin as SwapOps>::dex_pubkey
+        .mock_safe(|_| MockResult::Return(DEX_FEE_ADDR_RAW_PUBKEY_LEGACY.as_slice()));
+
     let validate_fee_args = ValidateFeeArgs {
         fee_tx: &taker_fee_tx,
         expected_sender: &hex::decode("03242d9cb2168968d785f6914c494c303ff1c27ba0ad882dbc3c15cfa773ea953c").unwrap(),
@@ -2857,6 +2864,8 @@ fn test_validate_old_fee_tx() {
     let result = block_on(coin.validate_fee(validate_fee_args));
     log!("result: {:?}", result);
     assert!(result.is_ok());
+
+    <UtxoStandardCoin as SwapOps>::dex_pubkey.clear_mock();
 }
 
 #[test]
@@ -2905,8 +2914,9 @@ fn test_validate_fee_min_block() {
     }
 }
 
-#[test]
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/857
+// TODO: Update test fixtures with transactions to new DEX fee address once swaps exist
+#[test]
 fn test_validate_fee_bch_70_bytes_signature() {
     let rpc_client = electrum_client_for_test(
         &[
@@ -2918,10 +2928,16 @@ fn test_validate_fee_bch_70_bytes_signature() {
     );
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Electrum(rpc_client), None, false);
     // https://blockchair.com/bitcoin-cash/transaction/ccee05a6b5bbc6f50d2a65a5a3a04690d3e2d81082ad57d3ab471189f53dd70d
+    // This tx was sent to the OLD dex fee address, so we mock dex_pubkey to return the legacy address
     let tx_bytes = hex::decode("0100000002cae89775f264e50f14238be86a7184b7f77bfe26f54067b794c546ec5eb9c91a020000006b483045022100d6ed080f722a0637a37552382f462230cc438984bc564bdb4b7094f06cfa38fa022062304a52602df1fbb3bebac4f56e1632ad456f62d9031f4983f07e546c8ec4d8412102ae7dc4ef1b49aadeff79cfad56664105f4d114e1716bc4f930cb27dbd309e521ffffffff11f386a6fe8f0431cb84f549b59be00f05e78f4a8a926c5e023a0d5f9112e8200000000069463043021f17eb93ed20a6f2cd357eabb41a4ec6329000ddc6d5b42ecbe642c5d41b206a022026bc4920c4ce3af751283574baa8e4a3efd4dad0d8fe6ba3ddf5d75628d36fda412102ae7dc4ef1b49aadeff79cfad56664105f4d114e1716bc4f930cb27dbd309e521ffffffff0210270000000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ac57481c00000000001976a914bac11ce4cd2b1df2769c470d09b54f86df737e3c88ac035b4a60").unwrap();
     let taker_fee_tx = coin.tx_enum_from_bytes(&tx_bytes).unwrap();
     let amount: BigDecimal = "0.0001".parse().unwrap();
     let sender_pub = hex::decode("02ae7dc4ef1b49aadeff79cfad56664105f4d114e1716bc4f930cb27dbd309e521").unwrap();
+
+    // Mock to use legacy fee address for this historical tx fixture
+    <UtxoStandardCoin as SwapOps>::dex_pubkey
+        .mock_safe(|_| MockResult::Return(DEX_FEE_ADDR_RAW_PUBKEY_LEGACY.as_slice()));
+
     let validate_fee_args = ValidateFeeArgs {
         fee_tx: &taker_fee_tx,
         expected_sender: &sender_pub,
@@ -2930,6 +2946,8 @@ fn test_validate_fee_bch_70_bytes_signature() {
         uuid: &[],
     };
     block_on(coin.validate_fee(validate_fee_args)).unwrap();
+
+    <UtxoStandardCoin as SwapOps>::dex_pubkey.clear_mock();
 }
 
 #[test]

@@ -61,7 +61,7 @@ const CONNECTED_RELAYS_CHECK_INTERVAL: Duration = Duration::from_secs(30);
 const ANNOUNCE_INTERVAL: Duration = Duration::from_secs(600);
 const ANNOUNCE_INITIAL_DELAY: Duration = Duration::from_secs(60);
 const CHANNEL_BUF_SIZE: usize = 1024 * 8;
-const DEFAULT_NETID: u16 = 8762;
+const DEFAULT_NETID: u16 = 6133;
 
 /// Used in time validation logic for each peer which runs immediately  after the
 /// `ConnectionEstablished` event.
@@ -79,7 +79,8 @@ lazy_static! {
 }
 
 pub const DEPRECATED_NETID_LIST: &[u16] = &[
-    7777, // TODO: keep it inaccessible until Q2 of 2024.
+    7777, // Deprecated since netid migration to 8762
+    8762, // Deprecated since netid migration to 6133
 ];
 
 /// The structure is the same as `PeerResponse`,

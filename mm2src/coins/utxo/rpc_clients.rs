@@ -822,6 +822,7 @@ impl JsonRpcBatchClient for NativeClientImpl {}
 #[async_trait]
 #[cfg_attr(test, mockable)]
 impl UtxoRpcClientOps for NativeClient {
+    #[allow(clippy::result_large_err)]
     fn list_unspent(&self, address: &Address, decimals: u8) -> UtxoRpcFut<Vec<UnspentInfo>> {
         let fut = self
             .list_unspent_impl(0, i32::MAX, vec![address.to_string()])
@@ -835,6 +836,7 @@ impl UtxoRpcClientOps for NativeClient {
         Box::new(fut)
     }
 
+    #[allow(clippy::result_large_err)]
     fn list_unspent_group(&self, addresses: Vec<Address>, decimals: u8) -> UtxoRpcFut<UnspentMap> {
         let mut addresses_str = Vec::with_capacity(addresses.len());
         let mut addresses_map = HashMap::with_capacity(addresses.len());

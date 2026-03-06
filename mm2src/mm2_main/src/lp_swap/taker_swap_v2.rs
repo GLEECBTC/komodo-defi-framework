@@ -489,11 +489,12 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         }
     }
 
+    /// GLEEC pairs get a 1% discount rate (applied inside dex_fee_rate).
     fn dex_fee(&self) -> DexFee {
-        if self.taker_coin.ticker() == "KMD" || self.maker_coin.ticker() == "KMD" {
-            // Set DexFee::NoFee for swaps with KMD coin.
-            return DexFee::NoFee;
-        }
+        // NOTE: To fully exempt a specific coin from dex fees, uncomment below:
+        // if self.taker_coin.ticker() == "GLEEC" || self.maker_coin.ticker() == "GLEEC" {
+        //     return DexFee::NoFee;
+        // }
 
         if let Some(taker_pub) = self.taker_coin.taker_pubkey_bytes() {
             // for dex fee calculation we need only permanent (non-derived for HTLC) taker pubkey here

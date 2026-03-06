@@ -63,6 +63,7 @@ impl TokenInitializer for SlpTokenInitializer {
         platform_params.slp_tokens_requests.clone()
     }
 
+    #[allow(clippy::result_large_err)]
     async fn enable_tokens(
         &self,
         activation_params: Vec<TokenActivationParams<SlpActivationRequest, SlpProtocolConf>>,

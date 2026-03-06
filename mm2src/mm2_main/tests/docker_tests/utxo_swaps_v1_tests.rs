@@ -448,7 +448,9 @@ fn test_get_max_taker_vol() {
     .unwrap();
     assert!(rc.0.is_success(), "!max_taker_vol: {}", rc.1);
     let json: MaxTakerVolResponse = serde_json::from_str(&rc.1).unwrap();
-    let expected = MmNumber::from((77699596737u64, 77800000000u64)).to_fraction();
+    // With 2% fee rate: max_vol = (balance - tx_fee) / 1.02
+    // balance = 1, tx_fee varies based on UTXO, so max_vol ≈ 0.98
+    let expected = MmNumber::from((99999481u64, 102000000u64)).to_fraction();
     assert_eq!(json.result, expected);
     assert_eq!(json.coin, "MYCOIN1");
 
@@ -497,8 +499,10 @@ fn test_get_max_taker_vol_dex_fee_min_tx_amount() {
     .unwrap();
     assert!(rc.0.is_success(), "!max_taker_vol: {}", rc.1);
     let json: Json = serde_json::from_str(&rc.1).unwrap();
-    assert_eq!(json["result"]["numer"], Json::from("105331"));
-    assert_eq!(json["result"]["denom"], Json::from("20000000"));
+    // With 2% fee rate: max_vol = (balance - tx_fee) / 1.02
+    // balance = 0.00532845, tx_fee varies based on UTXO
+    assert_eq!(json["result"]["numer"], Json::from("35177"));
+    assert_eq!(json["result"]["denom"], Json::from("6800000"));
 
     let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
@@ -614,8 +618,10 @@ fn test_get_max_taker_vol_with_kmd() {
     .unwrap();
     assert!(rc.0.is_success(), "!max_taker_vol: {}", rc.1);
     let json: Json = serde_json::from_str(&rc.1).unwrap();
-    assert_eq!(json["result"]["numer"], Json::from("2589865579"));
-    assert_eq!(json["result"]["denom"], Json::from("2593000000"));
+    // With 2% fee rate (KMD discount removed): max_vol = (balance - tx_fee) / 1.02
+    // balance = 1, tx_fee varies based on UTXO, so max_vol ≈ 0.9999
+    assert_eq!(json["result"]["numer"], Json::from("9999481"));
+    assert_eq!(json["result"]["denom"], Json::from("10200000"));
 
     let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
@@ -1045,7 +1051,9 @@ fn test_locked_amount() {
     let locked_alice = block_on(get_locked_amount(&mm_alice, "MYCOIN1"));
     assert_eq!(locked_alice.coin, "MYCOIN1");
 
-    let expected_result: MmNumberMultiRepr = MmNumber::from("778.00000519").into();
+    // With 2% fee rate: locked = volume + dex_fee + tx_fees
+    // = 777 + (777 * 0.02) + 0.00000519 = 777 + 15.54 + 0.00000519 = 792.54000519
+    let expected_result: MmNumberMultiRepr = MmNumber::from("792.54000519").into();
     assert_eq!(expected_result, locked_alice.locked_amount);
 }
 
@@ -1258,6 +1266,7 @@ fn test_buy_when_coins_locked_by_other_swap() {
     .unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
+    // With 2% fee rate: max_vol = (balance - tx_fee) / 1.02 = 49999863/51000000
     let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "buy",
@@ -1265,8 +1274,8 @@ fn test_buy_when_coins_locked_by_other_swap() {
         "rel": "MYCOIN1",
         "price": 1,
         "volume": {
-            "numer":"77699596737",
-            "denom":"77800000000"
+            "numer":"49999863",
+            "denom":"51000000"
         },
     })))
     .unwrap();
@@ -1276,6 +1285,7 @@ fn test_buy_when_coins_locked_by_other_swap() {
     block_on(mm_alice.wait_for_log(22., |log| log.contains("Entering the taker_swap_loop MYCOIN/MYCOIN1"))).unwrap();
     thread::sleep(Duration::from_secs(6));
 
+    // Second buy should fail because coins are locked by first swap
     let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "buy",
@@ -1283,8 +1293,8 @@ fn test_buy_when_coins_locked_by_other_swap() {
         "rel": "MYCOIN1",
         "price": 1,
         "volume": {
-            "numer":"77699599999",
-            "denom":"77800000000"
+            "numer":"49999864",
+            "denom":"51000000"
         },
     })))
     .unwrap();
@@ -1347,6 +1357,7 @@ fn test_sell_when_coins_locked_by_other_swap() {
     .unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
+    // With 2% fee rate: max_vol = (balance - tx_fee) / 1.02 = 49999863/51000000
     let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "sell",
@@ -1354,8 +1365,8 @@ fn test_sell_when_coins_locked_by_other_swap() {
         "rel": "MYCOIN",
         "price": 1,
         "volume": {
-            "numer":"77699596737",
-            "denom":"77800000000"
+            "numer":"49999863",
+            "denom":"51000000"
         },
     })))
     .unwrap();
@@ -1365,6 +1376,7 @@ fn test_sell_when_coins_locked_by_other_swap() {
     block_on(mm_alice.wait_for_log(22., |log| log.contains("Entering the taker_swap_loop MYCOIN/MYCOIN1"))).unwrap();
     thread::sleep(Duration::from_secs(6));
 
+    // Second sell should fail because coins are locked by first swap
     let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "sell",
@@ -1372,8 +1384,8 @@ fn test_sell_when_coins_locked_by_other_swap() {
         "rel": "MYCOIN",
         "price": 1,
         "volume": {
-            "numer":"77699599999",
-            "denom":"77800000000"
+            "numer":"49999864",
+            "denom":"51000000"
         },
     })))
     .unwrap();
@@ -1406,6 +1418,7 @@ fn test_buy_max() {
 
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[], None)));
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[], None)));
+    // With 2% fee rate: max_vol = (balance - tx_fee) / 1.02 = 99999481/102000000
     let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "buy",
@@ -1413,13 +1426,14 @@ fn test_buy_max() {
         "rel": "MYCOIN1",
         "price": 1,
         "volume": {
-            "numer":"77699596737",
-            "denom":"77800000000"
+            "numer":"99999481",
+            "denom":"102000000"
         },
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!buy: {}", rc.1);
 
+    // Slightly more than max should fail
     let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "buy",
@@ -1427,8 +1441,8 @@ fn test_buy_max() {
         "rel": "MYCOIN1",
         "price": 1,
         "volume": {
-            "numer":"77699596738",
-            "denom":"77800000000"
+            "numer":"99999482",
+            "denom":"102000000"
         },
     })))
     .unwrap();
@@ -1620,7 +1634,9 @@ fn test_max_taker_vol_swap() {
     .unwrap();
     assert!(rc.0.is_success(), "!max_taker_vol: {}", rc.1);
     let vol: MaxTakerVolResponse = serde_json::from_str(&rc.1).unwrap();
-    let expected_vol = MmNumber::from((1294999865579, 25930000000));
+    // With 1% fee rate (MYCOIN_FEE_DISCOUNT): max_vol = (balance - tx_fee) / 1.01
+    // balance = 50, tx_fee varies, so max_vol ≈ 49.50
+    let expected_vol = MmNumber::from((4999999481u64, 101000000u64));
 
     let actual_vol = MmNumber::from(vol.result.clone());
     log!("actual vol {}", actual_vol.to_decimal());
@@ -1883,10 +1899,12 @@ fn test_taker_trade_preimage() {
 
     let base_coin_fee = TradeFeeForTest::new("MYCOIN", "0.00000274", false);
     let rel_coin_fee = TradeFeeForTest::new("MYCOIN1", "0.00000992", true);
-    let taker_fee = TradeFeeForTest::new("MYCOIN", "0.01", false);
+    // With 2% fee rate: dex_fee = 7.77 * 0.02 = 0.1554
+    let taker_fee = TradeFeeForTest::new("MYCOIN", "0.1554", false);
     let fee_to_send_taker_fee = TradeFeeForTest::new("MYCOIN", "0.00000245", false);
 
-    let my_coin_total_fee = TotalTradeFeeForTest::new("MYCOIN", "0.01000519", "0.01000519");
+    // total = taker_fee + base_coin_fee + fee_to_send_taker_fee = 0.1554 + 0.00000274 + 0.00000245 = 0.15540519
+    let my_coin_total_fee = TotalTradeFeeForTest::new("MYCOIN", "0.15540519", "0.15540519");
     let my_coin1_total_fee = TotalTradeFeeForTest::new("MYCOIN1", "0.00000992", "0");
 
     let expected = TradePreimageResult::TakerPreimage(TakerPreimage {
@@ -1916,12 +1934,13 @@ fn test_taker_trade_preimage() {
     actual.result.sort_total_fees();
 
     let base_coin_fee = TradeFeeForTest::new("MYCOIN", "0.00000496", true);
-    let rel_coin_fee = TradeFeeForTest::new("MYCOIN1", "0.00000548", false); // fee to send taker payment
-    let taker_fee = TradeFeeForTest::new("MYCOIN1", "0.02", false);
+    let rel_coin_fee = TradeFeeForTest::new("MYCOIN1", "0.00000548", false); // fee to send taker payment     // With 2% fee rate: buy 7.77 MYCOIN at price 2 = spend 15.54 MYCOIN1, dex_fee = 15.54 * 0.02 = 0.3108
+    let taker_fee = TradeFeeForTest::new("MYCOIN1", "0.3108", false);
     let fee_to_send_taker_fee = TradeFeeForTest::new("MYCOIN1", "0.0000049", false);
 
     let my_coin_total_fee = TotalTradeFeeForTest::new("MYCOIN", "0.00000496", "0");
-    let my_coin1_total_fee = TotalTradeFeeForTest::new("MYCOIN1", "0.02001038", "0.02001038"); // taker_fee + rel_coin_fee + fee_to_send_taker_fee
+    // total = taker_fee + rel_coin_fee + fee_to_send_taker_fee = 0.3108 + 0.00000548 + 0.0000049 = 0.31081038
+    let my_coin1_total_fee = TotalTradeFeeForTest::new("MYCOIN1", "0.31081038", "0.31081038");
 
     let expected = TradePreimageResult::TakerPreimage(TakerPreimage {
         base_coin_fee,
@@ -2058,10 +2077,10 @@ fn test_trade_preimage_not_sufficient_balance() {
     assert!(!rc.0.is_success(), "trade_preimage success, but should fail: {}", rc.1);
     let available = MmNumber::from("7.77009773").to_decimal();
     // `required = volume + fee_to_send_taker_payment + dex_fee + fee_to_send_dex_fee`,
-    // where `volume = 7.77`, `fee_to_send_taker_payment = 0.00000393, fee_to_send_dex_fee = 0.00000422`, `dex_fee = 0.01`.
-    // Please note `dex_fee = 7.77 / 777` with dex_fee = 0.01
-    // required = 7.77 + 0.01 (dex_fee) + (0.00000393 + 0.00000422) = 7.78000815
-    let required = MmNumber::from("7.78000815");
+    // where `volume = 7.77`, `fee_to_send_taker_payment = 0.00000393, fee_to_send_dex_fee = 0.00000422`.
+    // With 2% fee rate: dex_fee = 7.77 * 0.02 = 0.1554
+    // required = 7.77 + 0.1554 (dex_fee) + (0.00000393 + 0.00000422) = 7.92540815
+    let required = MmNumber::from("7.92540815");
     expect_not_sufficient_balance(&rc.1, available, required.to_decimal(), Some(BigDecimal::from(0)));
 }
 
