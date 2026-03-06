@@ -188,7 +188,6 @@ mod tests {
     use crate::eth::tron::TronAddress;
     use common::cross_test;
     use mm2_number::bigdecimal::BigDecimal;
-    #[cfg(not(target_arch = "wasm32"))]
     use prost::Message;
 
     #[cfg(target_arch = "wasm32")]
@@ -223,9 +222,7 @@ mod tests {
         assert!(matches!(err, WithdrawError::InvalidFeePolicy(_)));
     });
 
-    #[cfg(not(target_arch = "wasm32"))]
-    #[test]
-    fn tron_signed_protobuf_bytes_are_not_valid_rlp() {
+    cross_test!(tron_signed_protobuf_bytes_are_not_valid_rlp, {
         // Build a deterministic TRON transaction
         let block_data = TaposBlockData {
             number: 54_242_114,
@@ -251,7 +248,7 @@ mod tests {
         // These protobuf bytes must NOT be decodable as EVM RLP
         let rlp_result = crate::eth::signed_eth_tx_from_bytes(&tx_bytes);
         assert!(rlp_result.is_err(), "TRON protobuf bytes must not decode as EVM RLP");
-    }
+    });
 
     cross_test!(trx_max_withdraw_deducts_fee_and_returns_consistent_details, {
         let from = TronAddress::from_hex(TEST_FROM_HEX).unwrap();

@@ -39,18 +39,35 @@ pub struct TronTxFeeDetails {
     pub total_fee: BigDecimal,
 }
 
-/// Snapshot of account resource usage/limits returned by TRON RPC.
+/// Subset of TRON's `AccountResourceMessage` (defined in `api.proto` of the
+/// [tronprotocol/protocol](https://github.com/tronprotocol/protocol/blob/master/api/api.proto)
+/// repo). The full message has 17 fields covering bandwidth, energy, storage,
+/// and Tron Power; we only deserialize the 6 we need for fee estimation.
+///
+/// Returned by the `/wallet/getaccountresource` HTTP endpoint as proto3 JSON.
+/// Proto3 JSON keeps the original proto field names as-is, which is why the
+/// casing is mixed (`freeNetUsed` vs `NetUsed` vs `EnergyUsed`).
+///
+/// All fields use `#[serde(default)]` because proto3 JSON omits zero-value
+/// fields. An empty `{}` response (unactivated account) deserializes to all
+/// zeros.
 ///
 /// Values are raw units:
 /// - bandwidth: bytes
 /// - energy: energy units
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
 pub struct TronAccountResources {
+    #[serde(default, rename = "freeNetUsed")]
     pub free_net_used: u64,
+    #[serde(default, rename = "freeNetLimit")]
     pub free_net_limit: u64,
+    #[serde(default, rename = "NetUsed")]
     pub net_used: u64,
+    #[serde(default, rename = "NetLimit")]
     pub net_limit: u64,
+    #[serde(default, rename = "EnergyUsed")]
     pub energy_used: u64,
+    #[serde(default, rename = "EnergyLimit")]
     pub energy_limit: u64,
 }
 

@@ -381,10 +381,10 @@ pub struct BlockRawData {
 }
 
 impl GetNowBlockResponse {
-    /// Validate the block number is non-negative and return the header with it as `u64`.
+    /// Validate block number and timestamp are sane, return the header with block number as `u64`.
     ///
-    /// A negative block number means the node returned bad data. Returns `BadResponse`
-    /// (retryable) to trigger rotation to another node.
+    /// A negative block number or non-positive timestamp means the node returned bad data.
+    /// Returns `BadResponse` (retryable) to trigger rotation to another node.
     fn validated_header(&self) -> Web3RpcResult<(&BlockHeader, u64)> {
         let number = self.block_header.raw_data.number;
         if number < 0 {
@@ -392,6 +392,12 @@ impl GetNowBlockResponse {
                 "TRON node returned invalid negative block number: {number}"
             ))
             .into());
+        }
+        let timestamp = self.block_header.raw_data.timestamp;
+        if timestamp <= 0 {
+            return Err(
+                Web3RpcError::BadResponse(format!("TRON node returned invalid block timestamp: {timestamp}")).into(),
+            );
         }
         Ok((&self.block_header, number as u64))
     }
@@ -569,43 +575,6 @@ struct GetAccountResourceRequest<'a> {
     visible: bool,
 }
 
-/// Intermediate serde struct for `/wallet/getaccountresource` response.
-///
-/// Maps the 6 proto fields we need from `AccountResourceMessage`. TRON's proto3 JSON
-/// serialization preserves the original proto field names verbatim, resulting in mixed
-/// casing (lowerCamelCase for `freeNet*`, PascalCase for `Net*`/`Energy*`).
-///
-/// All fields use `#[serde(default)]` because proto3 JSON omits zero-value fields.
-/// An empty `{}` response (unactivated account) deserializes to all zeros.
-#[derive(Debug, Deserialize)]
-struct AccountResourceResponse {
-    #[serde(default, rename = "freeNetUsed")]
-    free_net_used: u64,
-    #[serde(default, rename = "freeNetLimit")]
-    free_net_limit: u64,
-    #[serde(default, rename = "NetUsed")]
-    net_used: u64,
-    #[serde(default, rename = "NetLimit")]
-    net_limit: u64,
-    #[serde(default, rename = "EnergyUsed")]
-    energy_used: u64,
-    #[serde(default, rename = "EnergyLimit")]
-    energy_limit: u64,
-}
-
-impl From<AccountResourceResponse> for TronAccountResources {
-    fn from(r: AccountResourceResponse) -> Self {
-        TronAccountResources {
-            free_net_used: r.free_net_used,
-            free_net_limit: r.free_net_limit,
-            net_used: r.net_used,
-            net_limit: r.net_limit,
-            energy_used: r.energy_used,
-            energy_limit: r.energy_limit,
-        }
-    }
-}
-
 /// Request body for `/wallet/broadcasthex`.
 #[derive(Serialize)]
 struct BroadcastHexRequest<'a> {
@@ -731,16 +700,10 @@ impl TronHttpClient {
     pub async fn get_block_for_tapos(&self) -> Web3RpcResult<TaposBlockData> {
         let response = self.get_now_block().await?;
         let (header, number) = response.validated_header()?;
-        let timestamp = header.raw_data.timestamp;
-        if timestamp <= 0 {
-            return Err(
-                Web3RpcError::BadResponse(format!("TRON node returned invalid block timestamp: {timestamp}")).into(),
-            );
-        }
         Ok(TaposBlockData {
             number,
             block_id: response.block_id,
-            timestamp,
+            timestamp: header.raw_data.timestamp,
         })
     }
 
@@ -788,8 +751,7 @@ impl TronHttpClient {
     /// Empty `{}` responses (unactivated accounts) produce all-zero resources.
     pub async fn get_account_resource(&self, address: &TronAddress) -> Web3RpcResult<TronAccountResources> {
         let request = GetAccountResourceRequest { address, visible: true };
-        let response: AccountResourceResponse = self.post("/wallet/getaccountresource", &request).await?;
-        Ok(response.into())
+        self.post("/wallet/getaccountresource", &request).await
     }
 
     /// Broadcast a signed transaction (hex-encoded protobuf bytes).
@@ -1295,8 +1257,7 @@ mod tests {
             "TotalEnergyWeight": 12345678
         }"#;
 
-        let response: AccountResourceResponse = serde_json::from_str(json).unwrap();
-        let resources: TronAccountResources = response.into();
+        let resources: TronAccountResources = serde_json::from_str(json).unwrap();
         assert_eq!(resources.free_net_used, 100);
         assert_eq!(resources.free_net_limit, 600);
         assert_eq!(resources.net_used, 30);
@@ -1308,8 +1269,7 @@ mod tests {
     /// Empty `{}` (unactivated account / proto3 zero-omission) produces all-zero resources.
     #[test]
     fn parse_account_resource_empty_response() {
-        let response: AccountResourceResponse = serde_json::from_str("{}").unwrap();
-        let resources: TronAccountResources = response.into();
+        let resources: TronAccountResources = serde_json::from_str("{}").unwrap();
         assert_eq!(resources, TronAccountResources::default());
     }
 

@@ -930,10 +930,18 @@ fn test_trx_withdraw_max() {
     assert_eq!(tx_details.to, vec![TRON_WITHDRAW_ADDR_INDEX_0.to_owned()]);
     assert_eq!(tx_details.received_by_me, BigDecimal::default());
 
-    // Max withdraw: total_amount + fee = balance (fee comes from same coin)
+    // Max withdraw: spent_by_me ≈ balance (may leave up to ~0.001 TRX dust at varint boundaries).
+    // Fee can be zero when the account has enough free bandwidth.
     let fee = tron_total_fee(&tx_details);
-    assert!(fee > BigDecimal::from(0), "Max withdraw should have non-zero fee");
     assert!(tx_details.total_amount > BigDecimal::from(0));
+    let dust = &balance_before.balance - &tx_details.spent_by_me;
+    let max_dust = BigDecimal::from_str("0.001").unwrap(); // ~1000 SUN varint boundary tolerance
+    assert!(
+        dust >= BigDecimal::from(0) && dust <= max_dust,
+        "Max withdraw dust {} exceeds tolerance {}",
+        dust,
+        max_dust
+    );
     assert_eq!(tx_details.spent_by_me, &tx_details.total_amount + &fee);
     assert_eq!(
         tx_details.my_balance_change,
