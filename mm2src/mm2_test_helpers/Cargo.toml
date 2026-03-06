@@ -13,6 +13,7 @@ common = { path = "../common" }
 crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
+hex = "0.4.2"
 http = "0.2"
 lazy_static = "1.4"
 mm2_core = { path = "../mm2_core" }

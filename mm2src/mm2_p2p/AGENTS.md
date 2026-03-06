@@ -120,7 +120,7 @@ P2PContext::new(cmd_tx, keypair).store_to_mm_arc(&ctx);
 - **Mesh maintenance**: Relays maintain `mesh_n_low..mesh_n_high` connections (4-12 for relays, 2-6 for light)
 - **Dial cooldown**: Recently dialed peers are skipped for 5 minutes (`DIAL_RETRY_DELAY = 300s`)
 - **Message size**: Max ~1MB per message (`MAX_BUFFER_SIZE = 1024 * 1024 - 100`)
-- **Default netid**: 8762 (`DEFAULT_NETID`)
+- **Default netid**: 6133 (`DEFAULT_NETID`)
 - **Announce interval**: Peer address announcements every 600s
 
 ## Request-Response Pattern

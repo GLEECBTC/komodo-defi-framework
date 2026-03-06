@@ -135,8 +135,10 @@ macro_rules! try_ztx_s {
 }
 
 const DEX_FEE_OVK: OutgoingViewingKey = OutgoingViewingKey([7; 32]);
-const DEX_FEE_Z_ADDR: &str = "zs1rp6426e9r6jkq2nsanl66tkd34enewrmr0uvj0zelhkcwmsy0uvxz2fhm9eu9rl3ukxvgzy2v9f";
-const DEX_BURN_Z_ADDR: &str = "zs1ntx28kyurgvsc7rxgkdhasz8p6wzv63nqpcayvnh7c4r6cs4wfkz8ztkwazjzdsxkgaq6erscyl";
+const DEX_FEE_Z_ADDR: &str = "zs18egqw99pw5846jfrqntu4neup4hjjchx874j6krmeq88yh4adws9djmuplg5hfx9f0wdsscgr5j";
+/// Burn disabled - using same address as fee address
+const DEX_BURN_Z_ADDR: &str = "zs18egqw99pw5846jfrqntu4neup4hjjchx874j6krmeq88yh4adws9djmuplg5hfx9f0wdsscgr5j";
+
 cfg_native!(
     #[cfg(test)]
     const DOWNLOAD_URL: &str = "https://komodoplatform.com/downloads";
@@ -748,6 +750,21 @@ impl ZCoin {
             return Err(format!("invalid memo {memo:?}, expected {expected_memo:?}"));
         }
         Ok(true)
+    }
+}
+
+/// Methods used for DEX fee validation that can be mocked in tests
+/// to return legacy addresses for historical transaction fixtures.
+#[cfg_attr(test, mockable)]
+impl ZCoin {
+    /// Returns the DEX fee z-address for fee validation.
+    fn dex_fee_addr(&self) -> PaymentAddress {
+        self.z_fields.dex_fee_addr.clone()
+    }
+
+    /// Returns the DEX burn z-address for fee validation.
+    fn dex_burn_addr(&self) -> PaymentAddress {
+        self.z_fields.dex_burn_addr.clone()
     }
 }
 
@@ -1609,12 +1626,14 @@ impl SwapOps for ZCoin {
 
         let mut fee_output_valid = false;
         let mut burn_output_valid = false;
+        let dex_fee_addr = self.dex_fee_addr();
+        let dex_burn_addr = self.dex_burn_addr();
         for shielded_out in z_tx.shielded_outputs.iter() {
             if self
                 .validate_dex_fee_output(
                     shielded_out,
                     &DEX_FEE_OVK,
-                    &self.z_fields.dex_fee_addr,
+                    &dex_fee_addr,
                     block_height,
                     fee_amount_sat,
                     &expected_memo,
@@ -1632,7 +1651,7 @@ impl SwapOps for ZCoin {
                     .validate_dex_fee_output(
                         shielded_out,
                         &DEX_FEE_OVK,
-                        &self.z_fields.dex_burn_addr,
+                        &dex_burn_addr,
                         block_height,
                         burn_amount_sat,
                         &expected_memo,

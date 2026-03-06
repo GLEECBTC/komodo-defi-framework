@@ -962,7 +962,9 @@ impl MarketCoinOps for UtxoStandardCoin {
     }
 
     fn should_burn_directly(&self) -> bool {
-        &self.utxo_arc.conf.ticker == "KMD"
+        // &self.utxo_arc.conf.ticker == "KMD"
+        // Burn disabled - all fees go to DEX fee address
+        false
     }
 
     fn should_burn_dex_fee(&self) -> bool {

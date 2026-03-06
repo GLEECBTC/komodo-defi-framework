@@ -205,6 +205,7 @@ impl LightningCoin {
             .find(|chan| chan.user_channel_id == uuid.as_u128())
     }
 
+    #[allow(clippy::result_large_err)] // PaymentError is from external crate
     pub(crate) async fn pay_invoice(
         &self,
         invoice: Invoice,

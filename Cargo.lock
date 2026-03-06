@@ -4681,6 +4681,7 @@ dependencies = [
  "db_common",
  "futures 0.3.31",
  "gstuff",
+ "hex",
  "http 0.2.12",
  "kdf_walletconnect",
  "lazy_static",
