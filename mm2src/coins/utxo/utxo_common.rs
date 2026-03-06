@@ -4583,6 +4583,7 @@ where
 /// [`GetUtxoMapOps::get_mature_unspent_ordered_map`] implementation.
 /// Returns available mature and immature unspents in ascending order for every given `addresses`
 /// + `RecentlySpentOutPoints` MutexGuard for further interaction (e.g. to add new transaction to it).
+#[allow(clippy::result_large_err)]
 pub async fn get_mature_unspent_ordered_map<T>(
     coin: &T,
     addresses: Vec<Address>,

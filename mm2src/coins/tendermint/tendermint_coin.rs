@@ -1899,7 +1899,7 @@ impl TendermintCoin {
                     .await
             );
 
-            let timeout = expires_at.checked_sub(now_sec()).unwrap_or_default();
+            let timeout = expires_at.saturating_sub(now_sec());
             let (_tx_id, tx_raw) = try_tx_s!(
                 coin.common_send_raw_tx_bytes(
                     tx_payload.clone(),
@@ -4053,10 +4053,7 @@ impl SwapOps for TendermintCoin {
         let htlc_id = self.calculate_htlc_id(htlc.sender(), htlc.to(), &amount, maker_spends_payment_args.secret_hash);
 
         let claim_htlc_tx = try_tx_s!(self.gen_claim_htlc_tx(htlc_id, maker_spends_payment_args.secret));
-        let timeout = maker_spends_payment_args
-            .time_lock
-            .checked_sub(now_sec())
-            .unwrap_or_default();
+        let timeout = maker_spends_payment_args.time_lock.saturating_sub(now_sec());
         let coin = self.clone();
 
         let current_block = try_tx_s!(self.current_block().compat().await);
@@ -4108,10 +4105,7 @@ impl SwapOps for TendermintCoin {
 
         let htlc_id = self.calculate_htlc_id(htlc.sender(), htlc.to(), &amount, taker_spends_payment_args.secret_hash);
 
-        let timeout = taker_spends_payment_args
-            .time_lock
-            .checked_sub(now_sec())
-            .unwrap_or_default();
+        let timeout = taker_spends_payment_args.time_lock.saturating_sub(now_sec());
         let claim_htlc_tx = try_tx_s!(self.gen_claim_htlc_tx(htlc_id, taker_spends_payment_args.secret));
         let coin = self.clone();
 
