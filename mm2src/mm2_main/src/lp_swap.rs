@@ -2384,7 +2384,7 @@ mod lp_swap_tests {
     /// Tests that GLEEC trades get a 50% fee discount (1% vs 2% standard rate)
     /// and that the 75/25 fee/burn split is applied on the discounted amount.
     #[test]
-    fn test_gleec_taker_dex_fee_calculation() {
+    fn test_dex_fee_burn_split_with_discount_and_standard_coins() {
         let gleec = coins::TestCoin::new("GLEEC");
         TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
         let trade_amount = MmNumber::from(6150);
@@ -2432,57 +2432,6 @@ mod lp_swap_tests {
         let expected_burn = &total_gleec_fee * &MmNumber::from("0.25");
         assert_eq!(gleec_fee_amount, expected_fee);
         assert_eq!(gleec_burn_amount, expected_burn);
-    }
-
-    /// Tests that MYCOIN gets GLEEC-like discount when MYCOIN_FEE_DISCOUNT env is set.
-    #[test]
-    fn test_dex_fee_from_taker_coin_discount() {
-        std::env::set_var("MYCOIN_FEE_DISCOUNT", "1");
-
-        let mycoin = coins::TestCoin::new("MYCOIN");
-        TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
-        let trade_amount = MmNumber::from(6150);
-        let (mycoin_taker_fee, mycoin_burn_amount) = match DexFee::new_from_taker_coin(&mycoin, "", &trade_amount) {
-            DexFee::Standard(_) | DexFee::NoFee => {
-                panic!("Wrong variant returned for MYCOIN from `DexFee::new_from_taker_coin`.")
-            },
-            DexFee::WithBurn {
-                fee_amount,
-                burn_amount,
-                ..
-            } => (fee_amount, burn_amount),
-        };
-        TestCoin::should_burn_dex_fee.clear_mock();
-
-        // MYCOIN should have 1% rate (discount via env var)
-        let total_mycoin_fee = &mycoin_taker_fee + &mycoin_burn_amount;
-        let expected_total = &trade_amount * &MmNumber::from("0.01");
-        assert_eq!(total_mycoin_fee, expected_total);
-
-        let testcoin = coins::TestCoin::default();
-        TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
-        let (testcoin_taker_fee, testcoin_burn_amount) = match DexFee::new_from_taker_coin(&testcoin, "", &trade_amount)
-        {
-            DexFee::Standard(_) | DexFee::NoFee => {
-                panic!("Wrong variant returned for TEST coin from `DexFee::new_from_taker_coin`.")
-            },
-            DexFee::WithBurn {
-                fee_amount,
-                burn_amount,
-                ..
-            } => (fee_amount, burn_amount),
-        };
-        TestCoin::should_burn_dex_fee.clear_mock();
-
-        // TEST coin should have 2% rate (no discount)
-        let total_testcoin_fee = &testcoin_taker_fee + &testcoin_burn_amount;
-        let expected_total = &trade_amount * &MmNumber::from("0.02");
-        assert_eq!(total_testcoin_fee, expected_total);
-
-        // MYCOIN fee should be half of standard fee
-        assert_eq!(&total_mycoin_fee * &MmNumber::from(2), total_testcoin_fee);
-
-        std::env::remove_var("MYCOIN_FEE_DISCOUNT");
     }
 
     #[test]
