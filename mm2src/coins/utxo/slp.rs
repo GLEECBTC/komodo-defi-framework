@@ -10,7 +10,7 @@ use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::bch::BchCoin;
 use crate::utxo::bchd_grpc::{check_slp_transaction, validate_slp_utxos, ValidateSlpUtxosErr};
 use crate::utxo::rpc_clients::{UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcResult};
-use crate::utxo::utxo_common::{self, big_decimal_from_sat_unsigned, payment_script, UtxoTxBuilder};
+use crate::utxo::utxo_common::{self, big_decimal_from_sat_unsigned, payment_script, UtxoTxBuilder, DEFAULT_SWAP_VIN};
 use crate::utxo::{
     generate_and_send_tx, sat_from_big_decimal, ActualFeeRate, BroadcastTxErr, FeePolicy, GenerateTxError,
     RecentlySpentOutPointsGuard, UtxoCoinConf, UtxoCoinFields, UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps,
@@ -581,7 +581,7 @@ impl SlpToken {
 
         let other_pub = Public::from_slice(other_pub)?;
         let my_public_key = self.platform_coin.my_public_key().map_mm_err()?;
-        let redeem_script = payment_script(time_lock, secret_hash, my_public_key, &other_pub);
+        let redeem_script = payment_script(time_lock, secret_hash, &my_public_key, &other_pub);
 
         let slp_amount = match slp_tx.transaction {
             SlpTransaction::Send { token_id, amounts } => {
@@ -702,7 +702,7 @@ impl SlpToken {
             .map_mm_err()?;
 
         unsigned.lock_time = tx_locktime;
-        unsigned.inputs[0].sequence = input_sequence;
+        unsigned.inputs[DEFAULT_SWAP_VIN].sequence = input_sequence;
 
         let my_key_pair = self
             .platform_coin
@@ -712,7 +712,7 @@ impl SlpToken {
             .map_mm_err()?;
         let signed_p2sh_input = p2sh_spend(
             &unsigned,
-            0,
+            DEFAULT_SWAP_VIN,
             htlc_keypair,
             script_data,
             redeem_script,
@@ -1494,12 +1494,7 @@ impl SwapOps for SlpToken {
     }
 
     #[inline]
-    async fn extract_secret(
-        &self,
-        secret_hash: &[u8],
-        spend_tx: &[u8],
-        _watcher_reward: bool,
-    ) -> Result<[u8; 32], String> {
+    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<[u8; 32], String> {
         utxo_common::extract_secret(secret_hash, spend_tx)
     }
 
@@ -1516,7 +1511,7 @@ impl SwapOps for SlpToken {
     }
 
     fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> [u8; 33] {
-        utxo_common::derive_htlc_pubkey(self, swap_unique_data)
+        utxo_common::derive_htlc_pubkey(self.as_ref(), swap_unique_data)
     }
 
     #[inline]
@@ -2162,7 +2157,7 @@ mod slp_tests {
         let other_pub = Public::from_slice(&other_pub).unwrap();
 
         let my_public_key = bch.my_public_key().unwrap();
-        let htlc_script = payment_script(1624547837, &secret_hash, &other_pub, my_public_key);
+        let htlc_script = payment_script(1624547837, &secret_hash, &other_pub, &my_public_key);
 
         let slp_send_op_return_out = slp_send_output(&token_id, &[1000]);
 
@@ -2256,10 +2251,10 @@ mod slp_tests {
 
         // standard BCH validation should pass as the output itself is correct
         block_on(utxo_common::validate_payment(
-            bch.clone(),
+            bch,
             &deserialize(payment_tx.as_slice()).unwrap(),
             SLP_SWAP_VOUT,
-            my_pub,
+            &my_pub,
             &other_pub,
             SwapTxTypeWithSecretHash::TakerOrMakerPayment {
                 maker_secret_hash: &secret_hash,

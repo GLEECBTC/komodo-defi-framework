@@ -538,6 +538,7 @@ impl ElectrumClient {
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-scripthash-listunspent
     /// It can return duplicates sometimes: https://github.com/artemii235/SuperNET/issues/269
     /// We should remove them to build valid transactions
+    #[allow(clippy::result_large_err)]
     pub fn scripthash_list_unspent(&self, hash: &str) -> RpcRes<Vec<ElectrumUnspent>> {
         let request_fut = Box::new(rpc_func!(self, "blockchain.scripthash.listunspent", hash).and_then(
             move |unspents: Vec<ElectrumUnspent>| {
@@ -763,6 +764,7 @@ impl ElectrumClient {
         Ok((merkle_branch, header, height))
     }
 
+    #[allow(clippy::result_large_err)]
     pub fn retrieve_headers_from(
         &self,
         server_address: &str,
@@ -1105,6 +1107,7 @@ impl UtxoRpcClientOps for ElectrumClient {
         Box::new(fut.boxed().compat())
     }
 
+    #[allow(clippy::result_large_err)]
     fn get_median_time_past(&self, starting_block: u64, count: NonZeroU64) -> UtxoRpcFut<u32> {
         let from = if starting_block <= count.get() {
             0

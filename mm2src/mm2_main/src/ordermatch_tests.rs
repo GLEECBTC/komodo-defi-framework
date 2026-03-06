@@ -2455,6 +2455,22 @@ fn remove_order(ctx: &MmArc, uuid: Uuid) {
     };
 }
 
+/// Remove multiple orders in a single batch to avoid multiple synchronous flushes.
+/// This is faster than calling remove_order() in a loop.
+fn remove_orders_batch(ctx: &MmArc, uuids: impl IntoIterator<Item = Uuid>) {
+    let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
+    let ops: Vec<_> = {
+        let mut orderbook = ordermatch_ctx.orderbook.lock();
+        uuids
+            .into_iter()
+            .filter_map(|uuid| orderbook.index_remove(uuid).map(|(_removed, op)| op))
+            .collect()
+    };
+    if !ops.is_empty() {
+        let _ = ordermatch_ctx.trie_ops_tx.unbounded_send(ops);
+    }
+}
+
 /// Wait until the background trie worker has applied all pending ops.
 fn flush_trie(ctx: &MmArc) {
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
@@ -2557,12 +2573,11 @@ fn test_process_sync_pubkey_orderbook_state_after_orders_removed() {
 
     let mut old_mem_db = clone_orderbook_memory_db(&ctx);
 
-    // pick 10 orders at random and remove them
+    // pick 10 orders at random and remove them in a single batch
+    // (batching avoids 10 synchronous flushes which can exceed the 3s history timeout on slow CI)
     let mut rng = thread_rng();
-    let to_remove = orders.choose_multiple(&mut rng, 10);
-    for order in to_remove {
-        remove_order(&ctx, order.uuid);
-    }
+    let to_remove: Vec<Uuid> = orders.choose_multiple(&mut rng, 10).map(|o| o.uuid).collect();
+    remove_orders_batch(&ctx, to_remove);
     flush_trie(&ctx);
 
     let mut result = process_sync_pubkey_orderbook_state(ctx.clone(), pubkey.clone(), prev_pairs_state)

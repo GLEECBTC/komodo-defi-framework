@@ -1,4 +1,5 @@
-use crate::docker_tests::docker_tests_common::{fund_privkey_utxo, random_secp256k1_secret};
+use crate::docker_tests::helpers::env::random_secp256k1_secret;
+use crate::docker_tests::helpers::utxo::fund_privkey_utxo;
 
 use super::utils::*;
 
@@ -6,7 +7,7 @@ use coins::siacoin::{ApiClientHelpers, SiaTransactionTypes};
 use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::{start_swaps, wait_for_swap_finished_or_err};
 use serde::Deserialize;
-use serde_json::Value as Json;
+use serde_json::{json, Value as Json};
 
 use std::str::FromStr;
 

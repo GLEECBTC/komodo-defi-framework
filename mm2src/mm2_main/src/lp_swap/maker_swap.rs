@@ -1576,7 +1576,6 @@ impl MakerSwap {
                 search_from_block: taker_coin_start_block,
                 swap_contract_address: &taker_coin_swap_contract_address,
                 swap_unique_data: &unique_data,
-                watcher_reward,
             };
             // check if the taker payment is not spent yet
             match selfi.taker_coin.search_for_swap_tx_spend_other(search_input).await {
@@ -1671,7 +1670,6 @@ impl MakerSwap {
             search_from_block: maker_coin_start_block,
             swap_contract_address: &maker_coin_swap_contract_address,
             swap_unique_data: &unique_data,
-            watcher_reward,
         };
         // validate that maker payment is not spent
         match self.maker_coin.search_for_swap_tx_spend_my(search_input).await {

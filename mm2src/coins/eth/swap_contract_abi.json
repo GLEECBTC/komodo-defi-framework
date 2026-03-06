@@ -1,415 +1,224 @@
 [
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": false,
-				"internalType": "bytes32",
-				"name": "id",
-				"type": "bytes32"
-			}
-		],
-		"name": "PaymentSent",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": false,
-				"internalType": "bytes32",
-				"name": "id",
-				"type": "bytes32"
-			},
-			{
-				"indexed": false,
-				"internalType": "bytes32",
-				"name": "secret",
-				"type": "bytes32"
-			}
-		],
-		"name": "ReceiverSpent",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": false,
-				"internalType": "bytes32",
-				"name": "id",
-				"type": "bytes32"
-			}
-		],
-		"name": "SenderRefunded",
-		"type": "event"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "bytes32",
-				"name": "_id",
-				"type": "bytes32"
-			},
-			{
-				"internalType": "uint256",
-				"name": "_amount",
-				"type": "uint256"
-			},
-			{
-				"internalType": "address",
-				"name": "_tokenAddress",
-				"type": "address"
-			},
-			{
-				"internalType": "address",
-				"name": "_receiver",
-				"type": "address"
-			},
-			{
-				"internalType": "bytes20",
-				"name": "_secretHash",
-				"type": "bytes20"
-			},
-			{
-				"internalType": "uint64",
-				"name": "_lockTime",
-				"type": "uint64"
-			}
-		],
-		"name": "erc20Payment",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "bytes32",
-				"name": "_id",
-				"type": "bytes32"
-			},
-			{
-				"internalType": "uint256",
-				"name": "_amount",
-				"type": "uint256"
-			},
-			{
-				"internalType": "address",
-				"name": "_tokenAddress",
-				"type": "address"
-			},
-			{
-				"internalType": "address",
-				"name": "_receiver",
-				"type": "address"
-			},
-			{
-				"internalType": "bytes20",
-				"name": "_secretHash",
-				"type": "bytes20"
-			},
-			{
-				"internalType": "uint64",
-				"name": "_lockTime",
-				"type": "uint64"
-			},
-			{
-				"internalType": "enum EtomicSwap.RewardTargetOnSpend",
-				"name": "_rewardTarget",
-				"type": "uint8"
-			},
-			{
-				"internalType": "bool",
-				"name": "_sendsContractRewardOnSpend",
-				"type": "bool"
-			},
-			{
-				"internalType": "uint256",
-				"name": "_rewardAmount",
-				"type": "uint256"
-			}
-		],
-		"name": "erc20PaymentReward",
-		"outputs": [],
-		"stateMutability": "payable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "bytes32",
-				"name": "_id",
-				"type": "bytes32"
-			},
-			{
-				"internalType": "address",
-				"name": "_receiver",
-				"type": "address"
-			},
-			{
-				"internalType": "bytes20",
-				"name": "_secretHash",
-				"type": "bytes20"
-			},
-			{
-				"internalType": "uint64",
-				"name": "_lockTime",
-				"type": "uint64"
-			}
-		],
-		"name": "ethPayment",
-		"outputs": [],
-		"stateMutability": "payable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "bytes32",
-				"name": "_id",
-				"type": "bytes32"
-			},
-			{
-				"internalType": "address",
-				"name": "_receiver",
-				"type": "address"
-			},
-			{
-				"internalType": "bytes20",
-				"name": "_secretHash",
-				"type": "bytes20"
-			},
-			{
-				"internalType": "uint64",
-				"name": "_lockTime",
-				"type": "uint64"
-			},
-			{
-				"internalType": "enum EtomicSwap.RewardTargetOnSpend",
-				"name": "_rewardTarget",
-				"type": "uint8"
-			},
-			{
-				"internalType": "bool",
-				"name": "_sendsContractRewardOnSpend",
-				"type": "bool"
-			},
-			{
-				"internalType": "uint256",
-				"name": "_rewardAmount",
-				"type": "uint256"
-			}
-		],
-		"name": "ethPaymentReward",
-		"outputs": [],
-		"stateMutability": "payable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "bytes32",
-				"name": "_id",
-				"type": "bytes32"
-			},
-			{
-				"internalType": "uint256",
-				"name": "_amount",
-				"type": "uint256"
-			},
-			{
-				"internalType": "bytes32",
-				"name": "_secret",
-				"type": "bytes32"
-			},
-			{
-				"internalType": "address",
-				"name": "_tokenAddress",
-				"type": "address"
-			},
-			{
-				"internalType": "address",
-				"name": "_sender",
-				"type": "address"
-			}
-		],
-		"name": "receiverSpend",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "bytes32",
-				"name": "_id",
-				"type": "bytes32"
-			},
-			{
-				"internalType": "uint256",
-				"name": "_amount",
-				"type": "uint256"
-			},
-			{
-				"internalType": "bytes32",
-				"name": "_secret",
-				"type": "bytes32"
-			},
-			{
-				"internalType": "address",
-				"name": "_tokenAddress",
-				"type": "address"
-			},
-			{
-				"internalType": "address",
-				"name": "_sender",
-				"type": "address"
-			},
-			{
-				"internalType": "address",
-				"name": "_receiver",
-				"type": "address"
-			},
-			{
-				"internalType": "enum EtomicSwap.RewardTargetOnSpend",
-				"name": "_rewardTarget",
-				"type": "uint8"
-			},
-			{
-				"internalType": "bool",
-				"name": "_sendsContractRewardOnSpend",
-				"type": "bool"
-			},
-			{
-				"internalType": "uint256",
-				"name": "_rewardAmount",
-				"type": "uint256"
-			}
-		],
-		"name": "receiverSpendReward",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "bytes32",
-				"name": "_id",
-				"type": "bytes32"
-			},
-			{
-				"internalType": "uint256",
-				"name": "_amount",
-				"type": "uint256"
-			},
-			{
-				"internalType": "bytes20",
-				"name": "_paymentHash",
-				"type": "bytes20"
-			},
-			{
-				"internalType": "address",
-				"name": "_tokenAddress",
-				"type": "address"
-			},
-			{
-				"internalType": "address",
-				"name": "_receiver",
-				"type": "address"
-			}
-		],
-		"name": "senderRefund",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "bytes32",
-				"name": "_id",
-				"type": "bytes32"
-			},
-			{
-				"internalType": "uint256",
-				"name": "_amount",
-				"type": "uint256"
-			},
-			{
-				"internalType": "bytes20",
-				"name": "_paymentHash",
-				"type": "bytes20"
-			},
-			{
-				"internalType": "address",
-				"name": "_tokenAddress",
-				"type": "address"
-			},
-			{
-				"internalType": "address",
-				"name": "_sender",
-				"type": "address"
-			},
-			{
-				"internalType": "address",
-				"name": "_receiver",
-				"type": "address"
-			},
-			{
-				"internalType": "enum EtomicSwap.RewardTargetOnSpend",
-				"name": "_rewardTarget",
-				"type": "uint8"
-			},
-			{
-				"internalType": "bool",
-				"name": "_sendsReward",
-				"type": "bool"
-			},
-			{
-				"internalType": "uint256",
-				"name": "_rewardAmount",
-				"type": "uint256"
-			}
-		],
-		"name": "senderRefundReward",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"stateMutability": "nonpayable",
-		"type": "constructor"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "bytes32",
-				"name": "",
-				"type": "bytes32"
-			}
-		],
-		"name": "payments",
-		"outputs": [
-			{
-				"internalType": "bytes20",
-				"name": "paymentHash",
-				"type": "bytes20"
-			},
-			{
-				"internalType": "uint64",
-				"name": "lockTime",
-				"type": "uint64"
-			},
-			{
-				"internalType": "enum EtomicSwap.PaymentState",
-				"name": "state",
-				"type": "uint8"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	}
+  {
+    "inputs": [],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      }
+    ],
+    "name": "SafeERC20FailedOperation",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "id",
+        "type": "bytes32"
+      }
+    ],
+    "name": "PaymentSent",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "id",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "secret",
+        "type": "bytes32"
+      }
+    ],
+    "name": "ReceiverSpent",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "id",
+        "type": "bytes32"
+      }
+    ],
+    "name": "SenderRefunded",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "id",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "tokenAddress",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "receiver",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes20",
+        "name": "secretHash",
+        "type": "bytes20"
+      },
+      {
+        "internalType": "uint64",
+        "name": "lockTime",
+        "type": "uint64"
+      }
+    ],
+    "name": "erc20Payment",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "id",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "receiver",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes20",
+        "name": "secretHash",
+        "type": "bytes20"
+      },
+      {
+        "internalType": "uint64",
+        "name": "lockTime",
+        "type": "uint64"
+      }
+    ],
+    "name": "ethPayment",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "name": "payments",
+    "outputs": [
+      {
+        "internalType": "bytes20",
+        "name": "paymentHash",
+        "type": "bytes20"
+      },
+      {
+        "internalType": "uint64",
+        "name": "lockTime",
+        "type": "uint64"
+      },
+      {
+        "internalType": "enum EtomicSwap.PaymentState",
+        "name": "state",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "id",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "secret",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "tokenAddress",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "sender",
+        "type": "address"
+      }
+    ],
+    "name": "receiverSpend",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "id",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes20",
+        "name": "secretHash",
+        "type": "bytes20"
+      },
+      {
+        "internalType": "address",
+        "name": "tokenAddress",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "receiver",
+        "type": "address"
+      }
+    ],
+    "name": "senderRefund",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
 ]

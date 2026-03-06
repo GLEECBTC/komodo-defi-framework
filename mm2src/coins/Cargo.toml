@@ -5,14 +5,23 @@ edition = "2018"
 
 [features]
 zhtlc-native-tests = []
-default = []
+tron-network-tests = []
+default = ["utxo-walletconnect"]
 run-docker-tests = []
 for-tests = ["dep:mocktopus"]
 new-db-arch = ["mm2_core/new-db-arch"]
 
+# ETH/ERC20 watcher support - disabled by default because ETH watchers are
+# unstable and not completed yet
+enable-eth-watchers = []
+
 # Temporary feature for implementing IBC wrap/unwrap mechanism and will be removed
 # once we consider it as stable.
 ibc-routing-for-swaps = []
+
+# UTXO WalletConnect support - requires bitcoin crate and chain/ext-bitcoin for PSBT signing
+# TODO: Remove this feature once secp256k1 versions are unified (see mm2_bitcoin/chain/Cargo.toml).
+utxo-walletconnect = ["bitcoin", "chain/ext-bitcoin"]
 
 [lib]
 path = "lp_coins.rs"
@@ -23,6 +32,7 @@ async-std = { workspace = true, features = ["unstable"] }
 async-trait.workspace = true
 base64.workspace = true
 bip32.workspace = true
+bitcoin = { workspace = true, optional = true }
 bitcoin_hashes.workspace = true
 bitcrypto = { path = "../mm2_bitcoin/crypto" }
 blake2b_simd = { workspace = true }
@@ -30,7 +40,7 @@ bs58.workspace = true
 byteorder.workspace = true
 bytes.workspace = true
 cfg-if.workspace = true
-chain = { path = "../mm2_bitcoin/chain" }
+chain = { path = "../mm2_bitcoin/chain", default-features = false }
 chrono = { workspace = true, "features" = ["serde"] }
 common = { path = "../common" }
 compatible-time.workspace = true
@@ -68,11 +78,11 @@ mm2_event_stream = { path = "../mm2_event_stream" }
 mm2_io = { path = "../mm2_io" }
 mm2_metrics = { path = "../mm2_metrics" }
 mm2_net = { path = "../mm2_net" }
-mm2_number = { path = "../mm2_number"}
+mm2_number = { path = "../mm2_number" }
 mm2_p2p = { path = "../mm2_p2p", default-features = false }
 mm2_rpc = { path = "../mm2_rpc" }
 mm2_state_machine = { path = "../mm2_state_machine" }
-mocktopus = { workspace =  true, optional = true }
+mocktopus = { workspace = true, optional = true }
 num-traits.workspace = true
 parking_lot = { workspace = true }
 primitives = { path = "../mm2_bitcoin/primitives" }
@@ -102,6 +112,9 @@ sha3.workspace = true
 utxo_signer = { path = "utxo_signer" }
 # using the same version as cosmrs
 tendermint-rpc.workspace = true
+tokio-tungstenite-wasm = { workspace = true, features = [
+	"rustls-tls-native-roots",
+] }
 thiserror.workspace = true
 url.workspace = true
 uuid.workspace = true
@@ -135,18 +148,43 @@ blake2b_simd.workspace = true
 ff.workspace = true
 futures-util.workspace = true
 jubjub.workspace = true
+# TODO: Removing this causes `wasm-pack` to fail when starting a web session.
+# Consider PR to futures-ticker to add wasm-bindgen feature, or check if our libp2p fork
+# (KomodoPlatform/rust-libp2p k-0.52.12) can be updated - upstream libp2p now uses web-time.
+#
+# Why needed: Forces `wasm-bindgen` feature on transitive `instant` dep.
+# - futures-ticker: Uses `#[cfg(target_family = "wasm")] use instant::Instant;` without features
+# - libp2p-core (our fork): Also depends on instant
+# Without wasm-bindgen: `instant` declares `extern "C" { fn now() -> f64; }` which generates
+# `(import "env" "now" ...)` in WASM. wasm-bindgen's JS glue handles `wbg` imports but passes
+# `env` imports through. In browser ESM, this becomes `import { now } from "env"` - a bare
+# specifier that browsers reject: "TypeError: The specifier 'env' was a bare specifier..."
+# With wasm-bindgen: `instant` uses js-sys `performance.now()` which works in browsers.
+instant = { version = "0.1.12", features = ["wasm-bindgen"] }
 js-sys.workspace = true
 mm2_db = { path = "../mm2_db" }
 mm2_metamask = { path = "../mm2_metamask" }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
 time = { workspace = true, features = ["wasm-bindgen"] }
 timed-map = { workspace = true, features = ["rustc-hash", "wasm"] }
-tonic = { workspace = true, default-features = false, features = ["prost", "codegen", "gzip"] }
+tonic = { workspace = true, default-features = false, features = [
+	"prost",
+	"codegen",
+	"gzip",
+] }
 tower-service.workspace = true
 wasm-bindgen.workspace = true
 wasm-bindgen-futures.workspace = true
 wasm-bindgen-test.workspace = true
-web-sys = { workspace = true, features = ["console", "Headers", "Request", "RequestInit", "RequestMode", "Response", "Window"] }
+web-sys = { workspace = true, features = [
+	"console",
+	"Headers",
+	"Request",
+	"RequestInit",
+	"RequestMode",
+	"Response",
+	"Window",
+] }
 zcash_proofs = { workspace = true, features = ["local-prover"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -163,7 +201,13 @@ secp256k1v24.workspace = true
 timed-map = { workspace = true, features = ["rustc-hash"] }
 tokio.workspace = true
 tokio-rustls.workspace = true
-tonic = { workspace = true, features = ["codegen", "prost", "gzip", "tls", "tls-webpki-roots"] }
+tonic = { workspace = true, features = [
+	"codegen",
+	"prost",
+	"gzip",
+	"tls",
+	"tls-webpki-roots",
+] }
 zcash_client_sqlite.workspace = true
 zcash_proofs = { workspace = true, features = ["local-prover", "multicore"] }
 

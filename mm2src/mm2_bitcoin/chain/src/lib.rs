@@ -1,5 +1,5 @@
-#[cfg(not(target_arch = "wasm32"))]
-extern crate bitcoin as ext_bitcoin;
+#[cfg(feature = "ext-bitcoin")]
+extern crate bitcoin;
 extern crate bitcrypto as crypto;
 extern crate primitives;
 extern crate rustc_hex as hex;
@@ -14,6 +14,8 @@ mod block_header;
 mod merkle_root;
 mod raw_block;
 pub use raw_block::{RawBlockHeader, RawHeaderError};
+#[cfg(feature = "ext-bitcoin")]
+pub mod ext_bitcoin;
 mod transaction;
 
 /// `IndexedBlock` extension

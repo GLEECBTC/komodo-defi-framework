@@ -402,7 +402,9 @@ pub struct TradePreimageResponse {
 }
 
 impl TradePreimageResponse {
-    pub fn sort_total_fees(&mut self) { self.result.sort_total_fees() }
+    pub fn sort_total_fees(&mut self) {
+        self.result.sort_total_fees()
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -718,6 +720,15 @@ pub enum InitEthWithTokensStatus {
     Error(Json),
     InProgress(Json),
     UserActionRequired(Json),
+}
+
+/// Error type for non-panicking task enable helpers.
+#[derive(Debug)]
+pub enum TaskEnableError {
+    /// Task timed out waiting for completion.
+    Timeout { ticker: String, timeout_sec: u64 },
+    /// RPC returned an error status.
+    RpcError(Json),
 }
 
 #[derive(Debug, Deserialize)]
@@ -1235,6 +1246,20 @@ pub struct TokenInfoResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreateConnectionResponse {
+    pub url: String,
+    pub pairing_topic: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GetSessionResponse {
+    pub session: Option<kdf_walletconnect::session::SessionRpcInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SpentUtxo {
     pub txid: String,
     pub vout: u32,

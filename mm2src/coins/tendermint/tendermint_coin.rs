@@ -1899,7 +1899,7 @@ impl TendermintCoin {
                     .await
             );
 
-            let timeout = expires_at.checked_sub(now_sec()).unwrap_or_default();
+            let timeout = expires_at.saturating_sub(now_sec());
             let (_tx_id, tx_raw) = try_tx_s!(
                 coin.common_send_raw_tx_bytes(
                     tx_payload.clone(),
@@ -4053,10 +4053,7 @@ impl SwapOps for TendermintCoin {
         let htlc_id = self.calculate_htlc_id(htlc.sender(), htlc.to(), &amount, maker_spends_payment_args.secret_hash);
 
         let claim_htlc_tx = try_tx_s!(self.gen_claim_htlc_tx(htlc_id, maker_spends_payment_args.secret));
-        let timeout = maker_spends_payment_args
-            .time_lock
-            .checked_sub(now_sec())
-            .unwrap_or_default();
+        let timeout = maker_spends_payment_args.time_lock.saturating_sub(now_sec());
         let coin = self.clone();
 
         let current_block = try_tx_s!(self.current_block().compat().await);
@@ -4108,10 +4105,7 @@ impl SwapOps for TendermintCoin {
 
         let htlc_id = self.calculate_htlc_id(htlc.sender(), htlc.to(), &amount, taker_spends_payment_args.secret_hash);
 
-        let timeout = taker_spends_payment_args
-            .time_lock
-            .checked_sub(now_sec())
-            .unwrap_or_default();
+        let timeout = taker_spends_payment_args.time_lock.saturating_sub(now_sec());
         let claim_htlc_tx = try_tx_s!(self.gen_claim_htlc_tx(htlc_id, taker_spends_payment_args.secret));
         let coin = self.clone();
 
@@ -4203,12 +4197,7 @@ impl SwapOps for TendermintCoin {
         self.search_for_swap_tx_spend(input).await.map_err(|e| e.to_string())
     }
 
-    async fn extract_secret(
-        &self,
-        secret_hash: &[u8],
-        spend_tx: &[u8],
-        watcher_reward: bool,
-    ) -> Result<[u8; 32], String> {
+    async fn extract_secret(&self, _secret_hash: &[u8], spend_tx: &[u8]) -> Result<[u8; 32], String> {
         let tx = try_s!(cosmrs::Tx::from_bytes(spend_tx));
         let msg = try_s!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
 
@@ -4399,6 +4388,7 @@ pub mod tests {
     use common::{block_on, wait_until_ms, DEX_FEE_ADDR_RAW_PUBKEY};
     use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse};
     use crypto::privkey::key_pair_from_seed;
+    use mm2_test_helpers::for_tests::{DEX_BURN_ADDR_RAW_PUBKEY_LEGACY, DEX_FEE_ADDR_RAW_PUBKEY_LEGACY};
     use mocktopus::mocking::{MockResult, Mockable};
     use std::{mem::discriminant, num::NonZeroUsize};
 
@@ -4740,8 +4730,14 @@ pub mod tests {
         assert_eq!(hex::encode_upper(hash.0), expected_spend_hash);
     }
 
+    // TODO: Update test fixtures with transactions to new DEX fee address once swaps exist.
+    // This test uses historical tx fixtures sent to the OLD dex fee address.
+    // We mock dex_pubkey() to return the legacy pubkey for address derivation.
     #[test]
     fn validate_taker_fee_test() {
+        // Mock dex_pubkey to return legacy pubkey for historical tx fixtures
+        <TendermintCoin as SwapOps>::dex_pubkey
+            .mock_safe(|_| MockResult::Return(DEX_FEE_ADDR_RAW_PUBKEY_LEGACY.as_slice()));
         let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
 
         let protocol_conf = get_iris_protocol();
@@ -4931,11 +4927,20 @@ pub mod tests {
         )
         .unwrap();
         TendermintCoin::request_tx.clear_mock();
+        <TendermintCoin as SwapOps>::dex_pubkey.clear_mock();
     }
 
+    // This test uses historical tx fixtures sent to the OLD dex fee/burn addresses.
+    // Mock dex_pubkey and burn_pubkey to return legacy pubkeys for historical tx fixture validation.
     #[test]
     fn validate_taker_fee_with_burn_test() {
         const NUCLEUS_TEST_SEED: &str = "nucleus test seed";
+
+        // Mock dex_pubkey and burn_pubkey to return legacy pubkeys for historical tx fixtures
+        <TendermintCoin as SwapOps>::dex_pubkey
+            .mock_safe(|_| MockResult::Return(DEX_FEE_ADDR_RAW_PUBKEY_LEGACY.as_slice()));
+        <TendermintCoin as SwapOps>::burn_pubkey
+            .mock_safe(|_| MockResult::Return(DEX_BURN_ADDR_RAW_PUBKEY_LEGACY.as_slice()));
 
         let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
         let conf = TendermintConf {
@@ -4994,6 +4999,11 @@ pub mod tests {
             .compat(),
         )
         .unwrap();
+
+        // Clean up mocks
+        TendermintCoin::request_tx.clear_mock();
+        <TendermintCoin as SwapOps>::dex_pubkey.clear_mock();
+        <TendermintCoin as SwapOps>::burn_pubkey.clear_mock();
     }
 
     #[test]
@@ -5141,7 +5151,6 @@ pub mod tests {
             search_from_block: 0,
             swap_contract_address: &None,
             swap_unique_data: &[],
-            watcher_reward: false,
         };
 
         let spend_tx = match block_on(coin.search_for_swap_tx_spend_my(input)).unwrap().unwrap() {
@@ -5217,7 +5226,6 @@ pub mod tests {
             search_from_block: 0,
             swap_contract_address: &None,
             swap_unique_data: &[],
-            watcher_reward: false,
         };
 
         match block_on(coin.search_for_swap_tx_spend_my(input)).unwrap().unwrap() {

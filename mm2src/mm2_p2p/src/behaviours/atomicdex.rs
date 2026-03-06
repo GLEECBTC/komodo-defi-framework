@@ -35,11 +35,15 @@ use super::ping::AdexPing;
 use super::request_response::{
     build_request_response_behaviour, PeerRequest, PeerResponse, RequestResponseBehaviour, RequestResponseSender,
 };
+#[cfg(feature = "application")]
 use crate::application::request_response::network_info::NetworkInfoRequest;
+#[cfg(feature = "application")]
 use crate::application::request_response::P2PRequest;
 use crate::relay_address::{RelayAddress, RelayAddressError};
 use crate::swarm_runtime::SwarmRuntime;
-use crate::{decode_message, encode_message, NetworkInfo, NetworkPorts, RequestResponseBehaviourEvent};
+#[cfg(feature = "application")]
+use crate::{decode_message, encode_message};
+use crate::{NetworkInfo, NetworkPorts, RequestResponseBehaviourEvent};
 
 pub use libp2p::gossipsub::{Behaviour as Gossipsub, IdentTopic, MessageAuthenticity, MessageId, Topic, TopicHash};
 pub use libp2p::gossipsub::{
@@ -57,7 +61,7 @@ const CONNECTED_RELAYS_CHECK_INTERVAL: Duration = Duration::from_secs(30);
 const ANNOUNCE_INTERVAL: Duration = Duration::from_secs(600);
 const ANNOUNCE_INITIAL_DELAY: Duration = Duration::from_secs(60);
 const CHANNEL_BUF_SIZE: usize = 1024 * 8;
-const DEFAULT_NETID: u16 = 8762;
+const DEFAULT_NETID: u16 = 6133;
 
 /// Used in time validation logic for each peer which runs immediately  after the
 /// `ConnectionEstablished` event.
@@ -75,7 +79,8 @@ lazy_static! {
 }
 
 pub const DEPRECATED_NETID_LIST: &[u16] = &[
-    7777, // TODO: keep it inaccessible until Q2 of 2024.
+    7777, // Deprecated since netid migration to 8762
+    8762, // Deprecated since netid migration to 6133
 ];
 
 /// The structure is the same as `PeerResponse`,
@@ -242,6 +247,7 @@ pub async fn get_relay_mesh(mut cmd_tx: AdexCmdTx) -> Vec<String> {
     rx.await.expect("Tx should be present")
 }
 
+#[cfg(feature = "application")]
 async fn validate_peer_time(peer: PeerId, mut response_tx: Sender<PeerId>, rp_sender: RequestResponseSender) {
     let request = P2PRequest::NetworkInfo(NetworkInfoRequest::GetPeerUtcTimestamp);
     let encoded_request = encode_message(&request)
@@ -824,7 +830,9 @@ fn start_gossipsub(
     let mut announce_interval = Ticker::new_with_next(ANNOUNCE_INTERVAL, ANNOUNCE_INITIAL_DELAY);
     let mut listening = false;
 
-    let (timestamp_tx, mut timestamp_rx) = futures::channel::mpsc::channel(mesh_n_high);
+    #[cfg(feature = "application")]
+    let (timestamp_tx, mut timestamp_rx) = futures::channel::mpsc::channel::<PeerId>(mesh_n_high);
+
     let polling_fut = poll_fn(move |cx: &mut Context| {
         loop {
             match swarm.behaviour_mut().cmd_rx.poll_next_unpin(cx) {
@@ -834,6 +842,7 @@ fn start_gossipsub(
             }
         }
 
+        #[cfg(feature = "application")]
         while let Poll::Ready(Some(peer_id)) = timestamp_rx.poll_next_unpin(cx) {
             if swarm.disconnect_peer_id(peer_id).is_err() {
                 error!("Disconnection from `{peer_id}` failed unexpectedly, which should never happen.");
@@ -846,6 +855,7 @@ fn start_gossipsub(
                 Poll::Ready(Some(event)) => {
                     debug!("Swarm event {:?}", event);
 
+                    #[cfg(feature = "application")]
                     if let SwarmEvent::ConnectionEstablished { peer_id, .. } = &event {
                         info!("Validating time data for peer `{peer_id}`.");
                         let future = validate_peer_time(

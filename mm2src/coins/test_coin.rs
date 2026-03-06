@@ -155,7 +155,9 @@ impl MarketCoinOps for TestCoin {
     }
 
     fn should_burn_directly(&self) -> bool {
-        &self.ticker == "KMD"
+        // &self.ticker == "KMD"
+        // Burn disabled - all fees go to DEX fee address
+        false
     }
 
     fn should_burn_dex_fee(&self) -> bool {
@@ -243,12 +245,7 @@ impl SwapOps for TestCoin {
         unimplemented!()
     }
 
-    async fn extract_secret(
-        &self,
-        secret_hash: &[u8],
-        spend_tx: &[u8],
-        watcher_reward: bool,
-    ) -> Result<[u8; 32], String> {
+    async fn extract_secret(&self, _secret_hash: &[u8], _spend_tx: &[u8]) -> Result<[u8; 32], String> {
         unimplemented!()
     }
 

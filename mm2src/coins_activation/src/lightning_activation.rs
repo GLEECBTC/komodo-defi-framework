@@ -33,7 +33,7 @@ use lightning_invoice::payment;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use parking_lot::Mutex as PaMutex;
-use secp256k1::Secp256k1;
+use secp256k1v24::Secp256k1;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{self as json, Value as Json};

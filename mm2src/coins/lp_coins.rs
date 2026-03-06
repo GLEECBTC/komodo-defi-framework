@@ -26,7 +26,10 @@
     clippy::swap_ptr_to_ref,
     clippy::forget_non_drop,
     clippy::doc_lazy_continuation,
-    clippy::needless_lifetimes // mocktopus requires explicit lifetimes
+    clippy::needless_lifetimes, // mocktopus requires explicit lifetimes
+    // TODO: Remove this allow when Rust 1.92 regression is fixed.
+    // See: https://github.com/rust-lang/rust/issues/147648
+    unused_assignments
 )]
 #![allow(uncommon_codepoints)]
 
@@ -81,7 +84,7 @@ use mocktopus::macros::*;
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};
 use rpc_command::tendermint::ibc::ChannelId;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{self as json, Value as Json};
 use std::array::TryFromSliceError;
 use std::cmp::Ordering;
@@ -187,7 +190,7 @@ macro_rules! try_tx_s {
 
 /// `TransactionErr:Plain` compatible `ERR` macro.
 macro_rules! TX_PLAIN_ERR {
-    ($format: expr, $($args: tt)+) => { Err(crate::TransactionErr::Plain((ERRL!($format, $($args)+)))) };
+    ($format: expr, $($args: tt)+) => { Err(crate::TransactionErr::Plain(ERRL!($format, $($args)+))) };
     ($format: expr) => { Err(crate::TransactionErr::Plain(ERRL!($format))) }
 }
 
@@ -231,7 +234,7 @@ pub mod eth;
 use eth::erc20::get_erc20_ticker_by_contract_address;
 use eth::eth_swap_v2::{PrepareTxDataError, ValidatePaymentV2Err};
 use eth::{
-    eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetailsErr, EthTxFeeDetails, GetEthAddressError,
+    eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetailsErr, GetEthAddressError,
     GetValidEthWithdrawAddError, SignedEthTx,
 };
 
@@ -248,7 +251,7 @@ pub mod lightning;
 pub mod my_tx_history_v2;
 
 pub mod qrc20;
-use qrc20::{qrc20_coin_with_policy, Qrc20ActivationParams, Qrc20Coin, Qrc20FeeDetails};
+use qrc20::{qrc20_coin_with_policy, Qrc20ActivationParams, Qrc20Coin};
 
 pub mod rpc_command;
 use rpc_command::{
@@ -262,8 +265,7 @@ use rpc_command::{
 pub mod tendermint;
 use tendermint::htlc::CustomTendermintMsgType;
 use tendermint::{
-    CosmosTransaction, TendermintCoin, TendermintFeeDetails, TendermintProtocolInfo, TendermintToken,
-    TendermintTokenProtocolInfo,
+    CosmosTransaction, TendermintCoin, TendermintProtocolInfo, TendermintToken, TendermintTokenProtocolInfo,
 };
 
 #[doc(hidden)]
@@ -275,8 +277,11 @@ pub use test_coin::TestCoin;
 
 pub mod tx_history_storage;
 
+pub mod tx_fee_details;
+pub use tx_fee_details::TxFeeDetails;
+
 pub mod siacoin;
-use siacoin::{SiaCoin, SiaCoinActivationRequest, SiaFeeDetails, SiaTransaction, SiaTransactionTypes};
+use siacoin::{SiaCoin, SiaCoinActivationRequest, SiaTransaction, SiaTransactionTypes};
 
 pub mod utxo;
 use utxo::bch::{bch_coin_with_policy, BchActivationRequest, BchCoin};
@@ -285,8 +290,8 @@ use utxo::qtum::{
     QtumStakingInfosDetails, ScriptHashTypeNotSupported,
 };
 use utxo::rpc_clients::UtxoRpcError;
+use utxo::slp::slp_addr_from_pubkey_str;
 use utxo::slp::SlpToken;
-use utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
 use utxo::utxo_common::{big_decimal_from_sat_unsigned, payment_script, WaitForOutputSpendErr};
 use utxo::utxo_standard::{utxo_standard_coin_with_policy, UtxoStandardCoin};
 use utxo::{swap_proto_v2_scripts, BlockchainNetwork, GenerateTxError, UtxoActivationParams, UtxoFeeDetails, UtxoTx};
@@ -301,7 +306,6 @@ use crate::hd_wallet::{AddrToString, DisplayAddress};
 use z_coin::{ZCoin, ZcoinProtocolInfo};
 
 pub mod solana;
-use crate::solana::SolanaFeeDetails;
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
 pub type TransactionResult = Result<TransactionEnum, TransactionErr>;
@@ -852,7 +856,6 @@ pub struct SearchForSwapTxSpendInput<'a> {
     pub search_from_block: u64,
     pub swap_contract_address: &'a Option<BytesJson>,
     pub swap_unique_data: &'a [u8],
-    pub watcher_reward: bool,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -1177,12 +1180,7 @@ pub trait SwapOps {
         input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String>;
 
-    async fn extract_secret(
-        &self,
-        secret_hash: &[u8],
-        spend_tx: &[u8],
-        watcher_reward: bool,
-    ) -> Result<[u8; 32], String>;
+    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<[u8; 32], String>;
 
     /// Whether the refund transaction can be sent now
     /// For example: there are no additional conditions for ETH, but for some UTXO coins we should wait for
@@ -2344,6 +2342,9 @@ pub struct WithdrawRequest {
     /// Currently, this flag is used by ETH/ERC20 coins activated with MetaMask/WalletConnect(Some wallets e.g Metamask) **only**.
     #[serde(default)]
     broadcast: bool,
+    /// Transaction expiration window in seconds. Currently only used by TRON (default 60s),
+    /// but can be expanded to any protocol that supports transaction expiry.
+    pub expiration_seconds: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2465,80 +2466,6 @@ pub struct SignatureResponse {
 #[derive(Serialize)]
 pub struct VerificationResponse {
     is_valid: bool,
-}
-
-/// Please note that no type should have the same structure as another type,
-/// because this enum has the `untagged` deserialization.
-#[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(tag = "type")]
-pub enum TxFeeDetails {
-    Utxo(UtxoFeeDetails),
-    Eth(EthTxFeeDetails),
-    Qrc20(Qrc20FeeDetails),
-    Slp(SlpFeeDetails),
-    Tendermint(TendermintFeeDetails),
-    Sia(SiaFeeDetails),
-    Solana(SolanaFeeDetails),
-}
-
-/// Deserialize the TxFeeDetails as an untagged enum.
-impl<'de> Deserialize<'de> for TxFeeDetails {
-    fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum TxFeeDetailsUnTagged {
-            Utxo(UtxoFeeDetails),
-            Eth(EthTxFeeDetails),
-            Qrc20(Qrc20FeeDetails),
-            Slp(SlpFeeDetails),
-            Tendermint(TendermintFeeDetails),
-            Sia(SiaFeeDetails),
-            Solana(SolanaFeeDetails),
-        }
-
-        match Deserialize::deserialize(deserializer)? {
-            TxFeeDetailsUnTagged::Utxo(f) => Ok(TxFeeDetails::Utxo(f)),
-            TxFeeDetailsUnTagged::Eth(f) => Ok(TxFeeDetails::Eth(f)),
-            TxFeeDetailsUnTagged::Qrc20(f) => Ok(TxFeeDetails::Qrc20(f)),
-            TxFeeDetailsUnTagged::Slp(f) => Ok(TxFeeDetails::Slp(f)),
-            TxFeeDetailsUnTagged::Tendermint(f) => Ok(TxFeeDetails::Tendermint(f)),
-            TxFeeDetailsUnTagged::Sia(f) => Ok(TxFeeDetails::Sia(f)),
-            TxFeeDetailsUnTagged::Solana(f) => Ok(TxFeeDetails::Solana(f)),
-        }
-    }
-}
-
-impl From<EthTxFeeDetails> for TxFeeDetails {
-    fn from(eth_details: EthTxFeeDetails) -> Self {
-        TxFeeDetails::Eth(eth_details)
-    }
-}
-
-impl From<UtxoFeeDetails> for TxFeeDetails {
-    fn from(utxo_details: UtxoFeeDetails) -> Self {
-        TxFeeDetails::Utxo(utxo_details)
-    }
-}
-
-impl From<Qrc20FeeDetails> for TxFeeDetails {
-    fn from(qrc20_details: Qrc20FeeDetails) -> Self {
-        TxFeeDetails::Qrc20(qrc20_details)
-    }
-}
-
-impl From<SiaFeeDetails> for TxFeeDetails {
-    fn from(sia_details: SiaFeeDetails) -> Self {
-        TxFeeDetails::Sia(sia_details)
-    }
-}
-
-impl From<TendermintFeeDetails> for TxFeeDetails {
-    fn from(tendermint_details: TendermintFeeDetails) -> Self {
-        TxFeeDetails::Tendermint(tendermint_details)
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -2873,8 +2800,8 @@ pub enum TradePreimageError {
     #[from_stringify("NumConversError", "UnexpectedDerivationMethod")]
     #[display(fmt = "Internal error: {_0}")]
     InternalError(String),
-    #[display(fmt = "Nft Protocol is not supported yet!")]
-    NftProtocolNotSupported,
+    #[display(fmt = "Protocol not supported: {_0}")]
+    ProtocolNotSupported(String),
     #[display(fmt = "No such coin {}", coin)]
     NoSuchCoin { coin: String },
 }
@@ -3366,8 +3293,8 @@ pub enum WithdrawError {
         my_address: String,
         token_owner: String,
     },
-    #[display(fmt = "Nft Protocol is not supported yet!")]
-    NftProtocolNotSupported,
+    #[display(fmt = "Protocol not supported: {_0}")]
+    ProtocolNotSupported(String),
     #[display(fmt = "Chain id must be set for typed transaction for coin {coin}")]
     NoChainIdSet {
         coin: String,
@@ -3412,7 +3339,7 @@ impl HttpStatusCode for WithdrawError {
             WithdrawError::HwError(_) => StatusCode::GONE,
             #[cfg(target_arch = "wasm32")]
             WithdrawError::BroadcastExpected(_) => StatusCode::BAD_REQUEST,
-            WithdrawError::InternalError(_) | WithdrawError::DbError(_) | WithdrawError::NftProtocolNotSupported => {
+            WithdrawError::InternalError(_) | WithdrawError::DbError(_) | WithdrawError::ProtocolNotSupported(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             },
             WithdrawError::Transport(_) => StatusCode::BAD_GATEWAY,
@@ -3511,7 +3438,7 @@ impl From<EthGasDetailsErr> for WithdrawError {
             },
             EthGasDetailsErr::Internal(e) => WithdrawError::InternalError(e),
             EthGasDetailsErr::Transport(e) => WithdrawError::Transport(e),
-            EthGasDetailsErr::NftProtocolNotSupported => WithdrawError::NftProtocolNotSupported,
+            EthGasDetailsErr::ProtocolNotSupported(e) => WithdrawError::ProtocolNotSupported(e),
             EthGasDetailsErr::NoSuchCoin { coin } => WithdrawError::NoSuchCoin { coin },
         }
     }
@@ -4181,22 +4108,22 @@ impl DexFee {
         DexFee::Standard(dex_fee)
     }
 
-    /// Returns dex fee discount if KMD is traded
+    /// Returns DEX fee rate. GLEEC trades get a 50% discount (1% vs 2% base rate).
     pub fn dex_fee_rate(base: &str, rel: &str) -> MmNumber {
         #[cfg(any(feature = "for-tests", test))]
         let fee_discount_tickers: &[&str] = match std::env::var("MYCOIN_FEE_DISCOUNT") {
-            Ok(_) => &["KMD", "MYCOIN"],
-            Err(_) => &["KMD"],
+            Ok(_) => &["GLEEC", "MYCOIN"],
+            Err(_) => &["GLEEC"],
         };
-
         #[cfg(not(any(feature = "for-tests", test)))]
-        let fee_discount_tickers: &[&str] = &["KMD"];
+        let fee_discount_tickers: &[&str] = &["GLEEC"];
 
         if fee_discount_tickers.contains(&base) || fee_discount_tickers.contains(&rel) {
-            // 1/777 - 10%
-            BigRational::new(9.into(), 7770.into()).into()
+            // 1% fee (50% discount)
+            BigRational::new(1.into(), 100.into()).into()
         } else {
-            BigRational::new(1.into(), 777.into()).into()
+            // 2% fee (standard rate)
+            BigRational::new(2.into(), 100.into()).into()
         }
     }
 
@@ -4655,6 +4582,10 @@ impl<T> PrivKeyPolicy<T> {
     fn is_trezor(&self) -> bool {
         matches!(self, PrivKeyPolicy::Trezor)
     }
+
+    fn is_internal(&self) -> bool {
+        matches!(self, PrivKeyPolicy::Iguana(_) | PrivKeyPolicy::HDWallet { .. })
+    }
 }
 
 /// 'CoinWithPrivKeyPolicy' trait is used to get the private key policy of a coin.
@@ -4893,7 +4824,7 @@ pub struct UtxoProtocolInfo {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", content = "protocol_data")]
 pub enum CoinProtocol {
-    // TODO: Nest this option deep into the innert struct fields when more fields are added to the UTXO protocol info.
+    // TODO: Nest this option deep into the inner struct fields when more fields are added to the UTXO protocol info.
     UTXO(Option<UtxoProtocolInfo>),
     QTUM,
     QRC20 {
@@ -4912,7 +4843,11 @@ pub enum CoinProtocol {
     TRX {
         network: eth::tron::Network,
     },
-    // Todo: Add TRC20, Do we need to support TRC10?
+    TRC20 {
+        platform: String,
+        contract_address: String,
+    },
+    // Todo: Do we need to support TRC10?
     SLPTOKEN {
         platform: String,
         token_id: H256Json,
@@ -4967,6 +4902,7 @@ impl CoinProtocol {
         match self {
             CoinProtocol::QRC20 { platform, .. }
             | CoinProtocol::ERC20 { platform, .. }
+            | CoinProtocol::TRC20 { platform, .. }
             | CoinProtocol::SLPTOKEN { platform, .. }
             | CoinProtocol::NFT { platform, .. } => Some(platform),
             CoinProtocol::TENDERMINTTOKEN(info) => Some(&info.platform),
@@ -4988,9 +4924,9 @@ impl CoinProtocol {
     /// Returns the contract address associated with the coin, if any.
     pub fn contract_address(&self) -> Option<String> {
         match self {
-            CoinProtocol::QRC20 { contract_address, .. } | CoinProtocol::ERC20 { contract_address, .. } => {
-                Some(contract_address.clone())
-            },
+            CoinProtocol::QRC20 { contract_address, .. }
+            | CoinProtocol::ERC20 { contract_address, .. }
+            | CoinProtocol::TRC20 { contract_address, .. } => Some(contract_address.clone()),
             CoinProtocol::SLPTOKEN { .. }
             | CoinProtocol::UTXO { .. }
             | CoinProtocol::QTUM
@@ -5352,6 +5288,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         CoinProtocol::ZHTLC { .. } => return ERR!("ZHTLC protocol is not supported by lp_coininit"),
         CoinProtocol::NFT { .. } => return ERR!("NFT protocol is not supported by lp_coininit"),
         CoinProtocol::TRX { .. } => return ERR!("TRX protocol is not supported by lp_coininit"),
+        CoinProtocol::TRC20 { .. } => return ERR!("TRC20 protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::LIGHTNING { .. } => return ERR!("Lightning protocol is not supported by lp_coininit"),
         CoinProtocol::SIA => {
@@ -5969,8 +5906,13 @@ pub fn address_by_coin_conf_and_pubkey_str(
         CoinProtocol::ERC20 { .. } | CoinProtocol::ETH { .. } | CoinProtocol::NFT { .. } => {
             eth::addr_from_pubkey_str(pubkey)
         },
-        // Todo: implement TRX address generation
-        CoinProtocol::TRX { .. } => ERR!("TRX address generation is not implemented yet"),
+        CoinProtocol::TRX { .. } | CoinProtocol::TRC20 { .. } => {
+            let pubkey_hex = pubkey.strip_prefix("0x").unwrap_or(pubkey);
+            let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| ERRL!("{}", e))?;
+            let raw_addr = eth::addr_from_raw_pubkey(&pubkey_bytes)?;
+            let tron_addr = eth::tron::TronAddress::from(raw_addr);
+            Ok(tron_addr.to_base58())
+        },
         CoinProtocol::UTXO { .. } | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
             utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format)
         },
@@ -6474,6 +6416,7 @@ mod tests {
 
     #[test]
     fn test_dex_fee_amount() {
+        // BTC WithBurn, burn enabled by mocking
         let base = "BTC";
         let btc = TestCoin::new(base);
         TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
@@ -6482,22 +6425,24 @@ mod tests {
         let amount = 1.into();
         let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount);
         let expected_fee = DexFee::WithBurn {
-            fee_amount: amount.clone() / 777u64.into() * "0.75".into(),
-            burn_amount: amount / 777u64.into() * "0.25".into(),
+            fee_amount: amount.clone() * "0.02".into() * "0.75".into(),
+            burn_amount: amount * "0.02".into() * "0.25".into(),
             burn_destination: DexFeeBurnDestination::PreBurnAccount,
         };
         assert_eq!(expected_fee, actual_fee);
         TestCoin::should_burn_dex_fee.clear_mock();
 
+        // KMD WithBurn - same 2% rate as other coins (no KMD discount anymore)
+        // KMD uses should_burn_directly() -> KmdOpReturn
         let base = "KMD";
         let kmd = TestCoin::new(base);
-        TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
+        TestCoin::should_burn_directly.mock_safe(|_| MockResult::Return(true));
         TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.0001").into()));
         let rel = "ETH";
         let amount = 1.into();
         let actual_fee = DexFee::new_from_taker_coin(&kmd, rel, &amount);
-        let expected_fee = amount.clone() * (9, 7770).into() * MmNumber::from("0.75");
-        let expected_burn_amount = amount * (9, 7770).into() * MmNumber::from("0.25");
+        let expected_fee = amount.clone() * "0.02".into() * MmNumber::from("0.75");
+        let expected_burn_amount = amount * "0.02".into() * MmNumber::from("0.25");
         assert_eq!(
             DexFee::WithBurn {
                 fee_amount: expected_fee,
@@ -6506,26 +6451,31 @@ mod tests {
             },
             actual_fee
         );
-        TestCoin::should_burn_dex_fee.clear_mock();
+        TestCoin::should_burn_directly.clear_mock();
 
         // check the case when KMD taker fee is close to dust (0.75 of fee < dust)
         let base = "KMD";
         let kmd = TestCoin::new(base);
-        TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
+        TestCoin::should_burn_directly.mock_safe(|_| MockResult::Return(true));
         TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.00001").into()));
+        // With 2% rate: need amount where fee portion (75%) < min_tx_amount
+        // fee = amount * 0.02 * 0.75 < 0.00001 => amount < 0.00001 / 0.015 ≈ 0.000667
+        // Using amount = 0.0006: total = 0.000012, fee (75%) = 0.000009 < min, gets clamped to min
         let rel = "BTC";
-        let amount = (1001 * 777, 90000000).into();
+        let amount = "0.0006".into();
         let actual_fee = DexFee::new_from_taker_coin(&kmd, rel, &amount);
+        // fee gets clamped to min_tx_amount, burn = total - fee = 0.000012 - 0.00001 = 0.000002
         assert_eq!(
             DexFee::WithBurn {
                 fee_amount: "0.00001".into(), // equals to min_tx_amount
-                burn_amount: "0.00000001".into(),
+                burn_amount: "0.000002".into(),
                 burn_destination: DexFeeBurnDestination::KmdOpReturn,
             },
             actual_fee
         );
-        TestCoin::should_burn_dex_fee.clear_mock();
+        TestCoin::should_burn_directly.clear_mock();
 
+        // BTC WithBurn with smaller min_tx_amount
         let base = "BTC";
         let btc = TestCoin::new(base);
         TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
@@ -6534,55 +6484,58 @@ mod tests {
         let amount = 1.into();
         let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount);
         let expected_fee = DexFee::WithBurn {
-            fee_amount: amount.clone() * (9, 7770).into() * "0.75".into(),
-            burn_amount: amount * (9, 7770).into() * "0.25".into(),
+            fee_amount: amount.clone() * "0.02".into() * "0.75".into(),
+            burn_amount: amount * "0.02".into() * "0.25".into(),
             burn_destination: DexFeeBurnDestination::PreBurnAccount,
         };
         assert_eq!(expected_fee, actual_fee);
         TestCoin::should_burn_dex_fee.clear_mock();
 
-        // whole dex fee (0.001 * 9 / 7770) less than min tx amount (0.00001)
+        // whole dex fee (amount * 0.02) less than min tx amount (0.00001)
         let base = "BTC";
         let btc = TestCoin::new(base);
         TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
         TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.00001").into()));
         let rel = "KMD";
-        let amount: MmNumber = "0.001".parse::<BigDecimal>().unwrap().into();
+        // 2% of 0.0001 = 0.000002 < min (0.00001)
+        let amount: MmNumber = "0.0001".parse::<BigDecimal>().unwrap().into();
         let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount);
         assert_eq!(DexFee::Standard("0.00001".into()), actual_fee);
         TestCoin::should_burn_dex_fee.clear_mock();
 
-        // 75% of dex fee (0.03 * 9/7770 * 0.75) is over the min tx amount (0.00001)
+        // 75% of dex fee is over the min tx amount (0.00001)
         // but non-kmd burn amount is less than the min tx amount
         let base = "BTC";
         let btc = TestCoin::new(base);
         TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
         TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.00001").into()));
         let rel = "KMD";
-        let amount: MmNumber = "0.03".parse::<BigDecimal>().unwrap().into();
+        // 2% of 0.001 = 0.00002, fee = 0.000015 > min, burn = 0.000005 < min
+        let amount: MmNumber = "0.001".parse::<BigDecimal>().unwrap().into();
         let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount);
-        assert_eq!(DexFee::Standard(amount * (9, 7770).into()), actual_fee);
+        assert_eq!(DexFee::Standard(amount * "0.02".into()), actual_fee);
         TestCoin::should_burn_dex_fee.clear_mock();
 
         // burning from eth currently not supported
         let base = "USDT-ERC20";
-        let btc = TestCoin::new(base);
+        let erc20 = TestCoin::new(base);
         TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(false));
         TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.00001").into()));
         let rel = "BTC";
         let amount: MmNumber = "1".parse::<BigDecimal>().unwrap().into();
-        let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount);
-        assert_eq!(DexFee::Standard(amount / "777".into()), actual_fee);
+        let actual_fee = DexFee::new_from_taker_coin(&erc20, rel, &amount);
+        assert_eq!(DexFee::Standard(amount * "0.02".into()), actual_fee);
         TestCoin::should_burn_dex_fee.clear_mock();
 
+        // NUCLEUS WithBurn
         let base = "NUCLEUS";
-        let btc = TestCoin::new(base);
+        let nucleus = TestCoin::new(base);
         TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
         TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.000001").into()));
         let rel = "IRIS";
         let amount: MmNumber = "0.008".parse::<BigDecimal>().unwrap().into();
-        let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount);
-        let std_fee = amount / "777".into();
+        let actual_fee = DexFee::new_from_taker_coin(&nucleus, rel, &amount);
+        let std_fee = amount * "0.02".into();
         let fee_amount = std_fee.clone() * "0.75".into();
         let burn_amount = std_fee - fee_amount.clone();
         assert_eq!(
@@ -6601,12 +6554,61 @@ mod tests {
         TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
         TestCoin::dex_pubkey.mock_safe(|_| MockResult::Return(DEX_BURN_ADDR_RAW_PUBKEY.as_slice()));
         TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.00001").into()));
-        let rel = "KMD";
         let amount: MmNumber = "0.03".parse::<BigDecimal>().unwrap().into();
+        let rel = "KMD";
         let actual_fee = DexFee::new_with_taker_pubkey(&btc, rel, &amount, DEX_BURN_ADDR_RAW_PUBKEY.as_slice());
         assert_eq!(DexFee::NoFee, actual_fee);
         TestCoin::should_burn_dex_fee.clear_mock();
         TestCoin::dex_pubkey.clear_mock();
+
+        // ============================================================================
+        // Production behavior (burn disabled)
+        // ============================================================================
+
+        // Standard 2% fee for BTC (burn disabled in production)
+        let base = "BTC";
+        let btc = TestCoin::new(base);
+        TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.0001").into()));
+        let rel = "ETH";
+        let amount: MmNumber = 1.into();
+        let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount);
+        assert_eq!(DexFee::Standard("0.02".into()), actual_fee);
+
+        // Large trade amount
+        let base = "BTC";
+        let btc = TestCoin::new(base);
+        TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.00001").into()));
+        let rel = "ETH";
+        let amount: MmNumber = "1000".parse::<BigDecimal>().unwrap().into();
+        let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount);
+        assert_eq!(DexFee::Standard("20".into()), actual_fee);
+
+        // Fractional amount with precise 2% calculation
+        let base = "BTC";
+        let btc = TestCoin::new(base);
+        TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.00001").into()));
+        let rel = "ETH";
+        let amount: MmNumber = "0.5".parse::<BigDecimal>().unwrap().into();
+        let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount);
+        assert_eq!(DexFee::Standard("0.01".into()), actual_fee);
+
+        // GLEEC discount test: 1% fee instead of 2%
+        let gleec = TestCoin::new("GLEEC");
+        TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.00001").into()));
+        let rel = "BTC";
+        let amount: MmNumber = 1.into();
+        let actual_fee = DexFee::new_from_taker_coin(&gleec, rel, &amount);
+        assert_eq!(DexFee::Standard("0.01".into()), actual_fee);
+
+        // GLEEC as maker_ticker also gets discount
+        let btc = TestCoin::new("BTC");
+        TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.00001").into()));
+        let rel = "GLEEC";
+        let amount: MmNumber = 1.into();
+        let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount);
+        assert_eq!(DexFee::Standard("0.01".into()), actual_fee);
+
+        TestCoin::min_tx_amount.clear_mock();
     }
 }
 

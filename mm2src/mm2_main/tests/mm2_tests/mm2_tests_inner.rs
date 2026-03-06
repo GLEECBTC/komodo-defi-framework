@@ -2356,7 +2356,9 @@ fn test_metrics_method() {
         .expect(r#"Couldn't find a metric with key = "traffic.out" and label: coin = "RICK" in received json"#);
 }
 
+// TODO: Re-enable once Electrum servers are dockerized: https://github.com/KomodoPlatform/komodo-defi-framework/issues/2708
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_electrum_tx_history() {
     fn get_tx_history_request_count(mm: &MarketMakerIt) -> u64 {
@@ -2777,7 +2779,9 @@ fn test_convert_eth_address() {
     assert!(rc.1.contains("Address must be prefixed with 0x"));
 }
 
+// TODO: Re-enable once Electrum servers are dockerized: https://github.com/KomodoPlatform/komodo-defi-framework/issues/2708
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_add_delegation_qtum() {
     let coins = json!([{
@@ -2927,7 +2931,9 @@ fn test_remove_delegation_qtum() {
     );
 }
 
+// TODO: Re-enable once Electrum servers are dockerized: https://github.com/KomodoPlatform/komodo-defi-framework/issues/2708
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_query_delegations_info_qtum() {
     let coins = json!([{
@@ -3410,7 +3416,9 @@ fn qrc20_activate_electrum() {
     assert_eq!(electrum_json["balance"].as_str(), Some("139"));
 }
 
+// TODO: Re-enable once Electrum servers are dockerized: https://github.com/KomodoPlatform/komodo-defi-framework/issues/2708
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_qrc20_withdraw() {
     // corresponding private key: [3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72, 172, 110, 180, 13, 123, 179, 10, 49]
@@ -4112,7 +4120,21 @@ fn test_update_maker_order() {
     let max_base_vol =
         BigDecimal::from_str(update_maker_order_json["result"]["max_base_vol"].as_str().unwrap()).unwrap();
     assert_eq!(update_maker_order_json["result"]["price"], Json::from("2"));
-    assert_eq!(max_base_vol, max_volume);
+    // Approximate comparison: fee/balance can change slightly between the my_balance/trade_preimage
+    // calls above and the update_maker_order call
+    let diff = if max_base_vol > max_volume {
+        &max_base_vol - &max_volume
+    } else {
+        &max_volume - &max_base_vol
+    };
+    let tolerance = BigDecimal::from_str("0.0001").unwrap();
+    assert!(
+        diff < tolerance,
+        "max_base_vol {} differs from expected {} by more than {}",
+        max_base_vol,
+        max_volume,
+        tolerance
+    );
 
     block_on(mm_bob.stop()).unwrap();
 }
@@ -5592,8 +5614,12 @@ fn test_sign_verify_message_eth_with_derivation_path() {
         "0x36b91a54f905f2dd88ecfd7f4a539710c699eaab2b425ba79ad959c29ec26492011674981da72d68ac0ab72bb35661a13c42bce314ecdfff0e44174f82a7ee2501";
     assert_eq!(expected_signature, response.signature);
 
-    let address0 = match result.wallet_balance {
-        EnableCoinBalanceMap::HD(bal) => bal.accounts[0].addresses[0].address.clone(),
+    // Addresses were used before, so they are included in the activation result.
+    let (address0, address1) = match result.wallet_balance {
+        EnableCoinBalanceMap::HD(bal) => (
+            bal.accounts[0].addresses[0].address.clone(),
+            bal.accounts[0].addresses[1].address.clone(),
+        ),
         EnableCoinBalanceMap::Iguana(_) => panic!("Expected HD"),
     };
     let response = block_on(verify_message(&mm_bob, "ETH", expected_signature, &address0));
@@ -5603,8 +5629,6 @@ fn test_sign_verify_message_eth_with_derivation_path() {
     assert!(response.is_valid);
 
     // Test address 1.
-    let get_new_address = block_on(get_new_address(&mm_bob, "ETH", 0, Some(Bip44Chain::External)));
-    assert!(get_new_address.new_address.balance.contains_key("ETH"));
     let response = block_on(sign_message(
         &mm_bob,
         "ETH",
@@ -5621,12 +5645,7 @@ fn test_sign_verify_message_eth_with_derivation_path() {
         "0xc8aa1d54c311e38edc815308dc67018aecbd6d4008a88b9af7aba9c98997b7b56f9e6eab64b3c496c6fff1762ae0eba8228370b369d505dd9087cded0a4d947a01";
     assert_eq!(expected_signature, response.signature);
 
-    let response = block_on(verify_message(
-        &mm_bob,
-        "ETH",
-        expected_signature,
-        &get_new_address.new_address.address,
-    ));
+    let response = block_on(verify_message(&mm_bob, "ETH", expected_signature, &address1));
     let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
     let response = response.result;
 
@@ -6202,7 +6221,7 @@ fn test_enable_utxo_with_enable_hd() {
         block_on(get_new_address(&mm_hd_0, "BTC-segwit", 77, Some(Bip44Chain::External)));
     }
     let account_balance: HDAccountBalanceResponse =
-        block_on(account_balance(&mm_hd_0, "BTC-segwit", 77, Bip44Chain::External));
+        block_on(account_balance(&mm_hd_0, "BTC-segwit", 77, Bip44Chain::External, None));
     assert_eq!(
         account_balance.addresses[7].address,
         "bc1q0dxnd7afj997a40j86a8a6dq3xs3dwm7rkzams"
@@ -6686,8 +6705,8 @@ mod trezor_tests {
     use coins::rpc_command::get_new_address::{GetNewAddressParams, GetNewAddressRpcOps};
     use coins::rpc_command::init_create_account::for_tests::test_create_new_account_init_loop;
     use coins::utxo::{utxo_standard::UtxoStandardCoin, UtxoActivationParams};
-    use coins::EthGasLimitOption;
     use coins::{lp_coinfind, CoinProtocol, MmCoinEnum, PrivKeyBuildPolicy};
+    use coins::{EthGasLimitOption, PrivKeyActivationPolicy};
     use coins_activation::platform_for_tests::init_platform_coin_with_tokens_loop;
     use coins_activation::{for_tests::init_standalone_coin_loop, InitStandaloneCoinReq};
     use common::executor::Timer;
@@ -6974,7 +6993,7 @@ mod trezor_tests {
             tbtc_electrums(),
             None,
             80,
-            Some("Trezor"),
+            Some(json!(PrivKeyActivationPolicy::Trezor)),
         ));
         log!("enable UTXO bob {:?}", utxo_bob);
 
@@ -7015,7 +7034,7 @@ mod trezor_tests {
             tbtc_electrums(),
             None,
             80,
-            Some("Trezor"),
+            Some(json!(PrivKeyActivationPolicy::Trezor)),
         ));
         log!("enable UTXO bob {:?}", utxo_bob);
 

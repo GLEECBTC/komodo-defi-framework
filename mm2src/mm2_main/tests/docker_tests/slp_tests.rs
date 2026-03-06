@@ -1,15 +1,99 @@
-use crate::docker_tests::docker_tests_common::*;
+use crate::docker_tests::helpers::slp::{get_prefilled_slp_privkey, get_slp_token_id};
 use crate::integration_tests_common::enable_native;
+use bitcrypto::ChecksumType;
+use coins::utxo::UtxoAddressFormat;
+use common::block_on;
 use http::StatusCode;
+use keys::{Address, AddressBuilder, AddressHashEnum, AddressPrefix, NetworkAddressPrefixes};
 use mm2_number::BigDecimal;
-use mm2_rpc::data::legacy::CoinInitResponse;
+use mm2_rpc::data::legacy::{BalanceResponse, CoinInitResponse};
 use mm2_test_helpers::for_tests::{
-    assert_coin_not_found_on_balance, disable_coin, enable_bch_with_tokens, enable_slp, my_balance, UtxoRpcMode,
+    assert_coin_not_found_on_balance, disable_coin, enable_bch_with_tokens, enable_native_bch, enable_slp, my_balance,
+    MarketMakerIt, UtxoRpcMode,
 };
-use mm2_test_helpers::structs::{EnableBchWithTokensResponse, EnableSlpResponse, RpcV2Response};
+use mm2_test_helpers::structs::{EnableBchWithTokensResponse, EnableSlpResponse, RpcV2Response, TransactionDetails};
 use serde_json::{self as json, json, Value as Json};
 use std::collections::HashSet;
+use std::thread;
 use std::time::Duration;
+
+// ============================================================================
+// SLP-specific helper functions
+// ============================================================================
+
+fn slp_supplied_node() -> MarketMakerIt {
+    let coins = json! ([
+        {"coin":"FORSLP","asset":"FORSLP","required_confirmations":0,"txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"BCH","protocol_data":{"slp_prefix":"slptest"}}},
+        {"coin":"ADEXSLP","protocol":{"type":"SLPTOKEN","protocol_data":{"decimals":8,"token_id":get_slp_token_id(),"platform":"FORSLP"}}}
+    ]);
+
+    let priv_key = get_prefilled_slp_privkey();
+    MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9000,
+            "dht": "on",  // Enable DHT without delay.
+            "passphrase": format!("0x{}", hex::encode(priv_key)),
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+            "is_bootstrap_node": true
+        }),
+        "pass".to_string(),
+        None,
+    )
+    .unwrap()
+}
+
+fn get_balance(mm: &MarketMakerIt, coin: &str) -> BalanceResponse {
+    let rc = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "method": "my_balance",
+        "coin": coin,
+    })))
+    .unwrap();
+    assert_eq!(rc.0, StatusCode::OK, "my_balance request failed {}", rc.1);
+    json::from_str(&rc.1).unwrap()
+}
+
+fn utxo_burn_address() -> Address {
+    AddressBuilder::new(
+        UtxoAddressFormat::Standard,
+        ChecksumType::DSHA256,
+        NetworkAddressPrefixes {
+            p2pkh: [60].into(),
+            p2sh: AddressPrefix::default(),
+        },
+        None,
+    )
+    .as_pkh(AddressHashEnum::default_address_hash())
+    .build()
+    .expect("valid address props")
+}
+
+fn withdraw_max_and_send_v1(mm: &MarketMakerIt, coin: &str, to: &str) -> TransactionDetails {
+    let rc = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "method": "withdraw",
+        "coin": coin,
+        "max": true,
+        "to": to,
+    })))
+    .unwrap();
+    assert_eq!(rc.0, StatusCode::OK, "withdraw request failed {}", rc.1);
+    let tx_details: TransactionDetails = json::from_str(&rc.1).unwrap();
+
+    let rc = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "method": "send_raw_transaction",
+        "tx_hex": tx_details.tx_hex,
+        "coin": coin,
+    })))
+    .unwrap();
+    assert_eq!(rc.0, StatusCode::OK, "send_raw_transaction request failed {}", rc.1);
+
+    tx_details
+}
 
 async fn enable_bch_with_tokens_without_balance(
     mm: &MarketMakerIt,
@@ -44,16 +128,6 @@ async fn enable_bch_with_tokens_without_balance(
         enable.1
     );
     json::from_str(&enable.1).unwrap()
-}
-
-#[test]
-fn trade_test_with_maker_slp() {
-    trade_base_rel(("ADEXSLP", "FORSLP"));
-}
-
-#[test]
-fn trade_test_with_taker_slp() {
-    trade_base_rel(("FORSLP", "ADEXSLP"));
 }
 
 #[test]

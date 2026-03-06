@@ -1,4 +1,5 @@
-use crate::docker_tests::docker_tests_common::{fund_privkey_utxo, random_secp256k1_secret};
+use crate::docker_tests::helpers::env::random_secp256k1_secret;
+use crate::docker_tests::helpers::utxo::fund_privkey_utxo;
 
 use super::utils::*;
 
