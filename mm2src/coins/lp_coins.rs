@@ -84,7 +84,7 @@ use mocktopus::macros::*;
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};
 use rpc_command::tendermint::ibc::ChannelId;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{self as json, Value as Json};
 use std::array::TryFromSliceError;
 use std::cmp::Ordering;
@@ -234,7 +234,7 @@ pub mod eth;
 use eth::erc20::get_erc20_ticker_by_contract_address;
 use eth::eth_swap_v2::{PrepareTxDataError, ValidatePaymentV2Err};
 use eth::{
-    eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetailsErr, EthTxFeeDetails, GetEthAddressError,
+    eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetailsErr, GetEthAddressError,
     GetValidEthWithdrawAddError, SignedEthTx,
 };
 
@@ -251,7 +251,7 @@ pub mod lightning;
 pub mod my_tx_history_v2;
 
 pub mod qrc20;
-use qrc20::{qrc20_coin_with_policy, Qrc20ActivationParams, Qrc20Coin, Qrc20FeeDetails};
+use qrc20::{qrc20_coin_with_policy, Qrc20ActivationParams, Qrc20Coin};
 
 pub mod rpc_command;
 use rpc_command::{
@@ -265,8 +265,7 @@ use rpc_command::{
 pub mod tendermint;
 use tendermint::htlc::CustomTendermintMsgType;
 use tendermint::{
-    CosmosTransaction, TendermintCoin, TendermintFeeDetails, TendermintProtocolInfo, TendermintToken,
-    TendermintTokenProtocolInfo,
+    CosmosTransaction, TendermintCoin, TendermintProtocolInfo, TendermintToken, TendermintTokenProtocolInfo,
 };
 
 #[doc(hidden)]
@@ -278,8 +277,11 @@ pub use test_coin::TestCoin;
 
 pub mod tx_history_storage;
 
+pub mod tx_fee_details;
+pub use tx_fee_details::TxFeeDetails;
+
 pub mod siacoin;
-use siacoin::{SiaCoin, SiaCoinActivationRequest, SiaFeeDetails, SiaTransaction, SiaTransactionTypes};
+use siacoin::{SiaCoin, SiaCoinActivationRequest, SiaTransaction, SiaTransactionTypes};
 
 pub mod utxo;
 use utxo::bch::{bch_coin_with_policy, BchActivationRequest, BchCoin};
@@ -288,8 +290,8 @@ use utxo::qtum::{
     QtumStakingInfosDetails, ScriptHashTypeNotSupported,
 };
 use utxo::rpc_clients::UtxoRpcError;
+use utxo::slp::slp_addr_from_pubkey_str;
 use utxo::slp::SlpToken;
-use utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
 use utxo::utxo_common::{big_decimal_from_sat_unsigned, payment_script, WaitForOutputSpendErr};
 use utxo::utxo_standard::{utxo_standard_coin_with_policy, UtxoStandardCoin};
 use utxo::{swap_proto_v2_scripts, BlockchainNetwork, GenerateTxError, UtxoActivationParams, UtxoFeeDetails, UtxoTx};
@@ -304,7 +306,6 @@ use crate::hd_wallet::{AddrToString, DisplayAddress};
 use z_coin::{ZCoin, ZcoinProtocolInfo};
 
 pub mod solana;
-use crate::solana::SolanaFeeDetails;
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
 pub type TransactionResult = Result<TransactionEnum, TransactionErr>;
@@ -2341,6 +2342,9 @@ pub struct WithdrawRequest {
     /// Currently, this flag is used by ETH/ERC20 coins activated with MetaMask/WalletConnect(Some wallets e.g Metamask) **only**.
     #[serde(default)]
     broadcast: bool,
+    /// Transaction expiration window in seconds. Currently only used by TRON (default 60s),
+    /// but can be expanded to any protocol that supports transaction expiry.
+    pub expiration_seconds: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2462,80 +2466,6 @@ pub struct SignatureResponse {
 #[derive(Serialize)]
 pub struct VerificationResponse {
     is_valid: bool,
-}
-
-/// Please note that no type should have the same structure as another type,
-/// because this enum has the `untagged` deserialization.
-#[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(tag = "type")]
-pub enum TxFeeDetails {
-    Utxo(UtxoFeeDetails),
-    Eth(EthTxFeeDetails),
-    Qrc20(Qrc20FeeDetails),
-    Slp(SlpFeeDetails),
-    Tendermint(TendermintFeeDetails),
-    Sia(SiaFeeDetails),
-    Solana(SolanaFeeDetails),
-}
-
-/// Deserialize the TxFeeDetails as an untagged enum.
-impl<'de> Deserialize<'de> for TxFeeDetails {
-    fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum TxFeeDetailsUnTagged {
-            Utxo(UtxoFeeDetails),
-            Eth(EthTxFeeDetails),
-            Qrc20(Qrc20FeeDetails),
-            Slp(SlpFeeDetails),
-            Tendermint(TendermintFeeDetails),
-            Sia(SiaFeeDetails),
-            Solana(SolanaFeeDetails),
-        }
-
-        match Deserialize::deserialize(deserializer)? {
-            TxFeeDetailsUnTagged::Utxo(f) => Ok(TxFeeDetails::Utxo(f)),
-            TxFeeDetailsUnTagged::Eth(f) => Ok(TxFeeDetails::Eth(f)),
-            TxFeeDetailsUnTagged::Qrc20(f) => Ok(TxFeeDetails::Qrc20(f)),
-            TxFeeDetailsUnTagged::Slp(f) => Ok(TxFeeDetails::Slp(f)),
-            TxFeeDetailsUnTagged::Tendermint(f) => Ok(TxFeeDetails::Tendermint(f)),
-            TxFeeDetailsUnTagged::Sia(f) => Ok(TxFeeDetails::Sia(f)),
-            TxFeeDetailsUnTagged::Solana(f) => Ok(TxFeeDetails::Solana(f)),
-        }
-    }
-}
-
-impl From<EthTxFeeDetails> for TxFeeDetails {
-    fn from(eth_details: EthTxFeeDetails) -> Self {
-        TxFeeDetails::Eth(eth_details)
-    }
-}
-
-impl From<UtxoFeeDetails> for TxFeeDetails {
-    fn from(utxo_details: UtxoFeeDetails) -> Self {
-        TxFeeDetails::Utxo(utxo_details)
-    }
-}
-
-impl From<Qrc20FeeDetails> for TxFeeDetails {
-    fn from(qrc20_details: Qrc20FeeDetails) -> Self {
-        TxFeeDetails::Qrc20(qrc20_details)
-    }
-}
-
-impl From<SiaFeeDetails> for TxFeeDetails {
-    fn from(sia_details: SiaFeeDetails) -> Self {
-        TxFeeDetails::Sia(sia_details)
-    }
-}
-
-impl From<TendermintFeeDetails> for TxFeeDetails {
-    fn from(tendermint_details: TendermintFeeDetails) -> Self {
-        TxFeeDetails::Tendermint(tendermint_details)
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

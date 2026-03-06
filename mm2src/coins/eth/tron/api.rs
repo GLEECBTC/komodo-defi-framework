@@ -26,7 +26,8 @@
 //!
 //! See `docs/plans/chain-rpc-client-refactor.md` for the full refactoring plan.
 
-use super::TronAddress;
+use super::fee::{TronAccountResources, TronChainPrices};
+use super::{trc20_transfer_tokens, TronAddress};
 use crate::eth::{Web3RpcError, Web3RpcResult};
 
 use common::{APPLICATION_JSON, PROXY_REQUEST_EXPIRATION_SEC, X_AUTH_PAYLOAD};
@@ -36,9 +37,10 @@ use http::Uri;
 use mm2_p2p::Keypair;
 use proxy_signature::RawMessage;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as Json;
 use serde_json::{self as json};
+use std::convert::TryInto;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -197,7 +199,7 @@ pub struct TronHttpNode {
 pub struct TronHttpClient {
     pub node: TronHttpNode,
     /// Keypair for signing requests to komodo proxy nodes.
-    pub proxy_sign_keypair: Option<Arc<Keypair>>,
+    proxy_sign_keypair: Option<Arc<Keypair>>,
 }
 
 impl TronHttpClient {
@@ -206,6 +208,21 @@ impl TronHttpClient {
             node,
             proxy_sign_keypair,
         }
+    }
+
+    /// Builds the proxy signature JSON string for komodo proxy nodes.
+    /// Returns `None` when this node is not a proxy.
+    fn proxy_sign_json(&self, uri: &Uri, body_len: usize) -> Web3RpcResult<Option<String>> {
+        if !self.node.komodo_proxy {
+            return Ok(None);
+        }
+        let keypair = self.proxy_sign_keypair.as_ref().ok_or_else(|| {
+            Web3RpcError::Internal("Proxy node requires signing keypair but none provided".to_string())
+        })?;
+        let proxy_sign = RawMessage::sign(keypair, uri, body_len, PROXY_REQUEST_EXPIRATION_SEC)
+            .map_err(|e| Web3RpcError::Internal(format!("Proxy signing failed: {e}")))?;
+        let json_str = json::to_string(&proxy_sign).map_err(|e| Web3RpcError::Internal(e.to_string()))?;
+        Ok(Some(json_str))
     }
 
     /// Send a POST request to the TRON API.
@@ -264,21 +281,10 @@ impl TronHttpClient {
         req.headers_mut()
             .insert(CONTENT_TYPE, HeaderValue::from_static(APPLICATION_JSON));
 
-        // Add proxy signature if using komodo proxy
-        if self.node.komodo_proxy {
-            let keypair = self.proxy_sign_keypair.as_ref().ok_or_else(|| {
-                Web3RpcError::Internal("Proxy node requires signing keypair but none provided".to_string())
-            })?;
-
-            let proxy_sign = RawMessage::sign(keypair, uri, body.len(), PROXY_REQUEST_EXPIRATION_SEC)
-                .map_err(|e| Web3RpcError::Internal(format!("Proxy signing failed: {e}")))?;
-
-            let proxy_sign_json = json::to_string(&proxy_sign).map_err(|e| Web3RpcError::Internal(e.to_string()))?;
-
-            let header_value = proxy_sign_json
+        if let Some(proxy_json) = self.proxy_sign_json(uri, body.len())? {
+            let header_value = proxy_json
                 .parse()
                 .map_err(|e| Web3RpcError::Internal(format!("Invalid proxy header value: {e}")))?;
-
             req.headers_mut().insert(X_AUTH_PAYLOAD, header_value);
         }
 
@@ -315,18 +321,8 @@ impl TronHttpClient {
             .header(ACCEPT.as_str(), APPLICATION_JSON)
             .header(CONTENT_TYPE.as_str(), APPLICATION_JSON);
 
-        // Add proxy signature if using komodo proxy
-        if self.node.komodo_proxy {
-            let keypair = self.proxy_sign_keypair.as_ref().ok_or_else(|| {
-                Web3RpcError::Internal("Proxy node requires signing keypair but none provided".to_string())
-            })?;
-
-            let proxy_sign = RawMessage::sign(keypair, uri, body.len(), PROXY_REQUEST_EXPIRATION_SEC)
-                .map_err(|e| Web3RpcError::Internal(format!("Proxy signing failed: {e}")))?;
-
-            let proxy_sign_json = json::to_string(&proxy_sign).map_err(|e| Web3RpcError::Internal(e.to_string()))?;
-
-            request = request.header(X_AUTH_PAYLOAD, &proxy_sign_json);
+        if let Some(proxy_json) = self.proxy_sign_json(uri, body.len())? {
+            request = request.header(X_AUTH_PAYLOAD, &proxy_json);
         }
 
         let (status_code, response_str) = match Box::pin(request.request_str()).timeout(TRON_API_TIMEOUT).await {
@@ -356,8 +352,16 @@ struct GetNowBlockRequest {}
 /// Response from `/wallet/getnowblock`.
 #[derive(Deserialize, Debug)]
 pub struct GetNowBlockResponse {
-    #[serde(default)]
-    pub block_header: Option<BlockHeader>,
+    /// Computed block identifier (not in protobuf, added by the HTTP servlet layer).
+    /// First 8 bytes duplicate the block number (big-endian) for sortability, remaining 24 bytes
+    /// are from SHA256 of `block_header.raw_data`. We only need bytes `[8..16]` for TAPOS
+    /// (`ref_block_hash`). The block number itself comes from `block_header.raw_data.number`.
+    /// Deserialized from a 64-char hex string.
+    /// See [`generateBlockId`](https://github.com/tronprotocol/java-tron/blob/1e35f79/common/src/main/java/org/tron/common/utils/Sha256Hash.java#L252-L258).
+    #[serde(rename = "blockID", deserialize_with = "deserialize_block_id")]
+    pub block_id: [u8; 32],
+    /// Block header containing raw block data (number, timestamp, etc.).
+    pub block_header: BlockHeader,
 }
 
 /// Block header from `/wallet/getnowblock` response.
@@ -366,17 +370,79 @@ pub struct BlockHeader {
     pub raw_data: BlockRawData,
 }
 
-/// Raw block data containing the block number.
+/// Raw block data from a TRON block header.
 #[derive(Deserialize, Debug)]
 pub struct BlockRawData {
     /// Block height.
     pub number: i64,
+    /// Block timestamp in milliseconds since Unix epoch.
+    #[serde(default)]
+    pub timestamp: i64,
+}
+
+impl GetNowBlockResponse {
+    /// Validate block number and timestamp are sane, return the header with block number as `u64`.
+    ///
+    /// A negative block number or non-positive timestamp means the node returned bad data.
+    /// Returns `BadResponse` (retryable) to trigger rotation to another node.
+    fn validated_header(&self) -> Web3RpcResult<(&BlockHeader, u64)> {
+        let number = self.block_header.raw_data.number;
+        if number < 0 {
+            return Err(Web3RpcError::BadResponse(format!(
+                "TRON node returned invalid negative block number: {number}"
+            ))
+            .into());
+        }
+        let timestamp = self.block_header.raw_data.timestamp;
+        if timestamp <= 0 {
+            return Err(
+                Web3RpcError::BadResponse(format!("TRON node returned invalid block timestamp: {timestamp}")).into(),
+            );
+        }
+        Ok((&self.block_header, number as u64))
+    }
+}
+
+/// Deserialize a hex string into `[u8; 32]`.
+///
+/// Handles TRON's `blockID` field: a 64-char hex string (no `0x` prefix).
+/// Returns an error if the hex is invalid or not exactly 32 bytes.
+fn deserialize_block_id<'de, D>(deserializer: D) -> Result<[u8; 32], D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let hex_str = String::deserialize(deserializer)?;
+    let hex_str = hex_str.strip_prefix("0x").unwrap_or(&hex_str);
+    let bytes = hex::decode(hex_str).map_err(serde::de::Error::custom)?;
+    let arr: [u8; 32] = bytes
+        .try_into()
+        .map_err(|v: Vec<u8>| serde::de::Error::custom(format!("blockID must be 32 bytes, got {}", v.len())))?;
+    Ok(arr)
+}
+
+/// Validated block data needed for TAPOS (Transaction as Proof of Stake) reference.
+///
+/// TRON transactions include a reference to a recent block (TAPOS) for replay protection:
+/// - `ref_block_bytes`: last 2 bytes of `number` (big-endian) → `number.to_be_bytes()[6..8]`
+/// - `ref_block_hash`: bytes 8..16 of `block_id` (the SHA256 portion)
+///
+/// TAPOS validity window is 65,536 blocks (~54 hours).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TaposBlockData {
+    /// Block height.
+    pub number: u64,
+    /// Full 32-byte block identifier.
+    pub block_id: [u8; 32],
+    /// Block timestamp in milliseconds since Unix epoch.
+    pub timestamp: i64,
 }
 
 /// Request body for `/wallet/getaccount`.
 #[derive(Serialize)]
-struct GetAccountRequest {
-    address: String,
+struct GetAccountRequest<'a> {
+    address: &'a TronAddress,
+    /// When `true`, addresses in request/response use Base58Check format (`T...`);
+    /// when `false`, hex format (`41...`).
     visible: bool,
 }
 
@@ -482,6 +548,141 @@ pub struct TriggerConstantContractResponse {
     pub energy_used: Option<u64>,
 }
 
+/// Request body for `/wallet/getchainparameters`.
+#[derive(Serialize)]
+struct GetChainParametersRequest {}
+
+/// Response from `/wallet/getchainparameters`.
+///
+/// The HTTP API uses camelCase `chainParameter` in live responses.
+#[derive(Clone, Debug, Deserialize)]
+struct GetChainParametersResponse {
+    #[serde(rename = "chainParameter", alias = "chain_parameter")]
+    chain_parameter: Vec<ChainParameterEntry>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct ChainParameterEntry {
+    key: String,
+    /// Some chain parameters are boolean-like flags and omit `value` in JSON.
+    value: Option<i64>,
+}
+
+/// Request body for `/wallet/getaccountresource`.
+#[derive(Serialize)]
+struct GetAccountResourceRequest<'a> {
+    address: &'a TronAddress,
+    visible: bool,
+}
+
+/// Request body for `/wallet/broadcasthex`.
+#[derive(Serialize)]
+struct BroadcastHexRequest<'a> {
+    transaction: &'a str,
+}
+
+/// Response from `/wallet/broadcasthex` on success.
+///
+/// Error responses (`result: false`) are intercepted by `tron_error_from_value()` before
+/// deserialization, so this struct only captures the success-path field.
+/// `txid` is always present — it is computed from the transaction hash before broadcast.
+#[derive(Debug, Deserialize)]
+pub struct BroadcastHexResponse {
+    pub txid: String,
+}
+
+/// Request body for transaction lookup by hash.
+#[derive(Serialize)]
+struct TxByIdRequest<'a> {
+    value: &'a str,
+}
+
+/// Response from `/wallet/gettransactionbyid`.
+#[derive(Debug, Deserialize)]
+pub struct GetTransactionByIdResponse {
+    #[serde(rename = "txID")]
+    pub tx_id: String,
+    pub raw_data: TronTxRawData,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TronTxRawData {
+    pub contract: Vec<TronTxContract>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TronTxContract {
+    #[serde(rename = "type")]
+    pub contract_type: String,
+    pub parameter: TronTxContractParameter,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TronTxContractParameter {
+    pub value: TronTxContractValue,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TronTxContractValue {
+    pub contract_address: Option<String>,
+    pub data: Option<String>,
+}
+
+/// Response from `/wallet/gettransactioninfobyid`.
+/// Request struct: [`TxByIdRequest`] (shared with `gettransactionbyid`).
+#[derive(Debug, Deserialize)]
+pub struct GetTransactionInfoByIdResponse {
+    pub id: String,
+    #[serde(rename = "blockNumber")]
+    pub block_number: u64,
+    pub receipt: TronTxReceipt,
+    #[serde(default)]
+    pub fee: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TronTxReceipt {
+    #[serde(default)]
+    pub energy_usage_total: u64,
+    #[serde(default)]
+    pub net_fee: u64,
+    #[serde(default)]
+    pub energy_fee: u64,
+    pub result: String,
+}
+
+fn parse_chain_prices_sun(chain_params: &GetChainParametersResponse) -> Web3RpcResult<TronChainPrices> {
+    let mut bandwidth_price_sun = None;
+    let mut energy_price_sun = None;
+
+    for param in &chain_params.chain_parameter {
+        match param.key.as_str() {
+            "getTransactionFee" => bandwidth_price_sun = param.value.and_then(|v| v.try_into().ok()),
+            "getEnergyFee" => energy_price_sun = param.value.and_then(|v| v.try_into().ok()),
+            _ => {},
+        }
+    }
+
+    let bandwidth_price_sun = bandwidth_price_sun.ok_or_else(|| {
+        Web3RpcError::BadResponse("Missing or invalid getTransactionFee in getchainparameters response".to_owned())
+    })?;
+    let energy_price_sun = energy_price_sun.ok_or_else(|| {
+        Web3RpcError::BadResponse("Missing or invalid getEnergyFee in getchainparameters response".to_owned())
+    })?;
+
+    if bandwidth_price_sun == 0 || energy_price_sun == 0 {
+        return Err(Web3RpcError::BadResponse(
+            "Invalid chain prices: getTransactionFee/getEnergyFee must be greater than zero".to_owned(),
+        )
+        .into());
+    }
+
+    Ok(TronChainPrices {
+        bandwidth_price_sun,
+        energy_price_sun,
+    })
+}
+
 // ============================================================================
 // High-level TRON API methods
 // ============================================================================
@@ -492,13 +693,23 @@ impl TronHttpClient {
         self.post("/wallet/getnowblock", &GetNowBlockRequest {}).await
     }
 
+    /// Get validated block data for TAPOS transaction references.
+    ///
+    /// Calls `/wallet/getnowblock` and validates that `blockID`, block number, and timestamp
+    /// are all present and sane. Returns `BadResponse` (retryable) for missing/invalid data.
+    pub async fn get_block_for_tapos(&self) -> Web3RpcResult<TaposBlockData> {
+        let response = self.get_now_block().await?;
+        let (header, number) = response.validated_header()?;
+        Ok(TaposBlockData {
+            number,
+            block_id: response.block_id,
+            timestamp: header.raw_data.timestamp,
+        })
+    }
+
     /// Get account information for a TRON address.
     pub async fn get_account(&self, address: &TronAddress) -> Web3RpcResult<GetAccountResponse> {
-        let request = GetAccountRequest {
-            // Use hex format with 0x41 prefix for the API
-            address: address.to_hex(),
-            visible: false,
-        };
+        let request = GetAccountRequest { address, visible: true };
         self.post("/wallet/getaccount", &request).await
     }
 
@@ -518,9 +729,49 @@ impl TronHttpClient {
             contract_address,
             function_selector,
             parameter,
-            visible: true, // TronAddress serializes to Base58
+            visible: true,
         };
         self.post("/wallet/triggerconstantcontract", &request).await
+    }
+
+    /// Fetch TRON chain fee prices from `/wallet/getchainparameters`.
+    ///
+    /// Returns `BadResponse` (retryable) when required fee parameters are missing, malformed,
+    /// negative, or zero so callers can rotate to the next node.
+    pub async fn get_chain_prices(&self) -> Web3RpcResult<TronChainPrices> {
+        let response: GetChainParametersResponse = self
+            .post("/wallet/getchainparameters", &GetChainParametersRequest {})
+            .await?;
+        parse_chain_prices_sun(&response)
+    }
+
+    /// Get account resource usage and limits.
+    ///
+    /// Returns `TronAccountResources` with bandwidth and energy quotas.
+    /// Empty `{}` responses (unactivated accounts) produce all-zero resources.
+    pub async fn get_account_resource(&self, address: &TronAddress) -> Web3RpcResult<TronAccountResources> {
+        let request = GetAccountResourceRequest { address, visible: true };
+        self.post("/wallet/getaccountresource", &request).await
+    }
+
+    /// Broadcast a signed transaction (hex-encoded protobuf bytes).
+    ///
+    /// Error responses (`result: false`) are handled by `tron_error_from_value()` in `post()`.
+    pub async fn broadcast_hex(&self, tx_hex: &str) -> Web3RpcResult<BroadcastHexResponse> {
+        self.post("/wallet/broadcasthex", &BroadcastHexRequest { transaction: tx_hex })
+            .await
+    }
+
+    /// Get raw transaction by hash.
+    pub async fn get_transaction_by_id(&self, tx_id: &str) -> Web3RpcResult<GetTransactionByIdResponse> {
+        self.post("/wallet/gettransactionbyid", &TxByIdRequest { value: tx_id })
+            .await
+    }
+
+    /// Get transaction execution info/receipt by hash.
+    pub async fn get_transaction_info_by_id(&self, tx_id: &str) -> Web3RpcResult<GetTransactionInfoByIdResponse> {
+        self.post("/wallet/gettransactioninfobyid", &TxByIdRequest { value: tx_id })
+            .await
     }
 }
 
@@ -590,6 +841,12 @@ impl TronApiClient {
             .into())
     }
 
+    /// Get validated block data for TAPOS with node rotation.
+    pub async fn get_block_for_tapos(&self) -> Web3RpcResult<TaposBlockData> {
+        self.try_clients(|client| async move { client.get_block_for_tapos().await })
+            .await
+    }
+
     /// Get account information with node rotation.
     pub async fn get_account(&self, address: &TronAddress) -> Web3RpcResult<GetAccountResponse> {
         self.try_clients(|client| {
@@ -646,6 +903,103 @@ impl TronApiClient {
         })
         .await
     }
+
+    /// Fetch validated TRON chain fee prices with node rotation.
+    ///
+    /// Invalid fee parameter payloads are treated as retryable (`BadResponse`) and trigger
+    /// fallback to the next node.
+    pub async fn get_chain_prices(&self) -> Web3RpcResult<TronChainPrices> {
+        self.try_clients(|client| async move { client.get_chain_prices().await })
+            .await
+    }
+
+    /// Get account resource usage and limits with node rotation.
+    pub async fn get_account_resource(&self, address: &TronAddress) -> Web3RpcResult<TronAccountResources> {
+        self.try_clients(|client| {
+            let addr = *address;
+            async move { client.get_account_resource(&addr).await }
+        })
+        .await
+    }
+
+    /// Broadcast a signed transaction (hex-encoded protobuf bytes) with node rotation.
+    pub async fn broadcast_hex(&self, tx_hex: &str) -> Web3RpcResult<BroadcastHexResponse> {
+        let tx_hex = tx_hex.to_owned();
+        self.try_clients(|client| {
+            let hex = tx_hex.clone();
+            async move { client.broadcast_hex(&hex).await }
+        })
+        .await
+    }
+
+    /// Get raw transaction by hash with node rotation.
+    pub async fn get_transaction_by_id(&self, tx_id: &str) -> Web3RpcResult<GetTransactionByIdResponse> {
+        let tx_id = tx_id.to_owned();
+        self.try_clients(|client| {
+            let tx_id = tx_id.clone();
+            async move { client.get_transaction_by_id(&tx_id).await }
+        })
+        .await
+    }
+
+    /// Get transaction execution info/receipt by hash with node rotation.
+    pub async fn get_transaction_info_by_id(&self, tx_id: &str) -> Web3RpcResult<GetTransactionInfoByIdResponse> {
+        let tx_id = tx_id.to_owned();
+        self.try_clients(|client| {
+            let tx_id = tx_id.clone();
+            async move { client.get_transaction_info_by_id(&tx_id).await }
+        })
+        .await
+    }
+
+    /// Call a constant (view/pure) function on a smart contract with node rotation.
+    pub async fn trigger_constant_contract(
+        &self,
+        owner_address: &TronAddress,
+        contract_address: &TronAddress,
+        function_selector: &str,
+        parameter: &str,
+    ) -> Web3RpcResult<TriggerConstantContractResponse> {
+        let owner = *owner_address;
+        let contract = *contract_address;
+        let selector = function_selector.to_owned();
+        let param = parameter.to_owned();
+        self.try_clients(move |client| {
+            let selector = selector.clone();
+            let param = param.clone();
+            async move {
+                client
+                    .trigger_constant_contract(&owner, &contract, &selector, &param)
+                    .await
+            }
+        })
+        .await
+    }
+
+    /// Estimate energy required for a TRC20 `transfer(address,uint256)` call.
+    ///
+    /// ABI-encodes the transfer parameters and calls `trigger_constant_contract`.
+    /// Returns the `energy_used` from the response. If `energy_used` is missing or zero,
+    /// returns `BadResponse` to trigger node rotation.
+    pub async fn estimate_trc20_transfer_energy(
+        &self,
+        owner: &TronAddress,
+        contract: &TronAddress,
+        recipient: &TronAddress,
+        amount: U256,
+    ) -> Web3RpcResult<u64> {
+        let params_hex = abi_encode_trc20_transfer_params(recipient, amount);
+        let response = self
+            .trigger_constant_contract(owner, contract, "transfer(address,uint256)", &params_hex)
+            .await?;
+        match response.energy_used {
+            Some(energy) if energy > 0 => Ok(energy),
+            _ => Err(Web3RpcError::BadResponse(
+                "trigger_constant_contract returned no energy_used for TRC20 transfer estimation".to_owned(),
+            )
+            .into()),
+        }
+    }
 }
 
 // ============================================================================
@@ -664,6 +1018,18 @@ fn abi_encode_address_param(addr: &TronAddress) -> String {
     let mut padded = [0u8; 32];
     padded[12..32].copy_from_slice(evm_addr.as_bytes());
     hex::encode(padded)
+}
+
+/// Encode TRC20 `transfer(address,uint256)` parameters as a hex string (no 0x prefix).
+///
+/// The parameters are ABI-encoded as two 32-byte slots:
+/// - recipient address (left-padded to 32 bytes, 20-byte EVM format)
+/// - amount as uint256
+///
+/// The function selector is NOT included — TRON's `function_selector` field handles that.
+fn abi_encode_trc20_transfer_params(recipient: &TronAddress, amount: U256) -> String {
+    let tokens = trc20_transfer_tokens(recipient, amount);
+    hex::encode(ethabi::encode(&tokens))
 }
 
 /// Parse the first constant_result element as U256.
@@ -723,20 +1089,8 @@ impl ChainRpcOps for TronApiClient {
     async fn current_block(&self) -> Result<u64, Self::Error> {
         self.try_clients(|client| async move {
             let response = client.get_now_block().await?;
-            // Faulty node validation: missing block_header means this node returned bad data.
-            // Use BadResponse to trigger rotation to another node.
-            let block_header = response.block_header.ok_or_else(|| {
-                Web3RpcError::BadResponse("TRON node returned getnowblock without block_header".to_string())
-            })?;
-            let block_number = block_header.raw_data.number;
-            // Faulty node validation: negative block number is invalid data from this node.
-            if block_number < 0 {
-                return Err(Web3RpcError::BadResponse(format!(
-                    "TRON node returned invalid negative block number: {block_number}"
-                ))
-                .into());
-            }
-            Ok(block_number as u64)
+            let (_header, number) = response.validated_header()?;
+            Ok(number)
         })
         .await
     }
@@ -772,5 +1126,169 @@ impl ChainRpcOps for TronApiClient {
 impl std::fmt::Debug for TronApiClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TronApiClient").finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verifies the custom `blockID` hex deserializer parses correctly and that the
+    /// block number embedded in `blockID[0..8]` matches `block_header.raw_data.number`.
+    /// Test data: Nile testnet block [54242114](https://nile.tronscan.org/#/block/54242114).
+    #[test]
+    fn parse_getnowblock_and_tapos_derivation() {
+        let json = r#"{
+            "blockID": "00000000033bab42567444cc8af3dbaeb5cf26b514b7e90b9a23424ea8392641",
+            "block_header": {
+                "raw_data": {
+                    "number": 54242114,
+                    "timestamp": 1738799040000
+                }
+            }
+        }"#;
+        let resp: GetNowBlockResponse = serde_json::from_str(json).unwrap();
+
+        assert_eq!(resp.block_header.raw_data.number, 54_242_114);
+        assert_eq!(resp.block_header.raw_data.timestamp, 1_738_799_040_000);
+
+        // Block number embedded in blockID[0..8] matches block_header
+        let number_from_id = u64::from_be_bytes(resp.block_id[..8].try_into().unwrap());
+        assert_eq!(number_from_id, 54_242_114);
+    }
+
+    /// Non-hex `blockID` must fail deserialization (triggers `BadResponse` → node rotation).
+    #[test]
+    fn parse_getnowblock_rejects_invalid_block_id_hex() {
+        let json = r#"{ "blockID": "zz00000000000000000000000000000000000000000000000000000000000000", "block_header": { "raw_data": { "number": 1 } } }"#;
+        let err = serde_json::from_str::<GetNowBlockResponse>(json).unwrap_err();
+        assert!(err.is_data(), "Expected data error for invalid hex, got: {}", err);
+        assert!(
+            err.to_string().contains("Invalid character"),
+            "Expected hex parse error, got: {}",
+            err
+        );
+    }
+
+    /// `blockID` that isn't exactly 32 bytes must fail deserialization.
+    #[test]
+    fn parse_getnowblock_rejects_wrong_length_block_id() {
+        // 31 bytes (62 hex chars) — too short
+        let json = r#"{ "blockID": "00000000033bab42e37d025dc14e9ebc26e8f6cb6b6e26e08d2bf2db29c3b4", "block_header": { "raw_data": { "number": 1 } } }"#;
+        let err = serde_json::from_str::<GetNowBlockResponse>(json).unwrap_err();
+        assert!(err.is_data(), "Expected data error for wrong length, got: {}", err);
+        assert!(
+            err.to_string().contains("blockID must be 32 bytes"),
+            "Expected length error, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn parse_chain_prices_accepts_valid_parameters() {
+        let response = GetChainParametersResponse {
+            chain_parameter: vec![
+                ChainParameterEntry {
+                    key: "getTransactionFee".to_owned(),
+                    value: Some(1000),
+                },
+                ChainParameterEntry {
+                    key: "getEnergyFee".to_owned(),
+                    value: Some(100),
+                },
+            ],
+        };
+
+        let prices = parse_chain_prices_sun(&response).unwrap();
+        assert_eq!(prices.bandwidth_price_sun, 1000);
+        assert_eq!(prices.energy_price_sun, 100);
+    }
+
+    #[test]
+    fn parse_chain_prices_rejects_zero_values_as_retryable_bad_response() {
+        let response = GetChainParametersResponse {
+            chain_parameter: vec![
+                ChainParameterEntry {
+                    key: "getTransactionFee".to_owned(),
+                    value: Some(0),
+                },
+                ChainParameterEntry {
+                    key: "getEnergyFee".to_owned(),
+                    value: Some(100),
+                },
+            ],
+        };
+
+        let err = parse_chain_prices_sun(&response).unwrap_err().into_inner();
+        assert!(matches!(err, Web3RpcError::BadResponse(_)));
+        assert!(err.is_retryable());
+    }
+
+    #[test]
+    fn parse_getchainparameters_handles_entries_without_value_field() {
+        let json = r#"{
+            "chainParameter": [
+                { "key": "getAllowUpdateAccountName" },
+                { "key": "getTransactionFee", "value": 1000 },
+                { "key": "getEnergyFee", "value": 100 }
+            ]
+        }"#;
+
+        let response: GetChainParametersResponse = serde_json::from_str(json).unwrap();
+        let prices = parse_chain_prices_sun(&response).unwrap();
+        assert_eq!(prices.bandwidth_price_sun, 1000);
+        assert_eq!(prices.energy_price_sun, 100);
+    }
+
+    /// Verifies that all 6 mixed-case field renames map correctly to `TronAccountResources`.
+    /// Extra fields (TotalNetLimit, etc.) are silently ignored as expected.
+    #[test]
+    fn parse_account_resource_canonical_response() {
+        let json = r#"{
+            "freeNetUsed": 100,
+            "freeNetLimit": 600,
+            "NetUsed": 30,
+            "NetLimit": 500,
+            "EnergyUsed": 200,
+            "EnergyLimit": 1000,
+            "TotalNetLimit": 43200000000,
+            "TotalNetWeight": 84593524300,
+            "TotalEnergyCurrentLimit": 50000000000,
+            "TotalEnergyWeight": 12345678
+        }"#;
+
+        let resources: TronAccountResources = serde_json::from_str(json).unwrap();
+        assert_eq!(resources.free_net_used, 100);
+        assert_eq!(resources.free_net_limit, 600);
+        assert_eq!(resources.net_used, 30);
+        assert_eq!(resources.net_limit, 500);
+        assert_eq!(resources.energy_used, 200);
+        assert_eq!(resources.energy_limit, 1000);
+    }
+
+    /// Empty `{}` (unactivated account / proto3 zero-omission) produces all-zero resources.
+    #[test]
+    fn parse_account_resource_empty_response() {
+        let resources: TronAccountResources = serde_json::from_str("{}").unwrap();
+        assert_eq!(resources, TronAccountResources::default());
+    }
+
+    /// `tron_error_from_value` catches `result: false` before deserialization,
+    /// so `BroadcastHexResponse` only needs to handle success responses.
+    #[test]
+    fn broadcast_hex_error_response_caught_by_tron_error_from_value() {
+        let json = r#"{
+            "result": false,
+            "code": "SIGERROR",
+            "message": "Validate signature error",
+            "txid": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
+        }"#;
+
+        let value: Json = serde_json::from_str(json).unwrap();
+        let error = tron_error_from_value(&value);
+        assert!(error.is_some(), "Error should be detected");
+        let error = error.unwrap();
+        assert_eq!(error.code.as_deref(), Some("SIGERROR"));
+        assert!(!error.is_retryable());
     }
 }

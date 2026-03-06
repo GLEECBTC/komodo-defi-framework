@@ -38,6 +38,7 @@ use ethereum_types::Address as EthAddress;
 use http::Uri;
 use mm2_test_helpers::for_tests::{TRON_NILE_NODES, TRON_TESTNET_KNOWN_ADDRESS};
 use rand::RngCore;
+use std::convert::TryInto;
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_test::*;
@@ -224,6 +225,29 @@ async fn test_balance_native_impl() {
     );
 }
 
+async fn test_get_block_for_tapos_impl() {
+    let client = tron_nile_api_client();
+    let tapos = client.get_block_for_tapos().await.unwrap();
+
+    assert!(
+        tapos.number > 1_000_000,
+        "Nile testnet should have more than 1M blocks, got {}",
+        tapos.number
+    );
+    assert!(
+        tapos.timestamp > 0,
+        "Block timestamp should be positive, got {}",
+        tapos.timestamp
+    );
+
+    // blockID first 8 bytes encode the block number in big-endian
+    let number_from_id = u64::from_be_bytes(tapos.block_id[..8].try_into().unwrap());
+    assert_eq!(
+        number_from_id, tapos.number,
+        "Block number in blockID should match block_header.raw_data.number"
+    );
+}
+
 // ============================================================================
 // Cross-Platform Integration Tests
 // ============================================================================
@@ -248,6 +272,10 @@ cross_test!(tron_nile_balance_native, {
     test_balance_native_impl().await;
 });
 
+cross_test!(tron_nile_get_block_for_tapos, {
+    test_get_block_for_tapos_impl().await;
+});
+
 // ============================================================================
 // Error Response Tests
 // ============================================================================
@@ -255,19 +283,12 @@ cross_test!(tron_nile_balance_native, {
 
 use serde::{Deserialize, Serialize};
 
-/// Request for /wallet/triggerconstantcontract endpoint.
-#[derive(Serialize)]
-struct TriggerConstantContractRequest {
-    owner_address: String,
-    contract_address: String,
-    function_selector: String,
-    parameter: String,
-    visible: bool,
-}
-
 /// Create a single TronHttpClient for error tests (no rotation needed).
 fn tron_nile_single_client() -> TronHttpClient {
-    let uri: Uri = TRON_NILE_NODES[0].parse().expect("Invalid TRON API URL");
+    let uri = tron_nile_urls()
+        .into_iter()
+        .next()
+        .expect("At least one TRON node expected");
     TronHttpClient::new(
         TronHttpNode {
             uri,
@@ -283,18 +304,19 @@ async fn test_error_nested_result_detection_impl() {
     // {"result": {"result": false, "code": "CONTRACT_VALIDATE_ERROR", "message": "..."}}
     let client = tron_nile_single_client();
 
-    let request = TriggerConstantContractRequest {
-        // Use a valid but non-contract address as owner
-        owner_address: TRON_TESTNET_KNOWN_ADDRESS.to_string(),
-        // Use a random address that is definitely not a contract
-        contract_address: random_tron_address().to_base58(),
-        function_selector: "balanceOf(address)".to_string(),
-        parameter: "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
-        visible: true,
-    };
+    let owner = parse_tron_address(TRON_TESTNET_KNOWN_ADDRESS);
+    // Use a random address that is definitely not a contract
+    let non_contract = random_tron_address();
 
-    // Our error detection should now catch the nested result error
-    let result: Result<serde_json::Value, _> = client.post("/wallet/triggerconstantcontract", &request).await;
+    // Uses the public trigger_constant_contract method (same post() + error detection path)
+    let result = client
+        .trigger_constant_contract(
+            &owner,
+            &non_contract,
+            "balanceOf(address)",
+            "0000000000000000000000000000000000000000000000000000000000000001",
+        )
+        .await;
 
     // Should be an error because our error detection catches nested {"result": {"result": false, ...}}
     assert!(result.is_err(), "Expected error for non-existent contract");
@@ -373,6 +395,82 @@ cross_test!(tron_nile_error_empty_response_handling, {
 });
 
 // ============================================================================
+// Fee Validation Tests (TRC20)
+// ============================================================================
+
+const NILE_KNOWN_TRC20_TX_HASH: &str = "b4eaf9c10802e20ad757c701fca45616c71fa68c84dea4110f6772005a480fa4";
+const NILE_KNOWN_TRC20_BLOCK_NUMBER: u64 = 64_844_180;
+const NILE_KNOWN_TRC20_CONTRACT_ADDRESS: &str = "41eca9bc828a3005b9a3b909f2cc5c2a54794de05f";
+const NILE_KNOWN_TRC20_TRANSFER_SELECTOR: &str = "a9059cbb";
+const NILE_KNOWN_TRC20_FEE_SUN: u64 = 345_000;
+
+async fn test_known_trc20_tx_fee_receipt_impl() {
+    let client = tron_nile_single_client();
+
+    let tx = client
+        .get_transaction_by_id(NILE_KNOWN_TRC20_TX_HASH)
+        .await
+        .expect("Known TRC20 transaction should be available on Nile");
+    assert_eq!(tx.tx_id, NILE_KNOWN_TRC20_TX_HASH);
+
+    let first_contract = tx
+        .raw_data
+        .contract
+        .first()
+        .expect("Known TRC20 transaction should contain at least one contract");
+
+    assert_eq!(first_contract.contract_type, "TriggerSmartContract");
+    assert_eq!(
+        first_contract.parameter.value.contract_address.as_deref(),
+        Some(NILE_KNOWN_TRC20_CONTRACT_ADDRESS)
+    );
+
+    let data = first_contract
+        .parameter
+        .value
+        .data
+        .as_deref()
+        .expect("TriggerSmartContract data must be present");
+    assert!(
+        data.starts_with(NILE_KNOWN_TRC20_TRANSFER_SELECTOR),
+        "Expected TRC20 transfer selector prefix {}, got {}",
+        NILE_KNOWN_TRC20_TRANSFER_SELECTOR,
+        data
+    );
+
+    let tx_info = client
+        .get_transaction_info_by_id(NILE_KNOWN_TRC20_TX_HASH)
+        .await
+        .expect("Known TRC20 transaction info should be available on Nile");
+    assert_eq!(tx_info.id, NILE_KNOWN_TRC20_TX_HASH);
+    assert_eq!(tx_info.block_number, NILE_KNOWN_TRC20_BLOCK_NUMBER);
+    assert_eq!(tx_info.receipt.result, "SUCCESS");
+    assert!(tx_info.receipt.energy_usage_total > 0);
+    assert_eq!(tx_info.receipt.energy_fee, 0);
+    assert_eq!(tx_info.receipt.net_fee, NILE_KNOWN_TRC20_FEE_SUN);
+    assert_eq!(tx_info.fee.unwrap_or_default(), NILE_KNOWN_TRC20_FEE_SUN);
+}
+
+async fn test_chain_fee_parameters_are_present_and_valid_impl() {
+    let client = tron_nile_api_client();
+    let chain_prices = client
+        .get_chain_prices()
+        .await
+        .expect("getchainparameters should be available and valid on Nile");
+
+    assert!(chain_prices.bandwidth_price_sun > 0);
+    assert!(chain_prices.energy_price_sun > 0);
+}
+
+cross_test!(tron_nile_known_trc20_tx_fee_receipt, {
+    test_known_trc20_tx_fee_receipt_impl().await;
+});
+
+cross_test!(tron_nile_chain_fee_parameters_are_present_and_valid, {
+    test_chain_fee_parameters_are_present_and_valid_impl().await;
+});
+
+// ============================================================================
 // Node Rotation and Retry Tests
 // ============================================================================
 // These tests verify the retry/failover behavior when nodes fail.
@@ -431,4 +529,51 @@ cross_test!(tron_nile_retry_on_transport_failure, {
 
 cross_test!(tron_nile_all_nodes_failing_returns_transport_error, {
     test_all_nodes_failing_returns_transport_error_impl().await;
+});
+
+// ============================================================================
+// Account Resource Tests
+// ============================================================================
+
+async fn test_get_account_resource_known_address_impl() {
+    let client = tron_nile_api_client();
+    let address = parse_tron_address(TRON_TESTNET_KNOWN_ADDRESS);
+
+    let resources = client
+        .get_account_resource(&address)
+        .await
+        .expect("getaccountresource should succeed for known address");
+
+    // Known testnet address should have at least the free bandwidth limit
+    assert!(
+        resources.free_net_limit > 0,
+        "Known address should have non-zero freeNetLimit, got {}",
+        resources.free_net_limit
+    );
+}
+
+async fn test_get_account_resource_unactivated_address_impl() {
+    let client = tron_nile_api_client();
+    let address = random_tron_address();
+
+    let resources = client
+        .get_account_resource(&address)
+        .await
+        .expect("getaccountresource should succeed for unactivated address (empty {} response)");
+
+    // Unactivated address returns empty {} which deserializes to all zeros
+    assert_eq!(resources.free_net_used, 0);
+    assert_eq!(resources.free_net_limit, 0);
+    assert_eq!(resources.net_used, 0);
+    assert_eq!(resources.net_limit, 0);
+    assert_eq!(resources.energy_used, 0);
+    assert_eq!(resources.energy_limit, 0);
+}
+
+cross_test!(tron_nile_get_account_resource_known_address, {
+    test_get_account_resource_known_address_impl().await;
+});
+
+cross_test!(tron_nile_get_account_resource_unactivated_address, {
+    test_get_account_resource_unactivated_address_impl().await;
 });

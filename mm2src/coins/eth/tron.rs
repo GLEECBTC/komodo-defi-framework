@@ -5,6 +5,11 @@
 
 mod address;
 pub mod api;
+pub mod fee;
+pub(crate) mod proto;
+pub(crate) mod sign;
+pub mod tx_builder;
+pub mod withdraw;
 
 /// Integration tests using real TRON testnet (Nile).
 /// These tests require network access and are gated behind the `tron-network-tests` feature.
@@ -13,13 +18,20 @@ pub mod api;
 mod api_integration_tests;
 
 pub use address::Address as TronAddress;
-pub use api::{TronApiClient, TronHttpClient, TronHttpNode};
+pub use api::{BroadcastHexResponse, TaposBlockData, TronApiClient, TronHttpClient, TronHttpNode};
 
+use ethabi::Token;
 use ethereum_types::U256;
 use serde::{Deserialize, Serialize};
 
 pub const TRX_DECIMALS: u8 = 6;
-const ONE_TRX: u64 = 1_000_000; // 1 TRX = 1,000,000 SUN
+
+/// Build ABI tokens for a TRC20 `transfer(address,uint256)` call.
+///
+/// Shared by `tx_builder` (full ABI encoding with selector) and `api` (parameter-only encoding).
+pub(crate) fn trc20_transfer_tokens(recipient: &TronAddress, amount: U256) -> [Token; 2] {
+    [Token::Address(recipient.to_evm_address()), Token::Uint(amount)]
+}
 
 /// Represents TRON chain/network.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -29,27 +41,99 @@ pub enum Network {
     Nile,
 }
 
-/// Convert TRX to SUN using U256 type.
-#[allow(dead_code)]
-fn trx_to_sun_u256(trx: u64) -> U256 {
-    U256::from(trx) * U256::from(ONE_TRX)
+/// Hard cap on TRON raw transaction size to prevent oversized-input DoS.
+/// Typical TRON transactions are a few hundred bytes; 256 KiB is generous.
+pub const MAX_TRON_RAW_TX_BYTES: usize = 256 * 1024;
+
+/// Strips optional `0x`/`0X` prefix and validates the hex string for TRON broadcast.
+///
+/// Checks: non-empty, bounded length, even character count, ASCII hex digits only.
+pub fn normalize_tron_raw_tx_hex(input: &str) -> Result<String, String> {
+    let s = input
+        .strip_prefix("0x")
+        .or_else(|| input.strip_prefix("0X"))
+        .unwrap_or(input);
+
+    if s.is_empty() {
+        return Err("TRON raw transaction hex is empty".to_owned());
+    }
+    if s.len() > MAX_TRON_RAW_TX_BYTES * 2 {
+        return Err(format!(
+            "TRON raw transaction hex too large: {} chars (max {})",
+            s.len(),
+            MAX_TRON_RAW_TX_BYTES * 2,
+        ));
+    }
+    if !s.len().is_multiple_of(2) {
+        return Err("TRON raw transaction hex has odd length".to_owned());
+    }
+    if !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err("TRON raw transaction hex contains non-hex characters".to_owned());
+    }
+    Ok(s.to_owned())
+}
+
+/// Validates that TRON raw transaction bytes are non-empty and within the size limit.
+pub fn validate_tron_raw_tx_len(len: usize) -> Result<(), String> {
+    if len == 0 {
+        return Err("TRON raw transaction bytes are empty".to_owned());
+    }
+    if len > MAX_TRON_RAW_TX_BYTES {
+        return Err(format!(
+            "TRON raw transaction too large: {} bytes (max {})",
+            len, MAX_TRON_RAW_TX_BYTES,
+        ));
+    }
+    Ok(())
+}
+
+/// Shared test fixtures for TRON unit tests.
+#[cfg(test)]
+pub(super) mod test_fixtures {
+    use super::api::TaposBlockData;
+
+    pub const TEST_FROM_HEX: &str = "4123b00d15c601b30613bf5a3b2f72527c79cc08b6";
+    pub const TEST_TO_HEX: &str = "418840e6c55b9ada326d211d818c34a994aeced808";
+
+    /// Nile testnet block 64,687,673 — used as TAPOS source in golden vector tests.
+    pub fn nile_block_64687673() -> TaposBlockData {
+        TaposBlockData {
+            number: 64_687_673,
+            block_id: {
+                let bytes = hex::decode("0000000003db0e39901ce5715271b601b1c57055f5d8fa6a9fe3505eee560308").unwrap();
+                let mut arr = [0u8; 32];
+                arr.copy_from_slice(&bytes);
+                arr
+            },
+            timestamp: 1_770_522_369_000,
+        }
+    }
 }
 
 #[cfg(test)]
-mod tests {
+mod raw_tx_validation_tests {
     use super::*;
 
     #[test]
-    fn test_trx_to_sun_conversion() {
-        // Zero TRX
-        assert_eq!(trx_to_sun_u256(0), U256::zero());
-        // 1 TRX = 1,000,000 SUN
-        assert_eq!(trx_to_sun_u256(1), U256::from(1_000_000u64));
-        // 100 TRX
-        assert_eq!(trx_to_sun_u256(100), U256::from(100_000_000u64));
-        // Total TRX supply is ~95 billion, but we test u64::MAX for extra safety
-        // u64::MAX * 1_000_000 = 18,446,744,073,709,551,615,000,000
-        let max_sun = trx_to_sun_u256(u64::MAX);
-        assert_eq!(max_sun, U256::from_dec_str("18446744073709551615000000").unwrap());
+    fn normalize_tron_raw_tx_hex_validates_input() {
+        // Valid inputs: strips 0x/0X prefix, accepts bare hex
+        assert_eq!(normalize_tron_raw_tx_hex("0xabcd").unwrap(), "abcd");
+        assert_eq!(normalize_tron_raw_tx_hex("0Xabcd").unwrap(), "abcd");
+        assert_eq!(normalize_tron_raw_tx_hex("abcd1234").unwrap(), "abcd1234");
+
+        // Rejections: empty, prefix-only, odd length, non-hex, oversized
+        assert!(normalize_tron_raw_tx_hex("").is_err());
+        assert!(normalize_tron_raw_tx_hex("0x").is_err());
+        assert!(normalize_tron_raw_tx_hex("abc").is_err());
+        assert!(normalize_tron_raw_tx_hex("abcg").is_err());
+        let oversized = "ab".repeat(MAX_TRON_RAW_TX_BYTES + 1);
+        assert!(normalize_tron_raw_tx_hex(&oversized).is_err());
+    }
+
+    #[test]
+    fn validate_tron_raw_tx_len_validates_bounds() {
+        assert!(validate_tron_raw_tx_len(0).is_err());
+        assert!(validate_tron_raw_tx_len(1000).is_ok());
+        assert!(validate_tron_raw_tx_len(MAX_TRON_RAW_TX_BYTES + 1).is_err());
     }
 }
