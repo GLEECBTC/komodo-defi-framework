@@ -4412,21 +4412,21 @@ pub mod tests {
     const AVG_BLOCKTIME: u8 = 5;
 
     const SUCCEED_TX_HASH_SAMPLES: &[&str] = &[
-        // https://nyancat.iobscan.io/#/tx?txHash=A010FC0AA33FC6D597A8635F9D127C0A7B892FAAC72489F4DADD90048CFE9279
-        "A010FC0AA33FC6D597A8635F9D127C0A7B892FAAC72489F4DADD90048CFE9279",
-        // https://nyancat.iobscan.io/#/tx?txHash=54FD77054AE311C484CC2EADD4621428BB23D14A9BAAC128B0E7B47422F86EC8
-        "54FD77054AE311C484CC2EADD4621428BB23D14A9BAAC128B0E7B47422F86EC8",
-        // https://nyancat.iobscan.io/#/tx?txHash=7C00FAE7F70C36A316A4736025B08A6EAA2A0CC7919A2C4FC4CD14D9FFD166F9
-        "7C00FAE7F70C36A316A4736025B08A6EAA2A0CC7919A2C4FC4CD14D9FFD166F9",
+        // https://nyancat.iobscan.io/#/tx?txHash=F3902E728CA9DA6250443E96087CE22B584D9C4638F938FDEE785A9D3342842C
+        "F3902E728CA9DA6250443E96087CE22B584D9C4638F938FDEE785A9D3342842C",
+        // https://nyancat.iobscan.io/#/tx?txHash=40E894173FEE18BECD7A75D6350D296121F0E2B6F45B56C8E39D2E7B29444900
+        "40E894173FEE18BECD7A75D6350D296121F0E2B6F45B56C8E39D2E7B29444900",
+        // https://nyancat.iobscan.io/#/tx?txHash=C3A42485DFE3EE98B75F736AFF7636FE7393FF43E9F7F2D47E321373326CF300
+        "C3A42485DFE3EE98B75F736AFF7636FE7393FF43E9F7F2D47E321373326CF300",
     ];
 
     const FAILED_TX_HASH_SAMPLES: &[&str] = &[
-        // https://nyancat.iobscan.io/#/tx?txHash=57EE62B2DF7E311C98C24AE2A53EB0FF2C16D289CECE0826CA1FF1108C91B3F9
-        "57EE62B2DF7E311C98C24AE2A53EB0FF2C16D289CECE0826CA1FF1108C91B3F9",
-        // https://nyancat.iobscan.io/#/tx?txHash=F3181D69C580318DFD54282C656AC81113BC600BCFBAAA480E6D8A6469EE8786
-        "F3181D69C580318DFD54282C656AC81113BC600BCFBAAA480E6D8A6469EE8786",
-        // https://nyancat.iobscan.io/#/tx?txHash=FE6F9F395DA94A14FCFC04E0E8C496197077D5F4968DA5528D9064C464ADF522
-        "FE6F9F395DA94A14FCFC04E0E8C496197077D5F4968DA5528D9064C464ADF522",
+        // https://nyancat.iobscan.io/#/tx?txHash=0BFB105AE46F02D165759BADFF2F1F492EE35B5B091C79C8DA125A2AE84EE940
+        "0BFB105AE46F02D165759BADFF2F1F492EE35B5B091C79C8DA125A2AE84EE940",
+        // https://nyancat.iobscan.io/#/tx?txHash=7CAC1418143FFA27687DA9DEE9C2692E024A7FB1DFE50239D6ABFAF47233F7B7
+        "7CAC1418143FFA27687DA9DEE9C2692E024A7FB1DFE50239D6ABFAF47233F7B7",
+        // https://nyancat.iobscan.io/#/tx?txHash=B24291E9BF2AA4EF22293964F29C9C661D5FCC99AF99877D55AD1E1B82015EFE
+        "B24291E9BF2AA4EF22293964F29C9C661D5FCC99AF99877D55AD1E1B82015EFE",
     ];
 
     fn get_iris_usdc_ibc_protocol() -> TendermintProtocolInfo {
@@ -4635,7 +4635,7 @@ pub mod tests {
         ))
         .unwrap();
 
-        let query = "claim_htlc.id='2B925FC83A106CC81590B3DB108AC2AE496FFA912F368FE5E29BC1ED2B754F2C'".to_owned();
+        let query = "claim_htlc.id='FAAD30DD74C5C13FB1B7ACEEE71EE6C26784C340A137120EB52024B199E50B71'".to_owned();
         let request = TxSearchRequest {
             query,
             order_by: TendermintResultOrder::Ascending.into(),
@@ -4653,7 +4653,7 @@ pub mod tests {
         println!("{first_msg:?}");
 
         let claim_htlc = ClaimHtlcProto::decode(HtlcType::Iris, first_msg.value.as_slice()).unwrap();
-        let expected_secret = [1; 32];
+        let expected_secret = [4; 32];
         let actual_secret = hex::decode(claim_htlc.secret()).unwrap();
 
         assert_eq!(actual_secret, expected_secret);
@@ -4689,8 +4689,8 @@ pub mod tests {
         ))
         .unwrap();
 
-        // https://nyancat.iobscan.io/#/tx?txHash=2DB382CE3D9953E4A94957B475B0E8A98F5B6DDB32D6BF0F6A765D949CF4A727
-        let create_tx_hash = "2DB382CE3D9953E4A94957B475B0E8A98F5B6DDB32D6BF0F6A765D949CF4A727";
+        // https://nyancat.iobscan.io/#/tx?txHash=C3A42485DFE3EE98B75F736AFF7636FE7393FF43E9F7F2D47E321373326CF300
+        let create_tx_hash = "C3A42485DFE3EE98B75F736AFF7636FE7393FF43E9F7F2D47E321373326CF300";
 
         let request = GetTxRequest {
             hash: create_tx_hash.into(),
@@ -4712,7 +4712,7 @@ pub mod tests {
 
         let encoded_tx = tx.encode_to_vec();
 
-        let secret_hash = hex::decode("0C34C71EBA2A51738699F9F3D6DAFFB15BE576E8ED543203485791B5DA39D10D").unwrap();
+        let secret_hash = hex::decode("9f4fb68f3e1dac82202f9aa581ce0bbf1f765df0e9ac3c8c57e20f685abab8ed").unwrap();
         let spend_tx = block_on(coin.wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
             tx_bytes: &encoded_tx,
             secret_hash: &secret_hash,
@@ -4724,8 +4724,8 @@ pub mod tests {
         }))
         .unwrap();
 
-        // https://nyancat.iobscan.io/#/tx?txHash=565C820C1F95556ADC251F16244AAD4E4274772F41BC13F958C9C2F89A14D137
-        let expected_spend_hash = "565C820C1F95556ADC251F16244AAD4E4274772F41BC13F958C9C2F89A14D137";
+        // https://nyancat.iobscan.io/#/tx?txHash=BC93B027248E0DC090B754E247C3B52A480576752CC4A0CCC1631F88BC496676
+        let expected_spend_hash = "BC93B027248E0DC090B754E247C3B52A480576752CC4A0CCC1631F88BC496676";
         let hash = spend_tx.tx_hash_as_bytes();
         assert_eq!(hex::encode_upper(hash.0), expected_spend_hash);
     }
@@ -5037,8 +5037,8 @@ pub mod tests {
         .unwrap();
 
         // just a random transfer tx not related to AtomicDEX, should fail because the message is not CreateHtlc
-        // https://nyancat.iobscan.io/#/tx?txHash=65815814E7D74832D87956144C1E84801DC94FE9A509D207A0ABC3F17775E5DF
-        let random_transfer_tx_hash = "65815814E7D74832D87956144C1E84801DC94FE9A509D207A0ABC3F17775E5DF";
+        // https://nyancat.iobscan.io/#/tx?txHash=F3902E728CA9DA6250443E96087CE22B584D9C4638F938FDEE785A9D3342842C
+        let random_transfer_tx_hash = "F3902E728CA9DA6250443E96087CE22B584D9C4638F938FDEE785A9D3342842C";
         let random_transfer_tx_bytes = block_on(coin.request_tx(random_transfer_tx_hash.into()))
             .unwrap()
             .encode_to_vec();
@@ -5063,26 +5063,27 @@ pub mod tests {
         };
 
         // The HTLC that was already claimed or refunded should not pass the validation
-        // https://nyancat.iobscan.io/#/tx?txHash=93CF377D470EB27BD6E2C5B95BFEFE99359F95B88C70D785B34D1D2C670201B9
-        let claimed_htlc_tx_hash = "93CF377D470EB27BD6E2C5B95BFEFE99359F95B88C70D785B34D1D2C670201B9";
+        // https://nyancat.iobscan.io/#/tx?txHash=41778118ABEFA7E98BD31DCD053A536E51895CDE5F06B216812EB5F70BE817E7
+        let claimed_htlc_tx_hash = "41778118ABEFA7E98BD31DCD053A536E51895CDE5F06B216812EB5F70BE817E7";
         let claimed_htlc_tx_bytes = block_on(coin.request_tx(claimed_htlc_tx_hash.into()))
             .unwrap()
             .encode_to_vec();
 
         let input = ValidatePaymentInput {
             payment_tx: claimed_htlc_tx_bytes,
-            time_lock_duration: 20000,
-            time_lock: 1664984893,
-            other_pub: hex::decode("025a37975c079a7543603fcab24e2565a4adee3cf9af8934690e103282fa402511").unwrap(),
-            secret_hash: hex::decode("441d0237e93677d3458e1e5a2e69f61e3622813521bf048dd56290306acdd134").unwrap(),
-            amount: "0.01".parse().unwrap(),
+            time_lock_duration: 5000,
+            time_lock: 0,
+            other_pub: IRIS_TESTNET_HTLC_PAIR2_PUB_KEY.to_vec(),
+            secret_hash: hex::decode("f849d67325facf04177bc663b2dc544051831c589ef581d412f2eba44834e77c").unwrap(),
+            amount: "0.000001".parse().unwrap(),
             swap_contract_address: None,
             try_spv_proof_until: 0,
             confirmations: 0,
             unique_swap_data: Vec::new(),
             watcher_reward: None,
         };
-        let validate_err = block_on(coin.validate_payment_for_denom(input, "nim".parse().unwrap(), 6)).unwrap_err();
+        let validate_err =
+            block_on(coin.validate_payment_for_denom(input, coin.protocol_info.denom.clone(), 6)).unwrap_err();
         match validate_err.into_inner() {
             ValidatePaymentError::UnexpectedPaymentState(_) => (),
             unexpected => panic!("Unexpected error variant {:?}", unexpected),
@@ -5119,8 +5120,8 @@ pub mod tests {
         ))
         .unwrap();
 
-        // https://nyancat.iobscan.io/#/tx?txHash=2DB382CE3D9953E4A94957B475B0E8A98F5B6DDB32D6BF0F6A765D949CF4A727
-        let create_tx_hash = "2DB382CE3D9953E4A94957B475B0E8A98F5B6DDB32D6BF0F6A765D949CF4A727";
+        // https://nyancat.iobscan.io/#/tx?txHash=C3A42485DFE3EE98B75F736AFF7636FE7393FF43E9F7F2D47E321373326CF300
+        let create_tx_hash = "C3A42485DFE3EE98B75F736AFF7636FE7393FF43E9F7F2D47E321373326CF300";
 
         let request = GetTxRequest {
             hash: create_tx_hash.into(),
@@ -5142,7 +5143,7 @@ pub mod tests {
 
         let encoded_tx = tx.encode_to_vec();
 
-        let secret_hash = hex::decode("0C34C71EBA2A51738699F9F3D6DAFFB15BE576E8ED543203485791B5DA39D10D").unwrap();
+        let secret_hash = hex::decode("9f4fb68f3e1dac82202f9aa581ce0bbf1f765df0e9ac3c8c57e20f685abab8ed").unwrap();
         let input = SearchForSwapTxSpendInput {
             time_lock: 0,
             other_pub: &[],
@@ -5158,8 +5159,8 @@ pub mod tests {
             unexpected => panic!("Unexpected search_for_swap_tx_spend_my result {:?}", unexpected),
         };
 
-        // https://nyancat.iobscan.io/#/tx?txHash=565C820C1F95556ADC251F16244AAD4E4274772F41BC13F958C9C2F89A14D137
-        let expected_spend_hash = "565C820C1F95556ADC251F16244AAD4E4274772F41BC13F958C9C2F89A14D137";
+        // https://nyancat.iobscan.io/#/tx?txHash=BC93B027248E0DC090B754E247C3B52A480576752CC4A0CCC1631F88BC496676
+        let expected_spend_hash = "BC93B027248E0DC090B754E247C3B52A480576752CC4A0CCC1631F88BC496676";
         let hash = spend_tx.tx_hash_as_bytes();
         assert_eq!(hex::encode_upper(hash.0), expected_spend_hash);
     }
@@ -5194,8 +5195,8 @@ pub mod tests {
         ))
         .unwrap();
 
-        // https://nyancat.iobscan.io/#/tx?txHash=BD1A76F43E8E2C7A1104EE363D63455CD50C76F2BFE93B703235F0A973061297
-        let create_tx_hash = "BD1A76F43E8E2C7A1104EE363D63455CD50C76F2BFE93B703235F0A973061297";
+        // https://nyancat.iobscan.io/#/tx?txHash=DB102708BA64ADD5DF551843D5F1E3CC574E4640A371EB265E7824B0C854757F
+        let create_tx_hash = "DB102708BA64ADD5DF551843D5F1E3CC574E4640A371EB265E7824B0C854757F";
 
         let request = GetTxRequest {
             hash: create_tx_hash.into(),
@@ -5217,7 +5218,7 @@ pub mod tests {
 
         let encoded_tx = tx.encode_to_vec();
 
-        let secret_hash = hex::decode("cb11cacffdfc82060aa4a9a1bb9cc094c4141b170994f7642cd54d7e7af6743e").unwrap();
+        let secret_hash = hex::decode("e802086ad6a1e16b78352ad7296d2aabd835b1b16dbe951e1135b97c68e29d81").unwrap();
         let input = SearchForSwapTxSpendInput {
             time_lock: 0,
             other_pub: &[],
@@ -5549,5 +5550,339 @@ pub mod tests {
 
         assert_eq!(expected_channel, actual_channel);
         assert_eq!(expected_channel_str, actual_channel_str);
+    }
+
+    /// One-off fixture generator for nyancat-9 testnet.
+    /// Run manually to create transactions needed by other tests:
+    ///   cargo test -p coins --lib -- test_create_nyancat_fixtures --ignored --nocapture
+    ///
+    /// After running, update the tx hash constants in the tests above.
+    /// The refunded HTLC needs ~50 blocks (~250 seconds) to expire after creation.
+    #[test]
+    #[ignore]
+    fn test_create_nyancat_fixtures() {
+        // ── Setup PAIR1 coin (unyan on IRIS nyancat-9) ──
+        let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
+        let protocol_conf = get_iris_protocol();
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
+        let conf = TendermintConf {
+            avg_blocktime: AVG_BLOCKTIME,
+            derivation_path: None,
+        };
+
+        let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
+        let tendermint_pair = TendermintKeyPair::new(key_pair.private().secret, *key_pair.public());
+        let activation_policy =
+            TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(tendermint_pair));
+
+        let coin = block_on(TendermintCoin::init(
+            &ctx,
+            "IRIS".to_string(),
+            conf,
+            protocol_conf,
+            nodes,
+            false,
+            activation_policy,
+            Default::default(),
+        ))
+        .unwrap();
+
+        println!("=== PAIR1 address: {} ===", coin.account_id);
+
+        // ── 1. Create a simple MsgSend transfer (for SUCCEED_TX_HASH_SAMPLES) ──
+        let to: AccountId = IRIS_TESTNET_HTLC_PAIR2_ADDRESS.parse().unwrap();
+        let amount = cosmrs::Coin {
+            denom: coin.protocol_info.denom.clone(),
+            amount: 1u64.into(),
+        };
+        let msg_send = MsgSend {
+            from_address: coin.account_id.clone(),
+            to_address: to.clone(),
+            amount: vec![amount],
+        }
+        .to_any()
+        .unwrap();
+
+        let current_block = block_on(async { coin.current_block().compat().await.unwrap() });
+        let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+        let fee = block_on(async {
+            coin.calculate_fee(msg_send.clone(), timeout_height, TX_DEFAULT_MEMO, None)
+                .await
+                .unwrap()
+        });
+        let (tx_id, _) = block_on(async {
+            coin.common_send_raw_tx_bytes(msg_send, fee, timeout_height, TX_DEFAULT_MEMO, Duration::from_secs(20))
+                .await
+                .unwrap()
+        });
+        println!("SUCCEED_TX (MsgSend transfer): {tx_id}");
+
+        // ── 2. Create + Claim HTLC with known secret ──
+        //    (for try_query_claim_htlc_txs_and_get_secret, wait_for_tx_spend_test,
+        //     test_search_for_swap_tx_spend_spent, validate_payment_test)
+        //    NOTE: Change this secret each time you run the fixture generator,
+        //    since IRIS rejects HTLCs with duplicate IDs.
+        let known_secret = [4u8; 32];
+        let secret_hash = sha256(&known_secret);
+        let time_lock = 1000;
+
+        let create_htlc_tx = coin
+            .gen_create_htlc_tx(
+                coin.protocol_info.denom.clone(),
+                &to,
+                1u64.into(),
+                secret_hash.as_slice(),
+                time_lock,
+            )
+            .unwrap();
+        let htlc_id = create_htlc_tx.id.clone();
+
+        let current_block = block_on(async { coin.current_block().compat().await.unwrap() });
+        let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+        let fee = block_on(async {
+            coin.calculate_fee(
+                create_htlc_tx.msg_payload.clone(),
+                timeout_height,
+                TX_DEFAULT_MEMO,
+                None,
+            )
+            .await
+            .unwrap()
+        });
+        let (create_tx_id, _) = block_on(async {
+            coin.common_send_raw_tx_bytes(
+                create_htlc_tx.msg_payload,
+                fee,
+                timeout_height,
+                TX_DEFAULT_MEMO,
+                Duration::from_secs(20),
+            )
+            .await
+            .unwrap()
+        });
+        println!("CLAIMED_HTLC CreateHTLC tx: {create_tx_id}");
+        println!("CLAIMED_HTLC ID: {htlc_id}");
+        println!("CLAIMED_HTLC secret_hash: {}", hex::encode(secret_hash.as_slice()));
+
+        // Claim it
+        let claim_htlc_tx = coin.gen_claim_htlc_tx(htlc_id.clone(), &known_secret).unwrap();
+        let current_block = block_on(async { coin.current_block().compat().await.unwrap() });
+        let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+        let fee = block_on(async {
+            coin.calculate_fee(claim_htlc_tx.msg_payload.clone(), timeout_height, TX_DEFAULT_MEMO, None)
+                .await
+                .unwrap()
+        });
+        let (claim_tx_id, _) = block_on(async {
+            coin.common_send_raw_tx_bytes(
+                claim_htlc_tx.msg_payload,
+                fee,
+                timeout_height,
+                TX_DEFAULT_MEMO,
+                Duration::from_secs(30),
+            )
+            .await
+            .unwrap()
+        });
+        println!("CLAIMED_HTLC ClaimHTLC tx: {claim_tx_id}");
+
+        // ── 2b. Create HTLC from PAIR2 → PAIR1 (reverse direction) ──
+        //    (for validate_payment_test: coin is PAIR1, validates HTLC sent TO it by PAIR2)
+        let key_pair2 = key_pair_from_seed("iris test2 seed").unwrap();
+        let tendermint_pair2 = TendermintKeyPair::new(key_pair2.private().secret, *key_pair2.public());
+        let activation_policy2 =
+            TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(tendermint_pair2));
+
+        let conf2 = TendermintConf {
+            avg_blocktime: AVG_BLOCKTIME,
+            derivation_path: None,
+        };
+        let coin2 = block_on(TendermintCoin::init(
+            &ctx,
+            "IRIS".to_string(),
+            conf2,
+            get_iris_protocol(),
+            vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)],
+            false,
+            activation_policy2,
+            Default::default(),
+        ))
+        .unwrap();
+
+        let pair1_address: AccountId = coin.account_id.clone();
+        let reverse_secret = [5u8; 32];
+        let reverse_secret_hash = sha256(&reverse_secret);
+        let reverse_htlc_tx = coin2
+            .gen_create_htlc_tx(
+                coin2.protocol_info.denom.clone(),
+                &pair1_address,
+                1u64.into(),
+                reverse_secret_hash.as_slice(),
+                1000,
+            )
+            .unwrap();
+
+        let current_block = block_on(async { coin2.current_block().compat().await.unwrap() });
+        let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+        let fee = block_on(async {
+            coin2
+                .calculate_fee(
+                    reverse_htlc_tx.msg_payload.clone(),
+                    timeout_height,
+                    TX_DEFAULT_MEMO,
+                    None,
+                )
+                .await
+                .unwrap()
+        });
+        let reverse_htlc_id = reverse_htlc_tx.id.clone();
+        let (reverse_create_tx_id, _) = block_on(async {
+            coin2
+                .common_send_raw_tx_bytes(
+                    reverse_htlc_tx.msg_payload,
+                    fee,
+                    timeout_height,
+                    TX_DEFAULT_MEMO,
+                    Duration::from_secs(20),
+                )
+                .await
+                .unwrap()
+        });
+        println!("REVERSE_HTLC (PAIR2→PAIR1) CreateHTLC tx: {reverse_create_tx_id}");
+        println!(
+            "REVERSE_HTLC secret_hash: {}",
+            hex::encode(reverse_secret_hash.as_slice())
+        );
+
+        // Claim the reverse HTLC (so it enters COMPLETED state for validate_payment_test)
+        let reverse_claim_tx = coin2.gen_claim_htlc_tx(reverse_htlc_id, &reverse_secret).unwrap();
+        let current_block = block_on(async { coin2.current_block().compat().await.unwrap() });
+        let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+        let fee = block_on(async {
+            coin2
+                .calculate_fee(
+                    reverse_claim_tx.msg_payload.clone(),
+                    timeout_height,
+                    TX_DEFAULT_MEMO,
+                    None,
+                )
+                .await
+                .unwrap()
+        });
+        let (reverse_claim_tx_id, _) = block_on(async {
+            coin2
+                .common_send_raw_tx_bytes(
+                    reverse_claim_tx.msg_payload,
+                    fee,
+                    timeout_height,
+                    TX_DEFAULT_MEMO,
+                    Duration::from_secs(30),
+                )
+                .await
+                .unwrap()
+        });
+        println!("REVERSE_HTLC ClaimHTLC tx: {reverse_claim_tx_id}");
+
+        // ── 3. Create HTLC with minimum timelock for refund ──
+        //    (for test_search_for_swap_tx_spend_refunded)
+        let refund_secret = [6u8; 32];
+        let refund_secret_hash = sha256(&refund_secret);
+        let min_time_lock = 50; // minimum allowed by IRIS module
+
+        let refund_htlc_tx = coin
+            .gen_create_htlc_tx(
+                coin.protocol_info.denom.clone(),
+                &to,
+                1u64.into(),
+                refund_secret_hash.as_slice(),
+                min_time_lock,
+            )
+            .unwrap();
+        let refund_htlc_id = refund_htlc_tx.id.clone();
+
+        let current_block = block_on(async { coin.current_block().compat().await.unwrap() });
+        let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+        let fee = block_on(async {
+            coin.calculate_fee(
+                refund_htlc_tx.msg_payload.clone(),
+                timeout_height,
+                TX_DEFAULT_MEMO,
+                None,
+            )
+            .await
+            .unwrap()
+        });
+        let (refund_create_tx_id, _) = block_on(async {
+            coin.common_send_raw_tx_bytes(
+                refund_htlc_tx.msg_payload,
+                fee,
+                timeout_height,
+                TX_DEFAULT_MEMO,
+                Duration::from_secs(20),
+            )
+            .await
+            .unwrap()
+        });
+        println!("REFUND_HTLC CreateHTLC tx: {refund_create_tx_id}");
+        println!("REFUND_HTLC ID: {refund_htlc_id}");
+        println!(
+            "REFUND_HTLC secret_hash: {}",
+            hex::encode(refund_secret_hash.as_slice())
+        );
+        println!(
+            "REFUND_HTLC time_lock: {min_time_lock} blocks (~{} seconds)",
+            min_time_lock * AVG_BLOCKTIME as u64
+        );
+
+        // ── 4. Create failed transactions (for FAILED_TX_HASH_SAMPLES) ──
+        //    Claim an HTLC with wrong secret — passes CheckTx but fails DeliverTx.
+        //    The tx is included in the block with a non-zero error code.
+        //    Use hardcoded fee since simulate rejects intentionally invalid txs.
+        for i in 0..3u8 {
+            let wrong_secret = [50 + i; 32];
+            let wrong_claim_tx = coin.gen_claim_htlc_tx(refund_htlc_id.clone(), &wrong_secret).unwrap();
+
+            let account_info = block_on(async { coin.account_info(&coin.account_id).await.unwrap() });
+            let current_block = block_on(async { coin.current_block().compat().await.unwrap() });
+            let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+            let fee = Fee::from_amount_and_gas(
+                cosmrs::Coin {
+                    denom: coin.protocol_info.denom.clone(),
+                    amount: 25000u64.into(),
+                },
+                GAS_LIMIT_DEFAULT,
+            );
+            let signed_tx = coin
+                .any_to_signed_raw_tx(
+                    coin.activation_policy.activated_key_or_err().unwrap(),
+                    &account_info,
+                    wrong_claim_tx.msg_payload,
+                    fee,
+                    timeout_height,
+                    TX_DEFAULT_MEMO,
+                )
+                .unwrap();
+
+            let tx_bytes = signed_tx.to_bytes().unwrap();
+            let broadcast_res = block_on(async {
+                coin.rpc_client()
+                    .await
+                    .unwrap()
+                    .broadcast_tx_commit(tx_bytes)
+                    .await
+                    .unwrap()
+            });
+            assert!(
+                !broadcast_res.tx_result.code.is_ok(),
+                "Expected failed tx but got success"
+            );
+            println!("FAILED_TX {}: {}", i + 1, broadcast_res.hash);
+        }
+
+        println!();
+        println!(
+            "=== Wait ~{} seconds for the refund HTLC to expire, then update test constants ===",
+            min_time_lock * AVG_BLOCKTIME as u64
+        );
     }
 }
