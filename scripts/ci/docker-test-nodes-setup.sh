@@ -136,7 +136,7 @@ EOF
             "failsafeAddress": "000000000000000000000000000000000000000000000000000000000000000089eb0d6a8a69"
         },
         "hardforkV2": {
-            "allowHeight": 0,
+            "allowHeight": 30,
             "requireHeight": 7777777,
             "finalCutHeight": 8888888
         }
