@@ -4406,7 +4406,7 @@ pub mod tests {
     ];
     const IRIS_TESTNET_HTLC_PAIR2_ADDRESS: &str = "iaa1erfnkjsmalkwtvj44qnfr2drfzdt4n9ldh0kjv";
 
-    pub const IRIS_TESTNET_RPC_URL: &str = "http://34.80.202.172:26657";
+    pub const IRIS_TESTNET_RPC_URL: &str = "https://rpc.nyancat.irisnet.org";
 
     const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
     const AVG_BLOCKTIME: u8 = 5;
