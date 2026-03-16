@@ -135,9 +135,9 @@ macro_rules! try_ztx_s {
 }
 
 const DEX_FEE_OVK: OutgoingViewingKey = OutgoingViewingKey([7; 32]);
-const DEX_FEE_Z_ADDR: &str = "zs18egqw99pw5846jfrqntu4neup4hjjchx874j6krmeq88yh4adws9djmuplg5hfx9f0wdsscgr5j";
+const DEX_FEE_Z_ADDR: &str = "zs1lgdrlg6kv6lmf0n9ps2uhj6sc8rdn30vx44qzu7hqa5ms4a4fwytlr8yuwrqyvhk6l6r5fevw50";
 /// Burn disabled - using same address as fee address
-const DEX_BURN_Z_ADDR: &str = "zs18egqw99pw5846jfrqntu4neup4hjjchx874j6krmeq88yh4adws9djmuplg5hfx9f0wdsscgr5j";
+const DEX_BURN_Z_ADDR: &str = "zs1lgdrlg6kv6lmf0n9ps2uhj6sc8rdn30vx44qzu7hqa5ms4a4fwytlr8yuwrqyvhk6l6r5fevw50";
 
 cfg_native!(
     #[cfg(test)]
