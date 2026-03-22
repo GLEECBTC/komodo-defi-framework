@@ -76,7 +76,7 @@ cfg-if.workspace = true
 chain = { path = "../mm2_bitcoin/chain", default-features = false }
 chrono.workspace = true
 clap.workspace = true
-coins = { path = "../coins", default-features = false }
+coins = { path = "../coins", default-features = false, features = ["utxo-walletconnect"] }
 coins_activation = { path = "../coins_activation", default-features = false }
 common = { path = "../common" }
 compatible-time.workspace = true
