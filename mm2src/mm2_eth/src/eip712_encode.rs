@@ -82,6 +82,7 @@ fn encode_data(
         PropertyType::String => encode_string(data, field_name),
         PropertyType::Uint256 => encode_u256(data, field_name),
         PropertyType::Address => encode_address(data, field_name),
+        PropertyType::Bytes => encode_bytes(data, field_name),
         PropertyType::Bytes32 => encode_bytes32(data, field_name),
         PropertyType::Custom(custom) => encode_custom(custom_types, &custom, data, field_name),
     }
@@ -110,16 +111,18 @@ fn encode_custom(
     Ok(keccak256(&encoded_tokens).as_ref().to_vec())
 }
 
-fn encode_bytes32(value: &Json, field_name: Option<&str>) -> Result<Vec<u8>> {
-    let string = value
-        .as_str()
-        .ok_or_else(|| expected_type_error("bytes32", value, field_name))?;
-    check_hex(string, field_name)?;
-
-    let bytes = hex::decode(string).map_err(|e| decode_error(e, field_name))?;
+/// Encode dynamic `bytes` — keccak256 hash of the raw bytes (same treatment as `string`).
+fn encode_bytes(value: &Json, field_name: Option<&str>) -> Result<Vec<u8>> {
+    let bytes = decode_hex_bytes(value, field_name)?;
     let hash = keccak256(&bytes).to_vec();
-
     Ok(encode(&[Token::FixedBytes(hash)]))
+}
+
+/// Encode fixed-size `bytes32` — the raw 32-byte value is encoded directly, NOT hashed.
+/// Per EIP-712: fixed-size bytesN values are zero-padded to 32 bytes and encoded as-is.
+fn encode_bytes32(value: &Json, field_name: Option<&str>) -> Result<Vec<u8>> {
+    let bytes = decode_hex_bytes_exact::<32>(value, "bytes32", field_name)?;
+    Ok(encode(&[Token::FixedBytes(bytes.to_vec())]))
 }
 
 fn encode_string(value: &Json, field_name: Option<&str>) -> Result<Vec<u8>> {
@@ -139,24 +142,22 @@ fn encode_bool(value: &Json, field_name: Option<&str>) -> Result<Vec<u8>> {
 }
 
 fn encode_address(value: &Json, field_name: Option<&str>) -> Result<Vec<u8>> {
-    let string = value
-        .as_str()
-        .ok_or_else(|| expected_type_error("address", value, field_name))?;
-    // "0x" - 2 chars, 40 chars are 20 hexed bytes.
-    if string.len() != 42 {
-        return Err(decode_error("Expected 0x-prefixed address (20 bytes)", field_name));
-    }
-    let address = Address::from_str(&string[2..]).map_err(|e| decode_error(e, field_name))?;
-    Ok(encode(&[Token::Address(address)]))
+    let bytes = decode_hex_bytes_exact::<20>(value, "address", field_name)?;
+    Ok(encode(&[Token::Address(Address::from(bytes))]))
 }
 
 fn encode_u256(value: &Json, field_name: Option<&str>) -> Result<Vec<u8>> {
     let string = value
         .as_str()
-        .ok_or_else(|| expected_type_error("str(u256)", value, field_name))?;
-    check_hex(string, field_name)?;
-
-    let uint = U256::from_str(&string[2..]).map_err(|e| decode_error(e, field_name))?;
+        .ok_or_else(|| expected_type_error("uint256", value, field_name))?;
+    let hex_str = string
+        .strip_prefix("0x")
+        .or_else(|| string.strip_prefix("0X"))
+        .ok_or_else(|| decode_error("Expected 0x-prefixed hex string", field_name))?;
+    if hex_str.len() > 64 {
+        return Err(decode_error("uint256 value exceeds 32 bytes", field_name));
+    }
+    let uint = U256::from_str(hex_str).map_err(|e| decode_error(e, field_name))?;
     Ok(encode(&[Token::Uint(uint)]))
 }
 
@@ -224,24 +225,43 @@ fn build_dependencies<'a>(data_type: &'a str, custom_types: &'a CustomTypes) -> 
     Some(deps)
 }
 
-fn check_hex(string: &str, field_name: Option<&str>) -> Result<()> {
-    if string.len() >= 2 && &string[..2] == "0x" {
-        return Ok(());
+/// Decode a `0x`-prefixed hex string from a JSON value into raw bytes.
+/// Accepts any even-length hex payload (including empty `"0x"`).
+fn decode_hex_bytes(value: &Json, field_name: Option<&str>) -> Result<Vec<u8>> {
+    let string = value
+        .as_str()
+        .ok_or_else(|| expected_type_error("hex bytes", value, field_name))?;
+    let hex_payload = string
+        .strip_prefix("0x")
+        .or_else(|| string.strip_prefix("0X"))
+        .ok_or_else(|| decode_error("Expected 0x-prefixed hex string", field_name))?;
+    if hex_payload.len() % 2 != 0 {
+        return Err(decode_error(
+            format!(
+                "Hex payload must have even length, found {} characters",
+                hex_payload.len()
+            ),
+            field_name,
+        ));
     }
+    hex::decode(hex_payload).map_err(|e| decode_error(e, field_name))
+}
 
-    Err(decode_error(
-        format!(
-            "Expected a 0x-prefixed string of even length, found {} length string",
-            string.len()
-        ),
-        field_name,
-    ))
+/// Decode a `0x`-prefixed hex string and enforce exactly `N` decoded bytes.
+fn decode_hex_bytes_exact<const N: usize>(value: &Json, type_name: &str, field_name: Option<&str>) -> Result<[u8; N]> {
+    let bytes = decode_hex_bytes(value, field_name)?;
+    bytes
+        .try_into()
+        .map_err(|_| decode_error(format!("{} must be exactly {} bytes", type_name, N), field_name))
 }
 
 fn expected_type_error(expected: &str, found: &Json, field_name: Option<&str>) -> Error {
     decode_error(format!("Expected '{expected}' type, found '{found}'"), field_name)
 }
 
+// TODO: Input validation errors currently reuse `web3::Error::Decoder`, which is
+// intended for RPC response parsing failures. Introduce a dedicated `Eip712EncodeError`
+// so callers can distinguish typed-data input errors from transport/deserialization errors.
 fn decode_error<E: fmt::Display>(error: E, field_name: Option<&str>) -> Error {
     let error = match field_name {
         Some(field_name) => format!("EIP712 '{field_name}' deserialization error: {error}"),
@@ -389,6 +409,141 @@ mod tests {
         assert_eq!(
             format!("{hash:02x}"),
             "be609aee343fb3c4b28e1df9e632fca64fcfaede20f02e86244efddf30957bd2",
+        );
+    }
+
+    #[test]
+    fn test_encode_bytes32_direct_no_hash() {
+        // Per EIP-712: bytes32 is encoded directly as its raw 32-byte value, NOT keccak256-hashed.
+        let value = Json::String("0x0000000000000000000000000000000000000000000000000000000000000001".to_string());
+        let encoded = encode_bytes32(&value, Some("testField")).unwrap();
+        // The ABI encoding of a 32-byte value that is 0x...01 should be the value itself,
+        // left-padded to 32 bytes (which it already is).
+        let expected = encode(&[Token::FixedBytes(
+            hex::decode("0000000000000000000000000000000000000000000000000000000000000001").unwrap(),
+        )]);
+        assert_eq!(encoded, expected);
+
+        // Verify this is NOT the old buggy behavior (keccak256 of the bytes).
+        let old_buggy = encode(&[Token::FixedBytes(
+            keccak256(&hex::decode("0000000000000000000000000000000000000000000000000000000000000001").unwrap())
+                .to_vec(),
+        )]);
+        assert_ne!(encoded, old_buggy, "bytes32 must NOT be keccak256-hashed");
+    }
+
+    #[test]
+    fn test_encode_bytes32_rejects_wrong_length() {
+        // Too short (16 bytes).
+        let short = Json::String("0x00000000000000000000000000000001".to_string());
+        assert!(encode_bytes32(&short, Some("salt")).is_err());
+
+        // Too long (33 bytes).
+        let long = Json::String(format!("0x{}", "ab".repeat(33)));
+        assert!(encode_bytes32(&long, Some("salt")).is_err());
+    }
+
+    #[test]
+    fn test_encode_bytes_dynamic_hashed() {
+        // Per EIP-712: dynamic `bytes` is encoded as keccak256 of its contents.
+        let value = Json::String("0x1234".to_string());
+        let encoded = encode_bytes(&value, Some("data")).unwrap();
+        let expected = encode(&[Token::FixedBytes(keccak256(&[0x12, 0x34]).to_vec())]);
+        assert_eq!(encoded, expected);
+    }
+
+    #[test]
+    fn test_encode_bytes_empty() {
+        // Empty bytes "0x" is valid — keccak256 of empty input.
+        let value = Json::String("0x".to_string());
+        let encoded = encode_bytes(&value, Some("data")).unwrap();
+        let expected = encode(&[Token::FixedBytes(keccak256(&[]).to_vec())]);
+        assert_eq!(encoded, expected);
+    }
+
+    #[test]
+    fn test_decode_hex_bytes_validation() {
+        // Missing 0x prefix.
+        let no_prefix = Json::String("1234".to_string());
+        assert!(decode_hex_bytes(&no_prefix, Some("f")).is_err());
+
+        // Odd-length hex.
+        let odd = Json::String("0x123".to_string());
+        assert!(decode_hex_bytes(&odd, Some("f")).is_err());
+
+        // Invalid hex characters.
+        let bad_chars = Json::String("0xZZZZ".to_string());
+        assert!(decode_hex_bytes(&bad_chars, Some("f")).is_err());
+
+        // Valid input.
+        let valid = Json::String("0xabcd".to_string());
+        assert_eq!(decode_hex_bytes(&valid, Some("f")).unwrap(), vec![0xab, 0xcd]);
+    }
+
+    #[test]
+    fn test_encode_u256_hex_parsing() {
+        // uint256 accepts odd-length hex like "0x1" (used by Ether Mail chainId).
+        let one = Json::String("0x1".to_string());
+        assert_eq!(encode_u256(&one, None).unwrap(), encode(&[Token::Uint(U256::from(1))]));
+
+        // Verify hex parsing — "0x10" must parse as 16, not 10.
+        let sixteen = Json::String("0x10".to_string());
+        assert_eq!(
+            encode_u256(&sixteen, None).unwrap(),
+            encode(&[Token::Uint(U256::from(16))])
+        );
+
+        // Alpha hex digits work.
+        let aa = Json::String("0xaa".to_string());
+        assert_eq!(
+            encode_u256(&aa, None).unwrap(),
+            encode(&[Token::Uint(U256::from(0xaa))])
+        );
+    }
+
+    #[test]
+    fn test_property_type_bytes_roundtrip() {
+        use crate::eip712::PropertyType;
+        assert_eq!(PropertyType::Bytes.to_string(), "bytes");
+        assert!(matches!(PropertyType::from_str("bytes").unwrap(), PropertyType::Bytes));
+    }
+
+    /// End-to-end hash_typed_data_raw test with bytes and bytes32 fields.
+    /// Validates the full dispatch + struct-hash composition path.
+    #[test]
+    fn test_hash_typed_data_with_bytes_and_bytes32() {
+        const JSON: &str = r#"{
+            "primaryType": "Transfer",
+            "domain": {
+                "name": "TestDomain",
+                "version": "1",
+                "chainId": "0x1",
+                "verifyingContract": "0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC"
+            },
+            "message": {
+                "salt": "0x0000000000000000000000000000000000000000000000000000000000000001",
+                "data": "0xdeadbeef"
+            },
+            "types": {
+                "EIP712Domain": [
+                    { "name": "name", "type": "string" },
+                    { "name": "version", "type": "string" },
+                    { "name": "chainId", "type": "uint256" },
+                    { "name": "verifyingContract", "type": "address" }
+                ],
+                "Transfer": [
+                    { "name": "salt", "type": "bytes32" },
+                    { "name": "data", "type": "bytes" }
+                ]
+            }
+        }"#;
+
+        let typed_data = serde_json::from_str::<Eip712Raw>(JSON).unwrap();
+        let hash = hash_typed_data_raw(typed_data).unwrap();
+        // Expected value independently computed via Python + pycryptodome keccak256.
+        assert_eq!(
+            format!("{hash:02x}"),
+            "0f421a4ad456c22cd0dd059375a17daa4d2f6e12ae0fae0b441313cf58207ae9",
         );
     }
 }

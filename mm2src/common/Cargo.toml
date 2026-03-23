@@ -63,7 +63,7 @@ web-sys = { workspace = true, features = ["console", "CloseEvent", "DomException
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 anyhow.workspace = true
-chrono.workspace = true 
+chrono = { workspace = true, features = ["alloc", "clock"] }
 hyper = { workspace = true, features = ["client", "http2", "server", "tcp"] }
 # using webpki-tokio to avoid rejecting valid certificates
 # got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features

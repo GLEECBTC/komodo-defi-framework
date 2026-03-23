@@ -12,6 +12,6 @@ pub use metamask::{detect_metamask_provider, MetamaskSession};
 #[cfg(target_arch = "wasm32")]
 pub use metamask_error::{from_metamask_error, MetamaskError, MetamaskResult, MetamaskRpcError, WithMetamaskRpcError};
 #[cfg(target_arch = "wasm32")]
-pub use mm2_eth::eip712::{Eip712, ObjectType, PropertyType};
+pub use mm2_eth::eip712::{CustomTypes, Eip712, ObjectType, PropertyType, EIP712_DOMAIN};
 #[cfg(target_arch = "wasm32")]
 pub use mm2_eth::eip712_encode::hash_typed_data;
