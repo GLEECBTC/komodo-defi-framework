@@ -208,8 +208,8 @@ pub fn estimate_trc20_transfer_fee(
 ///
 /// Steps:
 /// 1. Estimate bandwidth usage from serialized tx size.
-/// 2. If destination is unactivated, compute account creation fees and adjust available bandwidth.
-/// 3. Compute deficits against (remaining) account resources.
+/// 2. If destination is unactivated, use account-creation charging path.
+/// 3. Otherwise (activated destination), compute regular bandwidth deficit fee.
 /// 4. Price deficits using chain prices.
 /// 5. Return fixed-scale TRX decimals.
 fn estimate_fee_details(
@@ -220,39 +220,37 @@ fn estimate_fee_details(
     fee_coin: &str,
     dest_state: DestAccountState,
 ) -> TronTxFeeDetails {
-    let bandwidth_used = estimate_bandwidth(tx);
-    let tx_serialized_size = tx.encoded_len() as u64;
+    let mut bandwidth_used = estimate_bandwidth(tx);
 
-    let (account_creation_fee_sun, extra_bw_fee_sun, available_bw_after_creation) = match dest_state {
-        DestAccountState::Activated => (0u64, 0u64, resources.available_bandwidth()),
+    let (account_creation_fee_sun, bandwidth_fee_sun) = match dest_state {
+        DestAccountState::Activated => {
+            let bandwidth_deficit = bandwidth_used.saturating_sub(resources.available_bandwidth());
+            (0u64, bandwidth_deficit.saturating_mul(prices.bandwidth_price_sun))
+        },
         DestAccountState::NewAccount {
             creation_fee_sun,
             bandwidth_fallback_sun,
             bandwidth_rate,
         } => {
             let available = resources.available_bandwidth();
-            // Account creation bandwidth uses raw serialized size (not charged bandwidth
-            // which includes per-contract overhead), multiplied by
-            // `getCreateNewAccountBandwidthRate`.
+            // Account creation bandwidth uses charged bandwidth units for this tx,
+            // multiplied by `getCreateNewAccountBandwidthRate`.
             // If sender has enough bandwidth, it's consumed; otherwise the flat fallback fee applies.
-            let create_account_bw_cost = tx_serialized_size.saturating_mul(bandwidth_rate);
-            if available >= create_account_bw_cost {
-                // Bandwidth covers account creation — pool reduced, no flat fee.
-                let remaining_bw = available.saturating_sub(create_account_bw_cost);
-                (creation_fee_sun, 0, remaining_bw)
+            bandwidth_used = bandwidth_used.saturating_mul(bandwidth_rate);
+            if available >= bandwidth_used {
+                // Bandwidth covers account creation.
+                // For create-account transactions, java-tron does not additionally apply
+                // regular per-byte bandwidth fee (`getTransactionFee`) path.
+                (creation_fee_sun, 0)
             } else {
-                // Bandwidth insufficient — flat fallback fee, pool untouched for this part.
-                (creation_fee_sun, bandwidth_fallback_sun, available)
+                // FIXME: Should we reset the `bandwidth_used` to zero now?
+                // Bandwidth insufficient — flat fallback fee.
+                (creation_fee_sun, bandwidth_fallback_sun)
             }
         },
     };
 
-    let bandwidth_deficit = bandwidth_used.saturating_sub(available_bw_after_creation);
     let energy_deficit = energy_used.saturating_sub(resources.available_energy());
-
-    let bandwidth_fee_sun = bandwidth_deficit
-        .saturating_mul(prices.bandwidth_price_sun)
-        .saturating_add(extra_bw_fee_sun);
     let energy_fee_sun = energy_deficit.saturating_mul(prices.energy_price_sun);
     let total_fee_sun = bandwidth_fee_sun
         .saturating_add(energy_fee_sun)
@@ -422,10 +420,9 @@ mod tests {
 
         // account_creation_fee should be 1 TRX
         assert_eq!(details.account_creation_fee, Some(sun_to_trx_decimal(1_000_000)));
-        // bandwidth_fee should include the 0.1 TRX flat fee + regular bandwidth fee
-        let bandwidth_used = estimate_bandwidth(&tx);
-        let expected_regular_bw_fee = bandwidth_used * 1_000; // no bandwidth available
-        let expected_bw_fee = expected_regular_bw_fee + 100_000; // + 0.1 TRX flat
+        // bandwidth_fee should be only the 0.1 TRX flat fallback fee
+        // (`getCreateAccountFee`) for create-account path.
+        let expected_bw_fee = 100_000;
         assert_eq!(details.bandwidth_fee, sun_to_trx_decimal(expected_bw_fee));
         // total = bandwidth_fee + account_creation_fee
         let expected_total = expected_bw_fee + 1_000_000;
@@ -434,13 +431,11 @@ mod tests {
 
     cross_test!(account_creation_fee_no_extra_bw_fee_when_bandwidth_available, {
         let tx = tx_with_placeholder_signature(&sample_raw());
-        let tx_serialized_size = tx.encoded_len() as u64;
         let bandwidth_used = estimate_bandwidth(&tx);
-        // Give sender enough bandwidth for account creation (tx_serialized_size)
-        // + regular tx (bandwidth_used).
+        // Give sender enough bandwidth only for account creation path.
         let resources = TronAccountResources {
             free_net_used: 0,
-            free_net_limit: tx_serialized_size + bandwidth_used, // enough for both
+            free_net_limit: bandwidth_used,
             net_used: 0,
             net_limit: 0,
             energy_used: 0,
