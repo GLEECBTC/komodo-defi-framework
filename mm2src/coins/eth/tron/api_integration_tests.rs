@@ -470,6 +470,10 @@ async fn test_chain_fee_parameters_are_present_and_valid_impl() {
         chain_prices.create_account_bandwidth_fee_sun > 0,
         "Nile should have non-zero CreateAccountFee"
     );
+    assert!(
+        chain_prices.create_new_account_bandwidth_rate > 0,
+        "Nile should have non-zero CreateNewAccountBandwidthRate"
+    );
 }
 
 cross_test!(tron_nile_known_trc20_tx_fee_receipt, {

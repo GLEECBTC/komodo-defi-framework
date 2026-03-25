@@ -656,6 +656,7 @@ fn parse_chain_prices_sun(chain_params: &GetChainParametersResponse) -> Web3RpcR
     let mut energy_price_sun = None;
     let mut create_new_account_fee_sun = None;
     let mut create_account_bandwidth_fee_sun = None;
+    let mut create_new_account_bandwidth_rate = None;
 
     for param in &chain_params.chain_parameter {
         match param.key.as_str() {
@@ -665,6 +666,9 @@ fn parse_chain_prices_sun(chain_params: &GetChainParametersResponse) -> Web3RpcR
                 create_new_account_fee_sun = param.value.and_then(|v| v.try_into().ok())
             },
             "getCreateAccountFee" => create_account_bandwidth_fee_sun = param.value.and_then(|v| v.try_into().ok()),
+            "getCreateNewAccountBandwidthRate" => {
+                create_new_account_bandwidth_rate = param.value.and_then(|v| v.try_into().ok())
+            },
             _ => {},
         }
     }
@@ -679,6 +683,8 @@ fn parse_chain_prices_sun(chain_params: &GetChainParametersResponse) -> Web3RpcR
     // not return these parameters, and they are only needed for transfers to new addresses.
     let create_new_account_fee_sun = create_new_account_fee_sun.unwrap_or(0);
     let create_account_bandwidth_fee_sun = create_account_bandwidth_fee_sun.unwrap_or(0);
+    // Default to 1 when missing/invalid to match java-tron behavior.
+    let create_new_account_bandwidth_rate = create_new_account_bandwidth_rate.filter(|rate| *rate > 0).unwrap_or(1);
 
     if bandwidth_price_sun == 0 || energy_price_sun == 0 {
         return Err(Web3RpcError::BadResponse(
@@ -692,6 +698,7 @@ fn parse_chain_prices_sun(chain_params: &GetChainParametersResponse) -> Web3RpcR
         energy_price_sun,
         create_new_account_fee_sun,
         create_account_bandwidth_fee_sun,
+        create_new_account_bandwidth_rate,
     })
 }
 
@@ -1214,6 +1221,10 @@ mod tests {
                 key: "getCreateAccountFee".to_owned(),
                 value: Some(100_000),
             },
+            ChainParameterEntry {
+                key: "getCreateNewAccountBandwidthRate".to_owned(),
+                value: Some(1),
+            },
         ]
     }
 
@@ -1228,6 +1239,7 @@ mod tests {
         assert_eq!(prices.energy_price_sun, 100);
         assert_eq!(prices.create_new_account_fee_sun, 1_000_000);
         assert_eq!(prices.create_account_bandwidth_fee_sun, 100_000);
+        assert_eq!(prices.create_new_account_bandwidth_rate, 1);
     }
 
     #[test]
@@ -1257,6 +1269,7 @@ mod tests {
         let prices = parse_chain_prices_sun(&response).unwrap();
         assert_eq!(prices.create_new_account_fee_sun, 0);
         assert_eq!(prices.create_account_bandwidth_fee_sun, 0);
+        assert_eq!(prices.create_new_account_bandwidth_rate, 1);
     }
 
     #[test]
@@ -1278,6 +1291,7 @@ mod tests {
         let prices = parse_chain_prices_sun(&response).unwrap();
         assert_eq!(prices.create_new_account_fee_sun, 0);
         assert_eq!(prices.create_account_bandwidth_fee_sun, 0);
+        assert_eq!(prices.create_new_account_bandwidth_rate, 1);
     }
 
     #[test]
@@ -1288,7 +1302,8 @@ mod tests {
                 { "key": "getTransactionFee", "value": 1000 },
                 { "key": "getEnergyFee", "value": 100 },
                 { "key": "getCreateNewAccountFeeInSystemContract", "value": 1000000 },
-                { "key": "getCreateAccountFee", "value": 100000 }
+                { "key": "getCreateAccountFee", "value": 100000 },
+                { "key": "getCreateNewAccountBandwidthRate", "value": 1 }
             ]
         }"#;
 
@@ -1298,6 +1313,34 @@ mod tests {
         assert_eq!(prices.energy_price_sun, 100);
         assert_eq!(prices.create_new_account_fee_sun, 1_000_000);
         assert_eq!(prices.create_account_bandwidth_fee_sun, 100_000);
+        assert_eq!(prices.create_new_account_bandwidth_rate, 1);
+    }
+
+    #[test]
+    fn parse_chain_prices_defaults_missing_bandwidth_rate_to_one() {
+        let response = GetChainParametersResponse {
+            chain_parameter: vec![
+                ChainParameterEntry {
+                    key: "getTransactionFee".to_owned(),
+                    value: Some(1000),
+                },
+                ChainParameterEntry {
+                    key: "getEnergyFee".to_owned(),
+                    value: Some(100),
+                },
+                ChainParameterEntry {
+                    key: "getCreateNewAccountFeeInSystemContract".to_owned(),
+                    value: Some(1_000_000),
+                },
+                ChainParameterEntry {
+                    key: "getCreateAccountFee".to_owned(),
+                    value: Some(100_000),
+                },
+            ],
+        };
+
+        let prices = parse_chain_prices_sun(&response).unwrap();
+        assert_eq!(prices.create_new_account_bandwidth_rate, 1);
     }
 
     /// Verifies that all 6 mixed-case field renames map correctly to `TronAccountResources`.

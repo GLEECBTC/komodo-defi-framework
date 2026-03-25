@@ -117,6 +117,7 @@ pub(super) mod test_fixtures {
             energy_price_sun: 420,
             create_new_account_fee_sun: 1_000_000,     // 1 TRX
             create_account_bandwidth_fee_sun: 100_000, // 0.1 TRX
+            create_new_account_bandwidth_rate: 1,
         }
     }
 
@@ -125,6 +126,7 @@ pub(super) mod test_fixtures {
         DestAccountState::NewAccount {
             creation_fee_sun: 1_000_000,     // 1 TRX
             bandwidth_fallback_sun: 100_000, // 0.1 TRX
+            bandwidth_rate: 1,
         }
     }
 }

@@ -103,6 +103,9 @@ pub struct TronChainPrices {
     /// Flat SUN fee charged when sender lacks bandwidth for account creation
     /// (`getCreateAccountFee`). Currently 0.1 TRX on mainnet.
     pub create_account_bandwidth_fee_sun: u64,
+    /// Multiplier for bandwidth consumed by account creation
+    /// (`getCreateNewAccountBandwidthRate`).
+    pub create_new_account_bandwidth_rate: u64,
 }
 
 /// Account creation fee context for a withdrawal destination.
@@ -122,6 +125,9 @@ pub enum DestAccountState {
         /// `CreateAccountFee` in SUN — flat fallback if sender lacks bandwidth
         /// for the account creation bandwidth portion.
         bandwidth_fallback_sun: u64,
+        /// `CreateNewAccountBandwidthRate` multiplier applied to account
+        /// creation bandwidth cost.
+        bandwidth_rate: u64,
     },
 }
 
@@ -222,14 +228,17 @@ fn estimate_fee_details(
         DestAccountState::NewAccount {
             creation_fee_sun,
             bandwidth_fallback_sun,
+            bandwidth_rate,
         } => {
             let available = resources.available_bandwidth();
             // Account creation bandwidth uses raw serialized size (not charged bandwidth
-            // which includes per-contract overhead), at CREATE_NEW_ACCOUNT_BANDWIDTH_RATE=1.
+            // which includes per-contract overhead), multiplied by
+            // `getCreateNewAccountBandwidthRate`.
             // If sender has enough bandwidth, it's consumed; otherwise the flat fallback fee applies.
-            if available >= tx_serialized_size {
+            let create_account_bw_cost = tx_serialized_size.saturating_mul(bandwidth_rate);
+            if available >= create_account_bw_cost {
                 // Bandwidth covers account creation — pool reduced, no flat fee.
-                let remaining_bw = available.saturating_sub(tx_serialized_size);
+                let remaining_bw = available.saturating_sub(create_account_bw_cost);
                 (creation_fee_sun, 0, remaining_bw)
             } else {
                 // Bandwidth insufficient — flat fallback fee, pool untouched for this part.
@@ -341,6 +350,7 @@ mod tests {
             energy_price_sun: 420,
             create_new_account_fee_sun: 0,
             create_account_bandwidth_fee_sun: 0,
+            create_new_account_bandwidth_rate: 1,
         };
 
         let details = estimate_trx_transfer_fee(&tx, resources, prices, "TRX", DestAccountState::Activated);
@@ -368,6 +378,7 @@ mod tests {
             energy_price_sun: 420,
             create_new_account_fee_sun: 0,
             create_account_bandwidth_fee_sun: 0,
+            create_new_account_bandwidth_rate: 1,
         };
         let energy_used = 500u64;
 
@@ -393,6 +404,7 @@ mod tests {
             energy_price_sun: u64::MAX,
             create_new_account_fee_sun: 0,
             create_account_bandwidth_fee_sun: 0,
+            create_new_account_bandwidth_rate: 1,
         };
 
         let details = estimate_trc20_transfer_fee(&tx, u64::MAX, resources, prices, "TRX");

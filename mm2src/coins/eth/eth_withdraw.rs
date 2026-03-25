@@ -378,6 +378,7 @@ where
             DestAccountState::NewAccount {
                 creation_fee_sun: prices.create_new_account_fee_sun,
                 bandwidth_fallback_sun: prices.create_account_bandwidth_fee_sun,
+                bandwidth_rate: prices.create_new_account_bandwidth_rate,
             }
         };
 
