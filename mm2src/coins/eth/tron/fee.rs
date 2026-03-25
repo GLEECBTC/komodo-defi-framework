@@ -172,6 +172,10 @@ pub fn estimate_trx_transfer_fee(
 ///
 /// `energy_used` should come from `estimateenergy`/receipt-compatible estimation.
 ///
+/// FIXME: Looks like the doc down below is wrong. https://developers.tron.network/docs/account#:~:text=Contract%20Activation%20Method
+///        states that the 25000 is only incurred when sending trx or trx10 from within a contract.
+///        but doesn't mention trc20 transfers. and logically, trc20 transfers don't actually need the account
+///        activated as the balance is stored in the contract and not the actual account on the TVM.
 /// TRC20 transfers to unactivated addresses use energy (25,000 units) for account
 /// creation instead of the system contract fee, so `dest_state` should always be
 /// `DestAccountState::Activated`. The energy estimation API already accounts for
