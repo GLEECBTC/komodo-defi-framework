@@ -1178,3 +1178,105 @@ fn test_trx_fee_details_structure() {
     // Do NOT broadcast — pure structure validation.
     block_on(mm.stop()).unwrap();
 }
+
+/// Test TRX withdraw to an unactivated (new) address includes account creation fee.
+/// Does NOT broadcast to avoid spending the 1 TRX creation fee from the test wallet.
+#[test]
+fn test_trx_withdraw_to_unactivated_address() {
+    let coins = serde_json::json!([trx_conf()]);
+    let conf = Mm2TestConf::seednode(TRON_WITHDRAW_TEST_PASSPHRASE, &coins);
+    let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
+
+    block_on(enable_trx_with_tokens(&mm, TRON_NILE_NODES, &[]));
+
+    // Generate a fresh random address that doesn't exist on Nile
+    let random_addr = {
+        use rand::RngCore;
+        let mut rng = common::small_rng();
+        let mut bytes = [0u8; 20];
+        rng.fill_bytes(&mut bytes);
+        // 0x41 prefix = TRON mainnet/testnet address
+        let hex = format!("41{}", hex::encode(bytes));
+        TronAddress::from_hex(&hex).expect("valid random TRON address")
+    };
+
+    let withdraw = block_on(mm.rpc(&serde_json::json!({
+        "userpass": mm.userpass,
+        "method": "withdraw",
+        "coin": "TRX",
+        "to": random_addr.to_base58(),
+        "amount": "1",
+    })))
+    .unwrap();
+    assert!(
+        withdraw.0.is_success(),
+        "Withdraw to unactivated address failed: {}",
+        withdraw.1
+    );
+
+    let tx_details: TransactionDetails = serde_json::from_str(&withdraw.1).unwrap();
+
+    // Fee details should include account_creation_fee
+    let fee_json = &tx_details.fee_details;
+    assert_eq!(fee_json["type"].as_str().unwrap(), "Tron");
+    assert!(
+        fee_json["account_creation_fee"].is_string(),
+        "account_creation_fee should be present for unactivated destination, got: {}",
+        fee_json
+    );
+
+    // Typed deserialization
+    let fee: TxFeeDetails = serde_json::from_value(fee_json.clone()).unwrap();
+    match fee {
+        TxFeeDetails::Tron(tron_fee) => {
+            assert!(
+                tron_fee.account_creation_fee.is_some(),
+                "account_creation_fee should be Some for unactivated address"
+            );
+            let creation_fee = tron_fee.account_creation_fee.unwrap();
+            assert!(creation_fee > BigDecimal::from(0), "account_creation_fee should be > 0");
+            // total_fee should include bandwidth + account creation
+            assert!(
+                tron_fee.total_fee > creation_fee,
+                "total_fee should exceed account_creation_fee (includes bandwidth)"
+            );
+        },
+        other => panic!("Expected TxFeeDetails::Tron, got {:?}", other),
+    }
+
+    // Do NOT broadcast — would cost 1 TRX creation fee.
+    block_on(mm.stop()).unwrap();
+}
+
+/// Test TRX withdraw to an activated address does NOT include account creation fee.
+/// Verifies backward compatibility — existing flows should not show the new field.
+#[test]
+fn test_trx_withdraw_to_activated_address_no_creation_fee() {
+    let coins = serde_json::json!([trx_conf()]);
+    let conf = Mm2TestConf::seednode(TRON_WITHDRAW_TEST_PASSPHRASE, &coins);
+    let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
+
+    block_on(enable_trx_with_tokens(&mm, TRON_NILE_NODES, &[]));
+
+    // Withdraw to a known activated address
+    let tx_details = block_on(withdraw_v1(&mm, "TRX", TRON_WITHDRAW_ADDR_INDEX_0, "0.1", None));
+
+    // account_creation_fee should be absent (skip_serializing_if = None)
+    let fee_json = &tx_details.fee_details;
+    assert!(
+        fee_json.get("account_creation_fee").is_none(),
+        "account_creation_fee should be absent for activated destination, got: {}",
+        fee_json
+    );
+
+    // Typed deserialization confirms None
+    let fee: TxFeeDetails = serde_json::from_value(fee_json.clone()).unwrap();
+    match fee {
+        TxFeeDetails::Tron(tron_fee) => {
+            assert_eq!(tron_fee.account_creation_fee, None);
+        },
+        other => panic!("Expected TxFeeDetails::Tron, got {:?}", other),
+    }
+
+    block_on(mm.stop()).unwrap();
+}

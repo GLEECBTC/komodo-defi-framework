@@ -6,8 +6,8 @@
 
 use crate::eth::chain_rpc::ChainRpcOps;
 use crate::eth::tron::fee::{
-    estimate_trc20_transfer_fee, estimate_trx_transfer_fee, tx_with_placeholder_signature, TronAccountResources,
-    TronChainPrices, TronTxFeeDetails,
+    estimate_trc20_transfer_fee, estimate_trx_transfer_fee, tx_with_placeholder_signature, DestAccountState,
+    TronAccountResources, TronChainPrices, TronTxFeeDetails,
 };
 use crate::eth::tron::proto::TransactionRaw;
 use crate::eth::tron::tx_builder::{build_trc20_transfer, build_trx_transfer};
@@ -33,6 +33,9 @@ pub struct TronWithdrawContext<'a> {
     pub fee_coin: &'a str,
     /// Transaction expiration window in seconds. `None` uses the protocol default (60s).
     pub expiration_seconds: Option<u64>,
+    /// Destination account state. When `NewAccount`, account creation fees are
+    /// included in fee estimation for native TRX transfers.
+    pub dest_state: DestAccountState,
 }
 
 /// Reject EVM gas fee policies for TRON. TRON always auto-estimates fees.
@@ -85,7 +88,7 @@ pub fn build_tron_trx_withdraw(
     loop {
         // Estimate fee for the current transaction
         let tx = tx_with_placeholder_signature(&raw);
-        let fee_details = estimate_trx_transfer_fee(&tx, ctx.resources, ctx.prices, ctx.fee_coin);
+        let fee_details = estimate_trx_transfer_fee(&tx, ctx.resources, ctx.prices, ctx.fee_coin, ctx.dest_state);
         let fee_sun = u256_to_u64_checked(u256_from_big_decimal(&fee_details.total_fee, TRX_DECIMALS).map_mm_err()?)?;
 
         // How much can we afford to send after paying the fee? (0 if fee >= balance)
@@ -156,7 +159,9 @@ pub async fn build_tron_trc20_withdraw(
     )
     .map_to_mm(|e| WithdrawError::InternalError(format!("TRC20 ABI encoding failed: {e}")))?;
 
-    // Estimate fee details (bandwidth + energy)
+    // Estimate fee details (bandwidth + energy).
+    // TRC20 uses energy (not system contract fee) for account creation, so the
+    // energy estimation API already accounts for unactivated destinations.
     let tx = tx_with_placeholder_signature(&raw);
     let fee_details = estimate_trc20_transfer_fee(&tx, energy_used, ctx.resources, ctx.prices, ctx.fee_coin);
 
@@ -183,7 +188,9 @@ mod tests {
     use crate::eth::tron::fee::estimate_trx_transfer_fee;
     #[cfg(not(target_arch = "wasm32"))]
     use crate::eth::tron::sign::sign_tron_transaction;
-    use crate::eth::tron::test_fixtures::{nile_block_64687673, TEST_FROM_HEX, TEST_TO_HEX};
+    use crate::eth::tron::test_fixtures::{
+        mainnet_prices, new_account_state, nile_block_64687673, TEST_FROM_HEX, TEST_TO_HEX,
+    };
     use crate::eth::tron::tx_builder::build_trx_transfer;
     use crate::eth::tron::TronAddress;
     use common::cross_test;
@@ -258,10 +265,7 @@ mod tests {
         let balance = U256::from(10_000_000u64); // 10 TRX
         let balance_dec = BigDecimal::from(10);
         let resources = TronAccountResources::default(); // no free bandwidth
-        let prices = TronChainPrices {
-            bandwidth_price_sun: 1_000,
-            energy_price_sun: 420,
-        };
+        let prices = mainnet_prices();
 
         let ctx = TronWithdrawContext {
             from: &from,
@@ -271,6 +275,7 @@ mod tests {
             prices,
             fee_coin: "TRX",
             expiration_seconds: None,
+            dest_state: DestAccountState::Activated,
         };
         let (raw, fee_details, final_amount) =
             build_tron_trx_withdraw(&ctx, balance, balance, &balance_dec, true).unwrap();
@@ -280,10 +285,11 @@ mod tests {
             u256_to_u64_checked(u256_from_big_decimal(&fee_details.total_fee, TRX_DECIMALS).unwrap()).unwrap();
         assert!(final_amount.as_u64() + fee_sun <= balance.as_u64());
         assert!(final_amount > U256::zero());
+        assert_eq!(fee_details.account_creation_fee, None);
 
         // Verify fee_details corresponds to the final raw tx
         let tx = tx_with_placeholder_signature(&raw);
-        let recomputed = estimate_trx_transfer_fee(&tx, resources, prices, "TRX");
+        let recomputed = estimate_trx_transfer_fee(&tx, resources, prices, "TRX", DestAccountState::Activated);
         assert_eq!(fee_details, recomputed, "fee_details must match the final raw tx");
     });
 
@@ -296,10 +302,7 @@ mod tests {
         let balance_dec = BigDecimal::from(1);
         let amount = U256::from(999_999u64); // just under 1 TRX — fee will push it over
         let resources = TronAccountResources::default();
-        let prices = TronChainPrices {
-            bandwidth_price_sun: 1_000,
-            energy_price_sun: 420,
-        };
+        let prices = mainnet_prices();
 
         let ctx = TronWithdrawContext {
             from: &from,
@@ -309,11 +312,156 @@ mod tests {
             prices,
             fee_coin: "TRX",
             expiration_seconds: None,
+            dest_state: DestAccountState::Activated,
         };
         let result = build_tron_trx_withdraw(&ctx, amount, balance, &balance_dec, false);
 
         assert!(result.is_err());
         let err = result.unwrap_err().into_inner();
         assert!(matches!(err, WithdrawError::NotSufficientBalance { .. }));
+    });
+
+    cross_test!(trx_max_withdraw_to_new_account_deducts_creation_fee, {
+        let from = TronAddress::from_hex(TEST_FROM_HEX).unwrap();
+        let to = TronAddress::from_hex(TEST_TO_HEX).unwrap();
+        let block_data = nile_block_64687673();
+
+        let balance = U256::from(10_000_000u64); // 10 TRX
+        let balance_dec = BigDecimal::from(10);
+        let resources = TronAccountResources::default(); // no bandwidth
+        let prices = mainnet_prices();
+
+        // First: max withdraw to activated dest (no creation fee)
+        let ctx_activated = TronWithdrawContext {
+            from: &from,
+            to: &to,
+            block_data: &block_data,
+            resources,
+            prices,
+            fee_coin: "TRX",
+            expiration_seconds: None,
+            dest_state: DestAccountState::Activated,
+        };
+        let (_, _, amount_activated) =
+            build_tron_trx_withdraw(&ctx_activated, balance, balance, &balance_dec, true).unwrap();
+
+        // Then: max withdraw to unactivated dest (with creation fee)
+        let ctx_new = TronWithdrawContext {
+            dest_state: new_account_state(),
+            ..ctx_activated
+        };
+        let (_, fee_details_new, amount_new) =
+            build_tron_trx_withdraw(&ctx_new, balance, balance, &balance_dec, true).unwrap();
+
+        // Amount to new account should be less (creation fee deducted)
+        assert!(
+            amount_new < amount_activated,
+            "max amount to new account should be less than to activated"
+        );
+        // Account creation fee should be present
+        assert!(fee_details_new.account_creation_fee.is_some());
+        // final_amount + total_fee <= balance
+        let fee_sun =
+            u256_to_u64_checked(u256_from_big_decimal(&fee_details_new.total_fee, TRX_DECIMALS).unwrap()).unwrap();
+        assert!(amount_new.as_u64() + fee_sun <= balance.as_u64());
+    });
+
+    cross_test!(trx_non_max_withdraw_to_new_account_succeeds_with_sufficient_balance, {
+        let from = TronAddress::from_hex(TEST_FROM_HEX).unwrap();
+        let to = TronAddress::from_hex(TEST_TO_HEX).unwrap();
+        let block_data = nile_block_64687673();
+
+        let balance = U256::from(10_000_000u64); // 10 TRX
+        let balance_dec = BigDecimal::from(10);
+        let amount = U256::from(5_000_000u64); // 5 TRX — enough room for fees
+        let resources = TronAccountResources::default();
+        let prices = mainnet_prices();
+
+        let ctx = TronWithdrawContext {
+            from: &from,
+            to: &to,
+            block_data: &block_data,
+            resources,
+            prices,
+            fee_coin: "TRX",
+            expiration_seconds: None,
+            dest_state: new_account_state(),
+        };
+        let (_, fee_details, final_amount) =
+            build_tron_trx_withdraw(&ctx, amount, balance, &balance_dec, false).unwrap();
+
+        assert_eq!(final_amount, amount);
+        assert!(fee_details.account_creation_fee.is_some());
+        // total_fee includes creation fee + bandwidth
+        let fee_sun =
+            u256_to_u64_checked(u256_from_big_decimal(&fee_details.total_fee, TRX_DECIMALS).unwrap()).unwrap();
+        assert!(
+            fee_sun > 1_000_000,
+            "total fee should include at least the 1 TRX creation fee"
+        );
+    });
+
+    cross_test!(trx_non_max_withdraw_to_new_account_rejects_insufficient_balance, {
+        let from = TronAddress::from_hex(TEST_FROM_HEX).unwrap();
+        let to = TronAddress::from_hex(TEST_TO_HEX).unwrap();
+        let block_data = nile_block_64687673();
+
+        let balance = U256::from(5_000_000u64); // 5 TRX
+        let balance_dec = BigDecimal::from(5);
+        let amount = U256::from(4_500_000u64); // 4.5 TRX — not enough for amount + creation fee + bandwidth
+        let resources = TronAccountResources::default();
+        let prices = mainnet_prices();
+
+        let ctx = TronWithdrawContext {
+            from: &from,
+            to: &to,
+            block_data: &block_data,
+            resources,
+            prices,
+            fee_coin: "TRX",
+            expiration_seconds: None,
+            dest_state: new_account_state(),
+        };
+        let result = build_tron_trx_withdraw(&ctx, amount, balance, &balance_dec, false);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().into_inner();
+        assert!(matches!(err, WithdrawError::NotSufficientBalance { .. }));
+    });
+
+    cross_test!(trx_max_withdraw_empties_account_no_minimum_balance, {
+        let from = TronAddress::from_hex(TEST_FROM_HEX).unwrap();
+        let to = TronAddress::from_hex(TEST_TO_HEX).unwrap();
+        let block_data = nile_block_64687673();
+
+        // Small balance — should be able to send everything (no 0.1 TRX minimum enforced)
+        let balance = U256::from(2_000_000u64); // 2 TRX
+        let balance_dec = BigDecimal::from(2);
+        let resources = TronAccountResources::default();
+        let prices = mainnet_prices();
+
+        let ctx = TronWithdrawContext {
+            from: &from,
+            to: &to,
+            block_data: &block_data,
+            resources,
+            prices,
+            fee_coin: "TRX",
+            expiration_seconds: None,
+            dest_state: DestAccountState::Activated, // sending to existing address
+        };
+        let (_, fee_details, final_amount) =
+            build_tron_trx_withdraw(&ctx, balance, balance, &balance_dec, true).unwrap();
+
+        // Account can be emptied — no minimum balance enforced
+        let fee_sun =
+            u256_to_u64_checked(u256_from_big_decimal(&fee_details.total_fee, TRX_DECIMALS).unwrap()).unwrap();
+        assert_eq!(
+            final_amount.as_u64() + fee_sun,
+            balance.as_u64(),
+            "max withdraw should use entire balance with no minimum held back"
+        );
+        assert!(final_amount > U256::zero());
+        assert_eq!(fee_details.account_creation_fee, None);
     });
 }

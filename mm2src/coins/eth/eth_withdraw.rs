@@ -2,6 +2,7 @@ use super::{
     u256_from_big_decimal, u256_to_big_decimal, ChainSpec, ChainTaggedAddress, EthCoinType, EthDerivationMethod,
     EthPrivKeyPolicy, Public, WithdrawError, WithdrawRequest, WithdrawResult, ERC20_CONTRACT, H256,
 };
+use crate::eth::tron::fee::DestAccountState;
 use crate::eth::tron::sign::sign_tron_transaction;
 use crate::eth::tron::withdraw::{
     build_tron_trc20_withdraw, build_tron_trx_withdraw, validate_tron_fee_policy, TronWithdrawContext,
@@ -352,11 +353,35 @@ where
         // 5. Fetch TAPOS block data (timestamp/expiration are derived inside the tx builders).
         let block_data = tron.get_block_for_tapos().await.map_mm_err()?;
 
-        // 6. Fetch account resources and chain prices.
+        // 6. Check if destination account is activated (for account creation fee estimation).
+        let dest_account = tron.get_account(&to_tron).await.map_mm_err()?;
+
+        // 7. Fetch account resources and chain prices.
         let resources = tron.get_account_resource(&from_tron).await.map_mm_err()?;
         let prices = tron.get_chain_prices().await.map_mm_err()?;
 
-        // 7. Build tx, estimate fees — branching on coin type
+        // 8. Compute destination state — only native TRX transfers pay system-contract
+        //    account creation fees. TRC20 uses energy for activation instead.
+        let dest_state = if dest_account.exists_meaningfully() {
+            DestAccountState::Activated
+        } else {
+            // Validate that the RPC node actually provided account creation fee params.
+            // A zero value here means the node omitted them (defaulted), which would
+            // silently underprice the transaction and cause broadcast failure.
+            if prices.create_new_account_fee_sun == 0 {
+                return MmError::err(WithdrawError::InternalError(
+                    "TRON node did not provide CreateNewAccountFeeInSystemContract chain parameter; \
+                     cannot estimate fees for transfer to unactivated address"
+                        .to_owned(),
+                ));
+            }
+            DestAccountState::NewAccount {
+                creation_fee_sun: prices.create_new_account_fee_sun,
+                bandwidth_fallback_sun: prices.create_account_bandwidth_fee_sun,
+            }
+        };
+
+        // 9. Build tx, estimate fees — branching on coin type
         let withdraw_ctx = TronWithdrawContext {
             from: &from_tron,
             to: &to_tron,
@@ -365,6 +390,7 @@ where
             prices,
             fee_coin: ticker,
             expiration_seconds: req.expiration_seconds,
+            dest_state,
         };
         let (raw, tron_fee_details, final_amount) = match &coin.coin_type {
             EthCoinType::Eth => {

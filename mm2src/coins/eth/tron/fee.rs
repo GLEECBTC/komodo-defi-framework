@@ -36,6 +36,10 @@ pub struct TronTxFeeDetails {
     pub energy_used: u64,
     pub bandwidth_fee: BigDecimal,
     pub energy_fee: BigDecimal,
+    /// Fee for creating a new account at the destination address (burned by the network).
+    /// `None` when the destination already exists on chain.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_creation_fee: Option<BigDecimal>,
     pub total_fee: BigDecimal,
 }
 
@@ -93,6 +97,32 @@ pub struct TronChainPrices {
     pub bandwidth_price_sun: u64,
     /// SUN per energy unit (`getEnergyFee`).
     pub energy_price_sun: u64,
+    /// Flat SUN fee for creating a new account via system contract
+    /// (`getCreateNewAccountFeeInSystemContract`). Currently 1 TRX on mainnet.
+    pub create_new_account_fee_sun: u64,
+    /// Flat SUN fee charged when sender lacks bandwidth for account creation
+    /// (`getCreateAccountFee`). Currently 0.1 TRX on mainnet.
+    pub create_account_bandwidth_fee_sun: u64,
+}
+
+/// Account creation fee context for a withdrawal destination.
+///
+/// Used instead of a raw `bool` to make call sites self-documenting and to carry
+/// the precomputed fee values from chain parameters.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DestAccountState {
+    /// Destination account already exists on chain. No creation fees apply.
+    Activated,
+    /// Destination is a new/unactivated address. Creation fees apply for native
+    /// TRX transfers (`TransferContract`). TRC20 transfers use energy for account
+    /// creation instead, so they should always use `Activated`.
+    NewAccount {
+        /// `CreateNewAccountFeeInSystemContract` in SUN — always charged.
+        creation_fee_sun: u64,
+        /// `CreateAccountFee` in SUN — flat fallback if sender lacks bandwidth
+        /// for the account creation bandwidth portion.
+        bandwidth_fallback_sun: u64,
+    },
 }
 
 /// Builds a transaction clone with a synthetic 65-byte signature.
@@ -125,18 +155,27 @@ pub fn estimate_bandwidth(tx: &Transaction) -> u64 {
 }
 
 /// Estimates fee details for native TRX transfer (bandwidth-only path).
+///
+/// When `dest_state` is `NewAccount`, includes the account creation fee and adjusts
+/// bandwidth calculations for the extra bandwidth consumed by account creation.
 pub fn estimate_trx_transfer_fee(
     tx: &Transaction,
     resources: TronAccountResources,
     prices: TronChainPrices,
     fee_coin: &str,
+    dest_state: DestAccountState,
 ) -> TronTxFeeDetails {
-    estimate_fee_details(tx, 0, resources, prices, fee_coin)
+    estimate_fee_details(tx, 0, resources, prices, fee_coin, dest_state)
 }
 
 /// Estimates fee details for TRC20 transfer (bandwidth + energy path).
 ///
 /// `energy_used` should come from `estimateenergy`/receipt-compatible estimation.
+///
+/// TRC20 transfers to unactivated addresses use energy (25,000 units) for account
+/// creation instead of the system contract fee, so `dest_state` should always be
+/// `DestAccountState::Activated`. The energy estimation API already accounts for
+/// the extra energy cost of activating the destination.
 pub fn estimate_trc20_transfer_fee(
     tx: &Transaction,
     energy_used: u64,
@@ -144,31 +183,73 @@ pub fn estimate_trc20_transfer_fee(
     prices: TronChainPrices,
     fee_coin: &str,
 ) -> TronTxFeeDetails {
-    estimate_fee_details(tx, energy_used, resources, prices, fee_coin)
+    // TRC20 never uses system-contract account creation fees.
+    estimate_fee_details(
+        tx,
+        energy_used,
+        resources,
+        prices,
+        fee_coin,
+        DestAccountState::Activated,
+    )
 }
 
 /// Shared fee computation used by TRX/TRC20 paths.
 ///
 /// Steps:
 /// 1. Estimate bandwidth usage from serialized tx size.
-/// 2. Compute deficits against account resources.
-/// 3. Price deficits using chain prices.
-/// 4. Return fixed-scale TRX decimals.
+/// 2. If destination is unactivated, compute account creation fees and adjust available bandwidth.
+/// 3. Compute deficits against (remaining) account resources.
+/// 4. Price deficits using chain prices.
+/// 5. Return fixed-scale TRX decimals.
 fn estimate_fee_details(
     tx: &Transaction,
     energy_used: u64,
     resources: TronAccountResources,
     prices: TronChainPrices,
     fee_coin: &str,
+    dest_state: DestAccountState,
 ) -> TronTxFeeDetails {
     let bandwidth_used = estimate_bandwidth(tx);
+    let tx_serialized_size = tx.encoded_len() as u64;
 
-    let bandwidth_deficit = bandwidth_used.saturating_sub(resources.available_bandwidth());
+    let (account_creation_fee_sun, extra_bw_fee_sun, available_bw_after_creation) = match dest_state {
+        DestAccountState::Activated => (0u64, 0u64, resources.available_bandwidth()),
+        DestAccountState::NewAccount {
+            creation_fee_sun,
+            bandwidth_fallback_sun,
+        } => {
+            let available = resources.available_bandwidth();
+            // Account creation bandwidth uses raw serialized size (not charged bandwidth
+            // which includes per-contract overhead), at CREATE_NEW_ACCOUNT_BANDWIDTH_RATE=1.
+            // If sender has enough bandwidth, it's consumed; otherwise the flat fallback fee applies.
+            if available >= tx_serialized_size {
+                // Bandwidth covers account creation — pool reduced, no flat fee.
+                let remaining_bw = available.saturating_sub(tx_serialized_size);
+                (creation_fee_sun, 0, remaining_bw)
+            } else {
+                // Bandwidth insufficient — flat fallback fee, pool untouched for this part.
+                (creation_fee_sun, bandwidth_fallback_sun, available)
+            }
+        },
+    };
+
+    let bandwidth_deficit = bandwidth_used.saturating_sub(available_bw_after_creation);
     let energy_deficit = energy_used.saturating_sub(resources.available_energy());
 
-    let bandwidth_fee_sun = bandwidth_deficit.saturating_mul(prices.bandwidth_price_sun);
+    let bandwidth_fee_sun = bandwidth_deficit
+        .saturating_mul(prices.bandwidth_price_sun)
+        .saturating_add(extra_bw_fee_sun);
     let energy_fee_sun = energy_deficit.saturating_mul(prices.energy_price_sun);
-    let total_fee_sun = bandwidth_fee_sun.saturating_add(energy_fee_sun);
+    let total_fee_sun = bandwidth_fee_sun
+        .saturating_add(energy_fee_sun)
+        .saturating_add(account_creation_fee_sun);
+
+    let account_creation_fee = if account_creation_fee_sun > 0 {
+        Some(sun_to_trx_decimal(account_creation_fee_sun))
+    } else {
+        None
+    };
 
     TronTxFeeDetails {
         coin: fee_coin.to_owned(),
@@ -176,6 +257,7 @@ fn estimate_fee_details(
         energy_used,
         bandwidth_fee: sun_to_trx_decimal(bandwidth_fee_sun),
         energy_fee: sun_to_trx_decimal(energy_fee_sun),
+        account_creation_fee,
         total_fee: sun_to_trx_decimal(total_fee_sun),
     }
 }
@@ -189,6 +271,7 @@ fn sun_to_trx_decimal(sun: u64) -> BigDecimal {
 mod tests {
     use super::*;
     use crate::eth::tron::proto::{ContractType, TransactionContract, TYPE_URL_TRANSFER_CONTRACT};
+    use crate::eth::tron::test_fixtures::{mainnet_prices, new_account_state};
     use crate::eth::tron::tx_builder::wrap_contract;
     use common::cross_test;
 
@@ -252,13 +335,16 @@ mod tests {
         let prices = TronChainPrices {
             bandwidth_price_sun: 1_000,
             energy_price_sun: 420,
+            create_new_account_fee_sun: 0,
+            create_account_bandwidth_fee_sun: 0,
         };
 
-        let details = estimate_trx_transfer_fee(&tx, resources, prices, "TRX");
+        let details = estimate_trx_transfer_fee(&tx, resources, prices, "TRX", DestAccountState::Activated);
         assert_eq!(details.coin, "TRX");
         assert_eq!(details.energy_used, 0);
         assert_eq!(details.bandwidth_fee, BigDecimal::from(0));
         assert_eq!(details.energy_fee, BigDecimal::from(0));
+        assert_eq!(details.account_creation_fee, None);
         assert_eq!(details.total_fee, BigDecimal::from(0));
     });
 
@@ -276,6 +362,8 @@ mod tests {
         let prices = TronChainPrices {
             bandwidth_price_sun: 1_000,
             energy_price_sun: 420,
+            create_new_account_fee_sun: 0,
+            create_account_bandwidth_fee_sun: 0,
         };
         let energy_used = 500u64;
 
@@ -299,12 +387,101 @@ mod tests {
         let prices = TronChainPrices {
             bandwidth_price_sun: u64::MAX,
             energy_price_sun: u64::MAX,
+            create_new_account_fee_sun: 0,
+            create_account_bandwidth_fee_sun: 0,
         };
 
         let details = estimate_trc20_transfer_fee(&tx, u64::MAX, resources, prices, "TRX");
         assert_eq!(details.bandwidth_fee, sun_to_trx_decimal(u64::MAX));
         assert_eq!(details.energy_fee, sun_to_trx_decimal(u64::MAX));
         assert_eq!(details.total_fee, sun_to_trx_decimal(u64::MAX));
+    });
+
+    cross_test!(account_creation_fee_included_for_new_dest_no_bandwidth, {
+        let tx = tx_with_placeholder_signature(&sample_raw());
+        let resources = TronAccountResources::default(); // no bandwidth
+        let prices = mainnet_prices();
+
+        let details = estimate_trx_transfer_fee(&tx, resources, prices, "TRX", new_account_state());
+
+        // account_creation_fee should be 1 TRX
+        assert_eq!(details.account_creation_fee, Some(sun_to_trx_decimal(1_000_000)));
+        // bandwidth_fee should include the 0.1 TRX flat fee + regular bandwidth fee
+        let bandwidth_used = estimate_bandwidth(&tx);
+        let expected_regular_bw_fee = bandwidth_used * 1_000; // no bandwidth available
+        let expected_bw_fee = expected_regular_bw_fee + 100_000; // + 0.1 TRX flat
+        assert_eq!(details.bandwidth_fee, sun_to_trx_decimal(expected_bw_fee));
+        // total = bandwidth_fee + account_creation_fee
+        let expected_total = expected_bw_fee + 1_000_000;
+        assert_eq!(details.total_fee, sun_to_trx_decimal(expected_total));
+    });
+
+    cross_test!(account_creation_fee_no_extra_bw_fee_when_bandwidth_available, {
+        let tx = tx_with_placeholder_signature(&sample_raw());
+        let tx_serialized_size = tx.encoded_len() as u64;
+        let bandwidth_used = estimate_bandwidth(&tx);
+        // Give sender enough bandwidth for account creation (tx_serialized_size)
+        // + regular tx (bandwidth_used).
+        let resources = TronAccountResources {
+            free_net_used: 0,
+            free_net_limit: tx_serialized_size + bandwidth_used, // enough for both
+            net_used: 0,
+            net_limit: 0,
+            energy_used: 0,
+            energy_limit: 0,
+        };
+        let prices = mainnet_prices();
+
+        let details = estimate_trx_transfer_fee(&tx, resources, prices, "TRX", new_account_state());
+
+        // account_creation_fee should be 1 TRX
+        assert_eq!(details.account_creation_fee, Some(sun_to_trx_decimal(1_000_000)));
+        // bandwidth_fee should be 0 — sender has enough for both
+        assert_eq!(details.bandwidth_fee, BigDecimal::from(0));
+        // total = just the 1 TRX creation fee
+        assert_eq!(details.total_fee, sun_to_trx_decimal(1_000_000));
+    });
+
+    cross_test!(account_creation_fee_none_for_activated_destination, {
+        let tx = tx_with_placeholder_signature(&sample_raw());
+        let resources = TronAccountResources::default();
+        let prices = mainnet_prices();
+
+        let details = estimate_trx_transfer_fee(&tx, resources, prices, "TRX", DestAccountState::Activated);
+        assert_eq!(details.account_creation_fee, None);
+    });
+
+    cross_test!(serde_roundtrip_with_account_creation_fee, {
+        let with_fee = TronTxFeeDetails {
+            coin: "TRX".to_owned(),
+            bandwidth_used: 300,
+            energy_used: 0,
+            bandwidth_fee: sun_to_trx_decimal(400_000),
+            energy_fee: sun_to_trx_decimal(0),
+            account_creation_fee: Some(sun_to_trx_decimal(1_000_000)),
+            total_fee: sun_to_trx_decimal(1_400_000),
+        };
+        let json = serde_json::to_string(&with_fee).unwrap();
+        assert!(json.contains("account_creation_fee"));
+        let deserialized: TronTxFeeDetails = serde_json::from_str(&json).unwrap();
+        assert_eq!(with_fee, deserialized);
+    });
+
+    cross_test!(serde_roundtrip_without_account_creation_fee, {
+        let without_fee = TronTxFeeDetails {
+            coin: "TRX".to_owned(),
+            bandwidth_used: 300,
+            energy_used: 0,
+            bandwidth_fee: sun_to_trx_decimal(400_000),
+            energy_fee: sun_to_trx_decimal(0),
+            account_creation_fee: None,
+            total_fee: sun_to_trx_decimal(400_000),
+        };
+        let json = serde_json::to_string(&without_fee).unwrap();
+        // skip_serializing_if omits the field when None
+        assert!(!json.contains("account_creation_fee"));
+        let deserialized: TronTxFeeDetails = serde_json::from_str(&json).unwrap();
+        assert_eq!(without_fee, deserialized);
     });
 
     // Verifies that `sun_to_trx_decimal` preserves a fixed 6-digit scale in
