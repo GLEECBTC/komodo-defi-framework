@@ -382,6 +382,8 @@ where
                     }
                 }
             },
+            // No need for destination account to be activated in TRC20 transfers, so we just assume
+            // it is activated and calculate the fees accordingly.
             EthCoinType::Erc20 { .. } => DestAccountState::Activated,
             EthCoinType::Nft { .. } => DestAccountState::Activated,
         };
