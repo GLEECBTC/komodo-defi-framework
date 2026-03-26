@@ -84,6 +84,11 @@ impl TronAccountResources {
         free_bandwidth.saturating_add(staked_bandwidth)
     }
 
+    /// Available staked bandwidth only: `max(0, net_limit - net_used)`.
+    pub fn available_staked_bandwidth(&self) -> u64 {
+        self.net_limit.saturating_sub(self.net_used)
+    }
+
     /// Energy still available to the account: `max(0, energy_limit - energy_used)`.
     pub fn available_energy(&self) -> u64 {
         self.energy_limit.saturating_sub(self.energy_used)
@@ -227,18 +232,18 @@ fn estimate_fee_details(
             bandwidth_fallback_sun,
             bandwidth_rate,
         } => {
-            let available = resources.available_bandwidth();
+            let available = resources.available_staked_bandwidth();
             // Account creation bandwidth uses charged bandwidth units for this tx,
             // multiplied by `getCreateNewAccountBandwidthRate`.
-            // If sender has enough bandwidth, it's consumed; otherwise the flat fallback fee applies.
+            // If sender has enough staked bandwidth, it's consumed; otherwise the flat fallback fee applies.
             bandwidth_used = bandwidth_used.saturating_mul(bandwidth_rate);
             if available >= bandwidth_used {
-                // Bandwidth covers account creation.
+                // Staked bandwidth covers account creation.
                 // For create-account transactions, java-tron does not additionally apply
                 // regular per-byte bandwidth fee (`getTransactionFee`) path.
                 (creation_fee_sun, 0)
             } else {
-                // Bandwidth insufficient — flat fallback fee.
+                // Staked bandwidth insufficient — flat fallback fee.
                 bandwidth_used = 0;
                 (creation_fee_sun, bandwidth_fallback_sun)
             }
@@ -427,7 +432,32 @@ mod tests {
     cross_test!(account_creation_fee_no_extra_bw_fee_when_bandwidth_available, {
         let tx = tx_with_placeholder_signature(&sample_raw());
         let bandwidth_used = estimate_bandwidth(&tx);
-        // Give sender enough bandwidth only for account creation path.
+        // Give sender enough staked bandwidth only for account creation path.
+        // Free bandwidth is ignored for create-account flows.
+        let resources = TronAccountResources {
+            free_net_used: 0,
+            free_net_limit: 0,
+            net_used: 0,
+            net_limit: bandwidth_used,
+            energy_used: 0,
+            energy_limit: 0,
+        };
+        let prices = mainnet_prices();
+
+        let details = estimate_trx_transfer_fee(&tx, resources, prices, "TRX", new_account_state());
+
+        // account_creation_fee should be 1 TRX
+        assert_eq!(details.account_creation_fee, Some(sun_to_trx_decimal(1_000_000)));
+        // bandwidth_fee should be 0 — sender has enough staked bandwidth
+        assert_eq!(details.bandwidth_fee, BigDecimal::from(0));
+        // total = just the 1 TRX creation fee
+        assert_eq!(details.total_fee, sun_to_trx_decimal(1_000_000));
+    });
+
+    cross_test!(account_creation_fee_fallback_when_only_free_bandwidth_available, {
+        let tx = tx_with_placeholder_signature(&sample_raw());
+        let bandwidth_used = estimate_bandwidth(&tx);
+        // Although free bandwidth is sufficient, staked bandwidth is zero, which is mandatory for withdraws that trigger account creation.
         let resources = TronAccountResources {
             free_net_used: 0,
             free_net_limit: bandwidth_used,
@@ -440,12 +470,12 @@ mod tests {
 
         let details = estimate_trx_transfer_fee(&tx, resources, prices, "TRX", new_account_state());
 
-        // account_creation_fee should be 1 TRX
+        // account_creation_fee should be 1 TRX.
         assert_eq!(details.account_creation_fee, Some(sun_to_trx_decimal(1_000_000)));
-        // bandwidth_fee should be 0 — sender has enough for both
-        assert_eq!(details.bandwidth_fee, BigDecimal::from(0));
-        // total = just the 1 TRX creation fee
-        assert_eq!(details.total_fee, sun_to_trx_decimal(1_000_000));
+        // staked bandwidth missing triggers fallback. bandwidth_fee should be 0.1 TRX.
+        assert_eq!(details.bandwidth_fee, sun_to_trx_decimal(100_000));
+        // total = 1.1 TRX
+        assert_eq!(details.total_fee, sun_to_trx_decimal(1_100_000));
     });
 
     cross_test!(account_creation_fee_none_for_activated_destination, {
