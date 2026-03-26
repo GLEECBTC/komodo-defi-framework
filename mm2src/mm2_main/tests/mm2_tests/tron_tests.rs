@@ -1235,10 +1235,10 @@ fn test_trx_withdraw_to_unactivated_address() {
             );
             let creation_fee = tron_fee.account_creation_fee.unwrap();
             assert!(creation_fee > BigDecimal::from(0), "account_creation_fee should be > 0");
-            // total_fee should include bandwidth + account creation
+            // total_fee must at least cover the account creation fee (+ potential bandwidth fee).
             assert!(
-                tron_fee.total_fee > creation_fee,
-                "total_fee should exceed account_creation_fee (includes bandwidth)"
+                tron_fee.total_fee >= creation_fee,
+                "total_fee should be at least account_creation_fee"
             );
         },
         other => panic!("Expected TxFeeDetails::Tron, got {:?}", other),
