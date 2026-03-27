@@ -460,6 +460,20 @@ async fn test_chain_fee_parameters_are_present_and_valid_impl() {
 
     assert!(chain_prices.bandwidth_price_sun > 0);
     assert!(chain_prices.energy_price_sun > 0);
+    // Account creation fees should be present on Nile testnet.
+    // These are governance-set params; on Nile they mirror mainnet values.
+    assert!(
+        chain_prices.create_new_account_fee_sun > 0,
+        "Nile should have non-zero CreateNewAccountFeeInSystemContract"
+    );
+    assert!(
+        chain_prices.create_account_bandwidth_fee_sun > 0,
+        "Nile should have non-zero CreateAccountFee"
+    );
+    assert!(
+        chain_prices.create_new_account_bandwidth_rate > 0,
+        "Nile should have non-zero CreateNewAccountBandwidthRate"
+    );
 }
 
 cross_test!(tron_nile_known_trc20_tx_fee_receipt, {
@@ -576,4 +590,37 @@ cross_test!(tron_nile_get_account_resource_known_address, {
 
 cross_test!(tron_nile_get_account_resource_unactivated_address, {
     test_get_account_resource_unactivated_address_impl().await;
+});
+
+// ============================================================================
+// Account Creation Fee Integration Tests
+// ============================================================================
+
+async fn test_unactivated_address_detected_for_fee_estimation_impl() {
+    let client = tron_nile_api_client();
+    let random_addr = random_tron_address();
+
+    // Random address should be unactivated
+    let account = client
+        .get_account(&random_addr)
+        .await
+        .expect("getaccount should succeed for random address");
+    assert!(
+        !account.exists_meaningfully(),
+        "random address should not be activated on Nile"
+    );
+
+    // Chain prices should include account creation fee params
+    let prices = client
+        .get_chain_prices()
+        .await
+        .expect("getchainparameters should succeed");
+    assert!(
+        prices.create_new_account_fee_sun > 0,
+        "CreateNewAccountFeeInSystemContract should be set on Nile"
+    );
+}
+
+cross_test!(tron_nile_unactivated_address_detected_for_fee_estimation, {
+    test_unactivated_address_detected_for_fee_estimation_impl().await;
 });
