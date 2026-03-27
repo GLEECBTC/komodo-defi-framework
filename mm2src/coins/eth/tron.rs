@@ -91,6 +91,7 @@ pub fn validate_tron_raw_tx_len(len: usize) -> Result<(), String> {
 #[cfg(test)]
 pub(super) mod test_fixtures {
     use super::api::TaposBlockData;
+    use super::fee::{DestAccountState, TronChainPrices};
 
     pub const TEST_FROM_HEX: &str = "4123b00d15c601b30613bf5a3b2f72527c79cc08b6";
     pub const TEST_TO_HEX: &str = "418840e6c55b9ada326d211d818c34a994aeced808";
@@ -106,6 +107,26 @@ pub(super) mod test_fixtures {
                 arr
             },
             timestamp: 1_770_522_369_000,
+        }
+    }
+
+    /// Mainnet-like chain prices for tests.
+    pub fn mainnet_prices() -> TronChainPrices {
+        TronChainPrices {
+            bandwidth_price_sun: 1_000,
+            energy_price_sun: 420,
+            create_new_account_fee_sun: 1_000_000,     // 1 TRX
+            create_account_bandwidth_fee_sun: 100_000, // 0.1 TRX
+            create_new_account_bandwidth_rate: 1,
+        }
+    }
+
+    /// `DestAccountState` for an unactivated address with mainnet-like fees.
+    pub fn new_account_state() -> DestAccountState {
+        DestAccountState::NewAccount {
+            creation_fee_sun: 1_000_000,     // 1 TRX
+            bandwidth_fallback_sun: 100_000, // 0.1 TRX
+            bandwidth_rate: 1,
         }
     }
 }
