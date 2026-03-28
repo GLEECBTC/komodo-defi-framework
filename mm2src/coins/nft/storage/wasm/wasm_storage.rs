@@ -1032,7 +1032,7 @@ impl NftListTable {
 impl TableSignature for NftListTable {
     const TABLE_NAME: &'static str = "nft_list_cache_table";
 
-    fn on_upgrade_needed(upgrader: &DbUpgrader, mut old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+    async fn on_upgrade_needed(upgrader: &DbUpgrader, mut old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         while old_version < new_version {
             match old_version {
                 0 => {
@@ -1135,7 +1135,7 @@ impl NftTransferHistoryTable {
 impl TableSignature for NftTransferHistoryTable {
     const TABLE_NAME: &'static str = "nft_transfer_history_cache_table";
 
-    fn on_upgrade_needed(upgrader: &DbUpgrader, mut old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+    async fn on_upgrade_needed(upgrader: &DbUpgrader, mut old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         while old_version < new_version {
             match old_version {
                 0 => {
@@ -1190,7 +1190,7 @@ pub(crate) struct LastScannedBlockTable {
 impl TableSignature for LastScannedBlockTable {
     const TABLE_NAME: &'static str = "last_scanned_block_table";
 
-    fn on_upgrade_needed(upgrader: &DbUpgrader, mut old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+    async fn on_upgrade_needed(upgrader: &DbUpgrader, mut old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         while old_version < new_version {
             match old_version {
                 0 => {

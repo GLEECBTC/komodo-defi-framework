@@ -1133,8 +1133,7 @@ impl UtxoRpcClientOps for ElectrumClient {
                     let mut reader = Reader::new_with_chain_variant(serialized.as_slice(), chain_variant);
 
                     let headers = reader.read_list::<BlockHeader>().map_to_mm(|e| UtxoRpcError::InvalidResponse(format!(
-                            "blockchain.block.headers: failed to parse list of {} headers (coin={}, from={}, requested_count={}): {}",
-                            res_count, coin_name, from, requested_count, e,
+                            "blockchain.block.headers: failed to parse list of {res_count} headers (coin={coin_name}, from={from}, requested_count={requested_count}): {e}",
                         )))?;
 
                     let mut timestamps: Vec<_> = headers.into_iter().map(|block| block.time).collect();

@@ -941,17 +941,14 @@ pub(crate) async fn build_address_and_priv_key_policy(
             let bip39_secp_priv_key = global_hd_ctx.root_priv_key().clone();
 
             let hd_wallet_rmd160 = *ctx.rmd160();
-            let hd_wallet_storage = HDWalletCoinStorage::init_with_rmd160(ctx, ticker.to_string(), hd_wallet_rmd160)
-                .await
-                .mm_err(EthActivationV2Error::from)?;
-            let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, &path_to_coin)
-                .await
-                .map_mm_err()?;
+            let hd_wallet_storage =
+                HDWalletCoinStorage::init_with_rmd160(ctx, ticker.to_string(), path_to_coin.clone(), hd_wallet_rmd160)
+                    .await
+                    .mm_err(EthActivationV2Error::from)?;
+            let accounts = load_hd_accounts_from_storage(&hd_wallet_storage).await.map_mm_err()?;
             let gap_limit = gap_limit.unwrap_or(DEFAULT_GAP_LIMIT);
             let hd_wallet = EthHDWallet {
-                hd_wallet_rmd160,
                 hd_wallet_storage,
-                derivation_path: path_to_coin.clone(),
                 accounts: HDAccountsMutex::new(accounts),
                 enabled_address: *path_to_address,
                 gap_limit,
@@ -967,29 +964,21 @@ pub(crate) async fn build_address_and_priv_key_policy(
             ))
         },
         EthPrivKeyBuildPolicy::Trezor => {
-            let path_to_coin = json::from_value(conf["derivation_path"].clone())
+            let path_to_coin: HDPathToCoin = json::from_value(conf["derivation_path"].clone())
                 .map_to_mm(|e| EthActivationV2Error::ErrorDeserializingDerivationPath(e.to_string()))?;
 
             let trezor_coin: Option<String> = json::from_value(conf["trezor_coin"].clone()).ok();
             if trezor_coin.is_none() {
                 return MmError::err(EthActivationV2Error::CoinDoesntSupportTrezor);
             }
-            let crypto_ctx = CryptoCtx::from_ctx(ctx).map_mm_err()?;
-            let hw_ctx = crypto_ctx
-                .hw_ctx()
-                .or_mm_err(|| EthActivationV2Error::HwContextNotInitialized)?;
-            let hd_wallet_rmd160 = hw_ctx.rmd160();
-            let hd_wallet_storage = HDWalletCoinStorage::init_with_rmd160(ctx, ticker.to_string(), hd_wallet_rmd160)
+            let hd_wallet_storage = HDWalletCoinStorage::init_with_hw(ctx, ticker.to_string(), path_to_coin.clone())
                 .await
                 .mm_err(EthActivationV2Error::from)?;
-            let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, &path_to_coin)
-                .await
-                .map_mm_err()?;
+            let accounts = load_hd_accounts_from_storage(&hd_wallet_storage).await.map_mm_err()?;
             let gap_limit = gap_limit.unwrap_or(DEFAULT_GAP_LIMIT);
+
             let hd_wallet = EthHDWallet {
-                hd_wallet_rmd160,
                 hd_wallet_storage,
-                derivation_path: path_to_coin.clone(),
                 accounts: HDAccountsMutex::new(accounts),
                 enabled_address: *path_to_address,
                 gap_limit,

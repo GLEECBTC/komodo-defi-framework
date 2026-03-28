@@ -384,6 +384,7 @@ mod wasm_impl {
     use mm2_db::indexed_db::DbTable;
     use serde_json as json;
 
+    // TODO: Abandon this migration code since we can perform these migrations on `on_upgrade_needed` callback now.
     pub(super) async fn get_current_migration(
         migration_table: &DbTable<'_, SwapsMigrationTable>,
     ) -> MmResult<u32, SavedSwapError> {

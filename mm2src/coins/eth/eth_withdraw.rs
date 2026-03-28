@@ -162,12 +162,12 @@ where
     #[allow(clippy::result_large_err)]
     fn get_from_derivation_path(&self, from: &HDAddressSelector) -> Result<DerivationPath, MmError<WithdrawError>> {
         let coin = self.coin();
-        let path_to_coin = &coin
+        let path_to_coin = coin
             .deref()
             .derivation_method
             .hd_wallet_or_err()
             .map_mm_err()?
-            .derivation_path;
+            .derivation_path();
         let path_to_address = from
             .to_address_path(path_to_coin.coin_type())
             .mm_err(|err| WithdrawError::UnexpectedFromAddress(err.to_string()))

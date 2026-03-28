@@ -267,7 +267,7 @@ mod tests {
     impl TableSignature for SwapTable {
         const TABLE_NAME: &'static str = "swap_test_table";
 
-        fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, _new_version: u32) -> OnUpgradeResult<()> {
+        async fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, _new_version: u32) -> OnUpgradeResult<()> {
             if old_version > 0 {
                 // the table is initialized already
                 return Ok(());
@@ -340,7 +340,7 @@ mod tests {
     impl TableSignature for TimestampTable {
         const TABLE_NAME: &'static str = "timestamp_table";
 
-        fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, _new_version: u32) -> OnUpgradeResult<()> {
+        async fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, _new_version: u32) -> OnUpgradeResult<()> {
             if old_version > 0 {
                 // the table is initialized already
                 return Ok(());

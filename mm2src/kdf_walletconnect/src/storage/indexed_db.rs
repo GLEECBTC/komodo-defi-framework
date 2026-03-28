@@ -19,7 +19,7 @@ pub type IDBSessionStorageLocked<'a> = DbLocked<'a, IDBSessionStorageInner>;
 impl TableSignature for Session {
     const TABLE_NAME: &'static str = "sessions";
 
-    fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+    async fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         if let (0, 1) = (old_version, new_version) {
             let table = upgrader.create_table(Self::TABLE_NAME)?;
             table.create_index("topic", false)?;

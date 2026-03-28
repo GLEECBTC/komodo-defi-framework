@@ -1101,7 +1101,7 @@ impl ExtractExtendedPubkey for QtumCoin {
 
     async fn extract_extended_pubkey<XPubExtractor>(
         &self,
-        xpub_extractor: Option<XPubExtractor>,
+        xpub_extractor: Option<&XPubExtractor>,
         derivation_path: DerivationPath,
     ) -> MmResult<Self::ExtendedPublicKey, HDExtractPubkeyError>
     where

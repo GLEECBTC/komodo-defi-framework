@@ -422,10 +422,12 @@ pub enum AddressBalanceStatus<Balance> {
 }
 
 pub mod common_impl {
+    use common::log::warn;
+
     use super::*;
     use crate::hd_wallet::{
-        create_new_account, DisplayAddress, ExtractExtendedPubkey, HDAccountOps, HDAccountStorageOps, HDAddressOps,
-        HDCoinExtendedPubkey, HDWalletOps,
+        create_new_account, DisplayAddress, ExtendedPublicKeyOps, ExtractExtendedPubkey, HDAccountOps,
+        HDAccountStorageOps, HDAddressOps, HDCoinExtendedPubkey, HDWalletOps, HDWalletStorageOps,
     };
 
     pub(crate) async fn enable_hd_account<Coin>(
@@ -488,8 +490,10 @@ pub mod common_impl {
         XPubExtractor: HDXPubExtractor + Send,
         HDCoinHDAccount<Coin>: HDAccountStorageOps,
     {
-        let mut accounts = hd_wallet.get_accounts_mut().await;
         let address_scanner = coin.produce_hd_address_scanner().await.map_mm_err()?;
+        fix_bad_accounts(coin, hd_wallet, xpub_extractor.as_ref(), &address_scanner).await?;
+
+        let mut accounts = hd_wallet.get_accounts_mut().await;
 
         let mut result = HDWalletBalance {
             accounts: Vec::with_capacity(accounts.len() + 1),
@@ -504,9 +508,14 @@ pub mod common_impl {
             );
 
             // Create new HD account.
-            let mut new_account = create_new_account(coin, hd_wallet, xpub_extractor, Some(path_to_address.account_id))
-                .await
-                .map_mm_err()?;
+            let mut new_account = create_new_account(
+                coin,
+                hd_wallet,
+                xpub_extractor.as_ref(),
+                Some(path_to_address.account_id),
+            )
+            .await
+            .map_mm_err()?;
             let scan_new_addresses = matches!(
                 params.scan_policy,
                 EnableCoinScanPolicy::ScanIfNewWallet | EnableCoinScanPolicy::Scan
@@ -659,6 +668,79 @@ pub mod common_impl {
             });
 
         result_addresses.extend(to_extend);
+        Ok(())
+    }
+
+    async fn fix_bad_accounts<Coin, XPubExtractor>(
+        coin: &Coin,
+        hd_wallet: &Coin::HDWallet,
+        xpub_extractor: Option<&XPubExtractor>,
+        _address_scanner: &Coin::HDAddressScanner,
+    ) -> MmResult<(), EnableCoinBalanceError>
+    where
+        Coin: ExtractExtendedPubkey<ExtendedPublicKey = HDCoinExtendedPubkey<Coin>>
+            + HDWalletBalanceOps
+            + MarketCoinOps
+            + Sync,
+        HDCoinAddress<Coin>: fmt::Display,
+        XPubExtractor: HDXPubExtractor + Send,
+        HDCoinHDAccount<Coin>: HDAccountStorageOps,
+    {
+        // Load all bad accounts that don't have purpose & coin_type set.
+        let bad_accounts = hd_wallet
+            .hd_wallet_storage()
+            .load_bad_accounts()
+            .await
+            .mm_err(|e| BalanceError::WalletStorageError(e.to_string()))
+            .map_mm_err()?;
+        if bad_accounts.is_empty() {
+            return Ok(());
+        }
+        info!(
+            "Trying to recover {} bad accounts (coin={})",
+            bad_accounts.len(),
+            coin.ticker()
+        );
+
+        for bad_account in bad_accounts.iter() {
+            if hd_wallet.get_account(bad_account.account_id).await.is_some() {
+                // This bad account had a good account created for it already so we can skip it.
+                // Such a thing might happen if KDF was aborted whilst running this very loop in a previous run.
+                // In such case, we will have created some (or all) good substitute accounts but didn't delete the bad accounts yet.
+                info!(
+                    "Account {} already exists (good), skipping it (coin={})",
+                    bad_account.account_id,
+                    coin.ticker()
+                );
+                continue;
+            }
+            // FIXME: Use the `address_scanner` here so not to query for xpubs for accounts that don't have any balance in their addresses.
+            let account = create_new_account(coin, hd_wallet, xpub_extractor, Some(bad_account.account_id))
+                .await
+                .map_mm_err()?;
+            let derived_xpub = account.extended_pubkey().to_string(bip32::Prefix::XPUB);
+            // If xpubs don't match, this means that the account was derived with a different purpose and/or coin_type before,
+            // which means the coin name was left while purpose and/or coin_type changed in coins file.
+            if derived_xpub != bad_account.account_xpub {
+                // Stop here and delete all the bad accounts at this point since they will probably suffer from the same issue.
+                // We will have added one new *good* account at this loop. No need to delete it since it's good.
+                warn!(
+                    "Found a bad account in storage that doesn't correspond to the derived xpub (coin={}, derivation_path={}): derived_xpub={}, xpub_from_storage={}",
+                    coin.ticker(), account.account_derivation_path(), derived_xpub, bad_account.account_xpub
+                );
+                break;
+            }
+        }
+
+        // Finished creating good substitute accounts for all bad accounts.
+        // Now we can delete all the bad accounts.
+        hd_wallet
+            .hd_wallet_storage()
+            .delete_bad_accounts()
+            .await
+            .mm_err(|e| BalanceError::WalletStorageError(e.to_string()))
+            .map_mm_err()?;
+
         Ok(())
     }
 }

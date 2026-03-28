@@ -59,7 +59,7 @@ pub mod tables {
     impl TableSignature for SwapLockTable {
         const TABLE_NAME: &'static str = "swap_lock";
 
-        fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+        async fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
             on_upgrade_swap_table_by_uuid_v1(upgrader, old_version, new_version, Self::TABLE_NAME)
         }
     }
@@ -73,7 +73,7 @@ pub mod tables {
     impl TableSignature for SavedSwapTable {
         const TABLE_NAME: &'static str = "saved_swap";
 
-        fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+        async fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
             on_upgrade_swap_table_by_uuid_v1(upgrader, old_version, new_version, Self::TABLE_NAME)
         }
     }
@@ -96,7 +96,11 @@ pub mod tables {
     impl TableSignature for MySwapsFiltersTable {
         const TABLE_NAME: &'static str = "my_swaps";
 
-        fn on_upgrade_needed(upgrader: &DbUpgrader, mut old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+        async fn on_upgrade_needed(
+            upgrader: &DbUpgrader,
+            mut old_version: u32,
+            new_version: u32,
+        ) -> OnUpgradeResult<()> {
             while old_version < new_version {
                 match old_version {
                     0 => {
@@ -168,7 +172,11 @@ pub mod tables {
     impl TableSignature for SwapsMigrationTable {
         const TABLE_NAME: &'static str = "swaps_migration";
 
-        fn on_upgrade_needed(upgrader: &DbUpgrader, mut old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+        async fn on_upgrade_needed(
+            upgrader: &DbUpgrader,
+            mut old_version: u32,
+            new_version: u32,
+        ) -> OnUpgradeResult<()> {
             while old_version < new_version {
                 match old_version {
                     0 => {

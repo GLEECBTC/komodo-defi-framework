@@ -20,6 +20,14 @@ impl HDWalletStorageInternalOps for HDWalletMockStorage {
         unimplemented!()
     }
 
+    async fn load_bad_accounts(&self, _wallet_id: HDWalletId) -> HDWalletStorageResult<Vec<HDAccountStorageItem>> {
+        unimplemented!()
+    }
+
+    async fn delete_bad_accounts(&self, _wallet_id: HDWalletId) -> HDWalletStorageResult<()> {
+        unimplemented!()
+    }
+
     async fn load_account(
         &self,
         _wallet_id: HDWalletId,

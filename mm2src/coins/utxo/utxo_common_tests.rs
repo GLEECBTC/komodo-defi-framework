@@ -281,9 +281,7 @@ pub(super) async fn test_hd_utxo_tx_history_impl(rpc_client: ElectrumClient) {
     fields.conf.ticker = "DOC".to_string();
     fields.derivation_method = DerivationMethod::HDWallet(UtxoHDWallet {
         inner: HDWallet {
-            hd_wallet_rmd160: "6d9d2b554d768232320587df75c4338ecc8bf37d".into(),
             hd_wallet_storage: HDWalletCoinStorage::default(),
-            derivation_path: HDPathToCoin::from_str("m/44'/141'").unwrap(),
             accounts: HDAccountsMutex::new(hd_accounts),
             enabled_address: HDPathAccountToAddressId::default(),
             gap_limit: 20,

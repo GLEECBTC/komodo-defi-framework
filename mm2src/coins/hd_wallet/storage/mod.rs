@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use common::log::warn;
 use crypto::{Bip32Error, CryptoCtx, CryptoCtxError, HDPathToCoin, StandardHDPathError, XPub};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
@@ -78,15 +79,18 @@ impl HDWalletStorageError {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct HDWalletId {
     coin: String,
+    /// Purpose and coin type sections of the derivation path for this HD Wallet.
+    path_to_coin: HDPathToCoin,
     /// RIPEMD160(SHA256(x)) where x is a pubkey extracted from a Hardware Wallet device or passphrase.
     /// This property allows us to store DB items that are unique to each Hardware Wallet device.
     hd_wallet_rmd160: String,
 }
 
 impl HDWalletId {
-    pub fn new(coin: String, hd_wallet_rmd160: &H160) -> HDWalletId {
+    pub fn new(coin: String, path_to_coin: HDPathToCoin, hd_wallet_rmd160: &H160) -> HDWalletId {
         HDWalletId {
             coin,
+            path_to_coin,
             hd_wallet_rmd160: display_rmd160(hd_wallet_rmd160),
         }
     }
@@ -109,6 +113,12 @@ pub(crate) trait HDWalletStorageInternalOps {
         Self: Sized;
 
     async fn load_accounts(&self, wallet_id: HDWalletId) -> HDWalletStorageResult<Vec<HDAccountStorageItem>>;
+
+    /// Loads accounts with bad/unset purpose and coin_type values found in the storage.
+    async fn load_bad_accounts(&self, wallet_id: HDWalletId) -> HDWalletStorageResult<Vec<HDAccountStorageItem>>;
+
+    /// Removes accounts with bad/unset purpose and coin_type values found in the storage.
+    async fn delete_bad_accounts(&self, wallet_id: HDWalletId) -> HDWalletStorageResult<()>;
 
     async fn load_account(
         &self,
@@ -211,7 +221,11 @@ pub trait HDAccountStorageOps {
 /// The wrapper over the [`HDWalletStorage::inner`] database implementation.
 /// It's associated with a specific mm2 user, HD wallet and coin.
 pub struct HDWalletCoinStorage {
+    /// The coin ticker/name. This isn't actually used to identify the coin but rather just persisted in the DB for convenience.
+    /// `path_to_coin` is the field that is used to identify the coin in the collective HD wallet storage.
     coin: String,
+    /// Purpose and coin type sections of the derivation path for this HD Wallet.
+    path_to_coin: HDPathToCoin,
     /// RIPEMD160(SHA256(x)) where x is a pubkey extracted from a Hardware Wallet device or passphrase.
     /// This property allows us to store DB items that are unique to each Hardware Wallet device or HD wallet.
     hd_wallet_rmd160: H160,
@@ -232,6 +246,7 @@ impl Default for HDWalletCoinStorage {
     fn default() -> Self {
         HDWalletCoinStorage {
             coin: String::default(),
+            path_to_coin: HDPathToCoin::default_for_test(0),
             hd_wallet_rmd160: H160::default(),
             inner: Box::new(HDWalletMockStorage),
         }
@@ -239,39 +254,55 @@ impl Default for HDWalletCoinStorage {
 }
 
 impl HDWalletCoinStorage {
-    pub async fn init(ctx: &MmArc, coin: String) -> HDWalletStorageResult<HDWalletCoinStorage> {
-        let inner = Box::new(HDWalletStorageInstance::init(ctx).await?);
+    pub async fn init_with_hw(
+        ctx: &MmArc,
+        coin: String,
+        path_to_coin: HDPathToCoin,
+    ) -> HDWalletStorageResult<HDWalletCoinStorage> {
         let crypto_ctx = CryptoCtx::from_ctx(ctx).map_mm_err()?;
         let hd_wallet_rmd160 = crypto_ctx
             .hw_wallet_rmd160()
             .or_mm_err(|| HDWalletStorageError::HDWalletUnavailable)?;
-        Ok(HDWalletCoinStorage {
-            coin,
-            hd_wallet_rmd160,
-            inner,
-        })
+        Self::init_with_rmd160(ctx, coin, path_to_coin, hd_wallet_rmd160).await
     }
 
     pub async fn init_with_rmd160(
         ctx: &MmArc,
         coin: String,
+        path_to_coin: HDPathToCoin,
         hd_wallet_rmd160: H160,
     ) -> HDWalletStorageResult<HDWalletCoinStorage> {
         let inner = Box::new(HDWalletStorageInstance::init(ctx).await?);
         Ok(HDWalletCoinStorage {
             coin,
+            path_to_coin,
             hd_wallet_rmd160,
             inner,
         })
     }
 
+    pub fn path_to_coin(&self) -> &HDPathToCoin {
+        &self.path_to_coin
+    }
+
     pub fn wallet_id(&self) -> HDWalletId {
-        HDWalletId::new(self.coin.clone(), &self.hd_wallet_rmd160)
+        HDWalletId::new(self.coin.clone(), self.path_to_coin.clone(), &self.hd_wallet_rmd160)
     }
 
     pub async fn load_all_accounts(&self) -> HDWalletStorageResult<Vec<HDAccountStorageItem>> {
         let wallet_id = self.wallet_id();
         self.inner.load_accounts(wallet_id).await
+    }
+
+    pub async fn load_bad_accounts(&self) -> HDWalletStorageResult<Vec<HDAccountStorageItem>> {
+        let wallet_id = self.wallet_id();
+        self.inner.load_bad_accounts(wallet_id).await
+    }
+
+    pub async fn delete_bad_accounts(&self) -> HDWalletStorageResult<()> {
+        let wallet_id = self.wallet_id();
+        warn!("Deleting bad accounts for wallet={wallet_id:?}");
+        self.inner.delete_bad_accounts(wallet_id).await
     }
 
     async fn load_account(&self, account_id: u32) -> HDWalletStorageResult<Option<HDAccountStorageItem>> {
@@ -365,15 +396,20 @@ mod tests {
         let device0_rmd160 = H160::from("0000000000000000000000000000000000000020");
         let device1_rmd160 = H160::from("0000000000000000000000000000000000000030");
 
-        let rick_device0_db = HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), device0_rmd160)
-            .await
-            .expect("!HDWalletCoinStorage::new");
-        let rick_device1_db = HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), device1_rmd160)
-            .await
-            .expect("!HDWalletCoinStorage::new");
-        let morty_device0_db = HDWalletCoinStorage::init_with_rmd160(&ctx, "MORTY".to_owned(), device0_rmd160)
-            .await
-            .expect("!HDWalletCoinStorage::new");
+        let rick_path_to_coin = HDPathToCoin::default_for_test(0);
+        let rick_device0_db =
+            HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), rick_path_to_coin.clone(), device0_rmd160)
+                .await
+                .expect("!HDWalletCoinStorage::new");
+        let rick_device1_db =
+            HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), rick_path_to_coin, device1_rmd160)
+                .await
+                .expect("!HDWalletCoinStorage::new");
+        let morty_path_to_coin = HDPathToCoin::default_for_test(1);
+        let morty_device0_db =
+            HDWalletCoinStorage::init_with_rmd160(&ctx, "MORTY".to_owned(), morty_path_to_coin, device0_rmd160)
+                .await
+                .expect("!HDWalletCoinStorage::new");
 
         rick_device0_db
             .upload_new_account(rick_device0_account0.clone())
@@ -460,15 +496,19 @@ mod tests {
         let device1_rmd160 = H160::from("0000000000000000000000000000000000000020");
         let device2_rmd160 = H160::from("0000000000000000000000000000000000000030");
 
-        let wallet0_db = HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), device0_rmd160)
-            .await
-            .expect("!HDWalletCoinStorage::new");
-        let wallet1_db = HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), device1_rmd160)
-            .await
-            .expect("!HDWalletCoinStorage::new");
-        let wallet2_db = HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), device2_rmd160)
-            .await
-            .expect("!HDWalletCoinStorage::new");
+        let dummy_path_to_coin = HDPathToCoin::default_for_test(0);
+        let wallet0_db =
+            HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), dummy_path_to_coin.clone(), device0_rmd160)
+                .await
+                .expect("!HDWalletCoinStorage::new");
+        let wallet1_db =
+            HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), dummy_path_to_coin.clone(), device1_rmd160)
+                .await
+                .expect("!HDWalletCoinStorage::new");
+        let wallet2_db =
+            HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), dummy_path_to_coin, device2_rmd160)
+                .await
+                .expect("!HDWalletCoinStorage::new");
 
         wallet0_db
             .upload_new_account(wallet0_account0.clone())
@@ -519,7 +559,8 @@ mod tests {
         let ctx = mm_ctx_with_custom_db();
         let device_rmd160 = H160::from("0000000000000000000000000000000000000010");
 
-        let db = HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), device_rmd160)
+        let dummy_path_to_coin = HDPathToCoin::default_for_test(0);
+        let db = HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), dummy_path_to_coin, device_rmd160)
             .await
             .expect("!HDWalletCoinStorage::new");
 

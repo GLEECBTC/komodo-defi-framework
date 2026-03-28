@@ -1,14 +1,21 @@
 use common::stringify_js_error;
 use derive_more::Display;
+use futures::future::LocalBoxFuture;
 use js_sys::Array;
 use mm2_err_handle::prelude::*;
 use wasm_bindgen::prelude::*;
-use web_sys::{IdbDatabase, IdbIndexParameters, IdbObjectStore, IdbObjectStoreParameters, IdbTransaction};
+use web_sys::{IdbIndexParameters, IdbObjectStoreParameters};
+
+use crate::indexed_db::{
+    db_driver::{IdbDatabaseImpl, IdbObjectStoreImpl, IdbTransactionImpl},
+    DbTransactionError,
+};
 
 const ITEM_KEY_PATH: &str = "_item_id";
 
 pub type OnUpgradeResult<T> = Result<T, MmError<OnUpgradeError>>;
-pub type OnUpgradeNeededCb = Box<dyn FnOnce(&DbUpgrader, u32, u32) -> OnUpgradeResult<()> + Send>;
+pub type OnUpgradeNeededCb =
+    Box<dyn for<'a> FnOnce(&'a DbUpgrader, u32, u32) -> LocalBoxFuture<'a, OnUpgradeResult<()>> + Send>;
 
 #[derive(Debug, Display, PartialEq)]
 pub enum OnUpgradeError {
@@ -28,15 +35,17 @@ pub enum OnUpgradeError {
     },
     #[display(fmt = "Error occurred due to deleting the '{index}' index: {description}")]
     ErrorDeletingIndex { index: String, description: String },
+    #[display(fmt = "Error occurred while performing a transaction over the '{table}' table: {error}")]
+    TransactionError { table: String, error: DbTransactionError },
 }
 
 pub struct DbUpgrader {
-    db: IdbDatabase,
-    transaction: IdbTransaction,
+    db: IdbDatabaseImpl,
+    transaction: IdbTransactionImpl,
 }
 
 impl DbUpgrader {
-    pub(crate) fn new(db: IdbDatabase, transaction: IdbTransaction) -> DbUpgrader {
+    pub(crate) fn new(db: IdbDatabaseImpl, transaction: IdbTransactionImpl) -> DbUpgrader {
         DbUpgrader { db, transaction }
     }
 
@@ -48,8 +57,14 @@ impl DbUpgrader {
         params.set_key_path(&key_path);
         params.set_auto_increment(true);
 
-        match self.db.create_object_store_with_optional_parameters(table, &params) {
-            Ok(object_store) => Ok(TableUpgrader { object_store }),
+        match self.db.db.create_object_store_with_optional_parameters(table, &params) {
+            Ok(object_store) => Ok(TableUpgrader {
+                object_store: IdbObjectStoreImpl {
+                    object_store,
+                    aborted: self.transaction.aborted.clone(),
+                    _not_send: Default::default(),
+                },
+            }),
             Err(e) => MmError::err(OnUpgradeError::ErrorCreatingTable {
                 table: table.to_owned(),
                 description: stringify_js_error(&e),
@@ -59,8 +74,14 @@ impl DbUpgrader {
 
     /// Open the `table` if it was created already.
     pub fn open_table(&self, table: &str) -> OnUpgradeResult<TableUpgrader> {
-        match self.transaction.object_store(table) {
-            Ok(object_store) => Ok(TableUpgrader { object_store }),
+        match self.transaction.transaction.object_store(table) {
+            Ok(object_store) => Ok(TableUpgrader {
+                object_store: IdbObjectStoreImpl {
+                    object_store,
+                    aborted: self.transaction.aborted.clone(),
+                    _not_send: Default::default(),
+                },
+            }),
             Err(e) => MmError::err(OnUpgradeError::ErrorOpeningTable {
                 table: table.to_owned(),
                 description: stringify_js_error(&e),
@@ -70,7 +91,7 @@ impl DbUpgrader {
 }
 
 pub struct TableUpgrader {
-    object_store: IdbObjectStore,
+    pub object_store: IdbObjectStoreImpl,
 }
 
 impl TableUpgrader {
@@ -80,6 +101,7 @@ impl TableUpgrader {
         let params = IdbIndexParameters::new();
         params.set_unique(unique);
         self.object_store
+            .object_store
             .create_index_with_str_and_optional_parameters(index, index, &params)
             .map(|_| ())
             .map_to_mm(|e| OnUpgradeError::ErrorCreatingIndex {
@@ -102,6 +124,7 @@ impl TableUpgrader {
         }
 
         self.object_store
+            .object_store
             .create_index_with_str_sequence_and_optional_parameters(index, &fields_key_path, &params)
             .map(|_| ())
             .map_to_mm(|e| OnUpgradeError::ErrorCreatingIndex {
@@ -116,6 +139,7 @@ impl TableUpgrader {
     /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/deleteIndex
     pub fn delete_index(&self, index: &str) -> OnUpgradeResult<()> {
         self.object_store
+            .object_store
             .delete_index(index)
             .map(|_| ())
             .map_to_mm(|e| OnUpgradeError::ErrorDeletingIndex {

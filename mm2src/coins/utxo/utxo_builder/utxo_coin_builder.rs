@@ -23,8 +23,7 @@ use chain::TxHashAlgo;
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError};
 use common::now_sec;
 use crypto::{
-    Bip32DerPathError, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, HDPathToCoin, HwWalletType, StandardHDPath,
-    StandardHDPathError,
+    Bip32DerPathError, CryptoCtxError, GlobalHDAccountArc, HDPathToCoin, StandardHDPath, StandardHDPathError,
 };
 use derive_more::Display;
 use futures::channel::mpsc::{channel, Receiver as AsyncReceiver};
@@ -262,12 +261,16 @@ where
 
     let address_format = builder.address_format()?;
     let hd_wallet_rmd160 = *builder.ctx().rmd160();
-    let hd_wallet_storage =
-        HDWalletCoinStorage::init_with_rmd160(builder.ctx(), builder.ticker().to_owned(), hd_wallet_rmd160)
-            .await
-            .map_mm_err()?;
+    let hd_wallet_storage = HDWalletCoinStorage::init_with_rmd160(
+        builder.ctx(),
+        builder.ticker().to_owned(),
+        path_to_coin.clone(),
+        hd_wallet_rmd160,
+    )
+    .await
+    .map_mm_err()?;
 
-    let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, path_to_coin)
+    let accounts = load_hd_accounts_from_storage(&hd_wallet_storage)
         .await
         .mm_err(UtxoCoinBuildError::from)?;
 
@@ -275,9 +278,7 @@ where
 
     let hd_wallet = UtxoHDWallet {
         inner: HDWallet {
-            hd_wallet_rmd160,
             hd_wallet_storage,
-            derivation_path: path_to_coin.clone(),
             accounts: HDAccountsMutex::new(accounts),
             enabled_address: path_to_address,
             gap_limit,
@@ -450,16 +451,6 @@ where
         return MmError::err(UtxoCoinBuildError::CoinDoesntSupportTrezor);
     }
 
-    let hd_wallet_rmd160 = {
-        let crypto_ctx = CryptoCtx::from_ctx(builder.ctx()).map_mm_err()?;
-        let hw_ctx = crypto_ctx
-            .hw_ctx()
-            .or_mm_err(|| UtxoCoinBuildError::HwContextNotInitialized)?;
-        match hw_ctx.hw_wallet_type() {
-            HwWalletType::Trezor => hw_ctx.rmd160(),
-        }
-    };
-
     let address_format = builder.address_format()?;
     let path_to_coin = conf
         .derivation_path
@@ -467,17 +458,17 @@ where
         .or_mm_err(|| UtxoConfError::DerivationPathIsNotSet)
         .map_mm_err()?;
 
-    let hd_wallet_storage = HDWalletCoinStorage::init(builder.ctx(), ticker).await.map_mm_err()?;
+    let hd_wallet_storage = HDWalletCoinStorage::init_with_hw(builder.ctx(), ticker, path_to_coin)
+        .await
+        .map_mm_err()?;
 
-    let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, &path_to_coin)
+    let accounts = load_hd_accounts_from_storage(&hd_wallet_storage)
         .await
         .mm_err(UtxoCoinBuildError::from)?;
     let gap_limit = builder.activation_params().gap_limit.unwrap_or(DEFAULT_GAP_LIMIT);
     let hd_wallet = UtxoHDWallet {
         inner: HDWallet {
-            hd_wallet_rmd160,
             hd_wallet_storage,
-            derivation_path: path_to_coin,
             accounts: HDAccountsMutex::new(accounts),
             enabled_address: builder.activation_params().path_to_address,
             gap_limit,

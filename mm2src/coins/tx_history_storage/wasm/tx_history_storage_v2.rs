@@ -469,7 +469,7 @@ impl TxHistoryTableV2 {
 impl TableSignature for TxHistoryTableV2 {
     const TABLE_NAME: &'static str = "tx_history_v2";
 
-    fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+    async fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         if let (0, 1) = (old_version, new_version) {
             let table = upgrader.create_table(Self::TABLE_NAME)?;
             table.create_multi_index(TxHistoryTableV2::WALLET_ID_INDEX, &["coin", "hd_wallet_rmd160"], false)?;
@@ -529,7 +529,7 @@ impl TxCacheTableV2 {
 impl TableSignature for TxCacheTableV2 {
     const TABLE_NAME: &'static str = "tx_cache_v2";
 
-    fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+    async fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         if let (0, 1) = (old_version, new_version) {
             let table = upgrader.create_table(Self::TABLE_NAME)?;
             table.create_multi_index(TxCacheTableV2::COIN_TX_HASH_INDEX, &["coin", "tx_hash"], true)?;

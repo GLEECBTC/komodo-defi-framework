@@ -90,6 +90,19 @@ impl HDPathToCoin {
     pub fn coin_type(&self) -> u32 {
         self.child().value()
     }
+
+    #[cfg(any(target_arch = "wasm32", feature = "for-tests"))]
+    pub fn default_for_test(coin_type: u32) -> HDPathToCoin {
+        HDPathToCoin {
+            value: Bip32PurposeValue {
+                purpose: Bip43Purpose::Bip84,
+            },
+            child: Bip32Child {
+                value: HardenedValue::from_bip32_number(ChildNumber::new(coin_type, true).unwrap(), 0).unwrap(),
+                child: Bip44Tail,
+            },
+        }
+    }
 }
 
 impl HDPathToAccount {

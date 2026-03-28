@@ -8,7 +8,7 @@ zhtlc-native-tests = []
 tron-network-tests = []
 default = ["utxo-walletconnect"]
 run-docker-tests = []
-for-tests = ["dep:mocktopus"]
+for-tests = ["dep:mocktopus", "crypto/for-tests"]
 new-db-arch = ["mm2_core/new-db-arch"]
 
 # ETH/ERC20 watcher support - disabled by default because ETH watchers are

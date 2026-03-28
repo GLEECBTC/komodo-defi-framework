@@ -22,7 +22,7 @@ pub struct LockedNoteTable {
 impl TableSignature for LockedNoteTable {
     const TABLE_NAME: &'static str = "change_notes";
 
-    fn on_upgrade_needed(upgrader: &DbUpgrader, mut old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+    async fn on_upgrade_needed(upgrader: &DbUpgrader, mut old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         while old_version < new_version {
             match old_version {
                 0 => {

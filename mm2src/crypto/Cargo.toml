@@ -63,3 +63,4 @@ tokio.workspace = true
 
 [features]
 trezor-udp = ["trezor/trezor-udp"]
+for-tests = []

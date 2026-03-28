@@ -6,7 +6,6 @@ use crypto::{
 };
 use futures::lock::{MappedMutexGuard as AsyncMappedMutexGuard, Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use mm2_err_handle::prelude::*;
-use primitives::hash::H160;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Display;
@@ -269,7 +268,6 @@ where
 
 pub async fn load_hd_accounts_from_storage<HDAddress, ExtendedPublicKey>(
     hd_wallet_storage: &HDWalletCoinStorage,
-    derivation_path: &HDPathToCoin,
 ) -> HDWalletStorageResult<HDAccountsMap<HDAccount<HDAddress, ExtendedPublicKey>>>
 where
     HDAddress: HDAddressOps + Send,
@@ -280,7 +278,7 @@ where
     let res: HDWalletStorageResult<HDAccountsMap<HDAccount<HDAddress, ExtendedPublicKey>>> = accounts
         .iter()
         .map(|account_info| {
-            let account = HDAccount::try_from_storage_item(derivation_path, account_info)?;
+            let account = HDAccount::try_from_storage_item(hd_wallet_storage.path_to_coin(), account_info)?;
             Ok((account.account_id, account))
         })
         .collect();
@@ -303,18 +301,9 @@ pub struct HDWallet<HDAccount>
 where
     HDAccount: HDAccountOps + Send + Sync,
 {
-    /// A unique identifier for the HD wallet derived from the master public key.
-    /// Specifically, it's the RIPEMD160 hash of the SHA256 hash of the master pubkey.
-    /// This property aids in storing database items uniquely for each HD wallet.
-    pub hd_wallet_rmd160: H160,
     /// Provides a means to access database operations for a specific user, HD wallet, and coin.
     /// The storage wrapper associates with the `coin` and `hd_wallet_rmd160` to provide unique storage access.
     pub hd_wallet_storage: HDWalletCoinStorage,
-    /// Derivation path of the coin.
-    /// This derivation path consists of `purpose` and `coin_type` only
-    /// where the full `BIP44` address has the following structure:
-    /// `m/purpose'/coin_type'/account'/change/address_index`.
-    pub derivation_path: HDPathToCoin,
     /// Contains information about the accounts enabled for this HD wallet.
     pub accounts: HDAccountsMutex<HDAccount>,
     // Todo: This should be removed in the future to enable simultaneous swaps from multiple addresses
@@ -334,11 +323,11 @@ where
     type HDAccount = HDAccount;
 
     fn coin_type(&self) -> u32 {
-        self.derivation_path.coin_type()
+        self.derivation_path().coin_type()
     }
 
     fn derivation_path(&self) -> &HDPathToCoin {
-        &self.derivation_path
+        self.hd_wallet_storage.path_to_coin()
     }
 
     fn gap_limit(&self) -> u32 {
@@ -424,7 +413,7 @@ where
 pub async fn create_new_account<'a, Coin, XPubExtractor, HDWallet, HDAccount>(
     coin: &Coin,
     hd_wallet: &'a HDWallet,
-    xpub_extractor: Option<XPubExtractor>,
+    xpub_extractor: Option<&XPubExtractor>,
     account_id: Option<u32>,
 ) -> MmResult<HDAccountMut<'a, HDWalletHDAccount<HDWallet>>, NewAccountCreationError>
 where

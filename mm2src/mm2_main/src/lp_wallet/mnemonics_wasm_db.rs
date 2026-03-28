@@ -78,7 +78,7 @@ impl Deref for WalletsDb {
 impl TableSignature for MnemonicsTable {
     const TABLE_NAME: &'static str = "mnemonics";
 
-    fn on_upgrade_needed(upgrader: &DbUpgrader, mut old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+    async fn on_upgrade_needed(upgrader: &DbUpgrader, mut old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         while old_version < new_version {
             match old_version {
                 0 => {

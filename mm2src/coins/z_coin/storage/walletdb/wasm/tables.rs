@@ -24,7 +24,7 @@ impl WalletDbAccountsTable {
 impl TableSignature for WalletDbAccountsTable {
     const TABLE_NAME: &'static str = "walletdb_accounts";
 
-    fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+    async fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         if let (0, 1) = (old_version, new_version) {
             let table = upgrader.create_table(Self::TABLE_NAME)?;
             table.create_multi_index(Self::TICKER_ACCOUNT_INDEX, &["ticker", "account"], true)?;
@@ -62,7 +62,7 @@ impl WalletDbBlocksTable {
 impl TableSignature for WalletDbBlocksTable {
     const TABLE_NAME: &'static str = "walletdb_blocks";
 
-    fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+    async fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         if let (0, 1) = (old_version, new_version) {
             let table = upgrader.create_table(Self::TABLE_NAME)?;
             table.create_multi_index(Self::TICKER_HEIGHT_INDEX, &["ticker", "height"], true)?;
@@ -103,7 +103,7 @@ impl WalletDbTransactionsTable {
 impl TableSignature for WalletDbTransactionsTable {
     const TABLE_NAME: &'static str = "walletdb_transactions";
 
-    fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+    async fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         if let (0, 1) = (old_version, new_version) {
             let table = upgrader.create_table(Self::TABLE_NAME)?;
             table.create_multi_index(Self::TICKER_TXID_INDEX, &["ticker", "txid"], true)?;
@@ -154,7 +154,7 @@ impl WalletDbReceivedNotesTable {
 impl TableSignature for WalletDbReceivedNotesTable {
     const TABLE_NAME: &'static str = "walletdb_received_notes";
 
-    fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+    async fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         if let (0, 1) = (old_version, new_version) {
             let table = upgrader.create_table(Self::TABLE_NAME)?;
             table.create_multi_index(Self::TICKER_NF_INDEX, &["ticker", "nf"], true)?;
@@ -187,7 +187,7 @@ impl WalletDbSaplingWitnessesTable {
 impl TableSignature for WalletDbSaplingWitnessesTable {
     const TABLE_NAME: &'static str = "walletdb_sapling_witness";
 
-    fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+    async fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         if let (0, 1) = (old_version, new_version) {
             let table = upgrader.create_table(Self::TABLE_NAME)?;
             table.create_multi_index(Self::TICKER_NOTE_BLOCK_INDEX, &["ticker", "note", "block"], true)?;
@@ -222,7 +222,7 @@ impl WalletDbSentNotesTable {
 impl TableSignature for WalletDbSentNotesTable {
     const TABLE_NAME: &'static str = "walletdb_sent_notes";
 
-    fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+    async fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         if let (0, 1) = (old_version, new_version) {
             let table = upgrader.create_table(Self::TABLE_NAME)?;
             table.create_multi_index(Self::TICKER_TX_OUTPUT_INDEX, &["ticker", "tx", "output_index"], false)?;

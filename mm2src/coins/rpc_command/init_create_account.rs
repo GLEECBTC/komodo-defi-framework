@@ -435,7 +435,7 @@ pub(crate) mod common_impl {
     {
         let hd_wallet = coin.derivation_method().hd_wallet_or_err().map_mm_err()?;
 
-        let mut new_account = create_new_account(coin, hd_wallet, xpub_extractor, params.account_id)
+        let mut new_account = create_new_account(coin, hd_wallet, xpub_extractor.as_ref(), params.account_id)
             .await
             .map_mm_err()?;
         let account_index = new_account.account_id();
