@@ -32,6 +32,7 @@ pub enum SavedSwapError {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
+// NOTE: This is a big struct. Better not add Clone derive to it unless absolutely necessary.
 pub enum SavedSwap {
     Maker(MakerSavedSwap),
     Taker(TakerSavedSwap),

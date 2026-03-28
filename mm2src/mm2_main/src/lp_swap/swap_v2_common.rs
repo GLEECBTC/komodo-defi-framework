@@ -92,21 +92,28 @@
 //!   than requiring 0‑conf for funding.
 //!   This would also be up to makers, who choose allowed volumes and parameters to compete for volume and trust/reputation.
 
+use std::convert::TryFrom;
+
 use crate::lp_network::{subscribe_to_topic, unsubscribe_from_topic};
-use crate::lp_swap::maker_swap_v2::{MakerSwapDbRepr, MakerSwapStateMachine, MakerSwapStorage};
+use crate::lp_swap::maker_swap_v2::{MakerSwapDbRepr, MakerSwapEvent, MakerSwapStateMachine, MakerSwapStorage};
 use crate::lp_swap::swap_lock::{SwapLock, SwapLockError, SwapLockOps};
-use crate::lp_swap::taker_swap_v2::{TakerSwapDbRepr, TakerSwapStateMachine, TakerSwapStorage};
-use crate::lp_swap::{swap_v2_topic, SwapsContext};
+use crate::lp_swap::taker_swap_v2::{TakerSwapDbRepr, TakerSwapEvent, TakerSwapStateMachine, TakerSwapStorage};
+use crate::lp_swap::{broadcast_my_v2swap_status, p2p_private_and_peer_id_to_broadcast, swap_v2_topic, SwapsContext};
+use coins::lp_price::fetch_swap_coins_price;
 use coins::{lp_coinfind, MakerCoinSwapOpsV2, MmCoin, MmCoinEnum, TakerCoinSwapOpsV2};
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{SpawnFuture, Timer};
 use common::log::{error, info, warn};
+use common::now_sec;
 use derive_more::Display;
+use keys::SECP_SIGN;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_libp2p::Secp256k1PubkeySerialize;
+use mm2_number::BigDecimal;
 use mm2_state_machine::storable_state_machine::{StateMachineDbRepr, StateMachineStorage, StorableStateMachine};
 use rpc::v1::types::Bytes as BytesJson;
-use secp256k1::PublicKey;
+use secp256k1::{PublicKey, SecretKey};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Error;
@@ -557,6 +564,307 @@ pub(super) async fn swap_kickstart_handler_for_taker(
                     swap_repr.taker_coin()
                 );
             },
+        }
+    }
+}
+
+/// The structure represents the swap information to be sent for statistics purposes.
+// NOTE: This is a big struct. Better not add Clone derive to it unless absolutely necessary.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct TPUSwapStatusForStats {
+    /// The swap unique identifier
+    pub uuid: Uuid,
+
+    /// The timestamp when the swap was started
+    pub started_at: u64,
+    /// The timestamp when the swap was finished (either successfully or not)
+    pub finished_at: u64,
+
+    /// The coin name of the maker
+    pub maker_coin: String,
+    /// The public key of the maker (to which the taker's coins were paid)
+    pub maker_swap_pubkey: Option<String>,
+    /// The amount of the maker's coin
+    pub maker_amount: BigDecimal,
+
+    /// The coin name of the taker
+    pub taker_coin: String,
+    /// The public key of the taker (to which the maker's coins were paid)
+    pub taker_swap_pubkey: Option<String>,
+    /// The amount of the taker's coin
+    pub taker_amount: BigDecimal,
+
+    /// The price of the maker's coin in USD at the moment of the swap
+    pub maker_coin_usd_price: Option<BigDecimal>,
+    /// The price of the taker's coin in USD at the moment of the swap
+    pub taker_coin_usd_price: Option<BigDecimal>,
+    /// The difference (in +/- percentage) between the market price and the swap price at the moment of the swap (from the maker's pov)
+    pub market_margin: Option<BigDecimal>,
+    /// Is the maker a bot. Possible values are: Some(true) (yes), Some(false) (no), None (unknown)
+    pub is_maker_bot: Option<bool>,
+
+    /// The GUI of the maker
+    pub maker_gui: Option<String>,
+    /// The maker's KDF version
+    pub maker_version: Option<String>,
+    /// The GUI of the taker
+    pub taker_gui: Option<String>,
+    /// The taker's KDF version
+    pub taker_version: Option<String>,
+
+    /// The version of the swap protocol used in the swap
+    /// Note that this field should start with 2 because this struct is specific to TPU swaps
+    pub swap_version: u8,
+
+    // The next set of fields are extra and currently not part of the swap stats
+    /// Maker's p2p pubkey
+    pub maker_p2p_pubkey: Secp256k1PubkeySerialize,
+    /// Taker's p2p pubkey
+    pub taker_p2p_pubkey: Secp256k1PubkeySerialize,
+
+    /// Premium paid by taker to maker
+    pub taker_premium: BigDecimal,
+    /// The amount of fee paid by the taker to the DEX
+    pub dex_fee_amount: BigDecimal,
+    /// The amount of DEX fee burnt
+    pub dex_fee_burn: BigDecimal,
+
+    /// The maker or taker detailed swap events
+    pub events: TPUSwapEvents,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+/// Represents either a batch of maker or taker swap events. This could be used to know whether a [`TPUSwapStatusForStats`]
+/// is maker-originating or taker-originating.
+pub enum TPUSwapEvents {
+    FromMaker(Vec<MakerSwapEvent>),
+    FromTaker(Vec<TakerSwapEvent>),
+}
+
+impl TPUSwapStatusForStats {
+    pub async fn try_from_maker_state_machine(
+        machine: &MakerSwapStateMachine<impl MmCoin + MakerCoinSwapOpsV2, impl MmCoin + TakerCoinSwapOpsV2>,
+    ) -> Result<Self, SwapStatusGenerationError> {
+        let repr = machine
+            .storage
+            .get_repr(machine.uuid)
+            .await
+            .map_err(|_| SwapStatusGenerationError::StorageError)?;
+
+        // Make sure the swap is finished (aborted, completed or refunded)
+        if repr.events.last().map(|e| !e.is_end_state()).unwrap_or(true) {
+            return Err(SwapStatusGenerationError::SwapNotFinished);
+        }
+
+        // Make sure the swap is of version 2 or higher (since TPU starts from v2)
+        if repr.swap_version < 2 {
+            return Err(SwapStatusGenerationError::InvalidSwapVersion);
+        }
+
+        // Calculate the usd prices of the coins and the market margin
+        let mut maker_coin_usd_price = None;
+        let mut taker_coin_usd_price = None;
+        let mut market_margin = None;
+        let rates = fetch_swap_coins_price(Some(repr.maker_coin.clone()), Some(repr.taker_coin.clone())).await;
+        if let Some(ref rates) = rates {
+            let fair_market_price = &rates.rel / &rates.base;
+            let swap_price = repr.taker_volume.to_decimal() / repr.maker_volume.to_decimal();
+            market_margin = Some(
+                (&swap_price - &fair_market_price) / fair_market_price
+                    * BigDecimal::try_from(100.0).expect("100.0 is a valid non-NAN float"),
+            );
+            maker_coin_usd_price = Some(rates.base.clone());
+            taker_coin_usd_price = Some(rates.rel.clone());
+        }
+
+        // Get the maker's swap pubkey
+        let maker_swap_pubkey = machine.maker_coin.derive_htlc_pubkey_v2_bytes(&machine.unique_data());
+        let maker_swap_pubkey = Some(hex::encode(maker_swap_pubkey));
+
+        // Get the taker's swap pubkey from the negotiation data in the events if available
+        let mut taker_swap_pubkey = None;
+        for event in &repr.events {
+            if let Some(negotiation_data) = event.negotiation_data() {
+                taker_swap_pubkey = Some(hex::encode(negotiation_data.taker_coin_htlc_pub_from_taker.0.clone()));
+                break;
+            }
+        }
+
+        // Determine if the maker is a bot
+        // This is overly simplistic check and only checks whether the simple_market_maker_bot_ctx was initialized.
+        // TODO: A proper check would be to open the market maker bot and check whether is is running and that the
+        //       swap we just performed is found within its SimpleMakerBotRegistry. The problem at the moment is that
+        //       we can't import TradingBotContext since that's part of lp_ordermatch and that would create a cyclic dependency.
+        let is_maker_bot = Some(machine.ctx.simple_market_maker_bot_ctx.lock().unwrap().is_some());
+
+        // Get the maker's p2p pubkey
+        let (p2p_private_key, _) = p2p_private_and_peer_id_to_broadcast(&machine.ctx, machine.p2p_keypair.as_ref());
+        let secp_secret = SecretKey::from_slice(&p2p_private_key).expect("valid secret key");
+        let maker_p2p_pubkey = PublicKey::from_secret_key(&SECP_SIGN, &secp_secret).into();
+
+        Ok(TPUSwapStatusForStats {
+            uuid: repr.uuid,
+            started_at: repr.started_at,
+            // Assuming that this method gets called right after the swap is finished.
+            // TODO: Consider storing the finished_at timestamp in the DB and/or state machine and use that.
+            finished_at: now_sec(),
+            maker_coin: repr.maker_coin,
+            maker_swap_pubkey,
+            maker_amount: repr.maker_volume.to_decimal(),
+            taker_coin: repr.taker_coin,
+            taker_swap_pubkey,
+            taker_amount: repr.taker_volume.to_decimal(),
+            maker_coin_usd_price,
+            taker_coin_usd_price,
+            market_margin,
+            is_maker_bot,
+            maker_gui: machine.ctx.gui().map(|g| g.to_owned()),
+            maker_version: Some(machine.ctx.mm_version().into()),
+            taker_gui: None,
+            taker_version: None,
+            swap_version: repr.swap_version,
+            maker_p2p_pubkey,
+            taker_p2p_pubkey: repr.taker_p2p_pub,
+            taker_premium: repr.taker_premium.to_decimal(),
+            dex_fee_amount: repr.dex_fee_amount.to_decimal(),
+            dex_fee_burn: repr.dex_fee_burn.to_decimal(),
+            events: TPUSwapEvents::FromMaker(repr.events),
+        })
+    }
+
+    pub async fn try_from_taker_state_machine(
+        machine: &TakerSwapStateMachine<impl MmCoin + MakerCoinSwapOpsV2, impl MmCoin + TakerCoinSwapOpsV2>,
+    ) -> Result<Self, SwapStatusGenerationError> {
+        let repr = machine
+            .storage
+            .get_repr(machine.uuid)
+            .await
+            .map_err(|_| SwapStatusGenerationError::StorageError)?;
+
+        // Make sure the swap is finished (aborted, completed or refunded)
+        if repr.events.last().map(|e| !e.is_end_state()).unwrap_or(true) {
+            return Err(SwapStatusGenerationError::SwapNotFinished);
+        }
+
+        // Make sure the swap is of version 2 or higher (since TPU starts from v2)
+        if repr.swap_version < 2 {
+            return Err(SwapStatusGenerationError::InvalidSwapVersion);
+        }
+
+        // Calculate the usd prices of the coins and the market margin
+        let mut maker_coin_usd_price = None;
+        let mut taker_coin_usd_price = None;
+        let mut market_margin = None;
+        let rates = fetch_swap_coins_price(Some(repr.maker_coin.clone()), Some(repr.taker_coin.clone())).await;
+        if let Some(ref rates) = rates {
+            let fair_market_price = &rates.rel / &rates.base;
+            let swap_price = repr.taker_volume.to_decimal() / repr.maker_volume.to_decimal();
+            market_margin = Some(
+                (&swap_price - &fair_market_price) / fair_market_price
+                    * BigDecimal::try_from(100.0).expect("100.0 is a valid non-NAN float"),
+            );
+            maker_coin_usd_price = Some(rates.base.clone());
+            taker_coin_usd_price = Some(rates.rel.clone());
+        }
+
+        // Get the taker's swap pubkey
+        let taker_swap_pubkey = machine.taker_coin.derive_htlc_pubkey_v2_bytes(&machine.unique_data());
+        let taker_swap_pubkey = Some(hex::encode(taker_swap_pubkey));
+
+        // Get the maker's swap pubkey from the negotiation data in the events if available
+        let mut maker_swap_pubkey = None;
+        for event in &repr.events {
+            if let Some(negotiation_data) = event.negotiation_data() {
+                maker_swap_pubkey = Some(hex::encode(negotiation_data.maker_coin_htlc_pub_from_maker.0.clone()));
+                break;
+            }
+        }
+
+        // Get the taker's p2p pubkey
+        let (p2p_private_key, _) = p2p_private_and_peer_id_to_broadcast(&machine.ctx, machine.p2p_keypair.as_ref());
+        let secp_secret = SecretKey::from_slice(&p2p_private_key).expect("valid secret key");
+        let taker_p2p_pubkey = PublicKey::from_secret_key(&SECP_SIGN, &secp_secret).into();
+
+        Ok(TPUSwapStatusForStats {
+            uuid: repr.uuid,
+            started_at: repr.started_at,
+            // Assuming that this method gets called right after the swap is finished.
+            // TODO: Consider storing the finished_at timestamp in the DB and/or state machine and use that.
+            finished_at: now_sec(),
+            maker_coin: repr.maker_coin,
+            maker_swap_pubkey,
+            maker_amount: repr.maker_volume.to_decimal(),
+            taker_coin: repr.taker_coin,
+            taker_swap_pubkey,
+            taker_amount: repr.taker_volume.to_decimal(),
+            maker_coin_usd_price,
+            taker_coin_usd_price,
+            market_margin,
+            is_maker_bot: None,
+            maker_gui: None,
+            maker_version: None,
+            taker_gui: machine.ctx.gui().map(|g| g.to_owned()),
+            taker_version: Some(machine.ctx.mm_version().into()),
+            swap_version: repr.swap_version,
+            maker_p2p_pubkey: repr.maker_p2p_pub,
+            taker_p2p_pubkey,
+            taker_premium: repr.taker_premium.to_decimal(),
+            dex_fee_amount: repr.dex_fee_amount.to_decimal(),
+            dex_fee_burn: repr.dex_fee_burn.to_decimal(),
+            events: TPUSwapEvents::FromTaker(repr.events),
+        })
+    }
+
+    pub fn is_success(&self) -> bool {
+        match self.events {
+            TPUSwapEvents::FromMaker(ref events) => events
+                .last()
+                .map(|e| matches!(e, MakerSwapEvent::Completed))
+                .unwrap_or(false),
+            TPUSwapEvents::FromTaker(ref events) => events
+                .last()
+                .map(|e| matches!(e, TakerSwapEvent::Completed))
+                .unwrap_or(false),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+/// Errors that could be returned when generating the swap status for stats from a swap state machine.
+pub enum SwapStatusGenerationError {
+    StorageError,
+    SwapNotFinished,
+    InvalidSwapVersion,
+}
+
+pub async fn try_broadcast_v2_maker_swap_status(
+    state_machine: &MakerSwapStateMachine<impl MmCoin + MakerCoinSwapOpsV2, impl MmCoin + TakerCoinSwapOpsV2>,
+) {
+    let swap_status = TPUSwapStatusForStats::try_from_maker_state_machine(state_machine)
+        .await
+        .map_err(|e| {
+            error!("Error converting finished state machine to swap status for stats: {e:?}");
+        });
+
+    if let Ok(swap_status) = swap_status {
+        if let Err(e) = broadcast_my_v2swap_status(&state_machine.ctx, swap_status).await {
+            error!("Error broadcasting swap status: {e}");
+        }
+    }
+}
+
+pub async fn try_broadcast_v2_taker_swap_status(
+    state_machine: &TakerSwapStateMachine<impl MmCoin + MakerCoinSwapOpsV2, impl MmCoin + TakerCoinSwapOpsV2>,
+) {
+    let swap_status = TPUSwapStatusForStats::try_from_taker_state_machine(state_machine)
+        .await
+        .map_err(|e| {
+            error!("Error converting finished state machine to swap status for stats: {e:?}");
+        });
+
+    if let Ok(swap_status) = swap_status {
+        if let Err(e) = broadcast_my_v2swap_status(&state_machine.ctx, swap_status).await {
+            error!("Error broadcasting swap status: {e}");
         }
     }
 }

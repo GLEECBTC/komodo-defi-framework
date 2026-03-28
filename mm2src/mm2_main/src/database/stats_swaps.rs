@@ -1,6 +1,6 @@
 #![allow(deprecated)] // TODO: remove this once rusqlite is >= 0.29
 
-use crate::lp_swap::{MakerSavedSwap, SavedSwap, SavedSwapIo, TakerSavedSwap};
+use crate::lp_swap::{MakerSavedSwap, SavedSwap, SavedSwapIo, TPUSwapStatusForStats, TakerSavedSwap};
 use common::log::{debug, error};
 use db_common::{
     owned_named_params,
@@ -94,6 +94,13 @@ pub const ADD_MAKER_TAKER_GUI_AND_VERSION: &[&str] = &[
 ];
 
 pub const SELECT_ID_BY_UUID: &str = "SELECT id FROM stats_swaps WHERE uuid = ?1";
+
+pub const ADD_SWAP_VERSION_AND_MARKET_MARGIN: &[&str] = &[
+    "ALTER TABLE stats_swaps ADD COLUMN swap_version INTEGER NOT NULL DEFAULT 0;",
+    "ALTER TABLE stats_swaps ADD COLUMN market_margin DECIMAL;",
+    // NULL = unknown, 0 = not a bot, 1 = bot
+    "ALTER TABLE stats_swaps ADD COLUMN is_maker_bot INTEGER;",
+];
 
 /// Returns SQL statements to initially fill stats_swaps table using existing DB with JSON files
 pub async fn create_and_fill_stats_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<SqlValue>)> {
@@ -431,6 +438,151 @@ pub fn add_swap_to_index(conn: &Connection, swap: &SavedSwap) {
 
     if let Some((sql, params)) = update_optional_info(swap) {
         execute_query_with_params(conn, &sql, params);
+    }
+}
+
+/// Constructs the update query for optional fields of the TPU swap status struct. That is, any field that is wrapped in an Option<T>.
+fn update_optional_info_tpu(swap: &TPUSwapStatusForStats) -> (String, OwnedSqlNamedParams) {
+    let mut extra_args = String::new();
+    let mut params = OwnedSqlNamedParams::new();
+
+    if let Some(ref maker_pubkey) = swap.maker_swap_pubkey {
+        extra_args.push_str(", maker_pubkey = :maker_pubkey");
+        params.push((":maker_pubkey", maker_pubkey.clone().into()));
+    }
+    if let Some(ref taker_pubkey) = swap.taker_swap_pubkey {
+        extra_args.push_str(", taker_pubkey = :taker_pubkey");
+        params.push((":taker_pubkey", taker_pubkey.clone().into()));
+    }
+    if let Some(ref maker_coin_usd_price) = swap.maker_coin_usd_price {
+        extra_args.push_str(", maker_coin_usd_price = :maker_coin_usd_price");
+        params.push((":maker_coin_usd_price", maker_coin_usd_price.to_string().into()));
+    }
+    if let Some(ref taker_coin_usd_price) = swap.taker_coin_usd_price {
+        extra_args.push_str(", taker_coin_usd_price = :taker_coin_usd_price");
+        params.push((":taker_coin_usd_price", taker_coin_usd_price.to_string().into()));
+    }
+    if let Some(ref market_margin) = swap.market_margin {
+        extra_args.push_str(", market_margin = :market_margin");
+        params.push((":market_margin", market_margin.to_string().into()));
+    }
+    if let Some(is_maker_bot) = swap.is_maker_bot {
+        extra_args.push_str(", is_maker_bot = :is_maker_bot");
+        params.push((":is_maker_bot", (is_maker_bot as u32).into()));
+    }
+    if let Some(ref maker_gui) = swap.maker_gui {
+        extra_args.push_str(", maker_gui = :maker_gui");
+        params.push((":maker_gui", maker_gui.clone().into()));
+    }
+    if let Some(ref maker_version) = swap.maker_version {
+        extra_args.push_str(", maker_version = :maker_version");
+        params.push((":maker_version", maker_version.clone().into()));
+    }
+    if let Some(ref taker_gui) = swap.taker_gui {
+        extra_args.push_str(", taker_gui = :taker_gui");
+        params.push((":taker_gui", taker_gui.clone().into()));
+    }
+    if let Some(ref taker_version) = swap.taker_version {
+        extra_args.push_str(", taker_version = :taker_version");
+        params.push((":taker_version", taker_version.clone().into()));
+    }
+
+    let update_query = format!("UPDATE stats_swaps set swap_version = :swap_version{extra_args} WHERE uuid = :uuid;",);
+
+    // Swap version is actually mandatory and will always be set.
+    params.push((":uuid", swap.uuid.to_string().into()));
+    params.push((":swap_version", (swap.swap_version as u32).into()));
+
+    (update_query, params)
+}
+
+/// Adds a TPU swap to stats_swap table if it's not present and updates the swap with the new data if it already exists.
+pub fn add_v2swap_to_index(conn: &Connection, swap: &TPUSwapStatusForStats) -> Result<(), String> {
+    let params = vec![swap.uuid.to_string()];
+    let query_row = conn.query_row(SELECT_ID_BY_UUID, params_from_iter(params.iter()), |row| {
+        row.get::<_, i64>(0)
+    });
+    match query_row.optional() {
+        // swap is not indexed yet, insert it into the DB
+        Ok(None) => {
+            let (maker_coin_ticker, maker_coin_platform) = split_coin(&swap.maker_coin);
+            let (taker_coin_ticker, taker_coin_platform) = split_coin(&swap.taker_coin);
+
+            let params = owned_named_params! {
+                ":maker_coin": swap.maker_coin.clone(),
+                ":maker_coin_ticker": maker_coin_ticker,
+                ":maker_coin_platform": maker_coin_platform,
+                ":taker_coin": swap.taker_coin.clone(),
+                ":taker_coin_ticker": taker_coin_ticker,
+                ":taker_coin_platform": taker_coin_platform,
+                ":uuid": swap.uuid.to_string(),
+                ":started_at": swap.started_at.to_string(),
+                ":finished_at": swap.finished_at.to_string(),
+                ":maker_amount": swap.maker_amount.to_string(),
+                ":taker_amount": swap.taker_amount.to_string(),
+                ":is_success": (swap.is_success() as u32).to_string(),
+                // We will set those in the optional info update. For now setting them to NULL to conform with `INSERT_STATS_SWAP` statement.
+                ":maker_coin_usd_price": None::<String>,
+                ":taker_coin_usd_price": None::<String>,
+                ":maker_pubkey": None::<String>,
+                ":taker_pubkey": None::<String>,
+            };
+
+            execute_query_with_params(conn, INSERT_STATS_SWAP, params);
+        },
+        // swap is already indexed. Only update missing fields.
+        Ok(Some(_)) => (),
+        Err(e) => {
+            let err_msg = format!("Error {} on query {} with params {:?}", e, SELECT_ID_BY_UUID, params);
+            error!("{}", err_msg);
+            return Err(err_msg);
+        },
+    };
+
+    let (sql, params) = update_optional_info_tpu(swap);
+
+    execute_query_with_params(conn, &sql, params);
+
+    Ok(())
+}
+
+#[derive(Debug, Serialize)]
+pub struct SwapStatusFromDB {
+    pub maker_coin: String,
+    pub taker_coin: String,
+    pub started_at: u64,
+    pub finished_at: u64,
+    pub maker_amount: f64,
+    pub taker_amount: f64,
+    pub is_success: bool,
+}
+
+pub fn fetch_swap_status(conn: &Connection, uuid: &str) -> Result<Option<SwapStatusFromDB>, String> {
+    const SELECT_SWAP_STATUS_BY_UUID: &str = "SELECT maker_coin, taker_coin, started_at, finished_at, maker_amount, taker_amount, is_success FROM stats_swaps WHERE uuid = ?1";
+
+    let params = vec![uuid.to_string()];
+    let query_row = conn.query_row(SELECT_SWAP_STATUS_BY_UUID, params_from_iter(params.iter()), |row| {
+        Ok(SwapStatusFromDB {
+            maker_coin: row.get(0)?,
+            taker_coin: row.get(1)?,
+            started_at: row.get(2)?,
+            finished_at: row.get(3)?,
+            maker_amount: row.get(4)?,
+            taker_amount: row.get(5)?,
+            is_success: row.get::<_, u32>(6)? != 0,
+        })
+    });
+    match query_row.optional() {
+        Ok(Some(swap_status)) => Ok(Some(swap_status)),
+        Ok(None) => Ok(None),
+        Err(e) => {
+            let err_msg = format!(
+                "Error {} on query {} with params {:?}",
+                e, SELECT_SWAP_STATUS_BY_UUID, params
+            );
+            error!("{}", err_msg);
+            Err(err_msg)
+        },
     }
 }
 

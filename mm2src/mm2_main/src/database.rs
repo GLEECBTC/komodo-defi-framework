@@ -137,6 +137,10 @@ async fn migration_14(ctx: &MmArc) -> Vec<(&'static str, Vec<SqlValue>)> {
     fix_maker_and_taker_pubkeys_in_stats_db(ctx).await
 }
 
+fn migration_15() -> Vec<(&'static str, Vec<SqlValue>)> {
+    db_common::sqlite::execute_batch(stats_swaps::ADD_SWAP_VERSION_AND_MARKET_MARGIN)
+}
+
 async fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option<Vec<(&'static str, Vec<SqlValue>)>> {
     match current_migration {
         1 => Some(migration_1(ctx).await),
@@ -153,6 +157,7 @@ async fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option
         12 => Some(migration_12()),
         13 => Some(migration_13()),
         14 => Some(migration_14(ctx).await),
+        15 => Some(migration_15()),
         _ => None,
     }
 }

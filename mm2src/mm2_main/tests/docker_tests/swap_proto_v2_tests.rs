@@ -15,7 +15,7 @@ use mm2_number::MmNumber;
 use mm2_test_helpers::for_tests::{
     active_swaps, check_recent_swaps, coins_needed_for_kickstart, disable_coin, disable_coin_err, enable_native,
     get_locked_amount, mm_dump, my_swap_status, mycoin1_conf, mycoin_conf, start_swaps, wait_for_swap_finished,
-    wait_for_swap_status, MarketMakerIt, Mm2TestConf,
+    wait_for_swap_info_stats_db, wait_for_swap_status, MarketMakerIt, Mm2TestConf,
 };
 use mm2_test_helpers::structs::MmNumberMultiRepr;
 use script::{Builder, Opcode};
@@ -950,5 +950,58 @@ fn test_v2_swap_utxo_utxo_file_lock() {
         let expected_log = format!("Swap {uuid} file lock already acquired");
         block_on(mm_bob_dup.wait_for_log(22., |log| log.contains(&expected_log))).unwrap();
         block_on(mm_alice_dup.wait_for_log(22., |log| log.contains(&expected_log))).unwrap();
+    }
+}
+
+#[test]
+fn test_v2_swap_utxo_status_broadcasting() {
+    let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
+    let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey(MYCOIN1, 1000.into());
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
+
+    let bob_conf = Mm2TestConf::seednode_trade_v2(&format!("0x{}", hex::encode(bob_priv_key)), &coins);
+    let mut mm_bob = MarketMakerIt::start(bob_conf.conf.clone(), bob_conf.rpc_password.clone(), None).unwrap();
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
+    log!("Bob log path: {}", mm_bob.log_path.display());
+
+    let alice_conf = Mm2TestConf::light_node_trade_v2(
+        &format!("0x{}", hex::encode(alice_priv_key)),
+        &coins,
+        &[&mm_bob.ip.to_string()],
+    );
+    let mut mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password.clone(), None).unwrap();
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
+    log!("Alice log path: {}", mm_alice.log_path.display());
+
+    log!("{:?}", block_on(enable_native(&mm_bob, MYCOIN, &[], None)));
+    log!("{:?}", block_on(enable_native(&mm_bob, MYCOIN1, &[], None)));
+    log!("{:?}", block_on(enable_native(&mm_alice, MYCOIN, &[], None)));
+    log!("{:?}", block_on(enable_native(&mm_alice, MYCOIN1, &[], None)));
+
+    let uuids = block_on(start_swaps(
+        &mut mm_bob,
+        &mut mm_alice,
+        &[(MYCOIN, MYCOIN1)],
+        1.0,
+        1.0,
+        100.,
+    ));
+    log!("{:?}", uuids);
+
+    for uuid in uuids.iter() {
+        block_on(wait_for_swap_finished(&mm_bob, uuid, 60));
+        block_on(wait_for_swap_finished(&mm_alice, uuid, 30));
+
+        let maker_swap_status = block_on(my_swap_status(&mm_bob, uuid));
+        log!("{:?}", maker_swap_status);
+
+        let taker_swap_status = block_on(my_swap_status(&mm_alice, uuid));
+        log!("{:?}", taker_swap_status);
+    }
+
+    // Make sure that the swap status was persisted in stats DB.
+    for uuid in uuids.iter() {
+        block_on(wait_for_swap_info_stats_db(&mm_bob, uuid, 60));
+        block_on(wait_for_swap_info_stats_db(&mm_alice, uuid, 30));
     }
 }

@@ -140,6 +140,7 @@ use pubkey_banning::BanReason;
 pub use pubkey_banning::{ban_pubkey_rpc, is_pubkey_banned, list_banned_pubkeys_rpc, unban_pubkeys_rpc};
 pub use recreate_swap_data::recreate_swap_data;
 pub use saved_swap::{SavedSwap, SavedSwapError, SavedSwapIo, SavedSwapResult};
+pub use swap_v2_common::TPUSwapStatusForStats;
 use swap_v2_common::{
     get_unfinished_swaps_uuids, swap_kickstart_handler_for_maker, swap_kickstart_handler_for_taker, ActiveSwapV2Info,
 };
@@ -363,12 +364,22 @@ pub async fn process_swap_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PRequest
         Err(swap_msg_err) => {
             #[cfg(not(target_arch = "wasm32"))]
             return match json::from_slice::<SwapStatus>(msg) {
-                Ok(mut status) => {
-                    status.data.fetch_and_set_usd_prices().await;
-                    if let Err(e) = save_stats_swap(&ctx, &status.data).await {
-                        error!("Error saving the swap {} status: {}", status.data.uuid(), e);
-                    }
-                    Ok(())
+                Ok(SwapStatus { data, .. }) => match data {
+                    SwapStatusData::Legacy(mut status) => {
+                        status.fetch_and_set_usd_prices().await;
+                        let uuid = *status.uuid();
+                        if let Err(e) = save_stats_swap(&ctx, *status).await {
+                            error!("Error saving the swap {} status: {}", uuid, e);
+                        }
+                        Ok(())
+                    },
+                    SwapStatusData::Tpu(status) => {
+                        let uuid = status.uuid;
+                        if let Err(e) = add_v2swap_to_stats_db_index(&ctx, *status).await {
+                            error!("Error saving the swap {} status: {}", uuid, e);
+                        }
+                        Ok(())
+                    },
                 },
                 Err(swap_status_err) => {
                     let error = format!(
@@ -1012,16 +1023,33 @@ pub async fn insert_new_swap_to_db(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn add_swap_to_db_index(ctx: &MmArc, swap: &SavedSwap) {
-    if let Some(conn) = ctx.sqlite_conn_opt() {
-        crate::database::stats_swaps::add_swap_to_index(&conn, swap)
-    }
+pub async fn add_v2swap_to_stats_db_index(ctx: &MmArc, swap: TPUSwapStatusForStats) -> Result<(), String> {
+    let ctx = ctx.clone();
+    common::async_blocking(move || {
+        if let Some(conn) = ctx.sqlite_conn_opt() {
+            crate::database::stats_swaps::add_v2swap_to_index(&conn, &swap)
+        } else {
+            ERR!("No SQLite connection available")
+        }
+    })
+    .await
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-async fn save_stats_swap(ctx: &MmArc, swap: &SavedSwap) -> Result<(), String> {
+async fn add_swap_to_db_index(ctx: &MmArc, swap: SavedSwap) {
+    let ctx = ctx.clone();
+    common::async_blocking(move || {
+        if let Some(conn) = ctx.sqlite_conn_opt() {
+            crate::database::stats_swaps::add_swap_to_index(&conn, &swap)
+        }
+    })
+    .await
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn save_stats_swap(ctx: &MmArc, swap: SavedSwap) -> Result<(), String> {
     try_s!(swap.save_to_stats_db(ctx).await);
-    add_swap_to_db_index(ctx, swap);
+    add_swap_to_db_index(ctx, swap).await;
     Ok(())
 }
 
@@ -1169,9 +1197,16 @@ pub async fn stats_swap_status(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+enum SwapStatusData {
+    Legacy(Box<SavedSwap>),
+    Tpu(Box<TPUSwapStatusForStats>),
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 struct SwapStatus {
     method: String,
-    data: SavedSwap,
+    data: SwapStatusData,
 }
 
 /// Broadcasts `my` swap status to P2P network
@@ -1182,15 +1217,50 @@ async fn broadcast_my_swap_status(ctx: &MmArc, uuid: Uuid) -> Result<(), String>
     };
     status.hide_secrets();
 
-    #[cfg(not(target_arch = "wasm32"))]
-    try_s!(save_stats_swap(ctx, &status).await);
-
     let status = SwapStatus {
         method: "swapstatus".into(),
-        data: status,
+        data: SwapStatusData::Legacy(Box::new(status)),
     };
     let msg = json::to_vec(&status).expect("Swap status ser should never fail");
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        // Extract status back. We are avoiding cloning it since it's a big object.
+        let SwapStatusData::Legacy(status) = status.data else {
+            unreachable!("We are sure that status is Legacy variant");
+        };
+
+        try_s!(save_stats_swap(ctx, *status).await);
+    }
+
     broadcast_p2p_msg(ctx, swap_topic(&uuid), msg, None);
+    Ok(())
+}
+
+async fn broadcast_my_v2swap_status(ctx: &MmArc, status: TPUSwapStatusForStats) -> Result<(), String> {
+    let uuid = status.uuid;
+
+    // Serialize the status to prepare for broadcasting
+    let status = SwapStatus {
+        method: "swapstatus".into(),
+        data: SwapStatusData::Tpu(Box::new(status)),
+    };
+    let msg = json::to_vec(&status).expect("Swap status ser should never fail");
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        // Extract status back. We are avoiding cloning it since it's a big object.
+        let SwapStatusData::Tpu(status) = status.data else {
+            unreachable!("We are sure that status is Tpu variant");
+        };
+
+        // Add the status to our own stats db index
+        try_s!(add_v2swap_to_stats_db_index(ctx, *status).await);
+    }
+
+    // Broadcast the status to the P2P network
+    broadcast_p2p_msg(ctx, swap_topic(&uuid), msg, None);
+
     Ok(())
 }
 

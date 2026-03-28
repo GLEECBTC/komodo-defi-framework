@@ -12,6 +12,8 @@ use crate::lp_stats::{
     add_node_to_version_stat, remove_node_from_version_stat, start_version_stat_collection,
     stop_version_stat_collection, update_version_stat_collection,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use crate::lp_swap::swap_v2_rpcs::fetch_swap_status_rpc;
 use crate::lp_swap::swap_v2_rpcs::{active_swaps_rpc, my_recent_swaps_rpc, my_swap_status_rpc};
 use crate::lp_swap::{get_locked_amount_rpc, max_maker_vol, recreate_swap_data, trade_preimage_rpc};
 use crate::lp_wallet::{change_mnemonic_password, delete_wallet_rpc, get_mnemonic_rpc, get_wallet_names_rpc};
@@ -283,6 +285,8 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "start_version_stat_collection" => handle_mmrpc(ctx, request, start_version_stat_collection).await,
         "stop_simple_market_maker_bot" => handle_mmrpc(ctx, request, stop_simple_market_maker_bot).await,
         "stop_version_stat_collection" => handle_mmrpc(ctx, request, stop_version_stat_collection).await,
+        #[cfg(not(target_arch = "wasm32"))]
+        "swap_info_from_stats_db" => handle_mmrpc(ctx, request, fetch_swap_status_rpc).await,
         "trade_preimage" => handle_mmrpc(ctx, request, trade_preimage_rpc).await,
         "trezor_connection_status" => handle_mmrpc(ctx, request, trezor_connection_status).await,
         "update_nft" => handle_mmrpc(ctx, request, update_nft).await,

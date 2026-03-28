@@ -21,6 +21,7 @@ use uuid::Uuid;
 
 cfg_native!(
     use crate::database::my_swaps::SELECT_MY_SWAP_V2_FOR_RPC_BY_UUID;
+    use crate::database::stats_swaps;
     use common::async_blocking;
     use db_common::sqlite::query_single_row;
     use db_common::sqlite::rusqlite::{Result as SqlResult, Row, Error as SqlError};
@@ -533,4 +534,38 @@ pub(crate) async fn active_swaps_rpc(
             .collect(),
         statuses,
     })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Deserialize)]
+pub(crate) struct FetchSwapStatusRequest {
+    uuid: Uuid,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub(crate) enum FetchSwapStatusError {
+    NoSwapWithUuid(Uuid),
+    DBFetchError(String),
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl HttpStatusCode for FetchSwapStatusError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            FetchSwapStatusError::NoSwapWithUuid(_) => StatusCode::NOT_FOUND,
+            FetchSwapStatusError::DBFetchError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) async fn fetch_swap_status_rpc(
+    ctx: MmArc,
+    req: FetchSwapStatusRequest,
+) -> MmResult<stats_swaps::SwapStatusFromDB, FetchSwapStatusError> {
+    stats_swaps::fetch_swap_status(&ctx.sqlite_connection(), &req.uuid.to_string())
+        .map_to_mm(|e| FetchSwapStatusError::DBFetchError(e.to_string()))?
+        .or_mm_err(|| FetchSwapStatusError::NoSwapWithUuid(req.uuid))
 }
