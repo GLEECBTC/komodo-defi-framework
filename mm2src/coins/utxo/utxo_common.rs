@@ -918,7 +918,7 @@ pub enum P2SHSigner {
 }
 
 impl P2SHSigner {
-    fn try_from_coin<Coin>(coin: &Coin, swap_unique_data: &[u8]) -> Result<Self, String>
+    pub fn try_from_coin<Coin>(coin: &Coin, swap_unique_data: &[u8]) -> Result<Self, String>
     where
         Coin: UtxoCommonOps + SwapOps,
     {
@@ -1055,6 +1055,7 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxI
             input.prev_transaction,
             input.redeem_script,
             input.script_data.into(),
+            SIGHASH_ALL,
         )
         .await
         .map_err(|e| format!("WalletConnect P2SH signing error: {e}")),
@@ -1122,7 +1123,7 @@ async fn gen_taker_funding_spend_preimage<T: UtxoCommonOps>(
 pub async fn gen_and_sign_taker_funding_spend_preimage<T: UtxoCommonOps>(
     coin: &T,
     args: &GenTakerFundingSpendArgs<'_, T>,
-    htlc_keypair: &KeyPair,
+    p2sh_signer: &P2SHSigner,
 ) -> GenPreimageResult<T> {
     let funding_time_lock = args
         .funding_time_lock
@@ -1138,16 +1139,31 @@ pub async fn gen_and_sign_taker_funding_spend_preimage<T: UtxoCommonOps>(
         args.taker_pub,
         args.maker_pub,
     );
-    let signature = calc_and_sign_sighash(
-        &preimage,
-        DEFAULT_SWAP_VOUT,
-        &redeem_script,
-        htlc_keypair,
-        coin.as_ref().conf.signature_version,
-        SIGHASH_ALL,
-        coin.as_ref().conf.fork_id,
-    )
-    .map_mm_err()?;
+
+    let signature = match p2sh_signer {
+        P2SHSigner::KeyPair(htlc_keypair) => calc_and_sign_sighash(
+            &preimage,
+            DEFAULT_SWAP_VOUT,
+            &redeem_script,
+            htlc_keypair,
+            coin.as_ref().conf.signature_version,
+            SIGHASH_ALL,
+            coin.as_ref().conf.fork_id,
+        )
+        .map_mm_err()?,
+        #[cfg(feature = "utxo-walletconnect")]
+        P2SHSigner::WalletConnect(session_topic) => wallet_connect::sign_p2sh_get_sig_only(
+            coin,
+            session_topic,
+            &preimage,
+            args.funding_tx.clone(),
+            redeem_script.into(),
+            SIGHASH_ALL,
+        )
+        .await
+        .mm_err(|e| TxGenError::Signing(format!("WalletConnect P2SH signing error: {e}")))?,
+    };
+
     Ok(TxPreimageWithSig {
         preimage: preimage.into(),
         signature: signature.take().into(),
@@ -1244,7 +1260,7 @@ pub async fn sign_and_send_taker_funding_spend<T: UtxoCommonOps>(
     coin: &T,
     preimage: &TxPreimageWithSig<T>,
     gen_args: &GenTakerFundingSpendArgs<'_, T>,
-    htlc_keypair: &KeyPair,
+    p2sh_signer: &P2SHSigner,
 ) -> Result<UtxoTx, TransactionErr> {
     let redeem_script = swap_proto_v2_scripts::taker_funding_script(
         try_tx_s!(gen_args.funding_time_lock.try_into()),
@@ -1259,15 +1275,30 @@ pub async fn sign_and_send_taker_funding_spend<T: UtxoCommonOps>(
     payment_input.amount = funding_output.value;
     signer.consensus_branch_id = coin.as_ref().conf.consensus_branch_id;
 
-    let taker_signature = try_tx_s!(calc_and_sign_sighash(
-        &signer,
-        DEFAULT_SWAP_VOUT,
-        &redeem_script,
-        htlc_keypair,
-        coin.as_ref().conf.signature_version,
-        SIGHASH_ALL,
-        coin.as_ref().conf.fork_id
-    ));
+    let taker_signature = match p2sh_signer {
+        P2SHSigner::KeyPair(htlc_keypair) => try_tx_s!(calc_and_sign_sighash(
+            &signer,
+            DEFAULT_SWAP_VOUT,
+            &redeem_script,
+            htlc_keypair,
+            coin.as_ref().conf.signature_version,
+            SIGHASH_ALL,
+            coin.as_ref().conf.fork_id
+        )),
+        #[cfg(feature = "utxo-walletconnect")]
+        P2SHSigner::WalletConnect(session_topic) => try_tx_s!(
+            wallet_connect::sign_p2sh_get_sig_only(
+                coin,
+                session_topic,
+                &signer,
+                gen_args.funding_tx.clone(),
+                redeem_script.clone().into(),
+                SIGHASH_ALL,
+            )
+            .await
+        ),
+    };
+
     let sig_hash_all_fork_id = (SIGHASH_ALL | coin.as_ref().conf.fork_id) as u8;
 
     let mut maker_signature_with_sighash = preimage.signature.to_vec();
@@ -1406,7 +1437,7 @@ async fn gen_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
 pub async fn gen_and_sign_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     args: &GenTakerPaymentSpendArgs<'_, T>,
-    htlc_keypair: &KeyPair,
+    p2sh_signer: &P2SHSigner,
 ) -> GenPreimageResult<T> {
     let time_lock = args
         .time_lock
@@ -1423,16 +1454,30 @@ pub async fn gen_and_sign_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOp
         DexFee::WithBurn { .. } | DexFee::NoFee => SIGHASH_ALL,
     };
 
-    let signature = calc_and_sign_sighash(
-        &preimage,
-        DEFAULT_SWAP_VOUT,
-        &redeem_script,
-        htlc_keypair,
-        coin.as_ref().conf.signature_version,
-        sig_hash_type,
-        coin.as_ref().conf.fork_id,
-    )
-    .map_mm_err()?;
+    let signature = match p2sh_signer {
+        P2SHSigner::KeyPair(htlc_keypair) => calc_and_sign_sighash(
+            &preimage,
+            DEFAULT_SWAP_VOUT,
+            &redeem_script,
+            htlc_keypair,
+            coin.as_ref().conf.signature_version,
+            sig_hash_type,
+            coin.as_ref().conf.fork_id,
+        )
+        .map_mm_err()?,
+        #[cfg(feature = "utxo-walletconnect")]
+        P2SHSigner::WalletConnect(session_topic) => wallet_connect::sign_p2sh_get_sig_only(
+            coin,
+            session_topic,
+            &preimage,
+            args.taker_tx.clone(),
+            redeem_script.into(),
+            sig_hash_type,
+        )
+        .await
+        .mm_err(|e| TxGenError::Signing(format!("WalletConnect P2SH signing error: {e}")))?,
+    };
+
     Ok(TxPreimageWithSig {
         preimage: preimage.into(),
         signature: signature.take().into(),
@@ -1502,14 +1547,14 @@ pub async fn sign_and_broadcast_taker_payment_spend<T: UtxoCommonOps>(
     preimage: &TxPreimageWithSig<T>,
     gen_args: &GenTakerPaymentSpendArgs<'_, T>,
     secret: &[u8],
-    htlc_keypair: &KeyPair,
+    p2sh_signer: &P2SHSigner,
 ) -> Result<UtxoTx, TransactionErr> {
     let secret_hash = dhash160(secret);
     let redeem_script = swap_proto_v2_scripts::taker_payment_script(
         try_tx_s!(gen_args.time_lock.try_into()),
         secret_hash.as_slice(),
         gen_args.taker_pub,
-        htlc_keypair.public(),
+        gen_args.maker_pub,
     );
 
     let mut signer: TransactionInputSigner = preimage.preimage.clone().into();
@@ -1541,15 +1586,30 @@ pub async fn sign_and_broadcast_taker_payment_spend<T: UtxoCommonOps>(
     }
     drop_mutability!(signer);
 
-    let maker_signature = try_tx_s!(calc_and_sign_sighash(
-        &signer,
-        DEFAULT_SWAP_VOUT,
-        &redeem_script,
-        htlc_keypair,
-        coin.as_ref().conf.signature_version,
-        SIGHASH_ALL,
-        coin.as_ref().conf.fork_id
-    ));
+    let maker_signature = match p2sh_signer {
+        P2SHSigner::KeyPair(htlc_keypair) => try_tx_s!(calc_and_sign_sighash(
+            &signer,
+            DEFAULT_SWAP_VOUT,
+            &redeem_script,
+            htlc_keypair,
+            coin.as_ref().conf.signature_version,
+            SIGHASH_ALL,
+            coin.as_ref().conf.fork_id
+        )),
+        #[cfg(feature = "utxo-walletconnect")]
+        P2SHSigner::WalletConnect(session_topic) => try_tx_s!(
+            wallet_connect::sign_p2sh_get_sig_only(
+                coin,
+                session_topic,
+                &signer,
+                gen_args.taker_tx.clone(),
+                redeem_script.clone().into(),
+                SIGHASH_ALL,
+            )
+            .await
+        ),
+    };
+
     let mut taker_signature_with_sighash = preimage.signature.to_vec();
     let taker_sig_hash = match gen_args.dex_fee {
         DexFee::Standard(_) => (SIGHASH_SINGLE | coin.as_ref().conf.fork_id) as u8,
@@ -1774,8 +1834,7 @@ pub async fn send_maker_spends_taker_payment<T: UtxoCommonOps + SwapOps>(
         script_pubkey,
     };
 
-    let signer = P2SHSigner::try_from_coin(&coin, args.swap_unique_data)
-        .map_err(|e| TransactionErr::Plain(ERRL!("Failed to create P2SHSigner: {}", e)))?;
+    let signer = try_tx_s!(P2SHSigner::try_from_coin(&coin, args.swap_unique_data));
 
     let input = P2SHSpendingTxInput {
         prev_transaction,
@@ -1860,17 +1919,19 @@ pub fn create_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     drop_mutability!(prev_transaction);
     let payment_value = try_tx_fus!(prev_transaction.first_output()).value;
 
-    let key_pair = coin.derive_htlc_key_pair(swap_unique_data);
+    let taker_pub = coin.derive_htlc_pubkey(swap_unique_data);
 
     let script_data = Builder::default().into_script();
     let redeem_script = payment_script(
         time_lock,
         secret_hash,
         &try_tx_fus!(Public::from_slice(maker_pub)),
-        key_pair.public(),
+        &try_tx_fus!(Public::from_slice(&taker_pub)),
     )
     .into();
+
     let coin = coin.clone();
+    let swap_unique_data = swap_unique_data.to_vec();
     let fut = async move {
         let my_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err().await);
         let fee = try_tx_s!(
@@ -1898,7 +1959,7 @@ pub fn create_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
             script_data,
             sequence: SEQUENCE_FINAL,
             lock_time: time_lock,
-            signer: P2SHSigner::KeyPair(key_pair),
+            signer: try_tx_s!(P2SHSigner::try_from_coin(&coin, &swap_unique_data)),
         };
         let transaction = try_tx_s!(coin.p2sh_spending_tx(input).await);
 
@@ -1915,7 +1976,6 @@ pub fn create_taker_payment_refund_preimage<T: UtxoCommonOps + SwapOps>(
     secret_hash: &[u8],
     swap_unique_data: &[u8],
 ) -> TransactionFut {
-    let coin = coin.clone();
     let mut prev_transaction: UtxoTx =
         try_tx_fus!(deserialize(taker_payment_tx).map_err(|e| TransactionErr::Plain(format!(
             "Failed to deserialize transaction (coin={}, hex={}) : {}",
@@ -1927,15 +1987,18 @@ pub fn create_taker_payment_refund_preimage<T: UtxoCommonOps + SwapOps>(
     drop_mutability!(prev_transaction);
     let payment_value = try_tx_fus!(prev_transaction.first_output()).value;
 
-    let key_pair = coin.derive_htlc_key_pair(swap_unique_data);
+    let taker_pub = coin.derive_htlc_pubkey(swap_unique_data);
     let script_data = Builder::default().push_opcode(Opcode::OP_1).into_script();
     let redeem_script = payment_script(
         time_lock,
         secret_hash,
-        key_pair.public(),
+        &try_tx_fus!(Public::from_slice(&taker_pub)),
         &try_tx_fus!(Public::from_slice(maker_pub)),
     )
     .into();
+
+    let coin = coin.clone();
+    let swap_unique_data = swap_unique_data.to_vec();
     let fut = async move {
         let my_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err().await);
         let fee = try_tx_s!(
@@ -1962,7 +2025,7 @@ pub fn create_taker_payment_refund_preimage<T: UtxoCommonOps + SwapOps>(
             script_data,
             sequence: SEQUENCE_FINAL - 1,
             lock_time: time_lock,
-            signer: P2SHSigner::KeyPair(key_pair),
+            signer: try_tx_s!(P2SHSigner::try_from_coin(&coin, &swap_unique_data)),
         };
         let transaction = try_tx_s!(coin.p2sh_spending_tx(input).await);
 
@@ -2019,8 +2082,7 @@ pub async fn send_taker_spends_maker_payment<T: UtxoCommonOps + SwapOps>(
         script_pubkey,
     };
 
-    let signer = P2SHSigner::try_from_coin(&coin, args.swap_unique_data)
-        .map_err(|e| TransactionErr::Plain(ERRL!("Failed to create P2SHSigner: {}", e)))?;
+    let signer = try_tx_s!(P2SHSigner::try_from_coin(&coin, args.swap_unique_data));
 
     let input = P2SHSpendingTxInput {
         prev_transaction,
@@ -2081,8 +2143,7 @@ pub async fn refund_htlc_payment<T: UtxoCommonOps + SwapOps>(
         script_pubkey,
     };
 
-    let signer = P2SHSigner::try_from_coin(&coin, args.swap_unique_data)
-        .map_err(|e| TransactionErr::Plain(ERRL!("Failed to create P2SHSigner: {}", e)))?;
+    let signer = try_tx_s!(P2SHSigner::try_from_coin(&coin, args.swap_unique_data));
 
     let input = P2SHSpendingTxInput {
         prev_transaction,
@@ -5394,7 +5455,7 @@ where
     let my_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err().await).clone();
     let payment_value = try_tx_s!(args.funding_tx.first_output()).value;
 
-    let key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
+    let taker_pubkey = coin.derive_htlc_pubkey(args.swap_unique_data);
     let script_data = Builder::default()
         .push_data(args.taker_secret)
         .push_opcode(Opcode::OP_0)
@@ -5405,7 +5466,7 @@ where
     let redeem_script = swap_proto_v2_scripts::taker_funding_script(
         time_lock,
         args.taker_secret_hash,
-        key_pair.public(),
+        &try_tx_s!(Public::from_slice(&taker_pubkey)),
         args.maker_pubkey,
     )
     .into();
@@ -5433,7 +5494,7 @@ where
         script_data,
         sequence: SEQUENCE_FINAL,
         lock_time: time_lock,
-        signer: P2SHSigner::KeyPair(key_pair),
+        signer: try_tx_s!(P2SHSigner::try_from_coin(&coin, args.swap_unique_data)),
     };
     let transaction = try_tx_s!(coin.p2sh_spending_tx(input).await);
 
@@ -5563,7 +5624,7 @@ pub async fn spend_maker_payment_v2<T: UtxoCommonOps + SwapOps>(
     let my_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err().await).clone();
     let payment_value = try_tx_s!(args.maker_payment_tx.first_output()).value;
 
-    let key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
+    let taker_pub = coin.derive_htlc_pubkey(args.swap_unique_data);
     let script_data = Builder::default()
         .push_data(&args.maker_secret)
         .push_opcode(Opcode::OP_1)
@@ -5576,7 +5637,7 @@ pub async fn spend_maker_payment_v2<T: UtxoCommonOps + SwapOps>(
         args.maker_secret_hash,
         args.taker_secret_hash,
         args.maker_pub,
-        key_pair.public(),
+        &try_tx_s!(Public::from_slice(&taker_pub)),
     )
     .into();
 
@@ -5604,7 +5665,7 @@ pub async fn spend_maker_payment_v2<T: UtxoCommonOps + SwapOps>(
         script_data,
         sequence: SEQUENCE_FINAL,
         lock_time: time_lock,
-        signer: P2SHSigner::KeyPair(key_pair),
+        signer: try_tx_s!(P2SHSigner::try_from_coin(coin, args.swap_unique_data)),
     };
     let transaction = try_tx_s!(coin.p2sh_spending_tx(input).await);
 
@@ -5625,7 +5686,7 @@ where
     let my_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err().await).clone();
     let payment_value = try_tx_s!(args.maker_payment_tx.first_output()).value;
 
-    let key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
+    let maker_pub = coin.derive_htlc_pubkey(args.swap_unique_data);
     let script_data = Builder::default()
         .push_data(args.taker_secret)
         .push_opcode(Opcode::OP_0)
@@ -5637,7 +5698,7 @@ where
         time_lock,
         args.maker_secret_hash,
         args.taker_secret_hash,
-        key_pair.public(),
+        &try_tx_s!(Public::from_slice(&maker_pub)),
         args.taker_pub,
     )
     .into();
@@ -5665,7 +5726,7 @@ where
         script_data,
         sequence: SEQUENCE_FINAL,
         lock_time: time_lock,
-        signer: P2SHSigner::KeyPair(key_pair),
+        signer: try_tx_s!(P2SHSigner::try_from_coin(&coin, args.swap_unique_data)),
     };
     let transaction = try_tx_s!(coin.p2sh_spending_tx(input).await);
 

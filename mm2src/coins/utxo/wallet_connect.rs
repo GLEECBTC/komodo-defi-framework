@@ -162,12 +162,13 @@ struct SignedPsbt {
 ///
 /// An **array** of this struct is sent to WalletConnect in `SignPsbt` request.
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct InputSigningParams {
     /// The index of the input to sign.
     index: u32,
     /// The address to sign the input with.
     address: String,
-    /// The sighash types to use for signing.
+    /// An array of whitelisted sighash types that the wallet is allowed to use when signing this input.
     sighash_types: Vec<u8>,
 }
 
@@ -218,8 +219,10 @@ async fn sign_psbt(
 /// `prev_tx` is the previous transaction that contains the P2SH output being spent.
 /// `redeem_script` is the redeem script that is used to spend the P2SH output.
 /// `unlocking_script` is the unlocking script that picks the appropriate spending path (normal spend (with secret hash) vs refund)
+///
+/// Returns the signed transaction and the bare P2SH signature returned by WalletConnect.
 #[expect(clippy::too_many_arguments)]
-pub async fn sign_p2sh_with_walletconnect(
+async fn sign_p2sh_with_walletconnect(
     wc: &WalletConnectCtx,
     session_topic: &WcTopic,
     chain_id: &WcChainId,
@@ -228,7 +231,8 @@ pub async fn sign_p2sh_with_walletconnect(
     prev_tx: UtxoTx,
     redeem_script: Bytes,
     unlocking_script: Bytes,
-) -> MmResult<UtxoTx, WalletConnectError> {
+    sighash_type: EcdsaSighashType,
+) -> MmResult<(UtxoTx, Bytes), WalletConnectError> {
     let signing_address = signing_address.display_address().map_to_mm(|e| {
         WalletConnectError::InternalError(format!("Failed to convert the signing address to a string: {e}"))
     })?;
@@ -249,13 +253,13 @@ pub async fn sign_p2sh_with_walletconnect(
     // We need to provide the redeem script as it's used in the signing process.
     psbt.inputs[DEFAULT_SWAP_VIN].redeem_script = Some(redeem_script.take().into());
     // TODO: Check whether we should put `fork_id` here or not. When we support a `fork_id`-based chain in WalletConnect.
-    psbt.inputs[DEFAULT_SWAP_VIN].sighash_type = Some(EcdsaSighashType::All.into());
+    psbt.inputs[DEFAULT_SWAP_VIN].sighash_type = Some(sighash_type.into());
 
     // Ask WalletConnect to sign the PSBT for us.
     let inputs = vec![InputSigningParams {
         index: DEFAULT_SWAP_VIN as u32,
         address: signing_address.clone(),
-        sighash_types: vec![EcdsaSighashType::All as u8],
+        sighash_types: vec![sighash_type as u8],
     }];
     let signed_psbt = sign_psbt(wc, session_topic, chain_id, psbt, inputs, false).await?;
 
@@ -284,21 +288,22 @@ pub async fn sign_p2sh_with_walletconnect(
     tx_to_sign.inputs[DEFAULT_SWAP_VIN].script_sig = final_script_sig;
     tx_to_sign.inputs[DEFAULT_SWAP_VIN].script_witness = vec![];
 
-    Ok(tx_to_sign)
+    Ok((tx_to_sign, Bytes::from(walletconnect_sig.to_vec())))
 }
 
 /// Signs a P2SH transaction that has a single input using WalletConnect.
 ///
 /// This is just another wrapper around `sign_p2sh_with_walletconnect` to avoid some boilerplate given
 /// that there is an accessible `coin`.
-pub async fn sign_p2sh(
+async fn sign_p2sh_get_tx_and_sig(
     coin: &impl AsRef<UtxoCoinFields>,
     session_topic: &WcTopic,
     tx_input_signer: &TransactionInputSigner,
     prev_tx: UtxoTx,
     redeem_script: Bytes,
     unlocking_script: Bytes,
-) -> MmResult<UtxoTx, WalletConnectError> {
+    sighash_type: u32,
+) -> MmResult<(UtxoTx, Bytes), WalletConnectError> {
     let ctx = MmArc::from_weak(&coin.as_ref().ctx)
         .ok_or_else(|| WalletConnectError::InternalError("Couldn't get access to MmArc".to_string()))?;
     let wc_ctx = WalletConnectCtx::from_ctx(&ctx)?;
@@ -316,6 +321,9 @@ pub async fn sign_p2sh(
         .as_ref()
         .ok_or_else(|| WalletConnectError::InternalError("Chain ID is not set".to_string()))?;
 
+    let sighash_type = EcdsaSighashType::from_standard(sighash_type)
+        .map_err(|e| WalletConnectError::InternalError(format!("Bad sighash type: {e}")))?;
+
     sign_p2sh_with_walletconnect(
         &wc_ctx,
         session_topic,
@@ -325,15 +333,67 @@ pub async fn sign_p2sh(
         prev_tx,
         redeem_script,
         unlocking_script,
+        sighash_type,
     )
     .await
+}
+
+/// Signs a P2SH transaction that has a single input using WalletConnect and returns the signed transaction.
+pub async fn sign_p2sh(
+    coin: &impl AsRef<UtxoCoinFields>,
+    session_topic: &WcTopic,
+    tx_input_signer: &TransactionInputSigner,
+    prev_tx: UtxoTx,
+    redeem_script: Bytes,
+    unlocking_script: Bytes,
+    sighash_type: u32,
+) -> MmResult<UtxoTx, WalletConnectError> {
+    sign_p2sh_get_tx_and_sig(
+        coin,
+        session_topic,
+        tx_input_signer,
+        prev_tx,
+        redeem_script,
+        unlocking_script,
+        sighash_type,
+    )
+    .await
+    .map(|(tx, _p2sh_sig)| tx)
+}
+
+/// Signs a P2SH transaction that has a single input using WalletConnect and returns only the bare P2SH signature.
+pub async fn sign_p2sh_get_sig_only(
+    coin: &impl AsRef<UtxoCoinFields>,
+    session_topic: &WcTopic,
+    tx_input_signer: &TransactionInputSigner,
+    prev_tx: UtxoTx,
+    redeem_script: Bytes,
+    sighash_type: u32,
+) -> MmResult<Bytes, WalletConnectError> {
+    sign_p2sh_get_tx_and_sig(
+        coin,
+        session_topic,
+        tx_input_signer,
+        prev_tx,
+        redeem_script,
+        // Since we will not use the resulting tx, we can put any dummy unlocking script here.
+        Bytes::new(),
+        sighash_type,
+    )
+    .await
+    .map(|(_tx, p2sh_sig)| {
+        let mut p2sh_sig = p2sh_sig.take();
+        // Remove the sighash byte at the end so to align with the output of `calc_and_sign_sighash`.
+        p2sh_sig.pop();
+        Bytes::from(p2sh_sig)
+    })
 }
 
 /// Signs a P2PKH/P2WPKH spending transaction using WalletConnect.
 ///
 /// Contrary to what the function name might suggest, this function can sign both P2PKH and **P2WPKH** inputs.
 /// `prev_txs` is a map of previous transactions that contain the P2PKH inputs being spent. P2WPKH inputs don't need their previous transactions.
-pub async fn sign_p2pkh_with_walletconnect(
+async fn sign_p2pkh_with_walletconnect(
     wc: &WalletConnectCtx,
     session_topic: &WcTopic,
     chain_id: &WcChainId,
