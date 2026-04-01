@@ -421,6 +421,22 @@ impl CursorDriver {
     }
 }
 
+impl Drop for CursorDriver {
+    fn drop(&mut self) {
+        // Detach JS -> Rust callbacks to prevent "closure invoked after being dropped" error.
+        //
+        // When Rust passes a closure to JS via set_onsuccess/set_onerror, JS holds a reference
+        // to call it when events fire. If this Rust struct is dropped (freeing the closure memory)
+        // while JS still has a pending cursor operation, the callback would fire into freed memory,
+        // causing wasm-bindgen to panic with "closure invoked after being dropped".
+        //
+        // Setting callbacks to None tells JS "there's no handler anymore" - when the event fires,
+        // JS sees null and does nothing safely.
+        self.cursor_request.set_onsuccess(None);
+        self.cursor_request.set_onerror(None);
+    }
+}
+
 pub(crate) enum IdbCursorEnum {
     Empty(IdbEmptyCursor),
     SingleKey(IdbSingleKeyCursor),

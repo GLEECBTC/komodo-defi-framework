@@ -812,7 +812,7 @@ impl UtxoCommonOps for BchCoin {
         utxo_common::denominate_satoshis(&self.utxo_arc, satoshi)
     }
 
-    fn my_public_key(&self) -> Result<&Public, MmError<UnexpectedDerivationMethod>> {
+    fn my_public_key(&self) -> Result<Public, MmError<UnexpectedDerivationMethod>> {
         utxo_common::my_public_key(self.as_ref())
     }
 
@@ -844,7 +844,7 @@ impl UtxoCommonOps for BchCoin {
         utxo_common::get_mut_verbose_transaction_from_map_or_rpc(self, tx_hash, utxo_tx_map).await
     }
 
-    async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput<'_>) -> Result<UtxoTx, String> {
+    async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput) -> Result<UtxoTx, String> {
         utxo_common::p2sh_spending_tx(self, input).await
     }
 
@@ -1019,12 +1019,7 @@ impl SwapOps for BchCoin {
     }
 
     #[inline]
-    async fn extract_secret(
-        &self,
-        secret_hash: &[u8],
-        spend_tx: &[u8],
-        _watcher_reward: bool,
-    ) -> Result<[u8; 32], String> {
+    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<[u8; 32], String> {
         utxo_common::extract_secret(secret_hash, spend_tx)
     }
 
@@ -1048,7 +1043,7 @@ impl SwapOps for BchCoin {
     }
 
     fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> [u8; 33] {
-        utxo_common::derive_htlc_pubkey(self, swap_unique_data)
+        utxo_common::derive_htlc_pubkey(self.as_ref(), swap_unique_data)
     }
 
     #[inline]

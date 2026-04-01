@@ -7,6 +7,7 @@ use keys::Address;
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_number::bigdecimal::Zero;
 use mm2_test_helpers::electrums::tqtum_electrums;
+use mm2_test_helpers::for_tests::DEX_FEE_ADDR_RAW_PUBKEY_LEGACY;
 use rpc::v1::types::ToTxHash;
 use std::convert::TryFrom;
 use std::mem::discriminant;
@@ -251,7 +252,9 @@ fn test_validate_maker_payment() {
     }
 }
 
+// TODO: Re-enable once Electrum servers are dockerized: https://github.com/KomodoPlatform/komodo-defi-framework/issues/2708
 #[test]
+#[ignore]
 fn test_wait_for_confirmations_excepted() {
     // this priv_key corresponds to "taker_passphrase" passphrase
     let priv_key = [
@@ -319,6 +322,7 @@ fn test_wait_for_confirmations_excepted() {
 #[test]
 fn test_validate_fee() {
     // priv_key of qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG
+    // TODO: Update test fixtures with transactions to new DEX fee address once swaps exist
 
     use common::DEX_FEE_ADDR_RAW_PUBKEY;
     let priv_key = [
@@ -328,10 +332,14 @@ fn test_validate_fee() {
     let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
 
     // QRC20 transfer tx "f97d3a43dbea0993f1b7a6a299377d4ee164c84935a1eb7d835f70c9429e6a1d"
+    // This tx was sent to the OLD dex fee address, so we mock dex_pubkey to return the legacy address
     let tx = TransactionEnum::UtxoTx("010000000160fd74b5714172f285db2b36f0b391cd6883e7291441631c8b18f165b0a4635d020000006a47304402205d409e141111adbc4f185ae856997730de935ac30a0d2b1ccb5a6c4903db8171022024fc59bbcfdbba283556d7eeee4832167301dc8e8ad9739b7865f67b9676b226012103693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9ffffffff020000000000000000625403a08601012844a9059cbb000000000000000000000000ca1e04745e8ca0c60d8c5881531d51bec470743f00000000000000000000000000000000000000000000000000000000000f424014d362e096e873eb7907e205fadc6175c6fec7bc44c200ada205000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88acfe967d5f".into());
     let sender_pub = hex::decode("03693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9").unwrap();
 
     let amount = BigDecimal::from_str("0.01").unwrap();
+
+    // Mock to use legacy fee address for this historical tx fixture
+    <Qrc20Coin as SwapOps>::dex_pubkey.mock_safe(|_| MockResult::Return(DEX_FEE_ADDR_RAW_PUBKEY_LEGACY.as_slice()));
 
     let result = block_on(coin.validate_fee(ValidateFeeArgs {
         fee_tx: &tx,
@@ -342,12 +350,12 @@ fn test_validate_fee() {
     }));
     assert!(result.is_ok());
 
-    // wrong dex address
-    <Qrc20Coin as SwapOps>::dex_pubkey.mock_safe(|_| {
-        MockResult::Return(Box::leak(Box::new(
-            hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc05").unwrap(),
-        )))
-    });
+    // wrong dex address - use a completely different pubkey
+    let wrong_pubkey: &'static [u8] = &[
+        3, 188, 44, 123, 166, 113, 186, 228, 166, 252, 131, 82, 68, 201, 118, 43, 65, 100, 123, 152, 39, 212, 120, 10,
+        137, 169, 73, 185, 132, 168, 221, 204, 5,
+    ];
+    <Qrc20Coin as SwapOps>::dex_pubkey.mock_safe(move |_| MockResult::Return(wrong_pubkey));
     let err = block_on(coin.validate_fee(ValidateFeeArgs {
         fee_tx: &tx,
         expected_sender: &sender_pub,
@@ -362,7 +370,9 @@ fn test_validate_fee() {
         ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("QRC20 Fee tx was sent to wrong address")),
         _ => panic!("Expected `WrongPaymentTx` wrong receiver address, found {:?}", err),
     }
-    <Qrc20Coin as SwapOps>::dex_pubkey.clear_mock();
+
+    // Restore legacy mock for remaining tests with the historical tx fixture
+    <Qrc20Coin as SwapOps>::dex_pubkey.mock_safe(|_| MockResult::Return(DEX_FEE_ADDR_RAW_PUBKEY_LEGACY.as_slice()));
 
     let err = block_on(coin.validate_fee(ValidateFeeArgs {
         fee_tx: &tx,
@@ -411,6 +421,8 @@ fn test_validate_fee() {
         },
         _ => panic!("Expected `WrongPaymentTx` invalid fee value, found {:?}", err),
     }
+
+    <Qrc20Coin as SwapOps>::dex_pubkey.clear_mock();
 
     // QTUM tx "8a51f0ffd45f34974de50f07c5bf2f0949da4e88433f8f75191953a442cf9310"
     let tx = TransactionEnum::UtxoTx("020000000113640281c9332caeddd02a8dd0d784809e1ad87bda3c972d89d5ae41f5494b85010000006a47304402207c5c904a93310b8672f4ecdbab356b65dd869a426e92f1064a567be7ccfc61ff02203e4173b9467127f7de4682513a21efb5980e66dbed4da91dff46534b8e77c7ef012102baefe72b3591de2070c0da3853226b00f082d72daa417688b61cb18c1d543d1afeffffff020001b2c4000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88acbc4dd20c2f0000001976a9144208fa7be80dcf972f767194ad365950495064a488ac76e70800".into());
@@ -484,7 +496,7 @@ fn test_extract_secret() {
 
     // taker spent maker payment - d3f5dab4d54c14b3d7ed8c7f5c8cc7f47ccf45ce589fdc7cd5140a3c1c3df6e1
     let tx_hex = hex::decode("01000000033f56ecafafc8602fde083ba868d1192d6649b8433e42e1a2d79ba007ea4f7abb010000006b48304502210093404e90e40d22730013035d31c404c875646dcf2fad9aa298348558b6d65ba60220297d045eac5617c1a3eddb71d4bca9772841afa3c4c9d6c68d8d2d42ee6de3950121022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1affffffff9cac7fe90d597922a1d92e05306c2215628e7ea6d5b855bfb4289c2944f4c73a030000006b483045022100b987da58c2c0c40ce5b6ef2a59e8124ed4ef7a8b3e60c7fb631139280019bc93022069649bcde6fe4dd5df9462a1fcae40598488d6af8c324cd083f5c08afd9568be0121022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1affffffff70b9870f2b0c65d220a839acecebf80f5b44c3ca4c982fa2fdc5552c037f5610010000006a473044022071b34dd3ebb72d29ca24f3fa0fc96571c815668d3b185dd45cc46a7222b6843f02206c39c030e618d411d4124f7b3e7ca1dd5436775bd8083a85712d123d933a51300121022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1affffffff020000000000000000c35403a0860101284ca402ed292b806a1835a1b514ad643f2acdb5c8db6b6a9714accff3275ea0d79a3f23be8fd00000000000000000000000000000000000000000000000000000000001312d000101010101010101010101010101010101010101010101010101010101010101000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc440000000000000000000000009e032d4b0090a11dc40fe6c47601499a35d55fbb14ba8b71f3544b93e2f681f996da519a98ace0107ac2c02288d4010000001976a914783cf0be521101942da509846ea476e683aad83288ac0f047f5f").unwrap();
-    let secret = block_on(coin.extract_secret(secret_hash, &tx_hex, false)).unwrap();
+    let secret = block_on(coin.extract_secret(secret_hash, &tx_hex)).unwrap();
 
     assert_eq!(secret, expected_secret);
 }
@@ -505,7 +517,7 @@ fn test_extract_secret_malicious() {
     let spend_tx = hex::decode("01000000022bc8299981ec0cea664cdf9df4f8306396a02e2067d6ac2d3770b34646d2bc2a010000006b483045022100eb13ef2d99ac1cd9984045c2365654b115dd8a7815b7fbf8e2a257f0b93d1592022060d648e73118c843e97f75fafc94e5ff6da70ec8ba36ae255f8c96e2626af6260121022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1affffffffd92a0a10ac6d144b36033916f67ae79889f40f35096629a5cd87be1a08f40ee7010000006b48304502210080cdad5c4770dfbeb760e215494c63cc30da843b8505e75e7bf9e8dad18568000220234c0b11c41bfbcdd50046c69059976aedabe17657fe43d809af71e9635678e20121022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1affffffff030000000000000000c35403a0860101284ca402ed292b8620ad3b72361a5aeba5dffd333fb64750089d935a1ec974d6a91ef4f24ff6ba0000000000000000000000000000000000000000000000000000000001312d000202020202020202020202020202020202020202020202020202020202020202000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc440000000000000000000000009e032d4b0090a11dc40fe6c47601499a35d55fbb14ba8b71f3544b93e2f681f996da519a98ace0107ac20000000000000000c35403a0860101284ca402ed292b8620ad3b72361a5aeba5dffd333fb64750089d935a1ec974d6a91ef4f24ff6ba0000000000000000000000000000000000000000000000000000000001312d000101010101010101010101010101010101010101010101010101010101010101000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc440000000000000000000000009e032d4b0090a11dc40fe6c47601499a35d55fbb14ba8b71f3544b93e2f681f996da519a98ace0107ac2b8ea82d3010000001976a914783cf0be521101942da509846ea476e683aad83288ac735d855f").unwrap();
     let expected_secret = [1; 32];
     let secret_hash = &*dhash160(&expected_secret);
-    let actual = block_on(coin.extract_secret(secret_hash, &spend_tx, false));
+    let actual = block_on(coin.extract_secret(secret_hash, &spend_tx));
     assert_eq!(actual, Ok(expected_secret));
 }
 

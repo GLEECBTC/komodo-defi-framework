@@ -597,7 +597,6 @@ pub struct TakerSwapMut {
     pub secret_hash: BytesJson,
     secret: H256Json,
     pub watcher_reward: bool,
-    reward_amount: Option<BigDecimal>,
     payment_instructions: Option<PaymentInstructions>,
 }
 
@@ -839,6 +838,14 @@ impl TakerSwap {
         self.r().data.taker_payment_lock + 3700
     }
 
+    #[inline]
+    fn watcher_reward_amount(&self) -> Option<BigDecimal> {
+        match &self.r().payment_instructions {
+            Some(PaymentInstructions::WatcherReward(reward)) => Some(reward.clone()),
+            _ => None,
+        }
+    }
+
     pub(crate) fn apply_event(&self, event: TakerSwapEvent) {
         match event {
             TakerSwapEvent::Started(data) => {
@@ -976,7 +983,6 @@ impl TakerSwap {
                 secret_hash: BytesJson::default(),
                 secret: H256Json::default(),
                 watcher_reward: false,
-                reward_amount: None,
                 payment_instructions: None,
             }),
             ctx,
@@ -1551,7 +1557,7 @@ impl TakerSwap {
         }
         info!("After wait confirm");
 
-        let reward_amount = self.r().reward_amount.clone();
+        let reward_amount = self.watcher_reward_amount();
         let wait_maker_payment_until = self.r().data.maker_payment_wait;
         let watcher_reward = if self.r().watcher_reward {
             match self
@@ -1642,7 +1648,7 @@ impl TakerSwap {
             return Ok(None);
         }
 
-        let reward_amount = self.r().reward_amount.clone();
+        let reward_amount = self.watcher_reward_amount();
         self.taker_coin
             .get_taker_watcher_reward(
                 &self.maker_coin,
@@ -1940,11 +1946,7 @@ impl TakerSwap {
             tx_hash,
         };
 
-        let secret = match self
-            .taker_coin
-            .extract_secret(&secret_hash.0, &tx_ident.tx_hex, watcher_reward)
-            .await
-        {
+        let secret = match self.taker_coin.extract_secret(&secret_hash.0, &tx_ident.tx_hex).await {
             Ok(secret) => H256Json::from(secret),
             Err(e) => {
                 return Ok((
@@ -2331,7 +2333,6 @@ impl TakerSwap {
                     search_from_block: maker_coin_start_block,
                     swap_contract_address: &maker_coin_swap_contract_address,
                     swap_unique_data: &unique_data,
-                    watcher_reward,
                 };
 
                 match self.maker_coin.search_for_swap_tx_spend_other(search_input).await {
@@ -2436,7 +2437,6 @@ impl TakerSwap {
             search_from_block: taker_coin_start_block,
             swap_contract_address: &taker_coin_swap_contract_address,
             swap_unique_data: &unique_data,
-            watcher_reward,
         };
         let taker_payment_spend = try_s!(self.taker_coin.search_for_swap_tx_spend_my(search_input).await);
 
@@ -2446,11 +2446,7 @@ impl TakerSwap {
                     check_maker_payment_is_not_spent!();
                     let secret_hash = self.r().secret_hash.clone();
                     let tx_hex = tx.tx_hex();
-                    let secret = try_s!(
-                        self.taker_coin
-                            .extract_secret(&secret_hash.0, &tx_hex, watcher_reward)
-                            .await
-                    );
+                    let secret = try_s!(self.taker_coin.extract_secret(&secret_hash.0, &tx_hex).await);
 
                     let taker_spends_payment_args = SpendPaymentArgs {
                         other_payment_tx: &maker_payment,
@@ -2773,6 +2769,8 @@ pub async fn taker_swap_trade_preimage(
 #[derive(Deserialize)]
 struct MaxTakerVolRequest {
     coin: String,
+    /// Used for GLEEC fee discount calculation.
+    /// When trading with GLEEC, the fee rate is 1% instead of 2%.
     trade_with: Option<String>,
 }
 
@@ -3098,7 +3096,7 @@ mod taker_swap_tests {
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
-        TestCoin::extract_secret.mock_safe(|_, _, _, _| MockResult::Return(Box::pin(async move { Ok([0; 32]) })));
+        TestCoin::extract_secret.mock_safe(|_, _, _| MockResult::Return(Box::pin(async move { Ok([0; 32]) })));
 
         static MY_PAYMENT_SENT_CALLED: AtomicBool = AtomicBool::new(false);
         TestCoin::check_if_my_payment_sent.mock_safe(|_, _| {
@@ -3225,7 +3223,7 @@ mod taker_swap_tests {
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
-        TestCoin::extract_secret.mock_safe(|_, _, _, _| MockResult::Return(Box::pin(async move { Ok([0; 32]) })));
+        TestCoin::extract_secret.mock_safe(|_, _, _| MockResult::Return(Box::pin(async move { Ok([0; 32]) })));
 
         static SEARCH_TX_SPEND_CALLED: AtomicBool = AtomicBool::new(false);
         TestCoin::search_for_swap_tx_spend_my.mock_safe(|_, _| {
@@ -3379,26 +3377,39 @@ mod taker_swap_tests {
         assert!(!swap.is_recoverable());
     }
 
+    /// Tests max_taker_vol_from_available with 2% standard fee rate and 1% GLEEC discount rate.
+    ///
+    /// With 2% fee rate (standard):
+    /// - fee = max(vol * 0.02, min_tx_amount)
+    /// - available = vol + fee
+    /// - boundary: vol * 0.02 == min_tx_amount => vol == 0.0005 => available == 0.00051
+    ///
+    /// With 1% fee rate (GLEEC discount):
+    /// - fee = max(vol * 0.01, min_tx_amount)
+    /// - available = vol + fee
+    /// - boundary: vol * 0.01 == min_tx_amount => vol == 0.001 => available == 0.00101
     #[test]
     fn test_max_taker_vol_from_available() {
         let min_tx_amount = MmNumber::from("0.00001");
 
         // For these `availables` the dex_fee must be greater than min_tx_amount
         let source = vec![
-            ("0.00779", false),
+            ("0.00052", false),
+            ("0.001", false),
             ("0.01", false),
             ("0.0135", false),
             ("1.2000001", false),
             ("99999999999999999999999999999999999999999999999999999", false),
-            ("0.00778000000000000000000000000000000000000000000000002", false),
-            ("0.00778000000000000000000000000000000000000000000000001", false),
-            ("0.00863333333333333333333333333333333333333333333333334", true),
-            ("0.00863333333333333333333333333333333333333333333333333", true),
+            ("0.00051000000000000000000000000000000000000000000000002", false),
+            ("0.00051000000000000000000000000000000000000000000000001", false),
+            // GLEEC discount (1% rate, boundary at 0.00101)
+            ("0.00102", true),
+            ("0.00101000000000000000000000000000000000000000000000001", true),
         ];
-        for (available, is_kmd) in source {
+        for (available, is_gleec) in source {
             let available = MmNumber::from(available);
-            // no matter base or rel is KMD
-            let base = if is_kmd { "RICK" } else { "MORTY" };
+            // no matter base or rel is GLEEC
+            let base = if is_gleec { "RICK" } else { "MORTY" };
             let max_taker_vol = max_taker_vol_from_available(available.clone(), "RICK", "MORTY", &min_tx_amount)
                 .expect("!max_taker_vol_from_available");
 
@@ -3411,18 +3422,20 @@ mod taker_swap_tests {
             assert_eq!(max_taker_vol + dex_fee, available);
         }
 
-        // for these `availables` the dex_fee must be the same as min_tx_amount
+        // For these `availables` the dex_fee must be the same as min_tx_amount
         let source = vec![
-            ("0.00863333333333333333333333333333333333333333333333332", true),
-            ("0.00863333333333333333333333333333333333333333333333331", true),
-            ("0.00777999999999999999999999999999999999999999999999999", false),
-            ("0.00777", false),
+            // GLEEC discount (1% rate, boundary at 0.00101)
+            ("0.00101", true),
+            ("0.00100999999999999999999999999999999999999999999999999", true),
+            ("0.00051", false),
+            ("0.00050999999999999999999999999999999999999999999999999", false),
+            ("0.0003", false),
             ("0.00002001", false),
         ];
-        for (available, is_kmd) in source {
+        for (available, is_gleec) in source {
             let available = MmNumber::from(available);
-            // no matter base or rel is KMD
-            let base = if is_kmd { "KMD" } else { "RICK" };
+            // no matter base or rel is GLEEC
+            let base = if is_gleec { "GLEEC" } else { "RICK" };
             let max_taker_vol = max_taker_vol_from_available(available.clone(), base, "MORTY", &min_tx_amount)
                 .expect("!max_taker_vol_from_available");
 
@@ -3441,9 +3454,10 @@ mod taker_swap_tests {
             assert_eq!(max_taker_vol + dex_fee, available);
         }
 
-        // these `availables` must return an error
+        // These `availables` must return an error
         let availables = vec![
             "0.00002",
+            "0.000019",
             "0.000011",
             "0.00001000000000000000000000000000000000000000000000001",
             "0.00001",
@@ -3454,9 +3468,11 @@ mod taker_swap_tests {
         ];
         for available in availables {
             let available = MmNumber::from(available);
-            max_taker_vol_from_available(available.clone(), "KMD", "MORTY", &min_tx_amount)
+            max_taker_vol_from_available(available.clone(), "GLEEC", "MORTY", &min_tx_amount)
                 .expect_err("!max_taker_vol_from_available success but should be error");
         }
+
+        TestCoin::min_tx_amount.clear_mock();
     }
 
     #[test]

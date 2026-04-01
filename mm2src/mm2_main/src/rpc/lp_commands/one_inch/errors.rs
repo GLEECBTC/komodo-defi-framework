@@ -15,8 +15,7 @@ pub enum ApiIntegrationRpcError {
     },
     #[display(fmt = "EVM token needed")]
     CoinTypeError,
-    #[display(fmt = "NFT not supported")]
-    NftProtocolNotSupported,
+    ProtocolNotSupported(String),
     #[display(fmt = "Chain not supported")]
     ChainNotSupported,
     #[display(fmt = "Must be same chain")]
@@ -51,7 +50,7 @@ impl HttpStatusCode for ApiIntegrationRpcError {
         match self {
             ApiIntegrationRpcError::NoSuchCoin { .. } => StatusCode::NOT_FOUND,
             ApiIntegrationRpcError::CoinTypeError
-            | ApiIntegrationRpcError::NftProtocolNotSupported
+            | ApiIntegrationRpcError::ProtocolNotSupported(_)
             | ApiIntegrationRpcError::ChainNotSupported
             | ApiIntegrationRpcError::DifferentChains
             | ApiIntegrationRpcError::MyAddressError(_)

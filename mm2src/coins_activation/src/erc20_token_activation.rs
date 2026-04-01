@@ -8,6 +8,7 @@ use coins::hd_wallet::DisplayAddress;
 use coins::nft::nft_structs::NftInfo;
 use coins::{
     eth::{
+        tron::TronAddress,
         v2_activation::{Erc20Protocol, EthTokenActivationError},
         valid_addr_from_str, EthCoin,
     },
@@ -18,6 +19,7 @@ use mm2_err_handle::prelude::*;
 use serde::Serialize;
 use serde_json::Value as Json;
 use std::collections::HashMap;
+use std::str::FromStr;
 
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
@@ -86,6 +88,19 @@ impl TryFromCoinProtocol for Erc20Protocol {
 
                 Ok(Erc20Protocol { platform, token_addr })
             },
+            CoinProtocol::TRC20 {
+                platform,
+                contract_address,
+            } => {
+                // Parse TRON address (Base58 T... or hex 41...) and convert to raw 20-byte EVM address
+                let tron_addr = TronAddress::from_str(&contract_address).map_err(|_| CoinProtocol::TRC20 {
+                    platform: platform.clone(),
+                    contract_address,
+                })?;
+                let token_addr = tron_addr.to_evm_address();
+
+                Ok(Erc20Protocol { platform, token_addr })
+            },
             proto => MmError::err(proto),
         }
     }
@@ -109,7 +124,8 @@ impl TryFromCoinProtocol for EthTokenProtocol {
         Self: Sized,
     {
         match proto {
-            CoinProtocol::ERC20 { .. } => {
+            // Both ERC20 and TRC20 are handled as Erc20Protocol internally
+            CoinProtocol::ERC20 { .. } | CoinProtocol::TRC20 { .. } => {
                 let erc20_protocol = Erc20Protocol::try_from_coin_protocol(proto)?;
                 Ok(EthTokenProtocol::Erc20(erc20_protocol))
             },
@@ -172,6 +188,8 @@ impl TokenActivationOps for EthCoin {
                     let token_contract_address = token.erc20_token_address().ok_or_else(|| {
                         EthTokenActivationError::InternalError("Token contract address is missing".to_string())
                     })?;
+                    // Format contract address chain-aware: EVM checksum (0x) or TRON Base58 (T...)
+                    let token_contract_address = token.format_raw_address(token_contract_address);
 
                     let balance = token
                         .my_balance()
@@ -185,7 +203,7 @@ impl TokenActivationOps for EthCoin {
                         balances,
                         platform_coin: token.platform_ticker().to_owned(),
                         required_confirmations: token.required_confirmations(),
-                        token_contract_address: format!("{token_contract_address:#02x}"),
+                        token_contract_address,
                     });
 
                     Ok((token, init_result))

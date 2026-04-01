@@ -205,6 +205,7 @@ impl LightningCoin {
             .find(|chan| chan.user_channel_id == uuid.as_u128())
     }
 
+    #[allow(clippy::result_large_err)] // PaymentError is from external crate
     pub(crate) async fn pay_invoice(
         &self,
         invoice: Invoice,
@@ -791,12 +792,7 @@ impl SwapOps for LightningCoin {
         }
     }
 
-    async fn extract_secret(
-        &self,
-        _secret_hash: &[u8],
-        spend_tx: &[u8],
-        _watcher_reward: bool,
-    ) -> Result<[u8; 32], String> {
+    async fn extract_secret(&self, _secret_hash: &[u8], spend_tx: &[u8]) -> Result<[u8; 32], String> {
         let payment_hash = payment_hash_from_slice(spend_tx).map_err(|e| e.to_string())?;
         let payment_hex = hex::encode(payment_hash.0);
 

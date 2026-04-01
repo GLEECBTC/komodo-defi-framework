@@ -127,6 +127,7 @@ pub(super) fn utxo_coin_fields_for_test(
             zcash: true,
             checksum_type,
             fork_id: 0,
+            chain_id: None,
             signature_version: SignatureVersion::Base,
             required_confirmations: 1.into(),
             force_min_relay_fee: false,

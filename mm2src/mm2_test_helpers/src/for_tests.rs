@@ -168,6 +168,22 @@ pub const TAKER_ERROR_EVENTS: [&str; 17] = [
     "TakerPaymentRefundFinished",
 ];
 
+/// Legacy DEX fee public key - used in tests to validate historical transactions
+/// that were sent to the old fee address before the fee update.
+pub const DEX_FEE_ADDR_PUBKEY_LEGACY: &str = "03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc06";
+/// Legacy DEX burn public key - used in tests to validate historical transactions
+/// that were sent to the old burn address before the fee update.
+pub const DEX_BURN_ADDR_PUBKEY_LEGACY: &str = "0369aa10c061cd9e085f4adb7399375ba001b54136145cb748eb4c48657be13153";
+
+lazy_static! {
+    /// Legacy DEX fee raw pubkey bytes for test fixtures
+    pub static ref DEX_FEE_ADDR_RAW_PUBKEY_LEGACY: Vec<u8> =
+        hex::decode(DEX_FEE_ADDR_PUBKEY_LEGACY).expect("DEX_FEE_ADDR_PUBKEY_LEGACY is expected to be a hexadecimal string");
+    /// Legacy DEX burn raw pubkey bytes for test fixtures
+    pub static ref DEX_BURN_ADDR_RAW_PUBKEY_LEGACY: Vec<u8> =
+        hex::decode(DEX_BURN_ADDR_PUBKEY_LEGACY).expect("DEX_BURN_ADDR_PUBKEY_LEGACY is expected to be a hexadecimal string");
+}
+
 pub const RICK: &str = "RICK";
 pub const RICK_ELECTRUM_ADDRS: &[&str] = &[
     "electrum1.cipig.net:10017",
@@ -262,6 +278,33 @@ pub const ETH_SEPOLIA_SWAP_CONTRACT: &str = "0xeA6D65434A15377081495a9E7C5893543
 pub const ETH_SEPOLIA_TOKEN_CONTRACT: &str = "0x09d0d71FBC00D7CCF9CFf132f5E6825C88293F19";
 
 pub const BCHD_TESTNET_URLS: &[&str] = &["https://bchd-testnet.greyh.at:18335"];
+
+/// TRON Nile testnet RPC nodes.
+/// Nile is recommended over Shasta for more flexibility with RPC providers.
+pub const TRON_NILE_NODES: &[&str] = &["https://api.nileex.io", "https://nile.trongrid.io"];
+
+/// Known TRON testnet address that is always "activated" (zero address equivalent).
+/// This is the TRON network foundation address on testnet that has activity.
+/// T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb is the genesis address.
+pub const TRON_TESTNET_KNOWN_ADDRESS: &str = "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb";
+
+/// TRX ticker constant for tests.
+pub const TRX_TICKER: &str = "TRX";
+
+/// TRC20 test token contract on TRON Nile testnet.
+/// This is a test USDT contract deployed on Nile for testing purposes.
+/// Contract: TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf (Nile test USDT)
+pub const TRON_NILE_TRC20_USDT_CONTRACT: &str = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf";
+
+/// TRC20 test token ticker for tests.
+pub const TRON_NILE_TRC20_USDT_TICKER: &str = "USDT-TRC20-NILE";
+
+/// Mnemonic used by TRON withdraw integration tests (Nile).
+/// Index 0: TDcxD6E5wTzvqCJd4RfkGfw9NkCBdvYcV9 (50 TRX + 10 USDT)
+/// Index 1: TW9RqU6bTJnM4quyRbvTwm3xfSHgk718qU (20 TRX + 5 USDT)
+/// Index 2: TVK3ruiuNxN4sRJtSThDW7PGHrwYPYQ1UC (unfunded)
+pub const TRON_WITHDRAW_TEST_PASSPHRASE: &str =
+    "inject night leg month assume task power city until switch movie develop";
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -778,10 +821,10 @@ pub fn btc_with_sync_starting_header() -> Json {
         },
         "spv_conf": {
             "starting_block_header": {
-                "height": 764064,
-                "hash": "00000000000000000006da48b920343944908861fa05b28824922d9e60aaa94d",
-                "bits": 386375189,
-                "time": 1668986059,
+                "height": 872928,
+                "hash": "00000000000000000001dc2f171d19c36ad8afb972287230900b2a352184402a",
+                "bits": 386053475,
+                "time": 1733153640,
             },
             "max_stored_block_headers": 3000,
             "validation_params": {
@@ -942,6 +985,26 @@ pub fn erc20_dev_conf(contract_address: &str) -> Json {
     })
 }
 
+/// USDT token configuration used for dockerized Geth dev node.
+/// Uses 6 decimals like real mainnet USDT.
+pub fn usdt_dev_conf(contract_address: &str) -> Json {
+    json!({
+        "coin": "USDT",
+        "name": "usdt",
+        "mm2": 1,
+        "decimals": 6,
+        "derivation_path": "m/44'/60'",
+        "protocol": {
+            "type": "ERC20",
+            "protocol_data": {
+                "platform": "ETH",
+                "contract_address": contract_address,
+            }
+        },
+        "max_eth_tx_type": 2
+    })
+}
+
 /// ERC20 token configuration used for dockerized tests on Sepolia
 pub fn sepolia_erc20_dev_conf(contract_address: &str) -> Json {
     let mut conf = erc20_dev_conf(contract_address);
@@ -999,6 +1062,48 @@ pub fn eth_sepolia_trezor_firmware_compat_conf() -> Json {
         },
         "max_eth_tx_type": 2,
         "trezor_coin": "tETH"
+    })
+}
+
+/// TRX coin config for MarketMakerIt tests (Nile testnet).
+/// Uses TRON's SLIP-44 coin type 195 for HD wallet derivation.
+pub fn trx_conf() -> Json {
+    json!({
+        "coin": "TRX",
+        "name": "tron",
+        "fname": "TRON",
+        "mm2": 1,
+        "wallet_only": true,
+        "decimals": 6,
+        "avg_blocktime": 3,
+        "required_confirmations": 1,
+        "derivation_path": "m/44'/195'",
+        "protocol": {
+            "type": "TRX",
+            "protocol_data": {
+                "network": "Nile"
+            }
+        }
+    })
+}
+
+/// TRC20 USDT test token config for Nile testnet.
+/// Uses the same derivation path as TRX since tokens share the platform's addresses.
+pub fn trc20_usdt_nile_conf() -> Json {
+    json!({
+        "coin": TRON_NILE_TRC20_USDT_TICKER,
+        "name": "usdt_trc20_nile",
+        "fname": "USDT (TRC20 Nile)",
+        "mm2": 1,
+        "wallet_only": true,
+        "derivation_path": "m/44'/195'",
+        "protocol": {
+            "type": "TRC20",
+            "protocol_data": {
+                "platform": "TRX",
+                "contract_address": TRON_NILE_TRC20_USDT_CONTRACT
+            }
+        }
     })
 }
 
@@ -2714,7 +2819,10 @@ pub async fn wait_check_stats_swap_status(mm: &MarketMakerIt, uuid: &str, timeou
         if !response.0.is_success() {
             Timer::sleep(1.).await;
             if get_utc_timestamp() > wait_until {
-                panic!("Timed out waiting for swap stats status uuid={}, latest status={}", uuid, response.1);
+                panic!(
+                    "Timed out waiting for swap stats status uuid={}, latest status={}",
+                    uuid, response.1
+                );
             }
             continue;
         }
@@ -3525,7 +3633,7 @@ pub async fn init_utxo_electrum(
     coin: &str,
     servers: Vec<Json>,
     path_to_address: Option<HDAccountAddressId>,
-    priv_key_policy: Option<&str>,
+    priv_key_policy: Option<Json>,
 ) -> Json {
     let mut activation_params = json!({
         "mode": {
@@ -3536,7 +3644,7 @@ pub async fn init_utxo_electrum(
         }
     });
     if let Some(priv_key_policy) = priv_key_policy {
-        activation_params["priv_key_policy"] = priv_key_policy.into();
+        activation_params["priv_key_policy"] = priv_key_policy;
     }
     if let Some(path_to_address) = path_to_address {
         activation_params["path_to_address"] = json!(path_to_address);
@@ -3589,7 +3697,7 @@ pub async fn enable_utxo_v2_electrum(
     servers: Vec<Json>,
     path_to_address: Option<HDAccountAddressId>,
     timeout: u64,
-    priv_key_policy: Option<&str>,
+    priv_key_policy: Option<Json>,
 ) -> UtxoStandardActivationResult {
     let init = init_utxo_electrum(mm, coin, servers, path_to_address, priv_key_policy).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
@@ -3615,26 +3723,30 @@ async fn task_enable_eth_with_tokens_init(
     mm: &MarketMakerIt,
     platform_coin: &str,
     tokens: &[&str],
-    swap_contract_address: &str,
+    swap_contract_address: Option<&str>,
     nodes: &[&str],
     path_to_address: Option<HDAccountAddressId>,
 ) -> Json {
     let erc20_tokens_requests: Vec<_> = tokens.iter().map(|ticker| json!({ "ticker": ticker })).collect();
     let nodes: Vec<_> = nodes.iter().map(|url| json!({ "url": url })).collect();
 
+    let mut params = json!({
+        "ticker": platform_coin,
+        "nodes": nodes,
+        "tx_history": true,
+        "erc20_tokens_requests": erc20_tokens_requests,
+        "path_to_address": path_to_address.unwrap_or_default(),
+    });
+    if let Some(addr) = swap_contract_address {
+        params["swap_contract_address"] = json!(addr);
+    }
+
     let response = mm
         .rpc(&json!({
-        "userpass": mm.userpass,
-        "method": "task::enable_eth::init",
-        "mmrpc": "2.0",
-        "params": {
-                "ticker": platform_coin,
-                "swap_contract_address": swap_contract_address,
-                "nodes": nodes,
-                "tx_history": true,
-                "erc20_tokens_requests": erc20_tokens_requests,
-                "path_to_address": path_to_address.unwrap_or_default(),
-            }
+            "userpass": mm.userpass,
+            "method": "task::enable_eth::init",
+            "mmrpc": "2.0",
+            "params": params
         }))
         .await
         .unwrap();
@@ -3672,12 +3784,14 @@ pub async fn task_enable_eth_with_tokens(
     mm: &MarketMakerIt,
     platform_coin: &str,
     tokens: &[&str],
-    swap_contract_address: &str,
+    swap_contract_address: Option<&str>,
     nodes: &[&str],
     timeout: u64,
     path_to_address: Option<HDAccountAddressId>,
 ) -> EthWithTokensActivationResult {
-    let init = task_enable_eth_with_tokens_init(mm, platform_coin, tokens, swap_contract_address, nodes, path_to_address).await;
+    let init =
+        task_enable_eth_with_tokens_init(mm, platform_coin, tokens, swap_contract_address, nodes, path_to_address)
+            .await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
     let timeout = wait_until_ms(timeout * 1000);
 
@@ -3694,6 +3808,106 @@ pub async fn task_enable_eth_with_tokens(
             _ => Timer::sleep(1.).await,
         }
     }
+}
+
+/// Immediate TRX activation helper with optional TRC20 tokens.
+pub async fn enable_trx_with_tokens(mm: &MarketMakerIt, nodes: &[&str], tokens: &[&str]) -> Json {
+    let nodes: Vec<_> = nodes.iter().map(|url| json!({ "url": url })).collect();
+    let erc20_tokens_requests: Vec<_> = tokens.iter().map(|ticker| json!({ "ticker": ticker })).collect();
+    let enable = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "enable_eth_with_tokens",
+            "mmrpc": "2.0",
+            "params": {
+                "ticker": "TRX",
+                "mm2": 1,
+                "nodes": nodes,
+                "erc20_tokens_requests": erc20_tokens_requests
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        enable.0,
+        StatusCode::OK,
+        "'enable_eth_with_tokens' for TRX failed: {}",
+        enable.1
+    );
+    json::from_str(&enable.1).unwrap()
+}
+
+/// Immediate TRX activation helper using the enable RPC (no tokens).
+pub async fn enable_trx(mm: &MarketMakerIt, nodes: &[&str]) -> Json {
+    enable_trx_with_tokens(mm, nodes, &[]).await
+}
+
+/// TRX task init helper with optional TRC20 tokens (typed).
+/// Internally calls the shared `task::enable_eth::init` endpoint.
+pub async fn task_enable_trx_with_tokens_init(
+    mm: &MarketMakerIt,
+    nodes: &[&str],
+    tokens: &[&str],
+    path_to_address: Option<HDAccountAddressId>,
+) -> RpcV2Response<InitTaskResult> {
+    let init = task_enable_eth_with_tokens_init(mm, "TRX", tokens, None, nodes, path_to_address).await;
+    json::from_value(init).unwrap()
+}
+
+/// TRX task init helper (typed, no tokens).
+/// Internally calls the shared `task::enable_eth::init` endpoint.
+pub async fn task_enable_trx_init(
+    mm: &MarketMakerIt,
+    nodes: &[&str],
+    path_to_address: Option<HDAccountAddressId>,
+) -> RpcV2Response<InitTaskResult> {
+    task_enable_trx_with_tokens_init(mm, nodes, &[], path_to_address).await
+}
+
+/// TRX task status helper (typed).
+/// Internally calls the shared `task::enable_eth::status` endpoint.
+pub async fn task_enable_trx_status(mm: &MarketMakerIt, task_id: u64) -> RpcV2Response<InitEthWithTokensStatus> {
+    let status = task_eth_with_tokens_status(mm, task_id).await;
+    json::from_value(status).unwrap()
+}
+
+/// Task-based TRX activation helper with optional TRC20 tokens.
+pub async fn task_enable_trx_with_tokens(
+    mm: &MarketMakerIt,
+    nodes: &[&str],
+    tokens: &[&str],
+    timeout_sec: u64,
+    path_to_address: Option<HDAccountAddressId>,
+) -> Result<EthWithTokensActivationResult, TaskEnableError> {
+    let init = task_enable_trx_with_tokens_init(mm, nodes, tokens, path_to_address).await;
+    let timeout_at = wait_until_ms(timeout_sec * 1000);
+
+    loop {
+        if now_ms() > timeout_at {
+            return Err(TaskEnableError::Timeout {
+                ticker: "TRX".to_string(),
+                timeout_sec,
+            });
+        }
+
+        let status = task_enable_trx_status(mm, init.result.task_id).await;
+        match status.result {
+            InitEthWithTokensStatus::Ok(result) => return Ok(result),
+            InitEthWithTokensStatus::Error(e) => return Err(TaskEnableError::RpcError(e)),
+            InitEthWithTokensStatus::UserActionRequired(e) => return Err(TaskEnableError::RpcError(e)),
+            InitEthWithTokensStatus::InProgress(_) => Timer::sleep(1.).await,
+        }
+    }
+}
+
+/// Task-based TRX activation helper (no tokens).
+pub async fn task_enable_trx(
+    mm: &MarketMakerIt,
+    nodes: &[&str],
+    timeout_sec: u64,
+    path_to_address: Option<HDAccountAddressId>,
+) -> Result<EthWithTokensActivationResult, TaskEnableError> {
+    task_enable_trx_with_tokens(mm, nodes, &[], timeout_sec, path_to_address).await
 }
 
 async fn init_erc20_token(
@@ -4126,16 +4340,21 @@ pub async fn account_balance(
     coin: &str,
     account_index: u32,
     chain: Bip44Chain,
+    limit: Option<usize>,
 ) -> HDAccountBalanceResponse {
+    let mut params = json!({
+        "coin": coin,
+        "account_index": account_index,
+        "chain": chain
+    });
+    if let Some(limit) = limit {
+        params["limit"] = json!(limit);
+    }
     let request = json!({
         "userpass": mm.userpass,
         "method": "account_balance",
         "mmrpc": "2.0",
-        "params": {
-            "coin": coin,
-            "account_index": account_index,
-            "chain": chain
-        }
+        "params": params
     });
 
     let request = mm.rpc(&request).await.unwrap();
@@ -4310,4 +4529,45 @@ pub async fn active_swaps(mm: &MarketMakerIt) -> ActiveSwapsResponse {
     let response = mm.rpc(&request).await.unwrap();
     assert_eq!(response.0, StatusCode::OK, "'active_swaps' failed: {}", response.1);
     json::from_str(&response.1).unwrap()
+}
+
+pub async fn new_walletconnect_connection(mm: &MarketMakerIt, params: Json) -> CreateConnectionResponse {
+    let request = json!({
+        "method": "wc_new_connection",
+        "userpass": mm.userpass,
+        "mmrpc": "2.0",
+        "params": params,
+    });
+    let response = mm.rpc(&request).await.unwrap();
+    assert_eq!(response.0, StatusCode::OK, "'wc_new_connection' failed: {}", response.1);
+    log!("wc_new_connection response {}", response.1);
+    let response: RpcV2Response<CreateConnectionResponse> = json::from_str(&response.1).unwrap();
+    response.result
+}
+
+pub async fn wait_for_walletconnect_session(mm: &MarketMakerIt, pairing_topic: &str, timeout: u64) -> String {
+    let timeout = wait_until_ms(timeout * 1000);
+    loop {
+        if now_ms() > timeout {
+            panic!("WalletConnect session not established in {} seconds", timeout / 1000);
+        }
+
+        let request = json!({
+            "userpass": mm.userpass,
+            "method": "wc_get_session",
+            "mmrpc": "2.0",
+            "params": {
+                "topic": pairing_topic,
+                "with_pairing_topic": true,
+            }
+        });
+        let response = mm.rpc(&request).await.unwrap();
+        assert_eq!(response.0, StatusCode::OK, "'wc_session' failed: {}", response.1);
+        let response: RpcV2Response<GetSessionResponse> = json::from_str(&response.1).unwrap();
+        let GetSessionResponse { session } = response.result;
+        if let Some(session) = session {
+            return session.topic.to_string();
+        }
+        Timer::sleep(1.).await;
+    }
 }

@@ -5,7 +5,7 @@ use keys::Public as PublicKey;
 use primitives::hash::{H256, H512};
 use script::{Builder, Script, TransactionInputSigner, UnsignedTransactionInput};
 
-pub(crate) fn complete_tx(unsigned: TransactionInputSigner, signed_inputs: Vec<TransactionInput>) -> UtxoTx {
+pub fn complete_tx(unsigned: TransactionInputSigner, signed_inputs: Vec<TransactionInput>) -> UtxoTx {
     UtxoTx {
         inputs: signed_inputs,
         n_time: unsigned.n_time,

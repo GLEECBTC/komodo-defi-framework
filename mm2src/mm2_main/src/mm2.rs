@@ -27,7 +27,10 @@
     forgetting_copy_types,
     clippy::swap_ptr_to_ref,
     clippy::forget_non_drop,
-    clippy::let_unit_value
+    clippy::let_unit_value,
+    // TODO: Remove this allow when Rust 1.92 regression is fixed.
+    // See: https://github.com/rust-lang/rust/issues/147648
+    unused_assignments
 )]
 #![cfg_attr(target_arch = "wasm32", allow(dead_code))]
 #![cfg_attr(target_arch = "wasm32", allow(unused_imports))]

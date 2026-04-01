@@ -310,6 +310,14 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
         activation_request: Self::ActivationRequest,
         protocol: Self::PlatformProtocolInfo,
     ) -> Result<Self, MmError<Self::ActivationError>> {
+        // TRON doesn't support NFTs yet
+        if matches!(protocol, ChainSpec::Tron { .. }) && activation_request.nft_req.is_some() {
+            return MmError::err(EthActivationV2Error::UnsupportedChain {
+                chain: "TRON".to_string(),
+                feature: "NFT".to_string(),
+            });
+        }
+
         let priv_key_policy =
             eth_priv_key_build_policy(&ctx, &activation_request.platform_request.priv_key_policy).await?;
 
@@ -330,6 +338,14 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
         &self,
         activation_request: &Self::ActivationRequest,
     ) -> Result<Option<MmCoinEnum>, MmError<Self::ActivationError>> {
+        // TRON doesn't support NFTs (safety check - should be caught earlier in enable_platform_coin)
+        if matches!(self.chain_spec, ChainSpec::Tron { .. }) && activation_request.nft_req.is_some() {
+            return MmError::err(EthActivationV2Error::UnsupportedChain {
+                chain: "TRON".to_string(),
+                feature: "NFT".to_string(),
+            });
+        }
+
         let (url, proxy_auth) = match &activation_request.nft_req {
             Some(nft_req) => match &nft_req.provider {
                 NftProviderEnum::Moralis { url, komodo_proxy } => (url, *komodo_proxy),
@@ -378,6 +394,7 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
 
         match self.derivation_method() {
             DerivationMethod::SingleAddress(my_address) => {
+                let my_address_formatted = my_address.display_address();
                 let pubkey = self.get_public_key().await.map_mm_err()?;
                 let mut eth_address_info = CoinAddressInfo {
                     derivation_method: self.derivation_method().to_response().await.map_mm_err()?,
@@ -401,8 +418,8 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
                     return Ok(EthWithTokensActivationResult::Iguana(
                         IguanaEthWithTokensActivationResult {
                             current_block,
-                            eth_addresses_infos: HashMap::from([(my_address.display_address(), eth_address_info)]),
-                            erc20_addresses_infos: HashMap::from([(my_address.display_address(), erc20_address_info)]),
+                            eth_addresses_infos: HashMap::from([(my_address_formatted.clone(), eth_address_info)]),
+                            erc20_addresses_infos: HashMap::from([(my_address_formatted, erc20_address_info)]),
                             nfts_infos: nfts_map,
                         },
                     ));
@@ -426,8 +443,8 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
                 Ok(EthWithTokensActivationResult::Iguana(
                     IguanaEthWithTokensActivationResult {
                         current_block,
-                        eth_addresses_infos: HashMap::from([(my_address.display_address(), eth_address_info)]),
-                        erc20_addresses_infos: HashMap::from([(my_address.display_address(), erc20_address_info)]),
+                        eth_addresses_infos: HashMap::from([(my_address_formatted.clone(), eth_address_info)]),
+                        erc20_addresses_infos: HashMap::from([(my_address_formatted, erc20_address_info)]),
                         nfts_infos: nfts_map,
                     },
                 ))

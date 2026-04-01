@@ -101,7 +101,7 @@ docker run -v "$(pwd)":/app -w /app kdf-build-container cargo build
 
 Just like building it on your host system, you will now have the target directory containing the build files.
 
-Alternatively, container images are available on [DockerHub](https://hub.docker.com/r/komodoofficial/komodo-defi-framework)
+Alternatively, container images are available on [DockerHub](https://hub.docker.com/r/gleec/komodo-defi-framework)
 
 ## Building WASM binary
 

@@ -982,6 +982,7 @@ dependencies = [
  "http 0.2.12",
  "hyper 0.14.26",
  "hyper-rustls 0.24.2",
+ "instant",
  "itertools",
  "js-sys",
  "jsonrpc-core",
@@ -1126,6 +1127,7 @@ dependencies = [
  "arrayref",
  "async-trait",
  "backtrace",
+ "base64 0.21.7",
  "bytes",
  "cc",
  "cfg-if 1.0.0",
@@ -4215,7 +4217,7 @@ dependencies = [
 
 [[package]]
 name = "mm2_bin_lib"
-version = "2.6.0-beta"
+version = "3.0.0-beta"
 dependencies = [
  "chrono",
  "common",
@@ -4679,7 +4681,9 @@ dependencies = [
  "db_common",
  "futures 0.3.31",
  "gstuff",
+ "hex",
  "http 0.2.12",
+ "kdf_walletconnect",
  "lazy_static",
  "mm2_core",
  "mm2_io",

@@ -274,9 +274,8 @@ impl CheckBalanceError {
                 threshold,
             },
             TradePreimageError::Transport(transport) => CheckBalanceError::Transport(transport),
-            TradePreimageError::InternalError(internal) => CheckBalanceError::InternalError(internal),
-            TradePreimageError::NftProtocolNotSupported => {
-                CheckBalanceError::InternalError("Nft Protocol is not supported yet!".to_string())
+            TradePreimageError::InternalError(internal) | TradePreimageError::ProtocolNotSupported(internal) => {
+                CheckBalanceError::InternalError(internal)
             },
             TradePreimageError::NoSuchCoin { .. } => CheckBalanceError::InternalError(trade_preimage_err.to_string()),
         }

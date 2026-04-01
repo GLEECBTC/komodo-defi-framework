@@ -135,8 +135,10 @@ macro_rules! try_ztx_s {
 }
 
 const DEX_FEE_OVK: OutgoingViewingKey = OutgoingViewingKey([7; 32]);
-const DEX_FEE_Z_ADDR: &str = "zs1rp6426e9r6jkq2nsanl66tkd34enewrmr0uvj0zelhkcwmsy0uvxz2fhm9eu9rl3ukxvgzy2v9f";
-const DEX_BURN_Z_ADDR: &str = "zs1ntx28kyurgvsc7rxgkdhasz8p6wzv63nqpcayvnh7c4r6cs4wfkz8ztkwazjzdsxkgaq6erscyl";
+const DEX_FEE_Z_ADDR: &str = "zs1lgdrlg6kv6lmf0n9ps2uhj6sc8rdn30vx44qzu7hqa5ms4a4fwytlr8yuwrqyvhk6l6r5fevw50";
+/// Burn disabled - using same address as fee address
+const DEX_BURN_Z_ADDR: &str = "zs1lgdrlg6kv6lmf0n9ps2uhj6sc8rdn30vx44qzu7hqa5ms4a4fwytlr8yuwrqyvhk6l6r5fevw50";
+
 cfg_native!(
     #[cfg(test)]
     const DOWNLOAD_URL: &str = "https://komodoplatform.com/downloads";
@@ -751,6 +753,21 @@ impl ZCoin {
     }
 }
 
+/// Methods used for DEX fee validation that can be mocked in tests
+/// to return legacy addresses for historical transaction fixtures.
+#[cfg_attr(test, mockable)]
+impl ZCoin {
+    /// Returns the DEX fee z-address for fee validation.
+    fn dex_fee_addr(&self) -> PaymentAddress {
+        self.z_fields.dex_fee_addr.clone()
+    }
+
+    /// Returns the DEX burn z-address for fee validation.
+    fn dex_burn_addr(&self) -> PaymentAddress {
+        self.z_fields.dex_burn_addr.clone()
+    }
+}
+
 impl AsRef<UtxoCoinFields> for ZCoin {
     fn as_ref(&self) -> &UtxoCoinFields {
         &self.utxo_arc
@@ -1013,8 +1030,10 @@ impl UtxoCoinBuilder for ZCoinBuilder<'_> {
             )
             .await
             .map_mm_err()?,
-            #[cfg(test)]
+            #[cfg(all(test, not(target_arch = "wasm32")))]
             ZcoinRpcMode::UnitTests => z_unit_tests::create_test_sync_connector(&self).await,
+            #[cfg(all(test, target_arch = "wasm32"))]
+            ZcoinRpcMode::UnitTests => unreachable!("UnitTests mode is not supported on WASM"),
         };
 
         let z_fields = Arc::new(ZCoinFields {
@@ -1607,12 +1626,14 @@ impl SwapOps for ZCoin {
 
         let mut fee_output_valid = false;
         let mut burn_output_valid = false;
+        let dex_fee_addr = self.dex_fee_addr();
+        let dex_burn_addr = self.dex_burn_addr();
         for shielded_out in z_tx.shielded_outputs.iter() {
             if self
                 .validate_dex_fee_output(
                     shielded_out,
                     &DEX_FEE_OVK,
-                    &self.z_fields.dex_fee_addr,
+                    &dex_fee_addr,
                     block_height,
                     fee_amount_sat,
                     &expected_memo,
@@ -1630,7 +1651,7 @@ impl SwapOps for ZCoin {
                     .validate_dex_fee_output(
                         shielded_out,
                         &DEX_FEE_OVK,
-                        &self.z_fields.dex_burn_addr,
+                        &dex_burn_addr,
                         block_height,
                         burn_amount_sat,
                         &expected_memo,
@@ -1700,12 +1721,7 @@ impl SwapOps for ZCoin {
     }
 
     #[inline]
-    async fn extract_secret(
-        &self,
-        secret_hash: &[u8],
-        spend_tx: &[u8],
-        _watcher_reward: bool,
-    ) -> Result<[u8; 32], String> {
+    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<[u8; 32], String> {
         utxo_common::extract_secret(secret_hash, spend_tx)
     }
 
@@ -1950,7 +1966,7 @@ impl UtxoCommonOps for ZCoin {
         utxo_common::denominate_satoshis(&self.utxo_arc, satoshi)
     }
 
-    fn my_public_key(&self) -> Result<&Public, MmError<UnexpectedDerivationMethod>> {
+    fn my_public_key(&self) -> Result<Public, MmError<UnexpectedDerivationMethod>> {
         utxo_common::my_public_key(self.as_ref())
     }
 
@@ -1988,7 +2004,7 @@ impl UtxoCommonOps for ZCoin {
         utxo_common::get_mut_verbose_transaction_from_map_or_rpc(self, tx_hash, utxo_tx_map).await
     }
 
-    async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput<'_>) -> Result<UtxoTx, String> {
+    async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput) -> Result<UtxoTx, String> {
         utxo_common::p2sh_spending_tx(self, input).await
     }
 

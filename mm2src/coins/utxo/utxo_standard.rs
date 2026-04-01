@@ -210,7 +210,7 @@ impl UtxoCommonOps for UtxoStandardCoin {
         utxo_common::denominate_satoshis(&self.utxo_arc, satoshi)
     }
 
-    fn my_public_key(&self) -> Result<&Public, MmError<UnexpectedDerivationMethod>> {
+    fn my_public_key(&self) -> Result<Public, MmError<UnexpectedDerivationMethod>> {
         utxo_common::my_public_key(self.as_ref())
     }
 
@@ -242,7 +242,7 @@ impl UtxoCommonOps for UtxoStandardCoin {
         utxo_common::get_mut_verbose_transaction_from_map_or_rpc(self, tx_hash, utxo_tx_map).await
     }
 
-    async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput<'_>) -> Result<UtxoTx, String> {
+    async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput) -> Result<UtxoTx, String> {
         utxo_common::p2sh_spending_tx(self, input).await
     }
 
@@ -440,12 +440,7 @@ impl SwapOps for UtxoStandardCoin {
     }
 
     #[inline]
-    async fn extract_secret(
-        &self,
-        secret_hash: &[u8],
-        spend_tx: &[u8],
-        _watcher_reward: bool,
-    ) -> Result<[u8; 32], String> {
+    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<[u8; 32], String> {
         utxo_common::extract_secret(secret_hash, spend_tx)
     }
 
@@ -469,7 +464,7 @@ impl SwapOps for UtxoStandardCoin {
     }
 
     fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> [u8; 33] {
-        utxo_common::derive_htlc_pubkey(self, swap_unique_data)
+        utxo_common::derive_htlc_pubkey(self.as_ref(), swap_unique_data)
     }
 
     #[inline]
@@ -478,7 +473,10 @@ impl SwapOps for UtxoStandardCoin {
     }
 
     fn is_supported_by_watchers(&self) -> bool {
-        true
+        // Since watcher support require signing the watcher message with the same private key used in the swap,
+        // we disable watcher support for private key policies that don't give us access to the private key.
+        // TODO: Enable watcher support for WalletConnect by asking WalletConnect to sign the watcher message for us.
+        self.as_ref().priv_key_policy.is_internal()
     }
 }
 
@@ -964,7 +962,9 @@ impl MarketCoinOps for UtxoStandardCoin {
     }
 
     fn should_burn_directly(&self) -> bool {
-        &self.utxo_arc.conf.ticker == "KMD"
+        // &self.utxo_arc.conf.ticker == "KMD"
+        // Burn disabled - all fees go to DEX fee address
+        false
     }
 
     fn should_burn_dex_fee(&self) -> bool {

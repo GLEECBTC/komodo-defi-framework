@@ -2,7 +2,6 @@ use bitcrypto::dhash160;
 use coins::z_coin::{
     z_coin_from_conf_and_params_with_docker, z_send_dex_fee, ZCoin, ZcoinActivationParams, ZcoinRpcMode,
 };
-use coins::DexFeeBurnDestination;
 use coins::{
     coin_errors::ValidatePaymentError, CoinProtocol, DexFee, PrivKeyBuildPolicy, RefundPaymentArgs, SendPaymentArgs,
     SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash, ValidateFeeArgs,
@@ -12,6 +11,7 @@ use lazy_static::lazy_static;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::MmNumber;
 use mm2_test_helpers::for_tests::zombie_conf_for_docker;
+use serde_json::json;
 use tempfile::TempDir;
 use tokio::sync::Mutex;
 
@@ -175,6 +175,7 @@ async fn zombie_coin_send_standard_dex_fee() {
     drop(_lock)
 }
 
+/// Tests sending a ZCoin DEX fee with Standard fee (burn disabled).
 #[tokio::test(flavor = "current_thread")]
 async fn zombie_coin_send_dex_fee() {
     let _lock = GEN_TX_LOCK_MUTEX_ADDR2.lock().await;
@@ -182,16 +183,14 @@ async fn zombie_coin_send_dex_fee() {
 
     assert!(coin.is_sapling_state_synced().await);
 
-    let dex_fee = DexFee::WithBurn {
-        fee_amount: "0.0075".into(),
-        burn_amount: "0.0025".into(),
-        burn_destination: DexFeeBurnDestination::PreBurnAccount,
-    };
-    let tx = z_send_dex_fee(&coin, dex_fee, &[1; 16]).await.unwrap();
+    let tx = z_send_dex_fee(&coin, DexFee::Standard("0.02".into()), &[1; 16])
+        .await
+        .unwrap();
     log!("dex fee tx {}", tx.txid());
     drop(_lock);
 }
 
+/// Tests ZCoin DEX fee validation with Standard fees (burn disabled).
 #[tokio::test(flavor = "current_thread")]
 async fn zombie_coin_validate_dex_fee() {
     let _lock = GEN_TX_LOCK_MUTEX.lock().await;
@@ -199,20 +198,14 @@ async fn zombie_coin_validate_dex_fee() {
 
     assert!(coin.is_sapling_state_synced().await);
 
-    let tx = z_send_dex_fee(
-        &coin,
-        DexFee::WithBurn {
-            fee_amount: "0.0075".into(),
-            burn_amount: "0.0025".into(),
-            burn_destination: DexFeeBurnDestination::PreBurnAccount,
-        },
-        &[1; 16],
-    )
-    .await
-    .unwrap();
+    // Test standard dex fee (burn is disabled)
+    let tx = z_send_dex_fee(&coin, DexFee::Standard("0.02".into()), &[1; 16])
+        .await
+        .unwrap();
     log!("dex fee tx {}", tx.txid());
     let tx = tx.into();
 
+    // Invalid amount should return an error
     let validate_fee_args = ValidateFeeArgs {
         fee_tx: &tx,
         expected_sender: &[],
@@ -220,7 +213,6 @@ async fn zombie_coin_validate_dex_fee() {
         min_block_number: 12000,
         uuid: &[1; 16],
     };
-    // Invalid amount should return an error
     let err = coin.validate_fee(validate_fee_args).await.unwrap_err().into_inner();
     match err {
         ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("invalid amount")),
@@ -228,11 +220,7 @@ async fn zombie_coin_validate_dex_fee() {
     }
 
     // Invalid memo should return an error
-    let expected_fee = DexFee::WithBurn {
-        fee_amount: "0.0075".into(),
-        burn_amount: "0.0025".into(),
-        burn_destination: DexFeeBurnDestination::PreBurnAccount,
-    };
+    let expected_fee = DexFee::Standard("0.02".into());
 
     let validate_fee_args = ValidateFeeArgs {
         fee_tx: &tx,
@@ -248,7 +236,7 @@ async fn zombie_coin_validate_dex_fee() {
         _ => panic!("Expected `WrongPaymentTx`: {:?}", err),
     }
 
-    // Success validation
+    // Success validation with correct amount and memo
     let validate_fee_args = ValidateFeeArgs {
         fee_tx: &tx,
         expected_sender: &[],
@@ -258,15 +246,14 @@ async fn zombie_coin_validate_dex_fee() {
     };
     coin.validate_fee(validate_fee_args).await.unwrap();
 
-    // Test old standard dex fee with no burn output
-    // TODO: disable when the upgrade transition period ends
+    // Test with different fee amount
     let tx_2 = z_send_dex_fee(&coin, DexFee::Standard("0.00879999".into()), &[1; 16])
         .await
         .unwrap();
     log!("dex fee tx {}", tx_2.txid());
     let tx_2 = tx_2.into();
 
-    // Success validation
+    // Wrong expected amount should fail
     let validate_fee_args = ValidateFeeArgs {
         fee_tx: &tx_2,
         expected_sender: &[],
@@ -280,7 +267,7 @@ async fn zombie_coin_validate_dex_fee() {
         _ => panic!("Expected `WrongPaymentTx`: {:?}", err),
     }
 
-    // Success validation
+    // Correct expected amount should succeed
     let expected_std_fee = DexFee::Standard("0.00879999".into());
     let validate_fee_args = ValidateFeeArgs {
         fee_tx: &tx_2,

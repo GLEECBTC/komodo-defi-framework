@@ -1,3 +1,51 @@
+## v3.0.0-beta - 2026-03-06
+
+### Features:
+
+**TRON Wallet-Only Support**:
+- Added initial TRON blockchain integration with HD wallet activation, TRC20 token support, transaction signing, fee estimation, and withdrawals. [#2467](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2467) [#2712](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2712) [#2714](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2714)
+
+**WalletConnect**:
+- Implemented BTC/UTXO transaction signing and legacy swap (v1) support via WalletConnect. [#2566](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2566)
+
+**UTXO**:
+- Added RXD `ForkIdRxd` sighash signing path for Radiant chain support. [#2713](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2713)
+
+---
+
+### Enhancements/Fixes:
+
+**EVM / ETH**:
+- Added SafeERC20 V1 USDT support and docker tests. [#2711](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2711)
+
+---
+
+### Other Changes:
+
+**Infrastructure / CI**:
+- Migrated service endpoints to gleec.com. [#2704](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2704)
+- Migrated docker image push to GLEEC organization. [#2705](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2705)
+- Split docker tests into feature-gated parallel suites. [#2707](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2707)
+- Removed review reminder bot. [#2706](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2706)
+
+**Documentation**:
+- Added AGENTS.md documentation across key crates. [#2465](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2465)
+
+**Legal**:
+- Updated LICENSE IP ownership.
+
+---
+
+### NB - Backwards compatibility breaking changes:
+
+**P2P Network**:
+- Default P2P netid changed from 8762 to 6133 as part of GLEEC rebranding; netid 8762 added to the deprecated list. Nodes on the old default netid will no longer discover peers on the new default. [#2710](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2710)
+
+**Dex Fees**:
+- Dex fee rate updated to 2% with a 1% discount for GLEEC; fee collection addresses migrated to GLEEC. [#2710](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2710)
+
+---
+
 ## v2.6.0-beta - 2025-11-28
 
 ### Features:

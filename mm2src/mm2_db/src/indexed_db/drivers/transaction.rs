@@ -107,3 +107,19 @@ impl IdbTransactionImpl {
         }
     }
 }
+
+impl Drop for IdbTransactionImpl {
+    fn drop(&mut self) {
+        // Detach JS -> Rust callback to prevent "closure invoked after being dropped" error.
+        //
+        // When Rust passes a closure to JS via set_onabort, JS holds a reference to call it
+        // when abort events fire. Transactions can abort for various reasons (store errors,
+        // explicit abort, timeout). If this Rust wrapper is dropped while the transaction is
+        // still open in JS, an abort event could fire into freed memory, causing wasm-bindgen
+        // to panic with "closure invoked after being dropped".
+        //
+        // Setting the callback to None tells JS "there's no handler anymore" - when the event
+        // fires, JS sees null and does nothing safely.
+        self.transaction.set_onabort(None);
+    }
+}

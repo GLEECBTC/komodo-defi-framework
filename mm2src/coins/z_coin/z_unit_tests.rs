@@ -26,6 +26,12 @@ use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
 
 const GITHUB_CLIENT_USER_AGENT: &str = "mm2";
 
+/// Legacy DEX fee z-address for unit test fixtures.
+/// Used to test WithBurn validation with different fee and burn addresses.
+const DEX_FEE_Z_ADDR_LEGACY: &str = "zs1rp6426e9r6jkq2nsanl66tkd34enewrmr0uvj0zelhkcwmsy0uvxz2fhm9eu9rl3ukxvgzy2v9f";
+/// Legacy DEX burn z-address for unit test fixtures.
+const DEX_BURN_Z_ADDR_LEGACY: &str = "zs1ntx28kyurgvsc7rxgkdhasz8p6wzv63nqpcayvnh7c4r6cs4wfkz8ztkwazjzdsxkgaq6erscyl";
+
 /// Download zcash params from komodo repo
 async fn fetch_and_save_params(param: &str, fname: &Path) -> Result<(), String> {
     let url = Url::parse(&format!("{DOWNLOAD_URL}/")).unwrap().join(param).unwrap();
@@ -285,60 +291,104 @@ fn test_interpret_memo_string() {
     assert_eq!(actual, expected);
 }
 
+/// Tests ZCoin DEX fee validation with Standard and WithBurn fees.
+/// Uses mocking to set legacy addresses (different fee and burn addresses)
+/// so we can properly test the WithBurn validation logic.
 #[tokio::test]
 async fn test_validate_zcoin_dex_fee() {
     let (_ctx, coin) = z_coin_from_spending_key_for_unit_test("secret-extended-key-main1qvqstxphqyqqpqqnh3hstqpdjzkpadeed6u7fz230jmm2mxl0aacrtu9vt7a7rmr2w5az5u79d24t0rudak3newknrz5l0m3dsd8m4dffqh5xwyldc5qwz8pnalrnhlxdzf900x83jazc52y25e9hvyd4kepaze6nlcvk8sd8a4qjh3e9j5d6730t7ctzhhrhp0zljjtwuptadnksxf8a8y5axwdhass5pjaxg0hzhg7z25rx0rll7a6txywl32s6cda0s5kexr03uqdtelwe").await;
 
+    // Decode legacy addresses for testing WithBurn (different fee and burn addresses)
+    let consensus_params = coin.consensus_params();
+    let hrp = consensus_params.hrp_sapling_payment_address();
+    let legacy_fee_addr = decode_payment_address(hrp, DEX_FEE_Z_ADDR_LEGACY)
+        .expect("valid z address format")
+        .expect("valid z address");
+    let legacy_burn_addr = decode_payment_address(hrp, DEX_BURN_Z_ADDR_LEGACY)
+        .expect("valid z address format")
+        .expect("valid z address");
+
+    // Mock dex_fee_addr and dex_burn_addr to return legacy addresses
+    let fee_addr_for_mock = legacy_fee_addr.clone();
+    ZCoin::dex_fee_addr.mock_safe(move |_| MockResult::Return(fee_addr_for_mock.clone()));
+    let burn_addr_for_mock = legacy_burn_addr.clone();
+    ZCoin::dex_burn_addr.mock_safe(move |_| MockResult::Return(burn_addr_for_mock.clone()));
+
+    // Test standard fee validation
     let std_fee = DexFee::Standard("0.001".into());
+    assert!(
+        validate_fee_caller(&coin, (legacy_fee_addr.clone(), 100000), None, &std_fee)
+            .await
+            .is_ok()
+    );
+
+    // Test WithBurn fee validation - using different fee and burn addresses
     let with_burn = DexFee::WithBurn {
         fee_amount: "0.0075".into(),
         burn_amount: "0.0025".into(),
         burn_destination: DexFeeBurnDestination::PreBurnAccount,
     };
-    assert!(
-        validate_fee_caller(&coin, (coin.z_fields.dex_fee_addr.clone(), 100000), None, &std_fee)
-            .await
-            .is_ok()
-    );
     assert!(validate_fee_caller(
         &coin,
-        (coin.z_fields.dex_fee_addr.clone(), 750000),
-        Some((coin.z_fields.dex_burn_addr.clone(), 250000)),
+        (legacy_fee_addr.clone(), 750000),
+        Some((legacy_burn_addr.clone(), 250000)),
         &with_burn
     )
     .await
     .is_ok());
-    // try reverted addresses
+
+    // Test reverted addresses - should fail because fee and burn addresses are swapped
     assert!(validate_fee_caller(
         &coin,
-        (coin.z_fields.dex_burn_addr.clone(), 750000),
-        Some((coin.z_fields.dex_fee_addr.clone(), 250000)),
+        (legacy_burn_addr.clone(), 750000),
+        Some((legacy_fee_addr.clone(), 250000)),
         &with_burn
     )
     .await
     .is_err());
+
+    // Test with a completely different address - should fail
     let other_addr = decode_payment_address(
-        coin.z_fields.consensus_params.hrp_sapling_payment_address(),
+        hrp,
         "zs182ht30wnnnr8jjhj2j9v5dkx3qsknnr5r00jfwk2nczdtqy7w0v836kyy840kv2r8xle5gcl549",
     )
     .expect("valid z address format")
     .expect("valid z address");
-    // try invalid dex address
+
+    // Fee sent to wrong address should fail
+    assert!(validate_fee_caller(&coin, (other_addr.clone(), 100000), None, &std_fee)
+        .await
+        .is_err());
+
+    // Invalid dex address in WithBurn should fail
     assert!(validate_fee_caller(
         &coin,
         (other_addr.clone(), 750000),
-        Some((coin.z_fields.dex_burn_addr.clone(), 250000)),
+        Some((legacy_burn_addr.clone(), 250000)),
         &with_burn
     )
     .await
     .is_err());
-    // try invalid burn address
+
+    // Invalid burn address should fail
     assert!(validate_fee_caller(
         &coin,
-        (coin.z_fields.dex_fee_addr.clone(), 750000),
+        (legacy_fee_addr.clone(), 750000),
         Some((other_addr.clone(), 250000)),
         &with_burn
     )
     .await
     .is_err());
+
+    // Test with larger fee amount
+    let large_fee = DexFee::Standard("0.02".into());
+    assert!(
+        validate_fee_caller(&coin, (legacy_fee_addr.clone(), 2000000), None, &large_fee)
+            .await
+            .is_ok()
+    );
+
+    // Clean up mocks
+    ZCoin::dex_fee_addr.clear_mock();
+    ZCoin::dex_burn_addr.clear_mock();
 }
