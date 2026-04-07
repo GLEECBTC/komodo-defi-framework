@@ -271,6 +271,7 @@ fn global_nft_with_random_privkey(
         path_to_address: Default::default(),
         gap_limit: None,
         swap_gas_fee_policy: None,
+        tron_gasless_provider: None,
     };
     let coin = block_on(eth_coin_from_conf_and_request_v2(
         &MM_CTX1,
@@ -1263,6 +1264,7 @@ fn eth_coin_v2_activation_with_random_privkey(
         path_to_address: Default::default(),
         gap_limit: None,
         swap_gas_fee_policy: None,
+        tron_gasless_provider: None,
     };
     let coin = block_on(eth_coin_from_conf_and_request_v2(
         ctx,

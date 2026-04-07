@@ -6,6 +6,7 @@
 mod address;
 pub mod api;
 pub mod fee;
+pub mod gasfree;
 pub(crate) mod proto;
 pub(crate) mod sign;
 pub mod tx_builder;
@@ -39,6 +40,17 @@ pub enum Network {
     Mainnet,
     Shasta,
     Nile,
+}
+
+impl Network {
+    /// Numeric chain ID used in TIP-712 typed-data signing.
+    pub fn chain_id(&self) -> u64 {
+        match self {
+            Network::Mainnet => 728126428,
+            Network::Shasta => 2494104990,
+            Network::Nile => 3448148188,
+        }
+    }
 }
 
 /// Hard cap on TRON raw transaction size to prevent oversized-input DoS.

@@ -1,6 +1,7 @@
 use super::*;
 use crate::eth::erc20::get_enabled_erc20_by_platform_and_contract;
 use crate::eth::eth_utils::nonce_sequencer::PerNetNonceLocks;
+use crate::eth::tron::gasfree::{resolve_tron_gasless_provider, TronGaslessProviderConfig};
 use crate::eth::wallet_connect::eth_request_wc_personal_sign;
 use crate::eth::web3_transport::http_transport::HttpTransport;
 use crate::hd_wallet::{
@@ -248,6 +249,10 @@ pub struct EthActivationV2Request {
     pub path_to_address: HDPathAccountToAddressId,
     pub gap_limit: Option<u32>,
     pub swap_gas_fee_policy: Option<SwapGasFeePolicy>,
+    /// Platform-level TRON GasFree provider configuration.
+    /// Only valid for TRON chains; rejected for EVM chains if present.
+    #[serde(default)]
+    pub tron_gasless_provider: Option<TronGaslessProviderConfig>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -578,6 +583,7 @@ impl EthCoin {
             gas_limit_v2,
             estimate_gas_mult,
             abortable_system,
+            tron_gasless_provider: None,
         };
 
         Ok(EthCoin(Arc::new(token)))
@@ -676,6 +682,7 @@ impl EthCoin {
             gas_limit_v2,
             estimate_gas_mult,
             abortable_system,
+            tron_gasless_provider: None,
         };
         Ok(EthCoin(Arc::new(global_nft)))
     }
@@ -769,6 +776,9 @@ pub async fn eth_coin_from_conf_and_request_v2(
         req.swap_v2_contracts,
         req.fallback_swap_contract,
     )?;
+
+    let tron_gasless_provider = resolve_tron_gasless_provider(&chain_spec, req.tron_gasless_provider.as_ref())
+        .map_err(|e| EthActivationV2Error::InvalidPayload(e.to_string()))?;
 
     let (priv_key_policy, derivation_method) = build_address_and_priv_key_policy(
         ctx,
@@ -898,6 +908,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         gas_limit_v2,
         estimate_gas_mult,
         abortable_system,
+        tron_gasless_provider,
     };
 
     Ok(EthCoin(Arc::new(coin)))

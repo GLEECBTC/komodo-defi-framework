@@ -94,6 +94,7 @@ fn make_eth_coin(
         gas_limit,
         gas_limit_v2,
         estimate_gas_mult,
+        tron_gasless_provider: None,
         abortable_system: AbortableQueue::default(),
     }))
 }
