@@ -130,17 +130,15 @@ pub trait SlurpHttpClient {
 
     /// Executes a GET request with additional headers.
     /// Returning the response status, headers and body.
-    async fn slurp_url_with_headers(&self, url: &str, headers: Vec<(&'static str, &'static str)>) -> SlurpResult {
-        let mut req = Request::builder();
-        let h = req
-            .headers_mut()
-            .or_mm_err(|| SlurpError::Internal("An error occurred when accessing the request headers".to_string()))?;
+    async fn slurp_url_with_headers(&self, url: &str, headers: Vec<(&str, &str)>) -> SlurpResult {
+        let req = build_request_with_headers("GET", url, headers, None)?;
+        self.slurp_req(req).await
+    }
 
-        for (key, value) in headers {
-            h.insert(key, HeaderValue::from_static(value));
-        }
-
-        let req = req.uri(url).body(Vec::new())?;
+    /// Executes a POST request with a JSON body and additional headers.
+    /// `Content-Type: application/json` is enforced after custom headers so callers cannot override it.
+    async fn slurp_post_json_with_headers(&self, url: &str, body: String, headers: Vec<(&str, &str)>) -> SlurpResult {
+        let req = build_post_json_request_with_headers(url, body, headers)?;
         self.slurp_req(req).await
     }
 
@@ -207,13 +205,58 @@ pub async fn slurp_url(url: &str) -> SlurpResult {
 
 /// Executes a GET request with additional headers.
 /// Returning the response status, headers and body.
-pub async fn slurp_url_with_headers(url: &str, headers: Vec<(&'static str, &'static str)>) -> SlurpResult {
+pub async fn slurp_url_with_headers(url: &str, headers: Vec<(&str, &str)>) -> SlurpResult {
     HYPER.slurp_url_with_headers(url, headers).await
 }
 
 /// Executes a POST request, returning the response status, headers and body.
 pub async fn slurp_post_json(url: &str, body: String) -> SlurpResult {
     HYPER.slurp_post_json(url, body).await
+}
+
+/// Executes a POST request with a JSON body and additional headers.
+/// `Content-Type: application/json` is enforced after custom headers.
+pub async fn slurp_post_json_with_headers(url: &str, body: String, headers: Vec<(&str, &str)>) -> SlurpResult {
+    HYPER.slurp_post_json_with_headers(url, body, headers).await
+}
+
+/// Builds an HTTP request with the given method, URL, custom headers, and optional body.
+fn build_request_with_headers(
+    method: &str,
+    url: &str,
+    headers: Vec<(&str, &str)>,
+    body: Option<String>,
+) -> Result<Request<Vec<u8>>, MmError<SlurpError>> {
+    let mut builder = Request::builder().method(method);
+    let header_map = builder
+        .headers_mut()
+        .or_mm_err(|| SlurpError::Internal("Failed to access request headers".to_string()))?;
+
+    for (key, value) in headers {
+        let name = header::HeaderName::from_bytes(key.as_bytes())
+            .map_err(|e| SlurpError::InvalidRequest(format!("Invalid header name '{key}': {e}")))?;
+        let val = HeaderValue::from_str(value)
+            .map_err(|e| SlurpError::InvalidRequest(format!("Invalid header value for '{key}': {e}")))?;
+        header_map.insert(name, val);
+    }
+
+    let request_body = body.map(String::into_bytes).unwrap_or_default();
+    // URI is set last so invalid-URL errors surface as http::Error -> SlurpError::InvalidRequest,
+    // not as the misleading "Failed to access request headers" from a poisoned builder.
+    Ok(builder.uri(url).body(request_body)?)
+}
+
+/// Builds a POST JSON request with custom headers.
+/// `Content-Type: application/json` is enforced after custom headers so callers cannot override it.
+fn build_post_json_request_with_headers(
+    url: &str,
+    body: String,
+    headers: Vec<(&str, &str)>,
+) -> Result<Request<Vec<u8>>, MmError<SlurpError>> {
+    let mut req = build_request_with_headers("POST", url, headers, Some(body))?;
+    req.headers_mut()
+        .insert(header::CONTENT_TYPE, HeaderValue::from_static(APPLICATION_JSON));
+    Ok(req)
 }
 
 impl From<Canceled> for SlurpError {
@@ -270,6 +313,7 @@ pub async fn send_request_to_uri(uri: &str, auth_header: Option<&str>) -> MmResu
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::native_http::slurp_url;
     use common::block_on;
 
@@ -277,5 +321,54 @@ mod tests {
     fn test_slurp_req() {
         let (status, headers, body) = block_on(slurp_url("https://postman-echo.com/get")).unwrap();
         assert!(status.is_success(), "{status:?} {headers:?} {body:?}");
+    }
+
+    #[test]
+    fn test_build_request_with_custom_headers_and_body() {
+        let headers = vec![("X-Api-Key", "test-key"), ("X-Signature", "abc123")];
+        let body = r#"{"amount":"100"}"#.to_string();
+        let req = build_request_with_headers("POST", "https://example.com/api", headers, Some(body.clone())).unwrap();
+
+        assert_eq!(req.method(), "POST");
+        assert_eq!(req.uri(), "https://example.com/api");
+        assert_eq!(req.headers().get("x-api-key").unwrap(), "test-key");
+        assert_eq!(req.headers().get("x-signature").unwrap(), "abc123");
+        // Generic builder does NOT set Content-Type — that's the caller's responsibility.
+        assert!(req.headers().get("content-type").is_none());
+        assert_eq!(req.body(), &body.into_bytes());
+    }
+
+    #[test]
+    fn test_build_request_get_with_headers() {
+        let headers = vec![("Authorization", "Bearer token123")];
+        let req = build_request_with_headers("GET", "https://example.com/data", headers, None).unwrap();
+
+        assert_eq!(req.method(), "GET");
+        assert_eq!(req.headers().get("authorization").unwrap(), "Bearer token123");
+        assert!(req.headers().get("content-type").is_none());
+        assert!(req.body().is_empty());
+    }
+
+    #[test]
+    fn test_build_post_json_enforces_content_type() {
+        let headers = vec![("Content-Type", "text/plain"), ("X-Api-Key", "key")];
+        let req = build_post_json_request_with_headers("https://example.com", "{}".to_string(), headers).unwrap();
+
+        assert_eq!(req.method(), "POST");
+        assert_eq!(req.headers().get("content-type").unwrap(), APPLICATION_JSON);
+        assert_eq!(req.headers().get("x-api-key").unwrap(), "key");
+        assert_eq!(req.body(), &b"{}"[..]);
+    }
+
+    #[test]
+    fn test_build_request_invalid_url() {
+        let result = build_request_with_headers("GET", "not a valid url\n", vec![], None);
+        match result {
+            Err(e) => assert!(
+                e.to_string().contains("Invalid"),
+                "Expected SlurpError::InvalidRequest, got: {e}"
+            ),
+            Ok(_) => panic!("Expected error for invalid URL"),
+        }
     }
 }

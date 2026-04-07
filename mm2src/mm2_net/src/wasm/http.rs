@@ -1,12 +1,11 @@
 use crate::transport::{GetInfoFromUriError, SlurpError, SlurpResult};
 use crate::wasm::body_stream::ResponseBody;
 use common::executor::spawn_local;
-use common::{drop_mutability, stringify_js_error, APPLICATION_JSON, X_AUTH_PAYLOAD};
+use common::{stringify_js_error, APPLICATION_JSON, X_AUTH_PAYLOAD};
 use futures::channel::oneshot;
 use gstuff::ERRL;
 use http::header::{ACCEPT, CONTENT_TYPE};
-use http::response::Builder;
-use http::{HeaderMap, Response, StatusCode};
+use http::{HeaderMap, HeaderName, HeaderValue, Response, StatusCode};
 use js_sys::Array;
 use js_sys::Uint8Array;
 use mm2_err_handle::prelude::*;
@@ -21,68 +20,72 @@ use web_sys::{Request as JsRequest, RequestInit, RequestMode, Response as JsResp
 pub type FetchResult<T> = Result<(StatusCode, T), MmError<SlurpError>>;
 
 /// Executes a GET request, returning the response status, headers and body.
-/// Please note the return header map is empty, because `wasm_bindgen` doesn't provide the way to extract all headers.
 pub async fn slurp_url(url: &str) -> SlurpResult {
-    FetchRequest::get(url)
-        .request_str()
-        .await
-        .map(|(status_code, response)| (status_code, HeaderMap::new(), response.into_bytes()))
+    FetchRequest::get(url).slurp().await
 }
 
 /// Executes a GET request with additional headers.
 /// Returning the response status, headers and body.
-/// Please note the return header map is empty, because `wasm_bindgen` doesn't provide the way to extract all headers.
 pub async fn slurp_url_with_headers(url: &str, headers: Vec<(&str, &str)>) -> SlurpResult {
-    FetchRequest::get(url)
-        .headers(headers)
-        .request_str()
-        .await
-        .map(|(status_code, response)| (status_code, HeaderMap::new(), response.into_bytes()))
+    FetchRequest::get(url).headers(headers).slurp().await
 }
 
 /// Executes a POST request, returning the response status, headers and body.
-/// Please note the return header map is empty, because `wasm_bindgen` doesn't provide the way to extract all headers.
 pub async fn slurp_post_json(url: &str, body: String) -> SlurpResult {
     FetchRequest::post(url)
         .header(CONTENT_TYPE.as_str(), APPLICATION_JSON)
         .body_utf8(body)
-        .request_str()
+        .slurp()
         .await
-        .map(|(status_code, response)| (status_code, HeaderMap::new(), response.into_bytes()))
 }
 
-/// Sets the response headers and extracts the content type.
+/// Executes a POST request with a JSON body and additional headers.
+/// `Content-Type: application/json` is enforced after custom headers so callers cannot override it.
+pub async fn slurp_post_json_with_headers(url: &str, body: String, headers: Vec<(&str, &str)>) -> SlurpResult {
+    build_post_json_fetch_request(url, body, headers).slurp().await
+}
+
+/// Builds a `FetchRequest` for POST JSON with custom headers.
+/// `Content-Type: application/json` is inserted last so callers cannot override it.
+/// Header names are already normalized to lowercase by `FetchRequest::header`/`headers`,
+/// so a plain insert overwrites any caller-provided content-type.
+fn build_post_json_fetch_request(url: &str, body: String, headers: Vec<(&str, &str)>) -> FetchRequest {
+    FetchRequest::post(url)
+        .headers(headers)
+        .header(CONTENT_TYPE.as_str(), APPLICATION_JSON)
+        .body_utf8(body)
+}
+
+/// Extracts response headers from a `JsResponse` into an `http::HeaderMap`.
 ///
-/// This function takes a `Builder` for a response and a `JsResponse` from which it extracts
-/// the headers and the content type.
-fn set_response_headers_and_content_type(
-    mut result: Builder,
-    response: &JsResponse,
-) -> Result<(Builder, String), MmError<SlurpError>> {
-    let headers = match js_sys::try_iter(response.headers().as_ref()) {
-        Ok(Some(headers)) => headers,
-        Ok(None) => return MmError::err(SlurpError::InvalidRequest("MissingHeaders".to_string())),
-        Err(err) => return MmError::err(SlurpError::InvalidRequest(format!("{err:?}"))),
+/// Uses `js_sys::try_iter` on the JS `Headers` object, which works via the
+/// Symbol.iterator protocol even on `web-sys 0.3.55` (before explicit
+/// `entries()`/`keys()`/`values()` methods were added in 0.3.94).
+///
+/// Note: in browsers, CORS may limit which headers are visible. The returned
+/// `HeaderMap` contains whatever the browser exposes, which is still better
+/// than always returning an empty map.
+fn extract_response_headers(response: &JsResponse) -> HeaderMap {
+    let iter = match js_sys::try_iter(response.headers().as_ref()) {
+        Ok(Some(iter)) => iter,
+        _ => return HeaderMap::new(),
     };
 
-    let mut content_type = None;
-    for header in headers {
-        let pair: Array = header
-            .map_to_mm(|err| SlurpError::InvalidRequest(format!("{err:?}")))?
-            .into();
-        if let (Some(header_name), Some(header_value)) = (pair.get(0).as_string(), pair.get(1).as_string()) {
-            if header_name == CONTENT_TYPE.as_str() {
-                content_type = Some(header_value.clone());
+    let mut header_map = HeaderMap::new();
+    for item in iter {
+        let pair: Array = match item {
+            Ok(val) => val.into(),
+            Err(_) => continue,
+        };
+        if let (Some(name), Some(value)) = (pair.get(0).as_string(), pair.get(1).as_string()) {
+            if let (Ok(header_name), Ok(header_value)) =
+                (HeaderName::from_bytes(name.as_bytes()), HeaderValue::from_str(&value))
+            {
+                header_map.append(header_name, header_value);
             }
-            result = result.header(header_name, header_value);
         }
     }
-    drop_mutability!(content_type);
-
-    match content_type {
-        Some(content_type) => Ok((result, content_type)),
-        None => MmError::err(SlurpError::InvalidRequest("MissingContentType".to_string())),
-    }
+    header_map
 }
 
 /// This function is a wrapper around the `fetch_with_request`, providing compatibility across
@@ -147,14 +150,18 @@ impl FetchRequest {
         self
     }
 
+    /// Insert a header. Names are normalized to ASCII lowercase to match
+    /// native `http::HeaderMap` case-insensitive semantics.
     pub fn header(mut self, key: &str, val: &str) -> FetchRequest {
-        self.headers.insert(key.to_owned(), val.to_owned());
+        self.headers.insert(key.to_ascii_lowercase(), val.to_owned());
         self
     }
 
+    /// Insert multiple headers. Names are normalized to ASCII lowercase to match
+    /// native `http::HeaderMap` case-insensitive semantics.
     pub fn headers(mut self, headers: Vec<(&str, &str)>) -> FetchRequest {
         for (key, value) in headers {
-            self.headers.insert(key.to_owned(), value.to_owned());
+            self.headers.insert(key.to_ascii_lowercase(), value.to_owned());
         }
         self
     }
@@ -182,6 +189,25 @@ impl FetchRequest {
         Self::spawn_fetch_stream_response(self, tx);
         rx.await
             .map_to_mm(|_| SlurpError::Internal("Spawned future has been canceled".to_owned()))?
+    }
+
+    /// Fetch and return the full response as raw bytes with actual response headers.
+    /// Used by the cross-platform `slurp_*` helpers to match native `SlurpResult` semantics.
+    async fn slurp(self) -> SlurpResult {
+        let (tx, rx) = oneshot::channel();
+        Self::spawn_slurp(self, tx);
+        match rx.await {
+            Ok(res) => res,
+            Err(_) => MmError::err(SlurpError::Internal("Spawned future has been canceled".to_owned())),
+        }
+    }
+
+    fn spawn_slurp(request: Self, tx: oneshot::Sender<SlurpResult>) {
+        let fut = async move {
+            let result = Self::fetch_slurp(request).await;
+            tx.send(result).ok();
+        };
+        spawn_local(fut);
     }
 
     fn spawn_fetch_str(request: Self, tx: oneshot::Sender<FetchResult<String>>) {
@@ -232,12 +258,12 @@ impl FetchRequest {
         }
 
         let js_request = JsRequest::new_with_str_and_init(&uri, &req_init)
-            .map_to_mm(|e| SlurpError::Internal(stringify_js_error(&e)))?;
+            .map_to_mm(|e| SlurpError::InvalidRequest(stringify_js_error(&e)))?;
         for (hkey, hval) in request.headers {
             js_request
                 .headers()
                 .set(&hkey, &hval)
-                .map_to_mm(|e| SlurpError::Internal(stringify_js_error(&e)))?;
+                .map_to_mm(|e| SlurpError::InvalidRequest(stringify_js_error(&e)))?;
         }
 
         let request_promise = compatible_fetch_with_request(&js_request)?;
@@ -265,6 +291,31 @@ impl FetchRequest {
         };
 
         Ok((status_code, js_response))
+    }
+
+    /// Fetch and return raw bytes with actual response headers.
+    async fn fetch_slurp(request: Self) -> SlurpResult {
+        let uri = request.uri.clone();
+        let (status_code, js_response) = Self::fetch(request).await?;
+
+        let response_headers = extract_response_headers(&js_response);
+
+        let resp_array_fut = match js_response.array_buffer() {
+            Ok(buf) => buf,
+            Err(e) => {
+                let error = format!("Expected array buffer: {}", stringify_js_error(&e));
+                return MmError::err(SlurpError::ErrorDeserializing { uri, error });
+            },
+        };
+        let resp_array = JsFuture::from(resp_array_fut)
+            .await
+            .map_to_mm(|e| SlurpError::ErrorDeserializing {
+                uri,
+                error: stringify_js_error(&e),
+            })?;
+
+        let bytes = Uint8Array::new(&resp_array).to_vec();
+        Ok((status_code, response_headers, bytes))
     }
 
     /// The private non-Send method that is called in a spawned future.
@@ -336,8 +387,18 @@ impl FetchRequest {
             },
         };
 
-        let builder = Response::builder().status(status_code);
-        let (builder, content_type) = set_response_headers_and_content_type(builder, &js_response)?;
+        let response_headers = extract_response_headers(&js_response);
+        let content_type = response_headers
+            .get(CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .ok_or_else(|| MmError::new(SlurpError::InvalidRequest("MissingContentType".to_string())))?
+            .to_owned();
+
+        let mut builder = Response::builder().status(status_code);
+        for (name, value) in response_headers.iter() {
+            builder = builder.header(name, value);
+        }
+
         let body = ResponseBody::new(resp_stream, &content_type)
             .await
             .map_to_mm(|err| SlurpError::InvalidRequest(format!("{err:?}")))?;
@@ -421,6 +482,56 @@ mod tests {
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
+
+    #[test]
+    fn test_header_names_normalized_to_lowercase() {
+        let req = FetchRequest::get("https://example.com")
+            .header("X-Api-Key", "key1")
+            .header("x-api-key", "key2");
+
+        // Second insert overwrites first because both normalize to "x-api-key".
+        assert_eq!(req.headers.len(), 1);
+        assert_eq!(req.headers.get("x-api-key").unwrap(), "key2");
+    }
+
+    #[test]
+    fn test_headers_batch_normalized_to_lowercase() {
+        let req = FetchRequest::get("https://example.com")
+            .headers(vec![("Content-Type", "text/plain"), ("ACCEPT", "application/json")]);
+
+        assert_eq!(req.headers.get("content-type").unwrap(), "text/plain");
+        assert_eq!(req.headers.get("accept").unwrap(), "application/json");
+        // Original casing keys should not exist.
+        assert!(req.headers.get("Content-Type").is_none());
+        assert!(req.headers.get("ACCEPT").is_none());
+    }
+
+    #[test]
+    fn test_build_post_json_fetch_request_with_headers() {
+        let headers = vec![("X-Api-Key", "test-key"), ("X-Signature", "abc123")];
+        let body = r#"{"amount":"100"}"#.to_string();
+        let req = build_post_json_fetch_request("https://example.com/api", body.clone(), headers);
+
+        assert_eq!(req.uri, "https://example.com/api");
+        assert!(matches!(req.method, FetchMethod::Post));
+        assert_eq!(req.headers.get("x-api-key").unwrap(), "test-key");
+        assert_eq!(req.headers.get("x-signature").unwrap(), "abc123");
+        assert_eq!(req.headers.get("content-type").unwrap(), APPLICATION_JSON);
+        match req.body {
+            Some(RequestBody::Utf8(b)) => assert_eq!(b, body),
+            _ => panic!("Expected Utf8 body"),
+        }
+    }
+
+    #[test]
+    fn test_post_json_content_type_cannot_be_overridden() {
+        let headers = vec![("Content-Type", "text/plain")];
+        let req = build_post_json_fetch_request("https://example.com", "{}".to_string(), headers);
+
+        // Only one content-type key should exist (normalized + overwritten).
+        assert_eq!(req.headers.len(), 1);
+        assert_eq!(req.headers.get("content-type").unwrap(), APPLICATION_JSON);
+    }
 
     #[wasm_bindgen_test]
     async fn fetch_get_test() {
