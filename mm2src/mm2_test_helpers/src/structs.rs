@@ -499,6 +499,7 @@ pub struct TransactionDetails {
 pub struct IguanaWalletBalance {
     pub address: String,
     pub balance: CoinBalance,
+    pub gasfree_address: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -506,6 +507,7 @@ pub struct IguanaWalletBalance {
 pub struct IguanaWalletBalanceMap {
     pub address: String,
     pub balance: HashMap<String, CoinBalance>,
+    pub gasfree_address: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -551,6 +553,7 @@ pub struct HDAddressBalance {
     pub derivation_path: String,
     pub chain: Bip44Chain,
     pub balance: CoinBalance,
+    pub gasfree_address: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -560,6 +563,7 @@ pub struct HDAddressBalanceMap {
     pub derivation_path: String,
     pub chain: Bip44Chain,
     pub balance: HashMap<String, CoinBalance>,
+    pub gasfree_address: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -907,6 +911,7 @@ pub struct CoinAddressInfo<Balance> {
     pub pubkey: String,
     pub balances: Option<Balance>,
     pub tickers: Option<HashSet<String>>,
+    pub gasfree_address: Option<String>,
 }
 
 pub type TokenBalances = HashMap<String, CoinBalance>;

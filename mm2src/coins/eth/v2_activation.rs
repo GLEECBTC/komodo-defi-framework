@@ -583,7 +583,7 @@ impl EthCoin {
             gas_limit_v2,
             estimate_gas_mult,
             abortable_system,
-            tron_gasless_provider: None,
+            tron_gasless_provider: self.tron_gasless_provider.clone(),
         };
 
         Ok(EthCoin(Arc::new(token)))

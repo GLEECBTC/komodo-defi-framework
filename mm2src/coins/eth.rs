@@ -25,8 +25,8 @@ use super::eth::Action::{Call, Create};
 use super::watcher_common::{validate_watcher_reward, REWARD_GAS_AMOUNT, REWARD_OVERPAY_FACTOR};
 use super::*;
 use crate::coin_balance::{
-    EnableCoinBalanceError, EnabledCoinBalanceParams, HDAccountBalance, HDAddressBalance, HDWalletBalance,
-    HDWalletBalanceOps,
+    BalanceObjectOps, CoinBalanceReport, EnableCoinBalanceError, EnabledCoinBalanceParams, HDAccountBalance,
+    HDAddressBalance, HDWalletBalance, HDWalletBalanceOps,
 };
 use crate::eth::eth_utils::nonce_sequencer::PerNetNonceLocks;
 use crate::eth::web3_transport::websocket_transport::{WebsocketTransport, WebsocketTransportNode};
@@ -118,7 +118,7 @@ use std::str::from_utf8;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
-use tron::gasfree::TronGaslessProviderConfig;
+use tron::gasfree::ResolvedTronGaslessProvider;
 use web3::types::{
     Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Trace, TraceFilterBuilder,
     Transaction as Web3Transaction, TransactionId, U64,
@@ -209,6 +209,7 @@ use eth_swap_v2::{extract_id_from_tx_data, EthPaymentType, PaymentMethod, SpendT
 pub mod eth_utils;
 
 pub mod tron;
+use tron::gasfree::compute_gasfree_address_for_network;
 use tron::{normalize_tron_raw_tx_hex, validate_tron_raw_tx_len, TronAddress};
 
 pub mod chain_rpc;
@@ -1085,8 +1086,7 @@ pub struct EthCoinImpl {
     /// TRON GasFree provider for this platform coin. `None` for EVM chains
     /// or when gasless is not configured. Tokens can access this when withdrawing
     /// via `platform_coin()`.
-    #[allow(dead_code)]
-    pub(crate) tron_gasless_provider: Option<TronGaslessProviderConfig>,
+    pub(crate) tron_gasless_provider: Option<ResolvedTronGaslessProvider>,
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation
     /// and on [`MmArc::stop`].
     pub abortable_system: AbortableQueue,
@@ -1159,6 +1159,42 @@ impl EthCoinImpl {
         match &self.rpc_client {
             Some(chain_rpc::ChainRpcClient::Tron(tron)) => Some(tron),
             _ => None,
+        }
+    }
+
+    /// Compute the GasFree receive address for a displayed user address, if applicable.
+    ///
+    /// Returns `Some(base58_address)` when the platform coin is TRON and a GasFree
+    /// provider is configured. Returns `None` otherwise.
+    pub fn compute_gasfree_for_display(&self, user_address: &str) -> Option<String> {
+        let network = match &self.chain_spec {
+            ChainSpec::Tron { network } => network,
+            _ => return None,
+        };
+        // Provider presence gate — `None` means GasFree is not configured for this coin.
+        self.tron_gasless_provider.as_ref()?;
+        // Parse should never fail — callers should pass valid addresses from the coin.
+        let user = TronAddress::from_str(user_address).ok()?;
+        Some(compute_gasfree_address_for_network(network, &user).to_base58())
+    }
+
+    /// Enrich all address entries in a `CoinBalanceReport` with GasFree addresses.
+    /// Handles both HD and Iguana variants. No-op for non-TRON coins or when GasFree is not configured.
+    pub fn enrich_balance_report_with_gasfree<B>(&self, report: &mut CoinBalanceReport<B>)
+    where
+        B: BalanceObjectOps,
+    {
+        match report {
+            CoinBalanceReport::HD(hd) => {
+                for account in &mut hd.accounts {
+                    for addr in &mut account.addresses {
+                        addr.gasfree_address = self.compute_gasfree_for_display(&addr.address);
+                    }
+                }
+            },
+            CoinBalanceReport::Iguana(iguana) => {
+                iguana.gasfree_address = self.compute_gasfree_for_display(&iguana.address);
+            },
         }
     }
 
@@ -7886,7 +7922,9 @@ impl GetNewAddressRpcOps for EthCoin {
         &self,
         params: GetNewAddressParams,
     ) -> MmResult<GetNewAddressResponse<Self::BalanceObject>, GetNewAddressRpcError> {
-        get_new_address::common_impl::get_new_address_rpc_without_conf(self, params).await
+        let mut response = get_new_address::common_impl::get_new_address_rpc_without_conf(self, params).await?;
+        response.new_address.gasfree_address = self.compute_gasfree_for_display(&response.new_address.address);
+        Ok(response)
     }
 
     async fn get_new_address_rpc<ConfirmAddress>(
@@ -7897,7 +7935,9 @@ impl GetNewAddressRpcOps for EthCoin {
     where
         ConfirmAddress: HDConfirmAddress,
     {
-        get_new_address::common_impl::get_new_address_rpc(self, params, confirm_address).await
+        let mut response = get_new_address::common_impl::get_new_address_rpc(self, params, confirm_address).await?;
+        response.new_address.gasfree_address = self.compute_gasfree_for_display(&response.new_address.address);
+        Ok(response)
     }
 }
 
@@ -7909,7 +7949,11 @@ impl AccountBalanceRpcOps for EthCoin {
         &self,
         params: AccountBalanceParams,
     ) -> MmResult<HDAccountBalanceResponse<Self::BalanceObject>, HDAccountBalanceRpcError> {
-        account_balance::common_impl::account_balance_rpc(self, params).await
+        let mut response = account_balance::common_impl::account_balance_rpc(self, params).await?;
+        for addr in &mut response.addresses {
+            addr.gasfree_address = self.compute_gasfree_for_display(&addr.address);
+        }
+        Ok(response)
     }
 }
 
@@ -7921,7 +7965,11 @@ impl InitAccountBalanceRpcOps for EthCoin {
         &self,
         params: InitAccountBalanceParams,
     ) -> MmResult<HDAccountBalance<Self::BalanceObject>, HDAccountBalanceRpcError> {
-        init_account_balance::common_impl::init_account_balance_rpc(self, params).await
+        let mut response = init_account_balance::common_impl::init_account_balance_rpc(self, params).await?;
+        for addr in &mut response.addresses {
+            addr.gasfree_address = self.compute_gasfree_for_display(&addr.address);
+        }
+        Ok(response)
     }
 }
 
@@ -7933,7 +7981,11 @@ impl InitScanAddressesRpcOps for EthCoin {
         &self,
         params: ScanAddressesParams,
     ) -> MmResult<ScanAddressesResponse<Self::BalanceObject>, HDAccountBalanceRpcError> {
-        init_scan_for_new_addresses::common_impl::scan_for_new_addresses_rpc(self, params).await
+        let mut response = init_scan_for_new_addresses::common_impl::scan_for_new_addresses_rpc(self, params).await?;
+        for addr in &mut response.new_addresses {
+            addr.gasfree_address = self.compute_gasfree_for_display(&addr.address);
+        }
+        Ok(response)
     }
 }
 
@@ -7950,7 +8002,12 @@ impl InitCreateAccountRpcOps for EthCoin {
     where
         XPubExtractor: HDXPubExtractor + Send,
     {
-        init_create_account::common_impl::init_create_new_account_rpc(self, params, state, xpub_extractor).await
+        let mut response =
+            init_create_account::common_impl::init_create_new_account_rpc(self, params, state, xpub_extractor).await?;
+        for addr in &mut response.addresses {
+            addr.gasfree_address = self.compute_gasfree_for_display(&addr.address);
+        }
+        Ok(response)
     }
 
     async fn revert_creating_account(&self, account_id: u32) {

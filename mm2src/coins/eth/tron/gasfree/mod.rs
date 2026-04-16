@@ -1,7 +1,9 @@
+pub mod address;
 pub mod config;
 pub mod error;
 
-pub use config::TronGaslessProviderConfig;
+pub use address::{compute_gasfree_address_for_network, controller_for_network};
+pub use config::{ResolvedTronGaslessProvider, TronGaslessProviderConfig};
 pub use error::TronGaslessConfigError;
 
 use crate::eth::ChainSpec;
@@ -10,18 +12,28 @@ use crate::eth::ChainSpec;
 pub fn resolve_tron_gasless_provider(
     chain_spec: &ChainSpec,
     provider_config: Option<&TronGaslessProviderConfig>,
-) -> Result<Option<TronGaslessProviderConfig>, TronGaslessConfigError> {
+) -> Result<Option<ResolvedTronGaslessProvider>, TronGaslessConfigError> {
     let config = match provider_config {
         Some(cfg) => cfg,
         None => return Ok(None),
     };
 
     // GasFree is TRON-only
-    if !matches!(chain_spec, ChainSpec::Tron { .. }) {
-        return Err(TronGaslessConfigError::UnsupportedChain {
-            chain: chain_spec.kind().to_string(),
-        });
-    }
+    let network = match chain_spec {
+        ChainSpec::Tron { network } => network,
+        _ => {
+            return Err(TronGaslessConfigError::UnsupportedChain {
+                chain: chain_spec.kind().to_string(),
+            });
+        },
+    };
 
-    Ok(Some(config.clone()))
+    let service_provider = config.service_provider_address()?;
+    let verifying_contract = controller_for_network(network);
+
+    Ok(Some(ResolvedTronGaslessProvider::new(
+        config.clone(),
+        service_provider,
+        verifying_contract,
+    )))
 }

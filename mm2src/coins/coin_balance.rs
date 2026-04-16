@@ -88,6 +88,7 @@ where
             CoinBalanceReport::Iguana(IguanaWalletBalance {
                 ref address,
                 ref balance,
+                ..
             }) => iter::once((address.clone(), balance.get_total_for_ticker(ticker))).collect(),
             CoinBalanceReport::HD(HDWalletBalance { ref accounts }) => accounts
                 .iter()
@@ -106,10 +107,13 @@ where
 
 /// `IguanaWalletBalance` represents the balance of an Iguana wallet.
 /// The BalanceObject generic parameter can be any type that represents the balance/s of a single address.
+// TODO: `gasfree_address` is TRON-specific; see the same TODO on `HDAddressBalance`.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct IguanaWalletBalance<BalanceObject> {
     pub address: String,
     pub balance: BalanceObject,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gasfree_address: Option<String>,
 }
 
 /// Represents the balance of an HD wallet.
@@ -140,12 +144,16 @@ pub enum HDAccountBalanceEnum {
 }
 
 /// Represents the balance of a single address in an HD wallet.
+// TODO: `gasfree_address` is TRON-specific but lives on this shared struct used by all coins.
+// Consider refactoring to something more generic like an `AddressMetadata` parameter.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct HDAddressBalance<BalanceObject> {
     pub address: String,
     pub derivation_path: RpcDerivationPath,
     pub chain: Bip44Chain,
     pub balance: BalanceObject,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gasfree_address: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -195,9 +203,15 @@ where
                 .iguana_balances()
                 .await
                 .map(|balance| {
+                    // TODO: `gasfree_address` is left as `None` here because this generic blanket
+                    // impl cannot call EthCoin-specific helpers. The sole caller today is UTXO
+                    // tx history, which doesn't need it. If TRON Iguana coins ever call this,
+                    // add an EthCoin override or add a `HDWalletBalanceOps::address_metadata`
+                    // hook.
                     CoinBalanceReport::Iguana(IguanaWalletBalance {
                         address: my_address.to_string(),
                         balance,
+                        gasfree_address: None,
                     })
                 })
                 .mm_err(BalanceError::from),
@@ -248,9 +262,16 @@ where
                 .iguana_balances()
                 .await
                 .map(|balance| {
+                    // TODO: `gasfree_address` is left as `None` here because this generic blanket
+                    // impl cannot call EthCoin-specific helpers. Callers that may reach this
+                    // branch with ETH/TRON (e.g. `init_erc20_token_activation.rs` for single-address
+                    // TRC20 token init) call `EthCoin::enrich_balance_report_with_gasfree`
+                    // on the returned report before serializing it to the user. A cleaner
+                    // long-term fix is an `HDWalletBalanceOps::address_metadata` hook.
                     CoinBalanceReport::Iguana(IguanaWalletBalance {
                         address: my_address.display_address(),
                         balance,
+                        gasfree_address: None,
                     })
                 })
                 .mm_err(EnableCoinBalanceError::from),
@@ -367,6 +388,7 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
                 derivation_path: RpcDerivationPath(derivation_path),
                 chain,
                 balance,
+                gasfree_address: None,
             })
             .collect();
         Ok(balances)
@@ -642,6 +664,7 @@ pub mod common_impl {
                 derivation_path: RpcDerivationPath(hd_address.derivation_path().clone()),
                 chain,
                 balance: HDWalletBalanceObject::<Coin>::new(),
+                gasfree_address: None,
             });
             addresses_to_request.push(hd_address.address().clone());
         }

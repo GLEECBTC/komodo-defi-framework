@@ -236,7 +236,7 @@ pub struct GetNewAddressParams {
 /// Generic response for the `get_new_address` RPC command.
 #[derive(Clone, Debug, Serialize)]
 pub struct GetNewAddressResponse<BalanceObject> {
-    new_address: HDAddressBalance<BalanceObject>,
+    pub(crate) new_address: HDAddressBalance<BalanceObject>,
 }
 
 /// Enum for the response of the `get_new_address` RPC command.
@@ -523,6 +523,7 @@ pub(crate) mod common_impl {
                 derivation_path: RpcDerivationPath(hd_address.derivation_path().clone()),
                 chain,
                 balance,
+                gasfree_address: None,
             },
         })
     }
@@ -569,6 +570,7 @@ pub(crate) mod common_impl {
                 derivation_path: RpcDerivationPath(hd_address.derivation_path().clone()),
                 chain,
                 balance,
+                gasfree_address: None,
             },
         })
     }

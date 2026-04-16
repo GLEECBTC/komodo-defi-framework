@@ -4382,6 +4382,7 @@ fn test_account_balance_rpc() {
                         TEST_COIN_NAME.to_string(),
                         CoinBalance::new(BigDecimal::from($balance)),
                     )]),
+                    gasfree_address: None,
                 },
             )
         };
@@ -4746,6 +4747,7 @@ fn test_scan_for_new_addresses() {
                     balance: $balance.map_or_else(HashMap::default, |balance| {
                         HashMap::from([(TEST_COIN_NAME.to_string(), CoinBalance::new(BigDecimal::from(balance)))])
                     }),
+                    gasfree_address: None,
                 },
             );
         }};

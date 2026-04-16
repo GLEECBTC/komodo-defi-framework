@@ -34,6 +34,10 @@ pub struct Erc20InitResult {
     platform_coin: String,
     token_contract_address: String,
     required_confirmations: u64,
+    /// TRON GasFree receive address derived locally via CREATE2.
+    /// Only populated for TRC20 tokens with a configured GasFree provider.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    gasfree_address: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -197,6 +201,7 @@ impl TokenActivationOps for EthCoin {
                         .await
                         .map_err(|e| EthTokenActivationError::CouldNotFetchBalance(e.to_string()))?;
 
+                    let gasfree_address = token.compute_gasfree_for_display(&address);
                     let balances = HashMap::from([(address, balance)]);
 
                     let init_result = EthTokenInitResult::Erc20(Erc20InitResult {
@@ -204,6 +209,7 @@ impl TokenActivationOps for EthCoin {
                         platform_coin: token.platform_ticker().to_owned(),
                         required_confirmations: token.required_confirmations(),
                         token_contract_address,
+                        gasfree_address,
                     });
 
                     Ok((token, init_result))

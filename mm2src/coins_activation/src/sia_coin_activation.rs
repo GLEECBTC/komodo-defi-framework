@@ -245,7 +245,11 @@ impl InitStandaloneCoinActivationOps for SiaCoin {
         Ok(SiaCoinActivationResult {
             ticker: self.ticker().into(),
             current_block,
-            wallet_balance: CoinBalanceReport::Iguana(IguanaWalletBalance { address, balance }),
+            wallet_balance: CoinBalanceReport::Iguana(IguanaWalletBalance {
+                address,
+                balance,
+                gasfree_address: None,
+            }),
         })
     }
 

@@ -6326,6 +6326,7 @@ where
                         derivation_path: RpcDerivationPath(empty_address.derivation_path().clone()),
                         chain,
                         balance: HDWalletBalanceObject::<T>::new(),
+                        gasfree_address: None,
                     });
                 balances.extend(empty_addresses);
 
@@ -6335,6 +6336,7 @@ where
                     derivation_path: RpcDerivationPath(checking_address_der_path.clone()),
                     chain,
                     balance: non_empty_balance,
+                    gasfree_address: None,
                 });
                 // Reset the counter of unused addresses to zero since we found a non-empty address.
                 unused_addresses_counter = 0;
