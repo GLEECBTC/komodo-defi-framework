@@ -67,6 +67,10 @@ pub enum ChainVariant {
     MORTY,
     RVN,
     PIVX,
+    /// Kerrigan: Dash fork with PIVX-style Sapling, multi-algo PoW (X11/KawPoW/Equihash).
+    /// The mined algorithm is encoded in `(version >> 9) & 0x7` and selects a different
+    /// header tail per block, so header size varies within a single batch.
+    KRGN,
 }
 
 impl ChainVariant {
@@ -92,6 +96,10 @@ impl ChainVariant {
     pub fn is_pivx(&self) -> bool {
         matches!(self, ChainVariant::PIVX)
     }
+
+    pub fn is_krgn(&self) -> bool {
+        matches!(self, ChainVariant::KRGN)
+    }
 }
 
 impl TryFrom<&str> for ChainVariant {
@@ -107,6 +115,7 @@ impl TryFrom<&str> for ChainVariant {
             "MORTY" => Ok(ChainVariant::MORTY),
             "RVN" => Ok(ChainVariant::RVN),
             "PIVX" => Ok(ChainVariant::PIVX),
+            "KRGN" => Ok(ChainVariant::KRGN),
             _ => Err(format!("Unknown chain variant: {}", value)),
         }
     }
