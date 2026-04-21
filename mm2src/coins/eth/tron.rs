@@ -7,6 +7,7 @@ mod address;
 pub mod api;
 pub mod fee;
 pub mod gasfree;
+mod primitives;
 pub(crate) mod proto;
 pub(crate) mod sign;
 pub mod tx_builder;
@@ -20,6 +21,7 @@ mod api_integration_tests;
 
 pub use address::Address as TronAddress;
 pub use api::{BroadcastHexResponse, TaposBlockData, TronApiClient, TronHttpClient, TronHttpNode};
+pub use primitives::{TronSignature, TronTxHash};
 
 use ethabi::Token;
 use ethereum_types::U256;

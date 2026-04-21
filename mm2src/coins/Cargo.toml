@@ -64,6 +64,7 @@ futures = { workspace = true, features = ["compat", "async-await"] }
 group.workspace = true
 gstuff.workspace = true
 hex.workspace = true
+hmac.workspace = true
 http.workspace = true
 itertools = { workspace = true, features = ["use_std"] }
 jsonrpc-core.workspace = true

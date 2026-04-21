@@ -64,6 +64,19 @@ pub fn controller_for_network(network: &Network) -> TronAddress {
     network_artifacts(network).controller
 }
 
+/// Returns the GasFree API path segment for a TRON network.
+///
+/// Mainnet (`tron`) and Nile (`nile`) come from the public protocol spec's base URLs.
+/// Shasta is not listed there, so we mirror the official SDK's network naming and use
+/// `shasta` as the prefix to keep host-only config derivation deterministic.
+pub fn api_path_segment_for_network(network: &Network) -> &'static str {
+    match network {
+        Network::Mainnet => "tron",
+        Network::Nile => "nile",
+        Network::Shasta => "shasta",
+    }
+}
+
 /// Compute the GasFree address for a user on a specific TRON network.
 ///
 /// Infallible: the controller and beacon are hardcoded per network, and

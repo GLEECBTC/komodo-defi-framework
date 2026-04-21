@@ -972,6 +972,7 @@ dependencies = [
  "group 0.8.0",
  "gstuff",
  "hex",
+ "hmac 0.12.1",
  "http 0.2.12",
  "hyper 0.14.26",
  "hyper-rustls 0.24.2",

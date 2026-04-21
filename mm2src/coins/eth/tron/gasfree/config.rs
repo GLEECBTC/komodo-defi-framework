@@ -13,7 +13,9 @@ const DEFAULT_STATUS_POLL_INTERVAL_MS: u64 = 3_000;
 /// Contains API credentials that MUST NOT appear in Debug output or serialized responses.
 #[derive(Clone, Deserialize)]
 pub struct TronGaslessProviderConfig {
-    /// Base URL for the GasFree API.
+    /// Host-only GasFree API URL (e.g. `https://open.gasfree.io`).
+    /// The resolver appends `/tron/`, `/nile/`, or `/shasta/` based on the activated TRON network.
+    /// A user-supplied path segment is rejected as `InvalidBaseUrl` at activation.
     pub base_url: Url,
     /// API key for authentication.
     pub api_key: String,
@@ -83,10 +85,15 @@ impl ResolvedTronGaslessProvider {
         }
     }
 
+    /// TODO(Commit 7, Commit 8): Consumed by Commit 7 (`GasfreeSubmitRequest.service_provider`)
+    /// and Commit 8 (TIP-712 `serviceProvider` field). Pre-parsed at activation by design.
     pub fn service_provider(&self) -> &TronAddress {
         &self.service_provider
     }
 
+    /// TODO(Commit 8): Consumed by TIP-712 `PermitTransferMessage` signing
+    /// (`verifyingContract` domain field). Pre-parsed at activation by design;
+    /// see the Commit 3 plan section for rationale.
     pub fn verifying_contract(&self) -> &TronAddress {
         &self.verifying_contract
     }
