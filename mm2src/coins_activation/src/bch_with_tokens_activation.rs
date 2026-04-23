@@ -340,6 +340,7 @@ impl PlatformCoinWithTokensActivationOps for BchCoin {
             pubkey: pubkey.clone(),
             balances: None,
             tickers: None,
+            gasfree_address: None,
         };
 
         let mut slp_address_info = CoinAddressInfo {
@@ -347,6 +348,7 @@ impl PlatformCoinWithTokensActivationOps for BchCoin {
             pubkey: pubkey.clone(),
             balances: None,
             tickers: None,
+            gasfree_address: None,
         };
 
         if !activation_request.get_balances {

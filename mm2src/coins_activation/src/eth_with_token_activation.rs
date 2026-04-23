@@ -396,17 +396,20 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
             DerivationMethod::SingleAddress(my_address) => {
                 let my_address_formatted = my_address.display_address();
                 let pubkey = self.get_public_key().await.map_mm_err()?;
+                let gasfree_address = self.compute_gasfree_for_display(&my_address_formatted);
                 let mut eth_address_info = CoinAddressInfo {
                     derivation_method: self.derivation_method().to_response().await.map_mm_err()?,
                     pubkey: pubkey.clone(),
                     balances: None,
                     tickers: None,
+                    gasfree_address: gasfree_address.clone(),
                 };
                 let mut erc20_address_info = CoinAddressInfo {
                     derivation_method: self.derivation_method().to_response().await.map_mm_err()?,
                     pubkey,
                     balances: None,
                     tickers: None,
+                    gasfree_address,
                 };
                 // Todo: make get_balances work with HDWallet if it's needed
                 if !activation_request.get_balances {
@@ -477,7 +480,7 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
                     None
                 };
 
-                let wallet_balance = self
+                let mut wallet_balance = self
                     .enable_coin_balance(
                         xpub_extractor,
                         activation_request.platform_request.enable_params.clone(),
@@ -485,6 +488,9 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
                     )
                     .await
                     .map_mm_err()?;
+
+                // Enrich HD addresses with GasFree address if TRON + provider configured
+                self.enrich_balance_report_with_gasfree(&mut wallet_balance);
 
                 Ok(EthWithTokensActivationResult::HD(HDEthWithTokensActivationResult {
                     current_block,

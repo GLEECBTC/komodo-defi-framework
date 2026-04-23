@@ -233,6 +233,7 @@ use crypto::secret_hash_algo::SecretHashAlgo;
 pub mod eth;
 use eth::erc20::get_erc20_ticker_by_contract_address;
 use eth::eth_swap_v2::{PrepareTxDataError, ValidatePaymentV2Err};
+use eth::tron::gasfree::GaslessWithdrawError;
 use eth::{
     eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetailsErr, GetEthAddressError,
     GetValidEthWithdrawAddError, SignedEthTx,
@@ -2345,6 +2346,39 @@ pub struct WithdrawRequest {
     /// Transaction expiration window in seconds. Currently only used by TRON (default 60s),
     /// but can be expanded to any protocol that supports transaction expiry.
     pub expiration_seconds: Option<u64>,
+    /// Preferred withdrawal fee rail. `None` preserves each coin's existing native behavior.
+    ///
+    /// TODO(Commit 9): consume in `build_tron_withdraw` to branch native/gasless; non-TRON
+    /// coins should reject `Some(Gasless | Auto)` with `WithdrawError::Gasless(Unavailable)`.
+    /// check when working on commit 9 for ways to have this in a generic way while backward compatible.
+    #[serde(default)]
+    pub fee_method: Option<WithdrawFeeMethod>,
+    /// Gasless rail constraints supplied by the caller.
+    ///
+    /// TODO(Commit 9): consume `max_fee` / `deadline_seconds` / `fallback_to_native` and
+    /// decide the policy for conflicting combos (`fee_method=Native` with populated options,
+    /// `fee_method=Gasless` with a manual `fee`).
+    /// check when working on commit 9 for ways to have this in a generic way while backward compatible.
+    #[serde(default)]
+    pub gasless: Option<GaslessWithdrawOptions>,
+}
+
+/// TODO(Commit 9): Is this needed here, or should it be in tron code. Is it needed at all?
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum WithdrawFeeMethod {
+    Native,
+    Gasless,
+    Auto,
+}
+
+/// TODO(Commit 9): Is this needed here, or should it be in tron code. Is it needed at all?
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct GaslessWithdrawOptions {
+    pub max_fee: Option<BigDecimal>,
+    pub deadline_seconds: Option<u64>,
+    #[serde(default)]
+    pub fallback_to_native: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -3232,6 +3266,8 @@ pub enum WithdrawError {
     },
     #[display(fmt = "Invalid memo field: {_0}")]
     InvalidMemo(String),
+    #[display(fmt = "{_0}")]
+    Gasless(GaslessWithdrawError),
     #[display(fmt = "No such coin {coin}")]
     NoSuchCoin {
         coin: String,
@@ -3312,6 +3348,7 @@ impl HttpStatusCode for WithdrawError {
         match self {
             WithdrawError::NoSuchCoin { .. } => StatusCode::NOT_FOUND,
             WithdrawError::Timeout(_) => StatusCode::REQUEST_TIMEOUT,
+            WithdrawError::Gasless(inner) => inner.status_code(),
             WithdrawError::CoinDoesntSupportInitWithdraw { .. }
             | WithdrawError::NotSufficientBalance { .. }
             | WithdrawError::NotSufficientPlatformBalanceForFee { .. }
@@ -6326,6 +6363,7 @@ where
                         derivation_path: RpcDerivationPath(empty_address.derivation_path().clone()),
                         chain,
                         balance: HDWalletBalanceObject::<T>::new(),
+                        gasfree_address: None,
                     });
                 balances.extend(empty_addresses);
 
@@ -6335,6 +6373,7 @@ where
                     derivation_path: RpcDerivationPath(checking_address_der_path.clone()),
                     chain,
                     balance: non_empty_balance,
+                    gasfree_address: None,
                 });
                 // Reset the counter of unused addresses to zero since we found a non-empty address.
                 unused_addresses_counter = 0;

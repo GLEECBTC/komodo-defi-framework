@@ -1,8 +1,9 @@
 use super::*;
 use crate::{coin_conf, NumConversError, NumConversResult};
+use bip32::DerivationPath;
 use ethabi::{Function, Token};
 use ethereum_types::{Address, FromDecStrErr, U256};
-use ethkey::{public_to_address, Public};
+use ethkey::{public_to_address, KeyPair, Public};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MapToMmResult;
 use mm2_number::{BigDecimal, MmNumber};
@@ -169,6 +170,26 @@ pub fn wei_from_coins_mm_number(mm_number: &MmNumber, decimals: u8) -> NumConver
 #[allow(unused)]
 pub fn wei_to_coins_mm_number(u256: U256, decimals: u8) -> NumConversResult<MmNumber> {
     Ok(MmNumber::from(u256_to_big_decimal(u256, decimals)?))
+}
+
+/// Derive an HD secp256k1 secret when `derivation_path` is
+/// `Some`, otherwise return a clone of the activated key.
+pub(crate) fn key_pair_from_priv_key_policy(
+    priv_key_policy: &PrivKeyPolicy<KeyPair>,
+    derivation_path: Option<&DerivationPath>,
+) -> Result<KeyPair, String> {
+    match derivation_path {
+        Some(path) => {
+            let raw = priv_key_policy
+                .hd_wallet_derived_priv_key_or_err(path)
+                .map_err(|e| e.to_string())?;
+            KeyPair::from_secret_slice(raw.as_slice()).map_err(|e| e.to_string())
+        },
+        None => priv_key_policy
+            .activated_key_or_err()
+            .cloned()
+            .map_err(|e| e.to_string()),
+    }
 }
 
 pub(super) fn get_conf_param_or_from_plaform_coin<T: DeserializeOwned>(

@@ -5,9 +5,9 @@ use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
 
-pub(crate) const EIP712_DOMAIN: &str = "EIP712Domain";
+pub const EIP712_DOMAIN: &str = "EIP712Domain";
 
-pub(crate) type CustomTypes = HashMap<String, Vec<ObjectProperty>>;
+pub type CustomTypes = HashMap<String, Vec<ObjectProperty>>;
 
 /// `ObjectType` is used to describes an object type accordingly to:
 /// https://github.com/ethereum/EIPs/blob/master/EIPS/eip-712.md#definition-of-typed-structured-data-%F0%9D%95%8A
@@ -85,6 +85,7 @@ pub enum PropertyType {
     String,
     Uint256,
     Address,
+    Bytes,
     Bytes32,
     Custom(String),
 }
@@ -96,6 +97,7 @@ impl fmt::Display for PropertyType {
             PropertyType::String => write!(f, "string"),
             PropertyType::Uint256 => write!(f, "uint256"),
             PropertyType::Address => write!(f, "address"),
+            PropertyType::Bytes => write!(f, "bytes"),
             PropertyType::Bytes32 => write!(f, "bytes32"),
             PropertyType::Custom(custom) => write!(f, "{custom}"),
         }
@@ -111,6 +113,7 @@ impl FromStr for PropertyType {
             "string" => PropertyType::String,
             "uint256" => PropertyType::Uint256,
             "address" => PropertyType::Address,
+            "bytes" => PropertyType::Bytes,
             "bytes32" => PropertyType::Bytes32,
             custom => PropertyType::Custom(custom.to_string()),
         };

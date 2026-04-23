@@ -311,6 +311,7 @@ impl InitStandaloneCoinActivationOps for ZCoin {
             wallet_balance: CoinBalanceReport::Iguana(IguanaWalletBalance {
                 address: self.my_z_address_encoded(),
                 balance,
+                gasfree_address: None,
             }),
             first_sync_block,
         })

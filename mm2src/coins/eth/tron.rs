@@ -6,6 +6,8 @@
 mod address;
 pub mod api;
 pub mod fee;
+pub mod gasfree;
+mod primitives;
 pub(crate) mod proto;
 pub(crate) mod sign;
 pub mod tx_builder;
@@ -19,6 +21,7 @@ mod api_integration_tests;
 
 pub use address::Address as TronAddress;
 pub use api::{BroadcastHexResponse, TaposBlockData, TronApiClient, TronHttpClient, TronHttpNode};
+pub use primitives::{TronSignature, TronTxHash};
 
 use ethabi::Token;
 use ethereum_types::U256;
@@ -39,6 +42,17 @@ pub enum Network {
     Mainnet,
     Shasta,
     Nile,
+}
+
+impl Network {
+    /// Numeric chain ID used in TIP-712 typed-data signing.
+    pub fn chain_id(&self) -> u64 {
+        match self {
+            Network::Mainnet => 728126428,
+            Network::Shasta => 2494104990,
+            Network::Nile => 3448148188,
+        }
+    }
 }
 
 /// Hard cap on TRON raw transaction size to prevent oversized-input DoS.

@@ -222,12 +222,20 @@ pub async fn my_balance(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Stri
         Err(err) => return ERR!("!lp_coinfind({}): {}", ticker, err),
     };
     let my_balance = try_s!(coin.my_balance().compat().await);
+    let address = try_s!(coin.my_address());
+
+    // Only ETH/TRON coins can have a GasFree address; returns None for everything else.
+    let gasfree_address = match &coin {
+        MmCoinEnum::EthCoinVariant(eth) => eth.compute_gasfree_for_display(&address),
+        _ => None,
+    };
 
     let res = try_s!(json::to_vec(&BalanceResponse {
         coin: ticker,
         balance: my_balance.spendable,
         unspendable_balance: my_balance.unspendable,
-        address: try_s!(coin.my_address())
+        address,
+        gasfree_address,
     }));
     Ok(try_s!(Response::builder().body(res)))
 }

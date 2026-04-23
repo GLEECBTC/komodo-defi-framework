@@ -73,6 +73,19 @@ pub enum WithdrawInProgressStatus {
     Preparing,
     GeneratingTransaction,
     SigningTransaction,
+    // TODO(Commit 9 / Commit 10): emit the variants below from the TRON gasless withdraw path.
+    // Defined now for wire compatibility; no execution path produces them yet. Check if one wrapped variant will be better and how to add those in a generic way if possible.
+    FetchingGaslessQuote,
+    SigningGaslessAuthorization,
+    SubmittingGaslessAuthorization,
+    WaitingForGaslessProvider {
+        trace_id: String,
+        provider_state: String,
+    },
+    WaitingForGaslessSettlement {
+        trace_id: String,
+        tx_hash: Option<String>,
+    },
     Finishing,
     /// The following statuses don't require the user to send `UserAction`,
     /// but they tell the user that he should confirm/decline the operation on his device.

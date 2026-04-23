@@ -54,6 +54,8 @@ pub struct CoinAddressInfo<Balance> {
     pub(crate) balances: Option<Balance>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) tickers: Option<HashSet<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) gasfree_address: Option<String>,
 }
 
 pub type TokenBalances = HashMap<String, CoinBalance>;

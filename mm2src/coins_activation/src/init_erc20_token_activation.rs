@@ -189,7 +189,7 @@ impl InitTokenActivationOps for EthCoin {
         task_handle
             .update_in_progress_status(InitTokenInProgressStatus::RequestingWalletBalance)
             .map_mm_err()?;
-        let wallet_balance = self
+        let mut wallet_balance = self
             .enable_coin_balance(
                 xpub_extractor,
                 activation_request.enable_params.clone(),
@@ -197,6 +197,8 @@ impl InitTokenActivationOps for EthCoin {
             )
             .await
             .map_mm_err()?;
+        // Enrich HD addresses with GasFree address if TRON + provider configured
+        self.enrich_balance_report_with_gasfree(&mut wallet_balance);
         task_handle
             .update_in_progress_status(InitTokenInProgressStatus::ActivatingCoin)
             .map_mm_err()?;
