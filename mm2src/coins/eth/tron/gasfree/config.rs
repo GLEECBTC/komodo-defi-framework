@@ -1,9 +1,10 @@
-use crate::eth::tron::TronAddress;
+use super::client::TronGasfreeClient;
+use super::error::TronGaslessConfigError;
+use crate::eth::tron::{Network, TronAddress};
 use serde::Deserialize;
 use std::str::FromStr;
+use std::sync::Arc;
 use url::Url;
-
-use super::error::TronGaslessConfigError;
 
 const DEFAULT_REQUEST_TIMEOUT_MS: u64 = 15_000;
 const DEFAULT_STATUS_POLL_INTERVAL_MS: u64 = 3_000;
@@ -58,31 +59,36 @@ impl TronGaslessProviderConfig {
     }
 }
 
-/// Fully-validated GasFree provider state stored on `EthCoinImpl` after activation.
-///
-/// `service_provider` is parsed from the user-supplied config.
-/// `verifying_contract` is derived from the hardcoded per-network controller.
-/// Construction is only possible via
-/// [`resolve_tron_gasless_provider`](super::resolve_tron_gasless_provider).
+/// Fully-validated GasFree provider state that can be stored on coin context.
+/// Redult of [`resolve_tron_gasless_provider`](super::resolve_tron_gasless_provider).
 #[derive(Clone)]
 pub struct ResolvedTronGaslessProvider {
     raw: TronGaslessProviderConfig,
+    network: Network,
     service_provider: TronAddress,
     verifying_contract: TronAddress,
+    client: Arc<TronGasfreeClient>,
 }
 
 impl ResolvedTronGaslessProvider {
     /// Construct a resolved provider. Only callable from the gasfree module.
     pub(super) fn new(
         raw: TronGaslessProviderConfig,
+        network: Network,
         service_provider: TronAddress,
         verifying_contract: TronAddress,
     ) -> Self {
         ResolvedTronGaslessProvider {
+            client: Arc::new(TronGasfreeClient::from_config(&raw)),
             raw,
+            network,
             service_provider,
             verifying_contract,
         }
+    }
+
+    pub fn network(&self) -> &Network {
+        &self.network
     }
 
     /// TODO(Commit 7, Commit 8): Consumed by Commit 7 (`GasfreeSubmitRequest.service_provider`)
@@ -98,6 +104,10 @@ impl ResolvedTronGaslessProvider {
         &self.verifying_contract
     }
 
+    pub fn client(&self) -> &Arc<TronGasfreeClient> {
+        &self.client
+    }
+
     pub fn config(&self) -> &TronGaslessProviderConfig {
         &self.raw
     }
@@ -108,7 +118,9 @@ impl std::fmt::Debug for ResolvedTronGaslessProvider {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ResolvedTronGaslessProvider")
             .field("raw", &self.raw)
+            .field("network", &self.network)
             .field("service_provider", &self.service_provider)
+            .field("verifying_contract", &self.verifying_contract)
             .finish_non_exhaustive()
     }
 }

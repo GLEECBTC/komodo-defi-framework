@@ -3,6 +3,7 @@ pub mod api_types;
 pub mod client;
 pub mod config;
 pub mod error;
+pub mod service;
 
 use crate::eth::ChainSpec;
 pub use address::{api_path_segment_for_network, compute_gasfree_address_for_network, controller_for_network};
@@ -13,6 +14,10 @@ pub use api_types::{
 pub use client::{TronGasfreeClient, TronGasfreeTransport};
 pub use config::{ResolvedTronGaslessProvider, TronGaslessProviderConfig};
 pub use error::{TronGasfreeError, TronGaslessConfigError};
+pub use service::{
+    DisabledReason, GasfreeAccountService, GasfreeAvailability, GasfreeRecommendation, GasfreeTransferPreflight,
+    GasfreeTransferRequest, NativeRouteAvailability, OnChainBalanceFetcher,
+};
 use url::Url;
 
 /// Validate and resolve a TRON GasFree provider config at platform activation time.
@@ -42,6 +47,7 @@ pub fn resolve_tron_gasless_provider(
 
     Ok(Some(ResolvedTronGaslessProvider::new(
         resolved_config,
+        network.clone(),
         service_provider,
         verifying_contract,
     )))

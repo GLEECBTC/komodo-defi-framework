@@ -1,7 +1,7 @@
 use super::api_types::{
     GasfreeAccountInfo, GasfreeSubmitRequest, GasfreeSubmitResponse, GasfreeSupportedToken, GasfreeTraceResponse,
 };
-use super::config::ResolvedTronGaslessProvider;
+use super::config::{ResolvedTronGaslessProvider, TronGaslessProviderConfig};
 use super::error::TronGasfreeError;
 use crate::eth::tron::TronAddress;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
@@ -42,13 +42,16 @@ pub enum TronGasfreeTransport {
 }
 
 impl TronGasfreeTransport {
-    pub fn from_resolved_provider(provider: &ResolvedTronGaslessProvider) -> Self {
-        let config = provider.config();
+    pub fn from_config(config: &TronGaslessProviderConfig) -> Self {
         TronGasfreeTransport::DirectHmac {
             base_url: config.base_url.clone(),
             api_key: config.api_key.clone(),
             api_secret: config.api_secret.clone(),
         }
+    }
+
+    pub fn from_resolved_provider(provider: &ResolvedTronGaslessProvider) -> Self {
+        TronGasfreeTransport::from_config(provider.config())
     }
 
     fn base_url(&self) -> &Url {
@@ -80,9 +83,6 @@ impl fmt::Debug for TronGasfreeTransport {
 pub struct TronGasfreeClient {
     transport: TronGasfreeTransport,
     request_timeout: Duration,
-    // TODO(Commit 6): This cache is ineffective in production today because the client
-    // is rebuilt per call. Commit 6 should move the client/provider into a long-lived
-    // home on `EthCoinImpl` before supported-token caching can pay off.
     supported_tokens_cache: Mutex<Option<Vec<GasfreeSupportedToken>>>,
 }
 
@@ -95,13 +95,12 @@ impl TronGasfreeClient {
         }
     }
 
-    // TODO(Commit 6): The account service layer will call this to build the client
-    // from the platform-stored `ResolvedTronGaslessProvider`.
+    pub fn from_config(config: &TronGaslessProviderConfig) -> Self {
+        TronGasfreeClient::new(TronGasfreeTransport::from_config(config), config.request_timeout_ms)
+    }
+
     pub fn from_resolved_provider(provider: &ResolvedTronGaslessProvider) -> Self {
-        TronGasfreeClient::new(
-            TronGasfreeTransport::from_resolved_provider(provider),
-            provider.config().request_timeout_ms,
-        )
+        TronGasfreeClient::from_config(provider.config())
     }
 
     pub fn cached_supported_tokens(&self) -> Option<Vec<GasfreeSupportedToken>> {
