@@ -16,6 +16,40 @@ pub enum TronGaslessConfigError {
     InvalidServiceProvider { reason: String },
 }
 
+/// Withdraw-level errors specific to TRON GasFree routing.
+#[derive(Clone, Debug, Display, PartialEq, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum GaslessWithdrawError {
+    #[display(fmt = "Gasless withdraw is unavailable for this coin or request")]
+    Unavailable,
+    #[display(fmt = "A gasless transfer is already pending; wait for settlement and retry")]
+    PendingTransfer,
+    #[display(fmt = "Gasless provider fee exceeds the requested maximum")]
+    MaxFeeExceeded,
+    #[display(fmt = "Gasless provider rejected the transfer")]
+    ProviderRejected,
+    #[display(fmt = "Gasless provider returned an invalid response")]
+    InvalidProviderResponse,
+    #[display(fmt = "Gasless transfer trace was not found")]
+    TraceNotFound,
+    #[display(fmt = "Gasless quote expired")]
+    QuoteExpired,
+}
+
+impl HttpStatusCode for GaslessWithdrawError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            GaslessWithdrawError::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
+            GaslessWithdrawError::PendingTransfer => StatusCode::CONFLICT,
+            GaslessWithdrawError::MaxFeeExceeded | GaslessWithdrawError::QuoteExpired => StatusCode::BAD_REQUEST,
+            GaslessWithdrawError::ProviderRejected | GaslessWithdrawError::InvalidProviderResponse => {
+                StatusCode::BAD_GATEWAY
+            },
+            GaslessWithdrawError::TraceNotFound => StatusCode::NOT_FOUND,
+        }
+    }
+}
+
 /// Errors during GasFree runtime HTTP/API interactions.
 #[derive(Clone, Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]

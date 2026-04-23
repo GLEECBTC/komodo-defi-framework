@@ -37,6 +37,21 @@ pub struct TronTxFeeDetails {
     pub bandwidth_fee: BigDecimal,
     pub energy_fee: BigDecimal,
     pub total_fee: BigDecimal,
+    /// TODO(Commit 9): populated by `build_tron_withdraw` when the gasless branch is taken. Check if it's better to have 2 variants while backward compatible
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gasless: Option<TronGaslessFeeMeta>,
+}
+
+/// Gasless provider fee metadata for TRC20 withdrawals routed through GasFree.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct TronGaslessFeeMeta {
+    pub fee_method: String,
+    pub provider: String,
+    pub gasfree_address: String,
+    pub transfer_fee: BigDecimal,
+    pub activation_fee: BigDecimal,
+    pub total_token_fee: BigDecimal,
+    pub trace_id: Option<String>,
 }
 
 /// Subset of TRON's `AccountResourceMessage` (defined in `api.proto` of the
@@ -177,6 +192,7 @@ fn estimate_fee_details(
         bandwidth_fee: sun_to_trx_decimal(bandwidth_fee_sun),
         energy_fee: sun_to_trx_decimal(energy_fee_sun),
         total_fee: sun_to_trx_decimal(total_fee_sun),
+        gasless: None,
     }
 }
 

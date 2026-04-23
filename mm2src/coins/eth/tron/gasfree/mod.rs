@@ -13,7 +13,7 @@ pub use api_types::{
 };
 pub use client::{TronGasfreeClient, TronGasfreeTransport};
 pub use config::{ResolvedTronGaslessProvider, TronGaslessProviderConfig};
-pub use error::{TronGasfreeError, TronGaslessConfigError};
+pub use error::{GaslessWithdrawError, TronGasfreeError, TronGaslessConfigError};
 pub use service::{
     DisabledReason, GasfreeAccountService, GasfreeAvailability, GasfreeRecommendation, GasfreeTransferPreflight,
     GasfreeTransferRequest, NativeRouteAvailability, OnChainBalanceFetcher,
