@@ -139,22 +139,13 @@ where
             return MmError::err(WithdrawError::InternalError("no keypair for hw wallet".to_owned()));
         }
 
-        match req.from {
-            Some(ref from) => {
-                let derivation_path = self.get_from_derivation_path(from)?;
-                let raw_priv_key = coin
-                    .priv_key_policy
-                    .hd_wallet_derived_priv_key_or_err(&derivation_path)
-                    .map_mm_err()?;
-                KeyPair::from_secret_slice(raw_priv_key.as_slice())
-                    .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))
-            },
-            None => coin
-                .priv_key_policy
-                .activated_key_or_err()
-                .mm_err(|e| WithdrawError::InternalError(e.to_string()))
-                .cloned(),
-        }
+        let derivation_path = req
+            .from
+            .as_ref()
+            .map(|from| self.get_from_derivation_path(from))
+            .transpose()?;
+        crate::eth::eth_utils::key_pair_from_priv_key_policy(&coin.priv_key_policy, derivation_path.as_ref())
+            .map_to_mm(WithdrawError::InternalError)
     }
 
     /// Gets the derivation path for the address from which the withdrawal is made using the `from` parameter.

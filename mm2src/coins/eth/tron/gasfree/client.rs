@@ -354,6 +354,7 @@ fn sanitize_text(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::eth::tron::gasfree::test_helpers::{base_submit_response_payload, provider_envelope};
     use serde_json::json;
 
     #[test]
@@ -415,29 +416,11 @@ mod tests {
 
     #[test]
     fn decode_submit_response_accepts_estimate_transfer_fee_alias_only() {
-        let body = serde_json::to_vec(&json!({
-            "code": 200,
-            "reason": null,
-            "message": "",
-            "data": {
-                "amount": 100000,
-                "providerAddress": "TKtWbdzEq5ss9vTS9kwRhBp5mXmBfBns3E",
-                "accountAddress": "TUUSMd58eC3fKx3fn7whxJyr1FR56tgaP8",
-                "signature": "",
-                "targetAddress": "TEkj3ndMVEmFLYaFrATMwMjBRZ1EAZkucT",
-                "maxFee": 2000000,
-                "version": 1,
-                "nonce": 8,
-                "tokenAddress": "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
-                "expiredAt": 1747909695000u64,
-                "estimateTransferFee": 2000,
-                "id": "6c3ff67e-0bf4-4c09-91ca-0c7c254b01a0",
-                "state": "WAITING",
-                "estimatedActivateFee": 0,
-                "gasFreeAddress": "TNER12mMVWruqopsW9FQtKxCGfZcEtb3ER"
-            }
-        }))
-        .unwrap();
+        let mut data = base_submit_response_payload();
+        let object = data.as_object_mut().unwrap();
+        object.remove("estimatedTransferFee");
+        object.insert("estimateTransferFee".into(), json!(2000));
+        let body = serde_json::to_vec(&provider_envelope(data)).unwrap();
 
         let response: GasfreeSubmitResponse = decode_provider_response(StatusCode::OK, &body).unwrap();
         assert_eq!(response.estimated_transfer_fee, 2000u64.into());

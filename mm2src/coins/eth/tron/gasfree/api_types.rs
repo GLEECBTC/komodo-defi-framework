@@ -1,10 +1,9 @@
+use super::typed_data::GASFREE_PERMIT_VERSION;
 use crate::eth::tron::{TronAddress, TronSignature, TronTxHash};
 use ethereum_types::U256;
 use serde::de::Error as DeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
-
-const GASFREE_PROTOCOL_VERSION: u64 = 1;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct GasfreeRequestId(Uuid);
@@ -304,11 +303,11 @@ fn parse_u64_value(value: FlexibleInteger, field_name: &str) -> Result<u64, Stri
 }
 
 fn validate_version_is_one(value: &U256, field_name: &str) -> Result<(), String> {
-    if *value == U256::from(GASFREE_PROTOCOL_VERSION) {
+    if *value == U256::from(GASFREE_PERMIT_VERSION) {
         Ok(())
     } else {
         Err(format!(
-            "{field_name} must equal {GASFREE_PROTOCOL_VERSION}, got {}",
+            "{field_name} must equal {GASFREE_PERMIT_VERSION}, got {}",
             value
         ))
     }
@@ -322,7 +321,7 @@ where
     Uuid::parse_str(raw.trim()).map_err(D::Error::custom)
 }
 
-fn deserialize_u256<'de, D>(deserializer: D) -> Result<U256, D::Error>
+pub(super) fn deserialize_u256<'de, D>(deserializer: D) -> Result<U256, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -330,7 +329,7 @@ where
     parse_u256_value(value, "decimal number").map_err(D::Error::custom)
 }
 
-fn deserialize_exact_version_one<'de, D>(deserializer: D) -> Result<U256, D::Error>
+pub(super) fn deserialize_exact_version_one<'de, D>(deserializer: D) -> Result<U256, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -445,7 +444,7 @@ where
     }
 }
 
-fn serialize_u256_as_string<S>(value: &U256, serializer: S) -> Result<S::Ok, S::Error>
+pub(super) fn serialize_u256_as_string<S>(value: &U256, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
@@ -455,6 +454,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::eth::tron::gasfree::test_helpers::{base_submit_response_payload, base_trace_response_payload};
     use serde_json::json;
 
     fn base_request_payload() -> serde_json::Value {
@@ -470,58 +470,6 @@ mod tests {
             "version": "1",
             "nonce": "8",
             "sig": "11".repeat(65)
-        })
-    }
-
-    fn base_submit_response_payload() -> serde_json::Value {
-        json!({
-            "id": "6c3ff67e-0bf4-4c09-91ca-0c7c254b01a0",
-            "accountAddress": "TUUSMd58eC3fKx3fn7whxJyr1FR56tgaP8",
-            "gasFreeAddress": "TNER12mMVWruqopsW9FQtKxCGfZcEtb3ER",
-            "providerAddress": "TKtWbdzEq5ss9vTS9kwRhBp5mXmBfBns3E",
-            "targetAddress": "TEkj3ndMVEmFLYaFrATMwMjBRZ1EAZkucT",
-            "tokenAddress": "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
-            "amount": 100000,
-            "maxFee": 2000000,
-            "signature": "",
-            "version": 1,
-            "nonce": 8,
-            "expiredAt": 1747909695000u64,
-            "state": "WAITING",
-            "estimatedActivateFee": 0,
-            "estimatedTransferFee": 2000,
-            "createdAt": 1747909635678u64,
-            "updatedAt": 1747909635678u64
-        })
-    }
-
-    fn base_trace_response_payload() -> serde_json::Value {
-        json!({
-            "id": "6c3ff67e-0bf4-4c09-91ca-0c7c254b01a0",
-            "accountAddress": "TUUSMd58eC3fKx3fn7whxJyr1FR56tgaP8",
-            "gasFreeAddress": "TNER12mMVWruqopsW9FQtKxCGfZcEtb3ER",
-            "providerAddress": "TKtWbdzEq5ss9vTS9kwRhBp5mXmBfBns3E",
-            "targetAddress": "TEkj3ndMVEmFLYaFrATMwMjBRZ1EAZkucT",
-            "tokenAddress": "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
-            "amount": 100000,
-            "state": "CONFIRMING",
-            "expiredAt": 1747909695000u64,
-            "estimatedActivateFee": 0,
-            "estimatedTransferFee": 2000,
-            "estimatedTotalFee": 2000,
-            "estimatedTotalCost": 102000,
-            "txnHash": "22".repeat(32),
-            "txnBlockNum": 57175988,
-            "txnBlockTimestamp": 1747909638000u64,
-            "txnState": "ON_CHAIN",
-            "txnActivateFee": 0,
-            "txnTransferFee": 2000,
-            "txnTotalFee": 2000,
-            "txnAmount": 100000,
-            "txnTotalCost": 102000,
-            "nonce": 8,
-            "version": 1,
-            "signature": "33".repeat(65)
         })
     }
 

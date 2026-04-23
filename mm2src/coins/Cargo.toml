@@ -75,6 +75,7 @@ libc.workspace = true
 nom.workspace = true
 mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
+mm2_eth = { path = "../mm2_eth" }
 mm2_event_stream = { path = "../mm2_event_stream" }
 mm2_io = { path = "../mm2_io" }
 mm2_metrics = { path = "../mm2_metrics" }

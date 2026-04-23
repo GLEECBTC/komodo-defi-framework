@@ -385,14 +385,13 @@ fn recommend_route(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::eth::tron::gasfree::config::TronGaslessProviderConfig;
     use crate::eth::tron::gasfree::resolve_tron_gasless_provider;
+    use crate::eth::tron::gasfree::test_helpers::{provider_config, DEFAULT_SERVICE_PROVIDER, TEST_BASE_URL};
     use crate::eth::tron::Network;
     use crate::eth::ChainSpec;
     use parking_lot::Mutex;
     use std::collections::HashMap;
     use std::sync::Arc;
-    use url::Url;
 
     #[derive(Clone, Default)]
     struct MockOnChainBalanceFetcher {
@@ -463,16 +462,8 @@ mod tests {
     }
 
     fn provider() -> ResolvedTronGaslessProvider {
-        let provider_config = TronGaslessProviderConfig {
-            base_url: Url::parse("https://open-test.gasfree.io").unwrap(),
-            api_key: "key".into(),
-            api_secret: "secret".into(),
-            service_provider: "TKtWbdzEq5ss9vTS9kwRhBp5mXmBfBns3E".into(),
-            request_timeout_ms: 15_000,
-            status_poll_interval_ms: 3_000,
-        };
-
-        resolve_tron_gasless_provider(&ChainSpec::Tron { network: Network::Nile }, Some(&provider_config))
+        let raw = provider_config(TEST_BASE_URL, DEFAULT_SERVICE_PROVIDER);
+        resolve_tron_gasless_provider(&ChainSpec::Tron { network: Network::Nile }, Some(&raw))
             .unwrap()
             .unwrap()
     }

@@ -147,8 +147,8 @@ impl<'de> Deserialize<'de> for Address {
     where
         D: Deserializer<'de>,
     {
-        let s = <&str>::deserialize(deserializer)?;
-        Address::from_str(s).map_err(serde::de::Error::custom)
+        let s = String::deserialize(deserializer)?;
+        Address::from_str(&s).map_err(serde::de::Error::custom)
     }
 }
 

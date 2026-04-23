@@ -1,9 +1,11 @@
 pub mod address;
 pub mod api_types;
+pub mod authorization;
 pub mod client;
 pub mod config;
 pub mod error;
 pub mod service;
+pub mod typed_data;
 
 use crate::eth::ChainSpec;
 pub use address::{api_path_segment_for_network, compute_gasfree_address_for_network, controller_for_network};
@@ -11,12 +13,17 @@ pub use api_types::{
     GasfreeAccountAsset, GasfreeAccountInfo, GasfreeRequestId, GasfreeSubmitRequest, GasfreeSubmitResponse,
     GasfreeSupportedToken, GasfreeTraceResponse, GasfreeTransactionState, GasfreeTransferState,
 };
+pub use authorization::{sign_permit_transfer, GasfreeSignedAuthorization};
 pub use client::{TronGasfreeClient, TronGasfreeTransport};
 pub use config::{ResolvedTronGaslessProvider, TronGaslessProviderConfig};
 pub use error::{GaslessWithdrawError, TronGasfreeError, TronGaslessConfigError};
 pub use service::{
     DisabledReason, GasfreeAccountService, GasfreeAvailability, GasfreeRecommendation, GasfreeTransferPreflight,
     GasfreeTransferRequest, NativeRouteAvailability, OnChainBalanceFetcher,
+};
+pub use typed_data::{
+    build_permit_transfer_typed_data, hash_permit_transfer_typed_data, GasfreeDomain, PermitTransferData,
+    PermitTransferMessage,
 };
 use url::Url;
 
@@ -70,25 +77,111 @@ fn resolve_gasfree_base_url(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::eth::tron::Network;
+mod test_helpers {
+    use super::config::{ResolvedTronGaslessProvider, TronGaslessProviderConfig};
+    use super::controller_for_network;
+    use crate::eth::tron::{Network, TronAddress};
+    use serde_json::{json, Value};
+    use std::str::FromStr;
+    use url::Url;
 
-    fn provider_config(base_url: &str) -> TronGaslessProviderConfig {
+    pub(super) const TEST_BASE_URL: &str = "https://open-test.gasfree.io";
+    pub(super) const DEFAULT_SERVICE_PROVIDER: &str = "TKtWbdzEq5ss9vTS9kwRhBp5mXmBfBns3E";
+
+    pub(super) fn provider_config(base_url: &str, service_provider: &str) -> TronGaslessProviderConfig {
         TronGaslessProviderConfig {
             base_url: Url::parse(base_url).unwrap(),
             api_key: "key".into(),
             api_secret: "secret".into(),
-            service_provider: "TKtWbdzEq5ss9vTS9kwRhBp5mXmBfBns3E".into(),
+            service_provider: service_provider.into(),
             request_timeout_ms: 15_000,
             status_poll_interval_ms: 3_000,
         }
     }
 
+    pub(super) fn test_provider(network: Network, service_provider: &str) -> ResolvedTronGaslessProvider {
+        let raw = provider_config(TEST_BASE_URL, service_provider);
+        let parsed = TronAddress::from_str(service_provider).unwrap();
+        let verifying_contract = controller_for_network(&network);
+        ResolvedTronGaslessProvider::new(raw, network, parsed, verifying_contract)
+    }
+
+    pub(super) fn base_submit_response_payload() -> Value {
+        json!({
+            "id": "6c3ff67e-0bf4-4c09-91ca-0c7c254b01a0",
+            "accountAddress": "TUUSMd58eC3fKx3fn7whxJyr1FR56tgaP8",
+            "gasFreeAddress": "TNER12mMVWruqopsW9FQtKxCGfZcEtb3ER",
+            "providerAddress": "TKtWbdzEq5ss9vTS9kwRhBp5mXmBfBns3E",
+            "targetAddress": "TEkj3ndMVEmFLYaFrATMwMjBRZ1EAZkucT",
+            "tokenAddress": "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
+            "amount": 100000,
+            "maxFee": 2000000,
+            "signature": "",
+            "version": 1,
+            "nonce": 8,
+            "expiredAt": 1747909695000u64,
+            "state": "WAITING",
+            "estimatedActivateFee": 0,
+            "estimatedTransferFee": 2000,
+            "createdAt": 1747909635678u64,
+            "updatedAt": 1747909635678u64
+        })
+    }
+
+    pub(super) fn base_trace_response_payload() -> Value {
+        json!({
+            "id": "6c3ff67e-0bf4-4c09-91ca-0c7c254b01a0",
+            "accountAddress": "TUUSMd58eC3fKx3fn7whxJyr1FR56tgaP8",
+            "gasFreeAddress": "TNER12mMVWruqopsW9FQtKxCGfZcEtb3ER",
+            "providerAddress": "TKtWbdzEq5ss9vTS9kwRhBp5mXmBfBns3E",
+            "targetAddress": "TEkj3ndMVEmFLYaFrATMwMjBRZ1EAZkucT",
+            "tokenAddress": "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
+            "amount": 100000,
+            "state": "CONFIRMING",
+            "expiredAt": 1747909695000u64,
+            "estimatedActivateFee": 0,
+            "estimatedTransferFee": 2000,
+            "estimatedTotalFee": 2000,
+            "estimatedTotalCost": 102000,
+            "txnHash": "22".repeat(32),
+            "txnBlockNum": 57175988,
+            "txnBlockTimestamp": 1747909638000u64,
+            "txnState": "ON_CHAIN",
+            "txnActivateFee": 0,
+            "txnTransferFee": 2000,
+            "txnTotalFee": 2000,
+            "txnAmount": 100000,
+            "txnTotalCost": 102000,
+            "nonce": 8,
+            "version": 1,
+            "signature": "33".repeat(65)
+        })
+    }
+
+    /// Wrap a payload in the GasFree provider's success envelope (`{code, reason, message, data}`).
+    pub(super) fn provider_envelope(data: Value) -> Value {
+        json!({
+            "code": 200,
+            "reason": null,
+            "message": "",
+            "data": data,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::test_helpers::{provider_config, DEFAULT_SERVICE_PROVIDER};
+    use super::*;
+    use crate::eth::tron::Network;
+
     fn resolved_path(network: Network, base_url: &str) -> String {
-        let provider = resolve_tron_gasless_provider(&ChainSpec::Tron { network }, Some(&provider_config(base_url)))
-            .unwrap()
-            .unwrap();
+        let provider = resolve_tron_gasless_provider(
+            &ChainSpec::Tron { network },
+            Some(&provider_config(base_url, DEFAULT_SERVICE_PROVIDER)),
+        )
+        .unwrap()
+        .unwrap();
 
         provider
             .config()
@@ -121,7 +214,10 @@ mod tests {
             &ChainSpec::Tron {
                 network: Network::Mainnet,
             },
-            Some(&provider_config("https://open.gasfree.io/tron/")),
+            Some(&provider_config(
+                "https://open.gasfree.io/tron/",
+                DEFAULT_SERVICE_PROVIDER,
+            )),
         )
         .unwrap_err();
 
