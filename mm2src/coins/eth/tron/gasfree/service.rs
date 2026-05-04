@@ -2,7 +2,7 @@ use crate::eth::tron::gasfree::address::compute_gasfree_address_for_network;
 use crate::eth::tron::gasfree::api_types::{GasfreeAccountAsset, GasfreeAccountInfo};
 use crate::eth::tron::gasfree::config::ResolvedTronGaslessProvider;
 use crate::eth::tron::gasfree::error::TronGasfreeError;
-use crate::eth::tron::TronAddress;
+use crate::eth::tron::{TronAddress, TronApiClient};
 use async_trait::async_trait;
 use ethereum_types::U256;
 use mm2_err_handle::prelude::*;
@@ -12,6 +12,7 @@ use mm2_err_handle::prelude::*;
 pub struct GasfreeTransferRequest {
     pub token_address: TronAddress,
     pub transfer_value: U256,
+    pub expected_token_decimals: u8,
 }
 
 /// Snapshot of everything needed to decide and execute a GasFree transfer.
@@ -22,6 +23,8 @@ pub struct GasfreeTransferRequest {
 pub struct GasfreeTransferPreflight {
     /// Locally-derived CREATE2 custody address for this user + network.
     pub gasfree_address: TronAddress,
+    /// Provider-reported nonce bound into the signed authorization.
+    pub nonce: U256,
     /// Whether the GasFree account has been on-chain activated.
     pub account_active: bool,
     /// TRC-20 balance at `gasfree_address`.
@@ -34,10 +37,6 @@ pub struct GasfreeTransferPreflight {
     pub activation_fee: U256,
     /// Primary preflight decision.
     pub availability: GasfreeAvailability,
-    /// Hint for auto withdraw: which rail the service suggests given the native
-    /// route state the caller supplied.
-    // Todo: Maybe this is not the best place for this
-    pub recommendation: GasfreeRecommendation,
 }
 
 /// Result of the preflight decision. Distinguishes transient waits from permanent failures
@@ -67,6 +66,13 @@ pub enum DisabledReason {
     /// Token is not enrolled in the caller's GasFree account. Gasless cannot be used here;
     /// caller should fall back to native or error.
     TokenUnsupported { token_address: TronAddress },
+    /// Provider-reported token decimals disagree with the activated token decimals.
+    /// Indicates provider/config drift, so callers must not sign or silently fall back.
+    TokenDecimalMismatch {
+        token_address: TronAddress,
+        expected: u8,
+        provider_reported: u8,
+    },
     /// Spendable (on-chain minus frozen) balance is below the required spendable amount
     /// (`value + transfer_fee + activation_fee`).
     InsufficientSpendableBalance,
@@ -76,39 +82,11 @@ pub enum DisabledReason {
     InactiveAccountInsufficientBalance,
 }
 
-/// Service recommendation for which rail to use under auto withdraw.
-/// Todo: Maybe this is not the best place for this
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum GasfreeRecommendation {
-    GasfreeOnly,
-    NativeOnly,
-    PreferGasfree,
-    PreferNative,
-    NoAvailableRoute,
-}
-
-/// What the caller knows about the native (TRX) withdraw route at preflight time.
-///
-/// Used only to shape `GasfreeRecommendation`. The service does not fetch native fee data
-/// itself — the caller is expected to have already quoted the native path.
-/// Todo: Maybe this is not the best place for this
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum NativeRouteAvailability {
-    /// Native is available and the caller has quoted the fee in the same token units as
-    /// `transfer_fee + activation_fee` so the two rails can be compared directly.
-    Available { comparable_cost_in_token: U256 },
-    /// Native is available but the caller has no comparable quote (e.g. price feed missing).
-    /// Service will prefer native absent a tiebreaker.
-    AvailableButUnpriced,
-    /// Native is not usable (e.g. insufficient TRX for fee).
-    Unavailable,
-}
-
 /// Abstraction over on-chain TRC-20 `balanceOf` reads.
 ///
 /// Keeps the service decoupled from the coin and useful for unit tests to
 /// drive the preflight math without standing up a live chain RPC or Coin.
-/// TODO: EthCoin lives a layer below and will supply the production impl in Commit 9.
+/// Production withdraw code uses [`TronOnChainBalanceFetcher`] backed by [`TronApiClient`].
 #[async_trait]
 pub trait OnChainBalanceFetcher: Send + Sync {
     async fn trc20_balance(
@@ -116,6 +94,36 @@ pub trait OnChainBalanceFetcher: Send + Sync {
         token_address: &TronAddress,
         owner_address: &TronAddress,
     ) -> MmResult<U256, TronGasfreeError>;
+}
+
+pub struct TronOnChainBalanceFetcher<'a> {
+    tron: &'a TronApiClient,
+}
+
+impl<'a> TronOnChainBalanceFetcher<'a> {
+    pub fn new(tron: &'a TronApiClient) -> Self {
+        TronOnChainBalanceFetcher { tron }
+    }
+}
+
+impl<'a> From<&'a TronApiClient> for TronOnChainBalanceFetcher<'a> {
+    fn from(tron: &'a TronApiClient) -> Self {
+        TronOnChainBalanceFetcher::new(tron)
+    }
+}
+
+#[async_trait]
+impl OnChainBalanceFetcher for TronOnChainBalanceFetcher<'_> {
+    async fn trc20_balance(
+        &self,
+        token_address: &TronAddress,
+        owner_address: &TronAddress,
+    ) -> MmResult<U256, TronGasfreeError> {
+        self.tron
+            .trc20_balance_of(token_address, owner_address)
+            .await
+            .mm_err(TronGasfreeError::from)
+    }
 }
 
 /// Stateless per-request preflight layer over a [`ResolvedTronGaslessProvider`] and an
@@ -157,26 +165,24 @@ where
     pub async fn preflight_transfer(
         &self,
         request: GasfreeTransferRequest,
-        native_route: NativeRouteAvailability,
     ) -> MmResult<GasfreeTransferPreflight, TronGasfreeError> {
         let account_info_fetcher = ProviderAccountInfoFetcher {
             provider: self.provider,
         };
-        self.preflight_with_account_fetcher(&request, native_route, &account_info_fetcher)
+        self.preflight_with_account_fetcher(&request, &account_info_fetcher)
             .await
     }
 
     async fn preflight_with_account_fetcher<F>(
         &self,
         request: &GasfreeTransferRequest,
-        native_route: NativeRouteAvailability,
         account_info_fetcher: &F,
     ) -> MmResult<GasfreeTransferPreflight, TronGasfreeError>
     where
         F: AccountInfoFetcher,
     {
         let account_info = account_info_fetcher.get_account_info(&self.user_address).await?;
-        let snapshot = AccountSnapshot::from_account_info(&account_info);
+        let snapshot = AccountSnapshot::from(&account_info);
 
         if account_info.gas_free_address != self.local_gasfree_address {
             return self.unavailable_preflight(
@@ -186,7 +192,6 @@ where
                         provider_reported: account_info.gas_free_address,
                     },
                 },
-                native_route,
                 snapshot,
             );
         }
@@ -203,10 +208,30 @@ where
                         token_address: request.token_address,
                     },
                 },
-                native_route,
                 snapshot,
             );
         };
+
+        if asset.decimal != request.expected_token_decimals {
+            return self.unavailable_preflight(
+                GasfreeAvailability::Disabled {
+                    reason: DisabledReason::TokenDecimalMismatch {
+                        token_address: request.token_address,
+                        expected: request.expected_token_decimals,
+                        provider_reported: asset.decimal,
+                    },
+                },
+                snapshot.with_asset_details(
+                    asset.frozen,
+                    asset.transfer_fee,
+                    if account_info.active {
+                        U256::zero()
+                    } else {
+                        asset.activate_fee
+                    },
+                ),
+            );
+        }
 
         if !account_info.allow_submit {
             let transfer_fee = asset.transfer_fee;
@@ -217,7 +242,6 @@ where
             };
             return self.unavailable_preflight(
                 GasfreeAvailability::PendingTransfer,
-                native_route,
                 snapshot.with_asset_details(asset.frozen, transfer_fee, activation_fee),
             );
         }
@@ -227,13 +251,12 @@ where
             .trc20_balance(&request.token_address, &self.local_gasfree_address)
             .await?;
 
-        self.evaluate_account_state(request, native_route, &account_info, &asset, on_chain_balance)
+        self.evaluate_account_state(request, &account_info, &asset, on_chain_balance)
     }
 
     fn evaluate_account_state(
         &self,
         request: &GasfreeTransferRequest,
-        native_route: NativeRouteAvailability,
         account_info: &GasfreeAccountInfo,
         asset: &GasfreeAccountAsset,
         on_chain_balance: U256,
@@ -262,42 +285,32 @@ where
             GasfreeAvailability::Available
         };
 
-        let recommendation = recommend_route(&availability, total_token_fee, native_route);
-
         Ok(GasfreeTransferPreflight {
             gasfree_address: self.local_gasfree_address,
+            nonce: account_info.nonce,
             account_active: account_info.active,
             on_chain_balance,
             frozen_balance,
             transfer_fee: asset.transfer_fee,
             activation_fee,
             availability,
-            recommendation,
         })
     }
 
     fn unavailable_preflight(
         &self,
         availability: GasfreeAvailability,
-        native_route: NativeRouteAvailability,
         snapshot: AccountSnapshot,
     ) -> MmResult<GasfreeTransferPreflight, TronGasfreeError> {
-        let total_token_fee = checked_add_u256(
-            snapshot.transfer_fee,
-            snapshot.activation_fee,
-            "unavailable total token fee",
-        )?;
-        let recommendation = recommend_route(&availability, total_token_fee, native_route);
-
         Ok(GasfreeTransferPreflight {
             gasfree_address: self.local_gasfree_address,
+            nonce: snapshot.nonce,
             account_active: snapshot.account_active,
             on_chain_balance: U256::zero(),
             frozen_balance: snapshot.frozen_balance,
             transfer_fee: snapshot.transfer_fee,
             activation_fee: snapshot.activation_fee,
             availability,
-            recommendation,
         })
     }
 }
@@ -320,20 +333,24 @@ impl<'a> AccountInfoFetcher for ProviderAccountInfoFetcher<'a> {
 
 #[derive(Clone, Copy, Debug, Default)]
 struct AccountSnapshot {
+    nonce: U256,
     account_active: bool,
     frozen_balance: U256,
     transfer_fee: U256,
     activation_fee: U256,
 }
 
-impl AccountSnapshot {
-    fn from_account_info(account_info: &GasfreeAccountInfo) -> Self {
+impl From<&GasfreeAccountInfo> for AccountSnapshot {
+    fn from(account_info: &GasfreeAccountInfo) -> Self {
         AccountSnapshot {
+            nonce: account_info.nonce,
             account_active: account_info.active,
             ..AccountSnapshot::default()
         }
     }
+}
 
+impl AccountSnapshot {
     fn with_asset_details(mut self, frozen_balance: U256, transfer_fee: U256, activation_fee: U256) -> Self {
         self.frozen_balance = frozen_balance;
         self.transfer_fee = transfer_fee;
@@ -345,41 +362,6 @@ impl AccountSnapshot {
 fn checked_add_u256(lhs: U256, rhs: U256, field_name: &str) -> MmResult<U256, TronGasfreeError> {
     lhs.checked_add(rhs)
         .or_mm_err(|| TronGasfreeError::Internal(format!("Overflow while computing {field_name}")))
-}
-
-// TODO(Commit 9): Revisit whether native-vs-gasless route selection belongs in the service
-// layer or in the withdraw caller. Kept here to match the Commit 6 plan, but Commit 9 has
-// the real context (user's `WithdrawFeeMethod`, native TRX fee) and may prefer to inline
-// the comparison from raw preflight outputs. If inlined there, drop this function,
-// `GasfreeRecommendation`, `NativeRouteAvailability`, and the `recommendation` field on
-// `GasfreeTransferPreflight`.
-fn recommend_route(
-    availability: &GasfreeAvailability,
-    gasless_total_token_fee: U256,
-    native_route: NativeRouteAvailability,
-) -> GasfreeRecommendation {
-    let gasless_available = matches!(availability, GasfreeAvailability::Available);
-
-    match (gasless_available, native_route) {
-        (true, NativeRouteAvailability::Unavailable) => GasfreeRecommendation::GasfreeOnly,
-        (false, NativeRouteAvailability::Unavailable) => GasfreeRecommendation::NoAvailableRoute,
-        (false, NativeRouteAvailability::Available { .. }) | (false, NativeRouteAvailability::AvailableButUnpriced) => {
-            GasfreeRecommendation::NativeOnly
-        },
-        (
-            true,
-            NativeRouteAvailability::Available {
-                comparable_cost_in_token,
-            },
-        ) => {
-            if comparable_cost_in_token <= gasless_total_token_fee {
-                GasfreeRecommendation::PreferNative
-            } else {
-                GasfreeRecommendation::PreferGasfree
-            }
-        },
-        (true, NativeRouteAvailability::AvailableButUnpriced) => GasfreeRecommendation::PreferNative,
-    }
 }
 
 #[cfg(test)]
@@ -480,6 +462,7 @@ mod tests {
         GasfreeTransferRequest {
             token_address: token_address(),
             transfer_value: U256::from(value),
+            expected_token_decimals: 6,
         }
     }
 
@@ -492,6 +475,29 @@ mod tests {
         activation_fee: u64,
         nonce: u64,
     ) -> GasfreeAccountInfo {
+        account_info_with_decimals(
+            provider_gasfree_address,
+            active,
+            allow_submit,
+            frozen,
+            transfer_fee,
+            activation_fee,
+            nonce,
+            6,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn account_info_with_decimals(
+        provider_gasfree_address: TronAddress,
+        active: bool,
+        allow_submit: bool,
+        frozen: u64,
+        transfer_fee: u64,
+        activation_fee: u64,
+        nonce: u64,
+        decimals: u8,
+    ) -> GasfreeAccountInfo {
         GasfreeAccountInfo {
             account_address: user_address(),
             gas_free_address: provider_gasfree_address,
@@ -503,7 +509,7 @@ mod tests {
                 token_symbol: "USDT".into(),
                 activate_fee: U256::from(activation_fee),
                 transfer_fee: U256::from(transfer_fee),
-                decimal: 6,
+                decimal: decimals,
                 frozen: U256::from(frozen),
             }],
         }
@@ -521,12 +527,7 @@ mod tests {
         );
         let fetcher = MockAccountInfoFetcher::returning(account_info(local_gasfree, false, true, 10, 5, 7, 9));
 
-        let preflight = common::block_on(service.preflight_with_account_fetcher(
-            &request(38),
-            NativeRouteAvailability::Unavailable,
-            &fetcher,
-        ))
-        .unwrap();
+        let preflight = common::block_on(service.preflight_with_account_fetcher(&request(38), &fetcher)).unwrap();
 
         assert_eq!(
             preflight.availability,
@@ -548,12 +549,7 @@ mod tests {
         );
         let fetcher = MockAccountInfoFetcher::returning(account_info(local_gasfree, true, true, 30, 10, 0, 3));
 
-        let preflight = common::block_on(service.preflight_with_account_fetcher(
-            &request(65),
-            NativeRouteAvailability::Unavailable,
-            &fetcher,
-        ))
-        .unwrap();
+        let preflight = common::block_on(service.preflight_with_account_fetcher(&request(65), &fetcher)).unwrap();
 
         assert_eq!(preflight.on_chain_balance, U256::from(100u64));
         assert_eq!(preflight.frozen_balance, U256::from(30u64));
@@ -577,12 +573,7 @@ mod tests {
         );
         let fetcher = MockAccountInfoFetcher::returning(account_info(local_gasfree, false, true, 10, 0, 0, 4));
 
-        let preflight = common::block_on(service.preflight_with_account_fetcher(
-            &request(0),
-            NativeRouteAvailability::Unavailable,
-            &fetcher,
-        ))
-        .unwrap();
+        let preflight = common::block_on(service.preflight_with_account_fetcher(&request(0), &fetcher)).unwrap();
 
         assert_eq!(
             preflight.availability,
@@ -601,12 +592,7 @@ mod tests {
         let fetcher =
             MockAccountInfoFetcher::returning(account_info(*service.local_gasfree_address(), true, false, 0, 9, 0, 7));
 
-        let preflight = common::block_on(service.preflight_with_account_fetcher(
-            &request(10),
-            NativeRouteAvailability::Unavailable,
-            &fetcher,
-        ))
-        .unwrap();
+        let preflight = common::block_on(service.preflight_with_account_fetcher(&request(10), &fetcher)).unwrap();
 
         assert_eq!(preflight.availability, GasfreeAvailability::PendingTransfer);
         assert_eq!(balance_fetcher.call_count(), 0);
@@ -628,12 +614,7 @@ mod tests {
                 second_user,
                 account_info(second_wrong_gasfree_address, true, true, 0, 5, 0, 1),
             );
-        let first = common::block_on(service.preflight_with_account_fetcher(
-            &request(1),
-            NativeRouteAvailability::Unavailable,
-            &fetcher,
-        ))
-        .unwrap();
+        let first = common::block_on(service.preflight_with_account_fetcher(&request(1), &fetcher)).unwrap();
 
         assert_eq!(
             first.availability,
@@ -645,12 +626,7 @@ mod tests {
             }
         );
 
-        let second = common::block_on(second_service.preflight_with_account_fetcher(
-            &request(1),
-            NativeRouteAvailability::Unavailable,
-            &fetcher,
-        ))
-        .unwrap();
+        let second = common::block_on(second_service.preflight_with_account_fetcher(&request(1), &fetcher)).unwrap();
 
         assert_eq!(
             second.availability,

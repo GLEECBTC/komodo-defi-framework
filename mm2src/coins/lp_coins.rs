@@ -2347,23 +2347,14 @@ pub struct WithdrawRequest {
     /// but can be expanded to any protocol that supports transaction expiry.
     pub expiration_seconds: Option<u64>,
     /// Preferred withdrawal fee rail. `None` preserves each coin's existing native behavior.
-    ///
-    /// TODO(Commit 9): consume in `build_tron_withdraw` to branch native/gasless; non-TRON
-    /// coins should reject `Some(Gasless | Auto)` with `WithdrawError::Gasless(Unavailable)`.
-    /// check when working on commit 9 for ways to have this in a generic way while backward compatible.
     #[serde(default)]
     pub fee_method: Option<WithdrawFeeMethod>,
     /// Gasless rail constraints supplied by the caller.
-    ///
-    /// TODO(Commit 9): consume `max_fee` / `deadline_seconds` / `fallback_to_native` and
-    /// decide the policy for conflicting combos (`fee_method=Native` with populated options,
-    /// `fee_method=Gasless` with a manual `fee`).
-    /// check when working on commit 9 for ways to have this in a generic way while backward compatible.
     #[serde(default)]
     pub gasless: Option<GaslessWithdrawOptions>,
 }
 
-/// TODO(Commit 9): Is this needed here, or should it be in tron code. Is it needed at all?
+/// Preferred fee rail for withdrawals that support alternative fee payment.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum WithdrawFeeMethod {
@@ -2372,7 +2363,7 @@ pub enum WithdrawFeeMethod {
     Auto,
 }
 
-/// TODO(Commit 9): Is this needed here, or should it be in tron code. Is it needed at all?
+/// Caller-supplied constraints for gasless withdrawals.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct GaslessWithdrawOptions {
     pub max_fee: Option<BigDecimal>,

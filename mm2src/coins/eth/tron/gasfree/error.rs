@@ -1,3 +1,4 @@
+use crate::eth::{format_remote_error, Web3RpcError};
 use common::HttpStatusCode;
 use derive_more::Display;
 use http::StatusCode;
@@ -105,6 +106,22 @@ impl From<SlurpError> for TronGasfreeError {
             SlurpError::Timeout { .. } => TronGasfreeError::Timeout(message),
             SlurpError::Transport { .. } => TronGasfreeError::Transport(message),
             SlurpError::Internal(_) => TronGasfreeError::Internal(message),
+        }
+    }
+}
+
+impl From<Web3RpcError> for TronGasfreeError {
+    fn from(err: Web3RpcError) -> Self {
+        match err {
+            Web3RpcError::Transport(message) => TronGasfreeError::Transport(message),
+            Web3RpcError::Timeout(message) => TronGasfreeError::Timeout(message),
+            Web3RpcError::BadResponse(message) | Web3RpcError::InvalidResponse(message) => {
+                TronGasfreeError::InvalidResponse(message)
+            },
+            Web3RpcError::RemoteError { code, message } => {
+                TronGasfreeError::InvalidResponse(format_remote_error(code, message))
+            },
+            other => TronGasfreeError::InvalidResponse(other.to_string()),
         }
     }
 }

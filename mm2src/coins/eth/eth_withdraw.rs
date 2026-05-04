@@ -2,9 +2,14 @@ use super::{
     u256_from_big_decimal, u256_to_big_decimal, ChainSpec, ChainTaggedAddress, EthCoinType, EthDerivationMethod,
     EthPrivKeyPolicy, Public, WithdrawError, WithdrawRequest, WithdrawResult, ERC20_CONTRACT, H256,
 };
+use crate::eth::tron::gasfree::withdraw::{
+    is_standard_tron_withdraw_unavailable, maybe_build_tron_gasless_withdraw, validate_non_tron_gasless_request,
+    TronGaslessMode,
+};
+use crate::eth::tron::gasfree::GaslessWithdrawError;
 use crate::eth::tron::sign::sign_tron_transaction;
 use crate::eth::tron::withdraw::{
-    build_tron_trc20_withdraw, build_tron_trx_withdraw, validate_tron_fee_policy, TronWithdrawContext,
+    build_standard_tron_withdraw, validate_tron_fee_policy, StandardTronWithdrawParams, TronWithdrawContext,
 };
 use crate::eth::tron::TronAddress;
 use crate::eth::wallet_connect::WcEthTxParams;
@@ -28,6 +33,7 @@ use crypto::hw_rpc_task::HwRpcTaskAwaitingStatus;
 use crypto::trezor::trezor_rpc_task::{TrezorRequestStatuses, TrezorRpcTaskProcessor};
 use crypto::{CryptoCtx, HwRpcError};
 use ethabi::Token;
+use ethereum_types::U256;
 use futures::compat::Future01CompatExt;
 use kdf_walletconnect::{WalletConnectCtx, WalletConnectOps};
 use mm2_core::mm_ctx::MmArc;
@@ -35,6 +41,7 @@ use mm2_err_handle::map_mm_error::MapMmError;
 use mm2_err_handle::mm_error::MmResult;
 use mm2_err_handle::prelude::{MapToMmResult, MmError, MmResultExt, OrMmError};
 use prost::Message;
+use std::convert::TryFrom;
 use std::ops::Deref;
 use std::sync::Arc;
 #[cfg(target_arch = "wasm32")]
@@ -67,6 +74,12 @@ where
     #[allow(clippy::result_large_err)]
     fn on_finishing(&self) -> Result<(), MmError<WithdrawError>>;
 
+    #[allow(clippy::result_large_err)]
+    fn on_fetching_gasless_quote(&self) -> Result<(), MmError<WithdrawError>>;
+
+    #[allow(clippy::result_large_err)]
+    fn on_signing_gasless_authorization(&self) -> Result<(), MmError<WithdrawError>>;
+
     /// Signs the transaction with a Trezor hardware wallet.
     async fn sign_tx_with_trezor(
         &self,
@@ -84,7 +97,7 @@ where
         from_tagged: &ChainTaggedAddress,
         to_tagged: &ChainTaggedAddress,
         tx: TransactionData,
-        amount: ethabi::ethereum_types::U256,
+        amount: U256,
         total_fee: &BigDecimal,
         fee_details: TxFeeDetails,
     ) -> WithdrawResult {
@@ -286,6 +299,7 @@ where
                 "Memo is not yet supported for TRON withdraw (TRON charges 1 TRX burn fee for memo)".to_owned(),
             ));
         }
+        let gasless_mode = TronGaslessMode::try_from(req)?;
 
         // 2. Validate key policy (only Iguana/HDWallet supported for TRON MVP)
         match coin.priv_key_policy {
@@ -314,26 +328,39 @@ where
             .tron_rpc()
             .ok_or_else(|| WithdrawError::InternalError("TRON RPC client is not initialized".to_owned()))?;
 
+        let trc20_contract = match &coin.coin_type {
+            EthCoinType::Eth => None,
+            EthCoinType::Erc20 { token_addr, .. } => Some(TronAddress::from(*token_addr)),
+            EthCoinType::Nft { .. } => {
+                return MmError::err(WithdrawError::ProtocolNotSupported(
+                    "NFT withdraw is not supported for TRON".to_owned(),
+                ))
+            },
+        };
+
+        if gasless_mode == TronGaslessMode::Gasless {
+            let Some(contract_tron) = trc20_contract else {
+                return MmError::err(WithdrawError::Gasless(GaslessWithdrawError::Unavailable));
+            };
+
+            if let Some(details) =
+                maybe_build_tron_gasless_withdraw(self, tron, &from_tagged, &to_tagged, contract_tron, gasless_mode)
+                    .await?
+            {
+                return Ok(details);
+            }
+        }
+
         let my_balance = coin.address_balance(from_tagged).compat().await.map_mm_err()?;
         let my_balance_dec = u256_to_big_decimal(my_balance, coin.decimals).map_mm_err()?;
 
-        if req.max && my_balance.is_zero() {
-            return MmError::err(WithdrawError::ZeroBalanceToWithdrawMax);
-        }
-
         let amount_base_units = if req.max {
+            if my_balance.is_zero() {
+                return MmError::err(WithdrawError::ZeroBalanceToWithdrawMax);
+            }
             my_balance
         } else {
-            let amount = u256_from_big_decimal(&req.amount, coin.decimals).map_mm_err()?;
-            if amount > my_balance {
-                let required_dec = u256_to_big_decimal(amount, coin.decimals).map_mm_err()?;
-                return MmError::err(WithdrawError::NotSufficientBalance {
-                    coin: ticker.to_owned(),
-                    available: my_balance_dec,
-                    required: required_dec,
-                });
-            }
-            amount
+            u256_from_big_decimal(&req.amount, coin.decimals).map_mm_err()?
         };
 
         // 4. Convert addresses to TRON format
@@ -347,7 +374,7 @@ where
         let resources = tron.get_account_resource(&from_tron).await.map_mm_err()?;
         let prices = tron.get_chain_prices().await.map_mm_err()?;
 
-        // 7. Build tx, estimate fees — branching on coin type
+        // 7. Build tx and estimate fees.
         let withdraw_ctx = TronWithdrawContext {
             from: &from_tron,
             to: &to_tron,
@@ -357,24 +384,42 @@ where
             fee_coin: ticker,
             expiration_seconds: req.expiration_seconds,
         };
-        let (raw, tron_fee_details, final_amount) = match &coin.coin_type {
-            EthCoinType::Eth => {
-                build_tron_trx_withdraw(&withdraw_ctx, amount_base_units, my_balance, &my_balance_dec, req.max)?
-            },
-            EthCoinType::Erc20 {
-                token_addr, platform, ..
-            } => {
-                let contract_tron = TronAddress::from(*token_addr);
-                let trc20_ctx = TronWithdrawContext {
-                    fee_coin: platform.as_str(),
-                    ..withdraw_ctx
+        let standard_tron_withdraw_params = StandardTronWithdrawParams {
+            coin_type: &coin.coin_type,
+            ticker,
+            decimals: coin.decimals,
+            balance: my_balance,
+            balance_dec: &my_balance_dec,
+            amount_base_units,
+            is_max: req.max,
+            ctx: &withdraw_ctx,
+            tron,
+        };
+
+        let (raw, tron_fee_details, final_amount) = match build_standard_tron_withdraw(standard_tron_withdraw_params)
+            .await
+        {
+            Ok(prepared) => prepared,
+            Err(standard_fee_route_err) => {
+                if gasless_mode != TronGaslessMode::Auto
+                    || req.max
+                    || !is_standard_tron_withdraw_unavailable(&standard_fee_route_err)
+                {
+                    return Err(standard_fee_route_err);
+                }
+
+                let Some(contract_tron) = trc20_contract else {
+                    return Err(standard_fee_route_err);
                 };
-                build_tron_trc20_withdraw(&trc20_ctx, tron, &contract_tron, amount_base_units).await?
-            },
-            EthCoinType::Nft { .. } => {
-                return MmError::err(WithdrawError::ProtocolNotSupported(
-                    "NFT withdraw is not supported for TRON".to_owned(),
-                ))
+
+                if let Some(details) =
+                    maybe_build_tron_gasless_withdraw(self, tron, &from_tagged, &to_tagged, contract_tron, gasless_mode)
+                        .await?
+                {
+                    return Ok(details);
+                }
+
+                return Err(standard_fee_route_err);
             },
         };
 
@@ -416,6 +461,8 @@ where
         if let ChainSpec::Tron { .. } = coin.chain_spec {
             return self.build_tron_withdraw(from_tagged, to_tagged).await;
         }
+
+        validate_non_tron_gasless_request(&req)?;
 
         // ── EVM withdraw: existing path (unchanged) ──
         let my_balance = coin.address_balance(from_tagged).compat().await.map_mm_err()?;
@@ -603,6 +650,18 @@ impl EthWithdraw for InitEthWithdraw {
             .map_mm_err()
     }
 
+    fn on_fetching_gasless_quote(&self) -> Result<(), MmError<WithdrawError>> {
+        self.task_handle
+            .update_in_progress_status(WithdrawInProgressStatus::FetchingGaslessQuote)
+            .map_mm_err()
+    }
+
+    fn on_signing_gasless_authorization(&self) -> Result<(), MmError<WithdrawError>> {
+        self.task_handle
+            .update_in_progress_status(WithdrawInProgressStatus::SigningGaslessAuthorization)
+            .map_mm_err()
+    }
+
     async fn sign_tx_with_trezor(
         &self,
         derivation_path: &DerivationPath,
@@ -674,6 +733,14 @@ impl EthWithdraw for StandardEthWithdraw {
     }
 
     fn on_finishing(&self) -> Result<(), MmError<WithdrawError>> {
+        Ok(())
+    }
+
+    fn on_fetching_gasless_quote(&self) -> Result<(), MmError<WithdrawError>> {
+        Ok(())
+    }
+
+    fn on_signing_gasless_authorization(&self) -> Result<(), MmError<WithdrawError>> {
         Ok(())
     }
 

@@ -1,7 +1,9 @@
 use super::*;
 use crate::eth::erc20::get_enabled_erc20_by_platform_and_contract;
 use crate::eth::eth_utils::nonce_sequencer::PerNetNonceLocks;
-use crate::eth::tron::gasfree::{resolve_tron_gasless_provider, TronGaslessProviderConfig};
+use crate::eth::tron::gasfree::{
+    resolve_tron_gasless_provider, ResolvedTronGaslessTokenConfig, TronGaslessProviderConfig,
+};
 use crate::eth::wallet_connect::eth_request_wc_personal_sign;
 use crate::eth::web3_transport::http_transport::HttpTransport;
 use crate::hd_wallet::{
@@ -28,6 +30,7 @@ use mm2_metamask::{from_metamask_error, MetamaskError, MetamaskRpcError, WithMet
 use mm2_p2p::p2p_ctx::P2PContext;
 use proxy_signature::RawMessage;
 use rpc_task::RpcTaskError;
+use std::convert::TryFrom;
 use std::sync::atomic::Ordering;
 use url::Url;
 use web3_transport::websocket_transport::WebsocketTransport;
@@ -262,7 +265,7 @@ pub struct EthNode {
     pub komodo_proxy: bool,
 }
 
-#[derive(Display, Serialize, SerializeErrorType)]
+#[derive(Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum EthTokenActivationError {
     InternalError(String),
@@ -279,6 +282,59 @@ pub enum EthTokenActivationError {
 impl From<AbortedError> for EthTokenActivationError {
     fn from(e: AbortedError) -> Self {
         EthTokenActivationError::InternalError(e.to_string())
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+struct TronGaslessTokenActivationConfig {
+    #[serde(default)]
+    enabled: bool,
+    transfer_max_fee: Option<BigDecimal>,
+}
+
+fn resolve_tron_gasless_token_config(
+    raw: Option<&TronGaslessTokenActivationConfig>,
+    decimals: u8,
+) -> MmResult<Option<ResolvedTronGaslessTokenConfig>, EthTokenActivationError> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+
+    if !raw.enabled {
+        return Ok(None);
+    }
+
+    Ok(Some(ResolvedTronGaslessTokenConfig::try_from((
+        EnabledTronGaslessTokenActivationConfig(raw),
+        decimals,
+    ))?))
+}
+
+struct EnabledTronGaslessTokenActivationConfig<'a>(&'a TronGaslessTokenActivationConfig);
+
+impl TryFrom<(EnabledTronGaslessTokenActivationConfig<'_>, u8)> for ResolvedTronGaslessTokenConfig {
+    type Error = MmError<EthTokenActivationError>;
+
+    fn try_from((config, decimals): (EnabledTronGaslessTokenActivationConfig<'_>, u8)) -> Result<Self, Self::Error> {
+        let config = config.0;
+        let transfer_max_fee_token_base_units = if let Some(ref transfer_max_fee) = config.transfer_max_fee {
+            if transfer_max_fee < &BigDecimal::from(0) {
+                return MmError::err(EthTokenActivationError::InvalidPayload(
+                    "TRON token gasless.transfer_max_fee must be non-negative".to_string(),
+                ));
+            }
+            Some(u256_from_big_decimal(transfer_max_fee, decimals).mm_err(|e| {
+                EthTokenActivationError::InvalidPayload(format!(
+                    "Invalid TRON token gasless.transfer_max_fee representation: {e}"
+                ))
+            })?)
+        } else {
+            None
+        };
+
+        Ok(ResolvedTronGaslessTokenConfig {
+            transfer_max_fee_token_base_units,
+        })
     }
 }
 
@@ -410,6 +466,8 @@ pub enum EthTokenActivationParams {
 #[derive(Clone, Deserialize)]
 pub struct Erc20TokenActivationRequest {
     pub required_confirmations: Option<u64>,
+    #[serde(default)]
+    gasless: Option<TronGaslessTokenActivationConfig>,
 }
 
 /// Holds ERC-20 token-specific activation parameters when using the task manager for activation.
@@ -417,6 +475,8 @@ pub struct Erc20TokenActivationRequest {
 pub struct InitErc20TokenActivationRequest {
     /// The number of confirmations required for swap transactions.
     pub required_confirmations: Option<u64>,
+    #[serde(default)]
+    gasless: Option<TronGaslessTokenActivationConfig>,
     /// Parameters for HD wallet account and addresses initialization.
     #[serde(flatten)]
     pub enable_params: EnabledCoinBalanceParams,
@@ -430,6 +490,7 @@ impl From<InitErc20TokenActivationRequest> for Erc20TokenActivationRequest {
     fn from(req: InitErc20TokenActivationRequest) -> Self {
         Erc20TokenActivationRequest {
             required_confirmations: req.required_confirmations,
+            gasless: req.gasless,
         }
     }
 }
@@ -550,6 +611,25 @@ impl EthCoin {
                 .map_mm_err()?
                 .unwrap_or_default();
         let swap_gas_fee_policy = SwapGasFeePolicy::default();
+        let tron_gasless_token_config = match &self.chain_spec {
+            ChainSpec::Tron { .. } => {
+                let config = resolve_tron_gasless_token_config(activation_params.gasless.as_ref(), decimals)?;
+                if config.is_some() && self.tron_gasless_provider.is_none() {
+                    return MmError::err(EthTokenActivationError::InvalidPayload(
+                        "TRON token gasless config requires a platform tron_gasless_provider".to_string(),
+                    ));
+                }
+                config
+            },
+            ChainSpec::Evm { .. } => {
+                if activation_params.gasless.is_some() {
+                    return MmError::err(EthTokenActivationError::InvalidPayload(
+                        "Token gasless config is only supported on TRON chains".to_string(),
+                    ));
+                }
+                None
+            },
+        };
 
         let token = EthCoinImpl {
             priv_key_policy: self.priv_key_policy.clone(),
@@ -584,6 +664,7 @@ impl EthCoin {
             estimate_gas_mult,
             abortable_system,
             tron_gasless_provider: self.tron_gasless_provider.clone(),
+            tron_gasless_token_config,
         };
 
         Ok(EthCoin(Arc::new(token)))
@@ -683,6 +764,7 @@ impl EthCoin {
             estimate_gas_mult,
             abortable_system,
             tron_gasless_provider: None,
+            tron_gasless_token_config: None,
         };
         Ok(EthCoin(Arc::new(global_nft)))
     }
@@ -909,6 +991,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         estimate_gas_mult,
         abortable_system,
         tron_gasless_provider,
+        tron_gasless_token_config: None,
     };
 
     Ok(EthCoin(Arc::new(coin)))
@@ -1295,4 +1378,42 @@ fn compress_public_key(uncompressed: H520) -> MmResult<H264, EthActivationV2Erro
     let compressed = public_key.serialize();
 
     Ok(H264::from(compressed))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ethereum_types::U256;
+
+    #[test]
+    fn resolve_tron_gasless_token_config_accepts_valid_positive_cap() {
+        let config = resolve_tron_gasless_token_config(
+            Some(&TronGaslessTokenActivationConfig {
+                enabled: true,
+                transfer_max_fee: Some("2.5".parse().unwrap()),
+            }),
+            6,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(
+            config.transfer_max_fee_token_base_units.unwrap(),
+            U256::from(2_500_000u64)
+        );
+    }
+
+    #[test]
+    fn resolve_tron_gasless_token_config_rejects_negative_cap() {
+        let err = resolve_tron_gasless_token_config(
+            Some(&TronGaslessTokenActivationConfig {
+                enabled: true,
+                transfer_max_fee: Some("-1".parse().unwrap()),
+            }),
+            6,
+        )
+        .unwrap_err();
+
+        assert!(matches!(err.into_inner(), EthTokenActivationError::InvalidPayload(_)));
+    }
 }

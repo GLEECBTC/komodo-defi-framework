@@ -73,8 +73,6 @@ pub enum WithdrawInProgressStatus {
     Preparing,
     GeneratingTransaction,
     SigningTransaction,
-    // TODO(Commit 9 / Commit 10): emit the variants below from the TRON gasless withdraw path.
-    // Defined now for wire compatibility; no execution path produces them yet. Check if one wrapped variant will be better and how to add those in a generic way if possible.
     FetchingGaslessQuote,
     SigningGaslessAuthorization,
     SubmittingGaslessAuthorization,

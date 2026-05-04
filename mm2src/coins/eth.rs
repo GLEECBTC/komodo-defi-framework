@@ -118,7 +118,7 @@ use std::str::from_utf8;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
-use tron::gasfree::ResolvedTronGaslessProvider;
+use tron::gasfree::{ResolvedTronGaslessProvider, ResolvedTronGaslessTokenConfig};
 use web3::types::{
     Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Trace, TraceFilterBuilder,
     Transaction as Web3Transaction, TransactionId, U64,
@@ -1087,6 +1087,8 @@ pub struct EthCoinImpl {
     /// or when gasless is not configured. Tokens can access this when withdrawing
     /// via `platform_coin()`.
     pub(crate) tron_gasless_provider: Option<ResolvedTronGaslessProvider>,
+    /// Token-level TRON GasFree configuration resolved at activation time.
+    pub(crate) tron_gasless_token_config: Option<ResolvedTronGaslessTokenConfig>,
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation
     /// and on [`MmArc::stop`].
     pub abortable_system: AbortableQueue,
@@ -7258,6 +7260,7 @@ pub async fn eth_coin_from_conf_and_request(
         gas_limit_v2,
         estimate_gas_mult,
         tron_gasless_provider: None,
+        tron_gasless_token_config: None,
         abortable_system,
     };
 
@@ -8263,6 +8266,7 @@ impl EthCoin {
             gas_limit_v2: EthGasLimitV2::default(),
             estimate_gas_mult: None,
             tron_gasless_provider: self.tron_gasless_provider.clone(),
+            tron_gasless_token_config: self.tron_gasless_token_config.clone(),
             abortable_system: self.abortable_system.create_subsystem().unwrap(),
         };
         EthCoin(Arc::new(coin))

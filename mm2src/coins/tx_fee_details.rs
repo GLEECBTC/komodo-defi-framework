@@ -3,7 +3,7 @@
 //! `TxFeeDetails` serializes with a `"type"` tag for outbound JSON, but deserializes
 //! as untagged to accept responses without the discriminator field.
 
-use crate::eth::tron::fee::TronTxFeeDetails;
+use crate::eth::tron::fee::{TronGaslessFeeDetails, TronTxFeeDetails};
 use crate::eth::EthTxFeeDetails;
 use crate::qrc20::Qrc20FeeDetails;
 use crate::siacoin::SiaFeeDetails;
@@ -18,6 +18,7 @@ pub enum TxFeeDetails {
     Utxo(UtxoFeeDetails),
     Eth(EthTxFeeDetails),
     Tron(TronTxFeeDetails),
+    TronGasless(TronGaslessFeeDetails),
     Qrc20(Qrc20FeeDetails),
     Slp(crate::utxo::slp::SlpFeeDetails),
     Tendermint(TendermintFeeDetails),
@@ -37,6 +38,7 @@ impl<'de> Deserialize<'de> for TxFeeDetails {
             Utxo(UtxoFeeDetails),
             Eth(EthTxFeeDetails),
             Tron(TronTxFeeDetails),
+            TronGasless(TronGaslessFeeDetails),
             Qrc20(Qrc20FeeDetails),
             Slp(crate::utxo::slp::SlpFeeDetails),
             Tendermint(TendermintFeeDetails),
@@ -48,6 +50,7 @@ impl<'de> Deserialize<'de> for TxFeeDetails {
             TxFeeDetailsUnTagged::Utxo(f) => Ok(TxFeeDetails::Utxo(f)),
             TxFeeDetailsUnTagged::Eth(f) => Ok(TxFeeDetails::Eth(f)),
             TxFeeDetailsUnTagged::Tron(f) => Ok(TxFeeDetails::Tron(f)),
+            TxFeeDetailsUnTagged::TronGasless(f) => Ok(TxFeeDetails::TronGasless(f)),
             TxFeeDetailsUnTagged::Qrc20(f) => Ok(TxFeeDetails::Qrc20(f)),
             TxFeeDetailsUnTagged::Slp(f) => Ok(TxFeeDetails::Slp(f)),
             TxFeeDetailsUnTagged::Tendermint(f) => Ok(TxFeeDetails::Tendermint(f)),
@@ -66,6 +69,12 @@ impl From<EthTxFeeDetails> for TxFeeDetails {
 impl From<TronTxFeeDetails> for TxFeeDetails {
     fn from(tron_details: TronTxFeeDetails) -> Self {
         TxFeeDetails::Tron(tron_details)
+    }
+}
+
+impl From<TronGaslessFeeDetails> for TxFeeDetails {
+    fn from(tron_gasless_details: TronGaslessFeeDetails) -> Self {
+        TxFeeDetails::TronGasless(tron_gasless_details)
     }
 }
 

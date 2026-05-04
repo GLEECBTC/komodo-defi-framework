@@ -12,7 +12,7 @@ use crate::eth::tron::fee::{
 use crate::eth::tron::proto::TransactionRaw;
 use crate::eth::tron::tx_builder::{build_trc20_transfer, build_trx_transfer};
 use crate::eth::tron::{TaposBlockData, TronAddress, TronApiClient, TRX_DECIMALS};
-use crate::eth::{u256_from_big_decimal, u256_to_big_decimal};
+use crate::eth::{u256_from_big_decimal, u256_to_big_decimal, EthCoinType};
 use crate::{WithdrawError, WithdrawFee};
 use ethereum_types::U256;
 use mm2_err_handle::map_mm_error::MmResultExt;
@@ -59,6 +59,89 @@ pub fn u256_to_u64_checked(value: U256) -> Result<u64, MmError<WithdrawError>> {
         return MmError::err(WithdrawError::InternalError(format!("value {value} exceeds u64::MAX")));
     }
     Ok(value.as_u64())
+}
+
+#[allow(clippy::result_large_err)]
+fn ensure_tron_withdraw_asset_balance(
+    ticker: &str,
+    amount: U256,
+    balance: U256,
+    balance_dec: &BigDecimal,
+    decimals: u8,
+) -> Result<(), MmError<WithdrawError>> {
+    if amount <= balance {
+        return Ok(());
+    }
+
+    MmError::err(WithdrawError::NotSufficientBalance {
+        coin: ticker.to_owned(),
+        available: balance_dec.clone(),
+        required: u256_to_big_decimal(amount, decimals).map_mm_err()?,
+    })
+}
+
+#[derive(Clone, Copy)]
+pub struct StandardTronWithdrawParams<'a, 'ctx> {
+    pub coin_type: &'a EthCoinType,
+    pub ticker: &'a str,
+    pub decimals: u8,
+    pub balance: U256,
+    pub balance_dec: &'a BigDecimal,
+    pub amount_base_units: U256,
+    pub is_max: bool,
+    pub ctx: &'a TronWithdrawContext<'ctx>,
+    pub tron: &'a TronApiClient,
+}
+
+impl StandardTronWithdrawParams<'_, '_> {
+    #[allow(clippy::result_large_err)]
+    fn ensure_asset_balance(&self) -> Result<(), MmError<WithdrawError>> {
+        ensure_tron_withdraw_asset_balance(
+            self.ticker,
+            self.amount_base_units,
+            self.balance,
+            self.balance_dec,
+            self.decimals,
+        )
+    }
+}
+
+/// Build a standard TRON withdrawal, validating the asset balance before preparing the transaction.
+#[allow(clippy::result_large_err)]
+pub async fn build_standard_tron_withdraw(
+    params: StandardTronWithdrawParams<'_, '_>,
+) -> Result<(TransactionRaw, TronTxFeeDetails, U256), MmError<WithdrawError>> {
+    match params.coin_type {
+        EthCoinType::Eth => {
+            params.ensure_asset_balance()?;
+            build_tron_trx_withdraw(
+                params.ctx,
+                params.amount_base_units,
+                params.balance,
+                params.balance_dec,
+                params.is_max,
+            )
+        },
+        EthCoinType::Erc20 {
+            platform, token_addr, ..
+        } => {
+            params.ensure_asset_balance()?;
+            let contract_tron = TronAddress::from(*token_addr);
+            let trc20_ctx = TronWithdrawContext {
+                from: params.ctx.from,
+                to: params.ctx.to,
+                block_data: params.ctx.block_data,
+                resources: params.ctx.resources,
+                prices: params.ctx.prices,
+                fee_coin: platform.as_str(),
+                expiration_seconds: params.ctx.expiration_seconds,
+            };
+            build_tron_trc20_withdraw(&trc20_ctx, params.tron, &contract_tron, params.amount_base_units).await
+        },
+        EthCoinType::Nft { .. } => MmError::err(WithdrawError::ProtocolNotSupported(
+            "NFT withdraw is not supported for TRON".to_owned(),
+        )),
+    }
 }
 
 /// Build TRX (native) withdraw: estimate fees, handle max-deduction, return final tx raw.

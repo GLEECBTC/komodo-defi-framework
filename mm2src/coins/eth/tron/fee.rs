@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 const RESULT_BYTES_OVERHEAD_PER_CONTRACT: u64 = 64;
 /// TRON signatures are 65 bytes (`r || s || v`), used here as estimation placeholder.
 const PLACEHOLDER_SIGNATURE_LEN: usize = 65;
+pub const TRON_GASFREE_PROVIDER_NAME: &str = "gasfree";
 
 /// Fee breakdown for a TRON transaction.
 ///
@@ -37,20 +38,32 @@ pub struct TronTxFeeDetails {
     pub bandwidth_fee: BigDecimal,
     pub energy_fee: BigDecimal,
     pub total_fee: BigDecimal,
-    /// TODO(Commit 9): populated by `build_tron_withdraw` when the gasless branch is taken. Check if it's better to have 2 variants while backward compatible
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gasless: Option<TronGaslessFeeMeta>,
 }
 
-/// Gasless provider fee metadata for TRC20 withdrawals routed through GasFree.
+/// Fee rail used for TRON gasless fee metadata.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TronGaslessFeeMethod {
+    /// Provider-sponsored TRC20 transfer authorized through GasFree.
+    Gasless,
+}
+
+/// Fee details for TRC20 withdrawals routed through GasFree.
+///
+/// Distinct variant from [`TronTxFeeDetails`] because the user pays the provider
+/// fee in the token itself (no TRX bandwidth/energy) and signs an off-chain
+/// authorization rather than broadcasting on-chain.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct TronGaslessFeeMeta {
-    pub fee_method: String,
-    pub provider: String,
+pub struct TronGaslessFeeDetails {
+    pub coin: String,
+    pub fee_method: TronGaslessFeeMethod,
+    pub provider_name: String,
     pub gasfree_address: String,
     pub transfer_fee: BigDecimal,
     pub activation_fee: BigDecimal,
     pub total_token_fee: BigDecimal,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signed_max_fee: Option<BigDecimal>,
     pub trace_id: Option<String>,
 }
 
@@ -192,7 +205,6 @@ fn estimate_fee_details(
         bandwidth_fee: sun_to_trx_decimal(bandwidth_fee_sun),
         energy_fee: sun_to_trx_decimal(energy_fee_sun),
         total_fee: sun_to_trx_decimal(total_fee_sun),
-        gasless: None,
     }
 }
 

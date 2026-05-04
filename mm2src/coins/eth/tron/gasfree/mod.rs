@@ -4,8 +4,10 @@ pub mod authorization;
 pub mod client;
 pub mod config;
 pub mod error;
+pub mod relay_payload;
 pub mod service;
 pub mod typed_data;
+pub(crate) mod withdraw;
 
 use crate::eth::ChainSpec;
 pub use address::{api_path_segment_for_network, compute_gasfree_address_for_network, controller_for_network};
@@ -15,11 +17,12 @@ pub use api_types::{
 };
 pub use authorization::{sign_permit_transfer, GasfreeSignedAuthorization};
 pub use client::{TronGasfreeClient, TronGasfreeTransport};
-pub use config::{ResolvedTronGaslessProvider, TronGaslessProviderConfig};
+pub use config::{ResolvedTronGaslessProvider, ResolvedTronGaslessTokenConfig, TronGaslessProviderConfig};
 pub use error::{GaslessWithdrawError, TronGasfreeError, TronGaslessConfigError};
+pub use relay_payload::{TronGasfreeRelayPayload, TRON_GASFREE_RELAY_TYPE};
 pub use service::{
-    DisabledReason, GasfreeAccountService, GasfreeAvailability, GasfreeRecommendation, GasfreeTransferPreflight,
-    GasfreeTransferRequest, NativeRouteAvailability, OnChainBalanceFetcher,
+    DisabledReason, GasfreeAccountService, GasfreeAvailability, GasfreeTransferPreflight, GasfreeTransferRequest,
+    OnChainBalanceFetcher, TronOnChainBalanceFetcher,
 };
 pub use typed_data::{
     build_permit_transfer_typed_data, hash_permit_transfer_typed_data, GasfreeDomain, PermitTransferData,

@@ -1,6 +1,7 @@
 use super::client::TronGasfreeClient;
 use super::error::TronGaslessConfigError;
 use crate::eth::tron::{Network, TronAddress};
+use ethereum_types::U256;
 use serde::Deserialize;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -59,8 +60,15 @@ impl TronGaslessProviderConfig {
     }
 }
 
+/// Token-level GasFree settings resolved at activation time for TRON TRC20 assets.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ResolvedTronGaslessTokenConfig {
+    /// Maximum provider fee allowed for transfers, converted at activation to token base units.
+    pub transfer_max_fee_token_base_units: Option<U256>,
+}
+
 /// Fully-validated GasFree provider state that can be stored on coin context.
-/// Redult of [`resolve_tron_gasless_provider`](super::resolve_tron_gasless_provider).
+/// Result of [`resolve_tron_gasless_provider`](super::resolve_tron_gasless_provider).
 #[derive(Clone)]
 pub struct ResolvedTronGaslessProvider {
     raw: TronGaslessProviderConfig,

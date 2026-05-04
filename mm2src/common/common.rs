@@ -157,7 +157,7 @@ pub use wasm::*;
 
 use backtrace::SymbolName;
 use chrono::format::ParseError;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SecondsFormat, TimeZone, Utc};
 use derive_more::Display;
 pub use futures::compat::Future01CompatExt;
 use futures01::{future, Future};
@@ -1204,6 +1204,14 @@ pub fn get_utc_timestamp() -> i64 {
 
     #[cfg(not(feature = "for-tests"))]
     return Utc::now().timestamp();
+}
+
+#[inline(always)]
+pub fn utc_now_rfc3339_secs() -> String {
+    Utc.timestamp_opt(get_utc_timestamp(), 0)
+        .single()
+        .unwrap_or_else(Utc::now)
+        .to_rfc3339_opts(SecondsFormat::Secs, true)
 }
 
 #[inline(always)]
