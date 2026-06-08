@@ -521,6 +521,133 @@ fn test_get_fee_to_send_taker_fee() {
     assert_eq!(actual, expected_fee);
 }
 
+/// Regression test for Gnosis/Nethermind: their newer release validates the EIP-1559 fee fields during
+/// `eth_estimateGas` and rejects the call with `"miner premium is negative"` when `max_fee_per_gas` is
+/// below the current base fee. Since gas *usage* is independent of the fee values, the estimate must
+/// transparently retry without the fee fields so fee preimages / order posting keep working.
+/// See [`EthCoin::estimate_gas_with_pay_for_gas_option`].
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn test_estimate_gas_retries_without_fee_fields_when_max_fee_below_base_fee() {
+    const ESTIMATED_GAS: u64 = 60_000;
+    static FEE_BEARING_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
+    static FEE_LESS_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
+
+    // Force EIP-1559 fee fields into the estimate request regardless of the configured policy.
+    EthCoin::get_swap_pay_for_gas_option.mock_safe(|_, _| {
+        MockResult::Return(Box::pin(futures::future::ok(PayForGasOption::Eip1559 {
+            max_fee_per_gas: 1_000_000_000u64.into(),
+            max_priority_fee_per_gas: 100_000_000u64.into(),
+        })))
+    });
+
+    // Emulate a Nethermind/Gnosis node: reject while the fee fields are present, succeed once omitted.
+    EthCoin::estimate_gas_wrapper.mock_safe(|_, req: CallRequest| {
+        if req.max_fee_per_gas.is_some() || req.max_priority_fee_per_gas.is_some() || req.gas_price.is_some() {
+            FEE_BEARING_ATTEMPTS.fetch_add(1, AtomicOrdering::Relaxed);
+            MockResult::Return(Box::new(futures01::future::err(web3::Error::InvalidResponse(
+                "RPC error: Error { code: ServerError(-32000), message: \"miner premium is negative\", data: None }"
+                    .to_string(),
+            ))))
+        } else {
+            FEE_LESS_ATTEMPTS.fetch_add(1, AtomicOrdering::Relaxed);
+            MockResult::Return(Box::new(futures01::future::ok(ESTIMATED_GAS.into())))
+        }
+    });
+
+    let (_ctx, coin) = eth_coin_for_test(
+        EthCoinType::Erc20 {
+            platform: ETH.to_string(),
+            token_addr: Address::default(),
+        },
+        &["http://dummy.dummy"],
+        None,
+        ETH_SEPOLIA_CHAIN_ID,
+    );
+
+    let gas = block_on(coin.estimate_gas_for_contract_call(Address::default(), vec![0u8; 4].into(), 0.into()))
+        .expect("estimate_gas_for_contract_call should succeed via the fee-less retry");
+
+    assert_eq!(gas, ESTIMATED_GAS.into());
+    assert_eq!(
+        FEE_BEARING_ATTEMPTS.load(AtomicOrdering::Relaxed),
+        1,
+        "the first attempt must include the EIP-1559 fee fields"
+    );
+    assert_eq!(
+        FEE_LESS_ATTEMPTS.load(AtomicOrdering::Relaxed),
+        1,
+        "the rejected fee fields must trigger exactly one fee-less retry"
+    );
+}
+
+/// Estimate errors unrelated to the base fee must propagate as-is (no fee-less retry), so we never mask
+/// a genuine failure behind a second request.
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn test_estimate_gas_does_not_retry_on_unrelated_error() {
+    static ATTEMPTS: AtomicU64 = AtomicU64::new(0);
+
+    EthCoin::get_swap_pay_for_gas_option.mock_safe(|_, _| {
+        MockResult::Return(Box::pin(futures::future::ok(PayForGasOption::Eip1559 {
+            max_fee_per_gas: 1_000_000_000u64.into(),
+            max_priority_fee_per_gas: 100_000_000u64.into(),
+        })))
+    });
+    EthCoin::estimate_gas_wrapper.mock_safe(|_, _| {
+        ATTEMPTS.fetch_add(1, AtomicOrdering::Relaxed);
+        MockResult::Return(Box::new(futures01::future::err(web3::Error::InvalidResponse(
+            "execution reverted".to_string(),
+        ))))
+    });
+
+    let (_ctx, coin) = eth_coin_for_test(
+        EthCoinType::Erc20 {
+            platform: ETH.to_string(),
+            token_addr: Address::default(),
+        },
+        &["http://dummy.dummy"],
+        None,
+        ETH_SEPOLIA_CHAIN_ID,
+    );
+
+    let err = block_on(coin.estimate_gas_for_contract_call(Address::default(), vec![0u8; 4].into(), 0.into()))
+        .expect_err("unrelated estimate errors must not be retried");
+    assert!(
+        err.to_string().to_lowercase().contains("execution reverted"),
+        "unexpected error: {}",
+        err
+    );
+    assert_eq!(
+        ATTEMPTS.load(AtomicOrdering::Relaxed),
+        1,
+        "an unrelated error must not trigger a retry"
+    );
+}
+
+/// `parse_fee_cap_error` must extract the fee cap and base fee from both the geth wording and the
+/// Nethermind >= v1.38.0 wording (and yield `None` for the numberless "miner premium is negative").
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn test_parse_fee_cap_error() {
+    // geth (older) wording: space-separated values.
+    let geth = "max fee per gas less than block base fee: address 0xabc, gasfeecap: 140 basefee: 146";
+    assert_eq!(
+        parse_fee_cap_error(geth),
+        Some((U256::from(140u64), U256::from(146u64)))
+    );
+
+    // geth / Nethermind >= v1.38.0 wording: comma-separated, mixed case.
+    let nethermind = "max fee per gas less than block base fee: address 0xABC, maxFeePerGas: 140000000000, baseFee: 146283608928 (supplied gas 56786)";
+    assert_eq!(
+        parse_fee_cap_error(nethermind),
+        Some((U256::from(140000000000u64), U256::from(146283608928u64)))
+    );
+
+    // The bare Nethermind condition carries no numbers, so the caller falls back to the generic error.
+    assert_eq!(parse_fee_cap_error("miner premium is negative"), None);
+}
+
 /// Some ERC20 tokens return the `error: -32016, message: \"The execution failed due to an exception.\"` error
 /// if the balance is insufficient.
 /// So [`EthCoin::get_fee_to_send_taker_fee`] must return [`TradePreimageError::NotSufficientBalance`].

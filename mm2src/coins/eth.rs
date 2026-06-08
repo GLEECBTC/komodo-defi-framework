@@ -5188,6 +5188,38 @@ impl EthCoin {
         Box::new(fut.boxed().compat())
     }
 
+    /// Estimates gas for the contract call described by `base_req` (which must NOT yet carry any
+    /// gas-price/fee fields), applying `pay_for_gas_option` to populate them.
+    ///
+    /// The fee fields are supplied because some contracts branch on gas price (e.g. TUSD, see
+    /// https://github.com/KomodoPlatform/atomicDEX-API/issues/643). However, gas *usage* itself does
+    /// not depend on the fee values, and some nodes (e.g. Nethermind, the client behind Gnosis)
+    /// validate the EIP-1559 fee fields during `eth_estimateGas` and reject the call when
+    /// `max_fee_per_gas` is below the current base fee (e.g. "miner premium is negative"). When that
+    /// happens we retry the estimate without the fee fields so gas estimation (and thus order posting
+    /// and fee preimages) keeps working even when the base fee spikes above our (high-policy) estimate.
+    async fn estimate_gas_with_pay_for_gas_option(
+        &self,
+        base_req: CallRequest,
+        pay_for_gas_option: PayForGasOption,
+    ) -> Web3RpcResult<U256> {
+        let req_with_fees = call_request_with_pay_for_gas_option(base_req.clone(), pay_for_gas_option);
+        let res = self.estimate_gas_wrapper(req_with_fees).compat().await;
+        match res {
+            Err(ref e) if is_max_fee_per_gas_below_base_fee_error(&e.to_string()) => {
+                warn!(
+                    "eth_estimateGas rejected the EIP-1559 fee fields ({}); retrying without them as gas usage is fee-independent",
+                    e
+                );
+                self.estimate_gas_wrapper(base_req)
+                    .compat()
+                    .await
+                    .map_to_mm(Web3RpcError::from)
+            },
+            other => other.map_to_mm(Web3RpcError::from),
+        }
+    }
+
     /// Estimates how much gas is necessary to allow the contract call to complete.
     /// `contract_addr` can be a ERC20 token address or any other contract address.
     ///
@@ -5219,13 +5251,8 @@ impl EthCoin {
             to: Some(contract_addr),
             ..CallRequest::default()
         };
-        // gas price must be supplied because some smart contracts base their
-        // logic on gas price, e.g. TUSD: https://github.com/KomodoPlatform/atomicDEX-API/issues/643
-        let estimate_gas_req = call_request_with_pay_for_gas_option(estimate_gas_req, pay_for_gas_option);
-        coin.estimate_gas_wrapper(estimate_gas_req)
-            .compat()
+        coin.estimate_gas_with_pay_for_gas_option(estimate_gas_req, pay_for_gas_option)
             .await
-            .map_to_mm(Web3RpcError::from)
     }
 
     /// Calls estimate_gas_for_contract_call if the `estimate_gas_mult` conf param is set or `default_gas` is None.
@@ -6586,12 +6613,12 @@ impl MmCoin for EthCoin {
             gas: None,
             ..CallRequest::default()
         };
-        // gas price must be supplied because some smart contracts base their
-        // logic on gas price, e.g. TUSD: https://github.com/KomodoPlatform/atomicDEX-API/issues/643
-        let estimate_gas_req = call_request_with_pay_for_gas_option(estimate_gas_req, pay_for_gas_option.clone());
         // Please note if the wallet's balance is insufficient to withdraw, then `estimate_gas` may fail with the `Exception` error.
         // Ideally we should determine the case when we have the insufficient balance and return `TradePreimageError::NotSufficientBalance` error.
-        let gas_limit = self.estimate_gas_wrapper(estimate_gas_req).compat().await?;
+        let gas_limit = self
+            .estimate_gas_with_pay_for_gas_option(estimate_gas_req, pay_for_gas_option.clone())
+            .await
+            .map_mm_err()?;
         let total_fee = calc_total_fee(gas_limit, &pay_for_gas_option).map_mm_err()?;
         let amount = u256_to_big_decimal(total_fee, ETH_DECIMALS).map_mm_err()?;
         Ok(TradeFee {
@@ -7456,12 +7483,31 @@ impl From<Web3RpcError> for EthGasDetailsErr {
     }
 }
 
-fn parse_fee_cap_error(message: &str) -> Option<(U256, U256)> {
-    let re = Regex::new(r"gasfeecap: (\d+)\s+basefee: (\d+)").ok()?;
-    let caps = re.captures(message)?;
+/// Returns `true` when an RPC error reports that the provided EIP-1559 `max_fee_per_gas` is below the
+/// current block base fee (so the call/tx would be underpriced). Different nodes word this differently:
+/// - geth: `"max fee per gas less than block base fee"`
+/// - older Nethermind: `"fee cap less than block base fee"`
+/// - newer Nethermind (e.g. the client behind Gnosis): `"miner premium is negative"`
+fn is_max_fee_per_gas_below_base_fee_error(error_str: &str) -> bool {
+    let error_str = error_str.to_lowercase();
+    error_str.contains("fee cap less than block base fee")
+        || error_str.contains("max fee per gas less than block base fee")
+        || error_str.contains("miner premium is negative")
+}
 
-    let user_cap_str = caps.get(1)?.as_str();
-    let required_base_str = caps.get(2)?.as_str();
+/// Extracts the `(provided_fee_cap, required_base_fee)` pair (in wei) from a "max fee per gas below base
+/// fee" RPC error, when the node embeds the numbers. Handles both wordings seen in the wild:
+/// - geth (older): `"... gasFeeCap: 140 baseFee: 146 ..."`
+/// - geth / Nethermind >= v1.38.0: `"... maxFeePerGas: 140000000000, baseFee: 146283608928 ..."`
+///
+/// Returns `None` when no numbers are present (e.g. the bare `"miner premium is negative"`), in which
+/// case the caller falls back to the generic [`EthGasDetailsErr::GasFeeCapBelowBaseFee`].
+fn parse_fee_cap_error(message: &str) -> Option<(U256, U256)> {
+    let fee_cap_re = Regex::new(r"(?i)(?:gasfeecap|maxfeepergas):\s*(\d+)").ok()?;
+    let base_fee_re = Regex::new(r"(?i)basefee:\s*(\d+)").ok()?;
+
+    let user_cap_str = fee_cap_re.captures(message)?.get(1)?.as_str();
+    let required_base_str = base_fee_re.captures(message)?.get(1)?.as_str();
 
     let user_cap = U256::from_dec_str(user_cap_str).ok()?;
     let required_base = U256::from_dec_str(required_base_str).ok()?;
@@ -7560,9 +7606,7 @@ async fn get_eth_gas_details_from_withdraw_fee(
                 let amount = u256_to_big_decimal(eth_value, eth_coin.decimals).map_mm_err()?;
 
                 return MmError::err(EthGasDetailsErr::AmountTooLow { amount, threshold });
-            } else if error_str.contains("fee cap less than block base fee")
-                || error_str.contains("max fee per gas less than block base fee")
-            {
+            } else if is_max_fee_per_gas_below_base_fee_error(&error_str) {
                 if let Some((user_cap, required_base)) = parse_fee_cap_error(&error_str) {
                     // The RPC error gives fee values in wei. Convert to Gwei (9 decimals) for the user.
                     let provided_fee_cap = u256_to_big_decimal(user_cap, ETH_GWEI_DECIMALS).map_mm_err()?;
