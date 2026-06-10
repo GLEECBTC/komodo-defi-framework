@@ -7562,6 +7562,8 @@ async fn get_eth_gas_details_from_withdraw_fee(
                 return MmError::err(EthGasDetailsErr::AmountTooLow { amount, threshold });
             } else if error_str.contains("fee cap less than block base fee")
                 || error_str.contains("max fee per gas less than block base fee")
+                // Nethermind < 1.38.0 reports a fee cap below the base fee with this message
+                || error_str.contains("miner premium is negative")
             {
                 if let Some((user_cap, required_base)) = parse_fee_cap_error(&error_str) {
                     // The RPC error gives fee values in wei. Convert to Gwei (9 decimals) for the user.

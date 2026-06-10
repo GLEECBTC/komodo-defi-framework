@@ -133,12 +133,16 @@ impl FeePerGasSimpleEstimator {
 
     /// estimate priority fees by fee history
     fn calculate_with_history(coin: &EthCoin, fee_history: &FeeHistoryResult) -> Web3RpcResult<FeePerGasEstimated> {
-        // For estimation of max fee and max priority fee we use latest block base_fee but adjusted.
-        // Apparently for this simple fee estimator for assured high priority we should assume
-        // that the real base_fee may go up by 1,25 (i.e. if the block is full). This is covered by high priority ADJUST_MAX_FEE multiplier
+        // For estimation of max fee and max priority fee we use the next block base_fee but adjusted.
+        // `eth_feeHistory` returns `baseFeePerGas` ordered oldest to newest with one extra trailing entry
+        // for the next (pending) block, so the last element is the most recent value available.
+        // Note that some non-mainline clients (e.g. Avalanche, Fantom) omit the extra next-block entry,
+        // in which case the last element is the newest mined block's base fee.
+        // The ADJUST_BASE_FEE multipliers then add headroom on top in case the base fee keeps growing
+        // (it can go up by 12.5% per block if blocks are full) until the tx is included.
         let latest_base_fee = fee_history
             .base_fee_per_gas
-            .first()
+            .last()
             .cloned()
             .unwrap_or_else(|| U256::from(0));
         let latest_base_fee_dec = wei_to_gwei_decimal(latest_base_fee).unwrap_or_else(|_| BigDecimal::from(0));
