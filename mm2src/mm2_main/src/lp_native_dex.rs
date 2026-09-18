@@ -46,11 +46,14 @@ use mm2_libp2p::{
     spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, SwarmRuntime, WssCerts,
 };
 use mm2_metrics::mm_gauge;
+use mm2_net::ip_addr::is_global_ipv4;
 use rpc_task::RpcTaskError;
 use serde_json as json;
+use serde_json::Value as Json;
 use std::convert::TryInto;
 use std::fs;
 use std::io;
+use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use std::str;
 use std::time::Duration;
@@ -60,6 +63,7 @@ cfg_native! {
     use mm2_io::fs::{ensure_dir_is_writable, ensure_file_is_writable};
     use mm2_net::ip_addr::myipaddr;
     use rustls_pemfile as pemfile;
+    use std::net::IpAddr;
 }
 
 #[path = "lp_init/init_context.rs"]
@@ -495,6 +499,33 @@ fn get_p2p_key(ctx: &MmArc, is_seed_node: bool) -> P2PResult<[u8; 32]> {
     Ok(p2p_key)
 }
 
+/// Reads an optional IPv4 address out of the config.
+///
+/// The P2P layer listens on and announces `/ip4/<addr>/tcp/<port>` multiaddresses only, so
+/// anything that isn't an IPv4 address is rejected here instead of becoming an unusable address
+/// further down.
+fn conf_ipv4(conf: &Json, field: &str) -> P2PResult<Option<Ipv4Addr>> {
+    let value = match conf.get(field) {
+        Some(value) if !value.is_null() => value,
+        _ => return Ok(None),
+    };
+
+    let deserializing_err = |error: String| {
+        MmError::new(P2PInitError::ErrorDeserializingConfig {
+            field: field.to_owned(),
+            error,
+        })
+    };
+
+    let addr = value
+        .as_str()
+        .ok_or_else(|| deserializing_err("expected an IPv4 address string".to_owned()))?;
+
+    addr.parse()
+        .map(Some)
+        .map_err(|e| deserializing_err(format!("'{addr}' is not a valid IPv4 address: {e}")))
+}
+
 fn p2p_precheck(ctx: &MmArc) -> P2PResult<()> {
     let is_seed_node = ctx.is_seed_node();
     let is_bootstrap_node = ctx.is_bootstrap_node();
@@ -539,6 +570,29 @@ fn p2p_precheck(ctx: &MmArc) -> P2PResult<()> {
 
         if is_seed_node {
             return precheck_err("Seed nodes cannot disable P2P.");
+        }
+    }
+
+    let advertise_ip = conf_ipv4(&ctx.conf, "p2p_advertise_ip")?;
+    let bind_ip = conf_ipv4(&ctx.conf, "p2p_bind_ip")?;
+
+    if advertise_ip.is_some() || bind_ip.is_some() {
+        if !is_seed_node {
+            return precheck_err("'p2p_advertise_ip' and 'p2p_bind_ip' only apply to seed nodes.");
+        }
+
+        if p2p_in_memory {
+            return precheck_err("'p2p_advertise_ip' and 'p2p_bind_ip' cannot be used with in-memory P2P mode.");
+        }
+    }
+
+    // Peers drop announcements of non-global addresses, so announcing one would leave the node
+    // silently undiscoverable - exactly the failure this field exists to avoid.
+    if let Some(ip) = advertise_ip {
+        if !is_global_ipv4(&ip) {
+            return precheck_err(&format!(
+                "'p2p_advertise_ip' must be a publicly routable IPv4 address, but '{ip}' is not."
+            ));
         }
     }
 
@@ -652,9 +706,17 @@ async fn relay_node_type(ctx: &MmArc) -> P2PResult<NodeType> {
     }
 
     let netid = ctx.netid();
-    let ip = myipaddr(ctx.clone())
-        .await
-        .map_to_mm(P2PInitError::ErrorGettingMyIpAddr)?;
+    let advertised_ip = conf_ipv4(&ctx.conf, "p2p_advertise_ip")?;
+    let ip = match conf_ipv4(&ctx.conf, "p2p_bind_ip")? {
+        Some(bind_ip) => IpAddr::V4(bind_ip),
+        // There is nothing left to detect once the operator has named the public address: it is
+        // very likely not bindable (that being the reason to configure it at all), so listen on
+        // every interface and let the announcement carry the routable address.
+        None if advertised_ip.is_some() => IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+        None => myipaddr(ctx.clone())
+            .await
+            .map_to_mm(P2PInitError::ErrorGettingMyIpAddr)?,
+    };
     let network_ports = lp_network_ports(netid).map_mm_err()?;
     let wss_certs = wss_certs(ctx)?;
     if wss_certs.is_none() {
@@ -666,6 +728,7 @@ Example:    "wss_certs": { "server_priv_key": "/path/to/key.pem", "certificate":
 
     Ok(NodeType::Relay {
         ip,
+        advertised_ip,
         network_ports,
         wss_certs,
     })
@@ -752,4 +815,85 @@ fn wss_certs(ctx: &MmArc) -> P2PResult<Option<WssCerts>> {
     .collect();
 
     Ok(Some(WssCerts { server_priv_key, certs }))
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod p2p_address_config_tests {
+    use super::*;
+    use mm2_core::mm_ctx::MmCtxBuilder;
+
+    fn precheck_err_of(conf: Json) -> String {
+        let ctx = MmCtxBuilder::new().with_conf(conf).into_mm_arc();
+        p2p_precheck(&ctx)
+            .expect_err("Expected the precheck to reject the config")
+            .to_string()
+    }
+
+    #[test]
+    fn conf_ipv4_is_optional() {
+        assert_eq!(conf_ipv4(&json!({}), "p2p_advertise_ip").unwrap(), None);
+        assert_eq!(
+            conf_ipv4(&json!({ "p2p_advertise_ip": null }), "p2p_advertise_ip").unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn conf_ipv4_parses_an_address() {
+        let conf = json!({ "p2p_advertise_ip": "168.119.236.251" });
+        assert_eq!(
+            conf_ipv4(&conf, "p2p_advertise_ip").unwrap(),
+            Some(Ipv4Addr::new(168, 119, 236, 251))
+        );
+    }
+
+    #[test]
+    fn conf_ipv4_rejects_anything_that_is_not_an_ipv4_address() {
+        for value in [json!(42), json!("not an ip"), json!("2001:db8::1"), json!("1.2.3.4:5")] {
+            let conf = json!({ "p2p_bind_ip": value });
+            let error = conf_ipv4(&conf, "p2p_bind_ip")
+                .expect_err("Expected the field to be rejected")
+                .to_string();
+            assert!(error.contains("p2p_bind_ip"), "Unexpected error: {}", error);
+        }
+    }
+
+    #[test]
+    fn precheck_rejects_address_fields_on_a_light_node() {
+        let error = precheck_err_of(json!({
+            "i_am_seed": false,
+            "seednodes": ["168.119.236.251"],
+            "p2p_advertise_ip": "168.119.236.251",
+        }));
+        assert!(
+            error.contains("only apply to seed nodes"),
+            "Unexpected error: {}",
+            error
+        );
+    }
+
+    #[test]
+    fn precheck_rejects_a_non_global_advertise_ip() {
+        // Announcing a private address is worse than announcing nothing: receiving peers drop it,
+        // so the node looks configured while staying undiscoverable.
+        let error = precheck_err_of(json!({
+            "i_am_seed": true,
+            "is_bootstrap_node": true,
+            "p2p_advertise_ip": "10.0.0.5",
+        }));
+        assert!(error.contains("publicly routable"), "Unexpected error: {}", error);
+    }
+
+    #[test]
+    fn precheck_accepts_a_natted_seed_config() {
+        // The identity check is the only thing left to trip over, which means the bind/advertise
+        // pair itself was accepted.
+        let error = precheck_err_of(json!({
+            "i_am_seed": true,
+            "is_bootstrap_node": true,
+            "p2p_bind_ip": "0.0.0.0",
+            "p2p_advertise_ip": "168.119.236.251",
+        }));
+        assert!(error.contains("persistent identity"), "Unexpected error: {}", error);
+    }
 }

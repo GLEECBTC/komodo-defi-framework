@@ -81,11 +81,21 @@ Determines node role in the network:
 ```rust
 enum NodeType {
     Light { network_ports },      // Client node
-    Relay { ip, network_ports, wss_certs }, // Server/relay node
+    Relay { ip, advertised_ip, network_ports, wss_certs }, // Server/relay node
     LightInMemory,               // Testing
     RelayInMemory { port },      // Testing
 }
 ```
+
+`Relay` separates the address it binds to from the address it tells other peers to dial:
+
+- `ip` — what `listen_on` binds to (config: `p2p_bind_ip`, else auto-detected via `myipaddr`).
+- `advertised_ip` — optional publicly routable IPv4 announced in its place (config: `p2p_advertise_ip`).
+
+A NATed or port-forwarded seed cannot bind its public address, so it binds `0.0.0.0` and sets
+`p2p_advertise_ip`. `NodeType::announced_address()` turns that into the `/ip4/<ip>/tcp/<tcp port>`
+multiaddress that `announce_my_addresses()` publishes; without it, the announcement falls back to
+picking a global address out of the swarm listeners (and finds none behind NAT).
 
 ## Message Topics
 
@@ -163,6 +173,7 @@ Response types:
 | Issue | Solution |
 |-------|----------|
 | Peer not connecting | Check seednode addresses, verify netid matches |
+| Seed behind NAT is never discovered | It binds `0.0.0.0` and has no global listener to announce. Set `p2p_advertise_ip` to the public IPv4 (and `p2p_bind_ip` if the default `0.0.0.0` is wrong) |
 | Messages not received | Confirm topic subscription via `GetGossipTopicPeers` |
 | Time validation failing | Ensure system clock is synchronized |
 | Too many/few connections | Adjust mesh_n parameters in GossipsubConfig |

@@ -25,7 +25,7 @@ use rand::seq::SliceRandom;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Mutex, MutexGuard};
 use std::task::{Context, Poll};
 use timed_map::{MapKind, TimedMap};
@@ -373,6 +373,10 @@ pub struct AtomicDexBehaviour {
     runtime: SwarmRuntime,
     cmd_rx: Receiver<AdexBehaviourCmd>,
     netid: u16,
+    /// Address announced to other peers in place of the swarm listeners.
+    ///
+    /// See [`NodeType::announced_address`].
+    announced_address: Option<Multiaddr>,
 }
 
 #[derive(NetworkBehaviour)]
@@ -600,6 +604,12 @@ pub enum NodeType {
     LightInMemory,
     Relay {
         ip: IpAddr,
+        /// Publicly routable address to announce to other peers, when it differs from `ip`.
+        ///
+        /// Set when the node is behind NAT or port forwarding: the socket binds to `ip` (usually
+        /// `0.0.0.0`, since the public address doesn't exist on any local interface) while peers
+        /// are told to dial `advertised_ip` instead.
+        advertised_ip: Option<Ipv4Addr>,
         network_ports: NetworkPorts,
         wss_certs: Option<WssCerts>,
     },
@@ -630,6 +640,25 @@ impl NodeType {
     pub fn wss_certs(&self) -> Option<&WssCerts> {
         match self {
             NodeType::Relay { wss_certs, .. } => wss_certs.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// The address this node wants other peers to dial.
+    ///
+    /// `None` unless an `advertised_ip` is configured, in which case the announcement falls back
+    /// to picking a globally routable address out of the addresses the swarm listens on.
+    pub fn announced_address(&self) -> Option<Multiaddr> {
+        match self {
+            NodeType::Relay {
+                advertised_ip: Some(ip),
+                network_ports,
+                ..
+            } => Some(
+                Multiaddr::empty()
+                    .with(Protocol::Ip4(*ip))
+                    .with(Protocol::Tcp(network_ports.tcp)),
+            ),
             _ => None,
         }
     }
@@ -698,6 +727,11 @@ fn start_gossipsub(
 
     let network_info = config.node_type.to_network_info();
     info!("Network information: {:?}", network_info);
+
+    let announced_address = config.node_type.announced_address();
+    if let Some(address) = &announced_address {
+        info!("Announcing {} to other peers instead of the listen addresses.", address);
+    }
 
     let transport = match network_info {
         NetworkInfo::InMemory => build_memory_transport(noise_config, config.max_num_streams),
@@ -771,6 +805,7 @@ fn start_gossipsub(
             runtime: config.runtime.clone(),
             cmd_rx,
             netid: config.netid,
+            announced_address,
         };
 
         libp2p::swarm::SwarmBuilder::with_executor(transport, adex_behavior, local_peer_id, config.runtime.clone())
@@ -788,12 +823,20 @@ fn start_gossipsub(
             ip,
             network_ports,
             wss_certs,
+            ..
         } => {
+            // A bad listen address is a config mistake (`p2p_bind_ip` naming an IP that belongs to
+            // no local interface, or a port already in use), so report it rather than panicking.
+            let listen_on = |swarm: &mut AtomicDexSwarm, addr: Multiaddr| {
+                libp2p::Swarm::listen_on(swarm, addr.clone())
+                    .map_err(|e| AdexBehaviourError::InitializationError(format!("Failed to listen on {addr}: {e}")))
+            };
+
             let dns_addr: Multiaddr = format!("/ip4/{}/tcp/{}", ip, network_ports.tcp).parse().unwrap();
-            libp2p::Swarm::listen_on(&mut swarm, dns_addr).unwrap();
+            listen_on(&mut swarm, dns_addr)?;
             if wss_certs.is_some() {
                 let wss_addr: Multiaddr = format!("/ip4/{}/tcp/{}/wss", ip, network_ports.wss).parse().unwrap();
-                libp2p::Swarm::listen_on(&mut swarm, wss_addr).unwrap();
+                listen_on(&mut swarm, wss_addr)?;
             }
         },
         NodeType::RelayInMemory { port } => {
@@ -996,6 +1039,15 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
 }
 
 fn announce_my_addresses(swarm: &mut AtomicDexSwarm) {
+    // A configured advertised address wins over the listeners. A NATed node listens on an address
+    // (typically `0.0.0.0`) that no other peer can dial, so its listeners say nothing useful about
+    // how to reach it.
+    let announced_address = swarm.behaviour().announced_address.clone();
+    if let Some(address) = announced_address {
+        swarm.behaviour_mut().announce_listeners(PeerAddresses::from([address]));
+        return;
+    }
+
     let global_listeners: PeerAddresses = Swarm::listeners(swarm)
         .filter(|listener| {
             for protocol in listener.iter() {

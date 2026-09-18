@@ -124,6 +124,34 @@ For example:
 }
 ```
 
+### Running a seed node behind NAT
+
+A seed node (`"i_am_seed": true`) normally binds and announces the same address. That breaks when
+the public address doesn't exist on any local interface, as with NAT or a port-forwarded
+container: the node falls back to binding `0.0.0.0`, has no globally routable listener to
+announce, and so is only reachable by peers that name it in `seednodes` explicitly.
+
+Two optional fields separate the two concerns:
+
+| Field | Purpose | Default |
+| --- | --- | --- |
+| `p2p_bind_ip` | IPv4 address the P2P socket listens on | auto-detected, or `0.0.0.0` when `p2p_advertise_ip` is set |
+| `p2p_advertise_ip` | Publicly routable IPv4 address announced to other peers | the listen address |
+
+```json
+{
+  "i_am_seed": true,
+  "p2p_bind_ip": "10.0.0.20",
+  "p2p_advertise_ip": "<your public IPv4>"
+}
+```
+
+Prefer naming the interface address the node should listen on, as above, over leaving it to the
+`0.0.0.0` default: on a host with more than one interface, binding all of them exposes the P2P
+port on networks the forwarding rule was never meant to cover.
+
+Forward the netid's TCP port (and the WSS port if `wss_certs` is configured) to the node.
+
 The coins file contains information about the coins and tokens you want to trade. A regularly updated version is maintained in the [Komodo Platform coins repository](https://github.com/KomodoPlatform/coins/blob/master/coins). Pull Requests to add any coins not yet included are welcome.
 
 To facilitate interoperability with the `kdf` service, there is the `adex-cli` command line utility. It provides a questionnaire initialization mode to set up the configuration and obtain the proper coin set through the internet. It can also be used to start or stop the service.
