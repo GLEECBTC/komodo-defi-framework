@@ -14,6 +14,7 @@ mod tests {
     use lazy_static::lazy_static;
     use libp2p::{Multiaddr, PeerId};
     use std::collections::{HashMap, HashSet};
+    use std::net::{IpAddr, Ipv4Addr};
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::Arc;
     #[cfg(target_os = "linux")]
@@ -444,6 +445,49 @@ mod tests {
             HashSet::from_iter(vec![address1, address2]),
         )]);
         assert!(behaviour.validate_get_known_peers_response(&response));
+    }
+
+    #[test]
+    fn test_relay_announced_address() {
+        let network_ports = NetworkPorts { tcp: 32326, wss: 32336 };
+
+        // Without `advertised_ip` the announcement falls back to scanning the swarm listeners.
+        let node_type = NodeType::Relay {
+            ip: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            advertised_ip: None,
+            network_ports,
+            wss_certs: None,
+        };
+        assert_eq!(node_type.announced_address(), None);
+
+        // With it, the node announces the routable address no matter what it binds to.
+        let node_type = NodeType::Relay {
+            ip: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            advertised_ip: Some(Ipv4Addr::new(168, 119, 236, 251)),
+            network_ports,
+            wss_certs: None,
+        };
+        let announced = node_type.announced_address().expect("Advertised address is set");
+        assert_eq!(
+            announced,
+            "/ip4/168.119.236.251/tcp/32326".parse::<Multiaddr>().unwrap()
+        );
+
+        // Receiving peers must accept what we announce, otherwise the node stays undiscoverable.
+        let behaviour = PeersExchange::new(NetworkInfo::Distributed { network_ports });
+        let response = HashMap::from_iter(vec![(
+            PeerIdSerde(PeerId::random()),
+            HashSet::from_iter(vec![announced]),
+        )]);
+        assert!(behaviour.validate_get_known_peers_response(&response));
+    }
+
+    #[test]
+    fn test_light_node_has_no_announced_address() {
+        let node_type = NodeType::Light {
+            network_ports: NetworkPorts { tcp: 32326, wss: 32336 },
+        };
+        assert_eq!(node_type.announced_address(), None);
     }
 
     #[test]
