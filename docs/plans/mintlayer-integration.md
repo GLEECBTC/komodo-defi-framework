@@ -238,7 +238,16 @@ Checks still open:
   after cleanup; it reported 36 errors for the library and 38 for the library
   test build in other modules. These overlapping counts must not be summed.
   This is not a passing Clippy gate, nor proof that every integration target
-  completed linting. A baseline-only Clippy comparison has not been run.
+  completed linting. A baseline-only comparison was subsequently run on
+  unmodified upstream dev `e686ef3500585f01c9f0e89c8c01bc036c42253c`
+  with the same command and Rust/Cargo 1.97.1. Both runs exited 101 with
+  the same 36 library / 38 library-test error counts. The complete emitted
+  error section, from the first diagnostic through the final compilation
+  error summary, is identical in both logs, including messages and locations.
+  Thus these observed failures also occur without the Mintlayer contribution;
+  this does not establish a passing gate or completion of all targets.
+  Baseline log SHA256:
+  `ae9526d6377f5d0849b1f65220b7945c17ce0c1094e3fb92aea724b6e09abf22`.
 - Workspace formatting check exited 1 on import ordering in
   `mm2src/derives/enum_derives/src/from_stringify.rs`, verified unchanged from
   the upstream dev base. The three edited Mintlayer source files were formatted.
