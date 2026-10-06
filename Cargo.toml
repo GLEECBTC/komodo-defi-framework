@@ -251,3 +251,6 @@ codegen-units = 256
 
 [profile.release.package.mocktopus]
 opt-level = 1 # TODO: MIR fails on optimizing this dependency, remove that..
+
+[patch.crates-io]
+parity-scale-codec = { git = "https://github.com/paritytech/parity-scale-codec.git", rev = "5021525697edc0661591ebc71392c48d950a10b0" }

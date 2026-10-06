@@ -296,6 +296,8 @@ use utxo::utxo_common::{big_decimal_from_sat_unsigned, payment_script, WaitForOu
 use utxo::utxo_standard::{utxo_standard_coin_with_policy, UtxoStandardCoin};
 use utxo::{swap_proto_v2_scripts, BlockchainNetwork, GenerateTxError, UtxoActivationParams, UtxoFeeDetails, UtxoTx};
 
+pub mod mintlayer;
+use mintlayer::MintlayerTransaction;
 pub mod nft;
 use nft::nft_errors::GetNftInfoError;
 use script::Script;
@@ -617,6 +619,7 @@ pub enum TransactionEnum {
     #[cfg(not(target_arch = "wasm32"))]
     LightningPayment(LightningPayment),
     SiaTransaction(SiaTransaction),
+    MintlayerTransaction(MintlayerTransaction),
 }
 
 ifrom!(TransactionEnum, UtxoTx);
@@ -625,6 +628,7 @@ ifrom!(TransactionEnum, ZTransaction);
 #[cfg(not(target_arch = "wasm32"))]
 ifrom!(TransactionEnum, LightningPayment);
 ifrom!(TransactionEnum, SiaTransaction);
+ifrom!(TransactionEnum, MintlayerTransaction);
 
 impl TransactionEnum {
     #[cfg(not(target_arch = "wasm32"))]
@@ -650,6 +654,7 @@ impl Deref for TransactionEnum {
             #[cfg(not(target_arch = "wasm32"))]
             TransactionEnum::LightningPayment(ref p) => p,
             TransactionEnum::SiaTransaction(ref t) => t,
+            TransactionEnum::MintlayerTransaction(ref t) => t,
         }
     }
 }
@@ -3820,6 +3825,7 @@ pub enum MmCoinEnum {
     #[cfg(not(target_arch = "wasm32"))]
     LightningCoinVariant(LightningCoin),
     SiaCoinVariant(SiaCoin),
+    MintlayerCoinVariant(mintlayer::MintlayerCoin),
     SolanaCoinVariant(solana::SolanaCoin),
     SolanaTokenVariant(solana::SolanaToken),
     #[cfg(any(test, feature = "for-tests"))]
@@ -3900,6 +3906,12 @@ impl From<SiaCoin> for MmCoinEnum {
     }
 }
 
+impl From<mintlayer::MintlayerCoin> for MmCoinEnum {
+    fn from(c: mintlayer::MintlayerCoin) -> MmCoinEnum {
+        MmCoinEnum::MintlayerCoinVariant(c)
+    }
+}
+
 impl From<solana::SolanaCoin> for MmCoinEnum {
     fn from(c: solana::SolanaCoin) -> MmCoinEnum {
         MmCoinEnum::SolanaCoinVariant(c)
@@ -3929,6 +3941,7 @@ impl Deref for MmCoinEnum {
             MmCoinEnum::LightningCoinVariant(ref c) => c,
             MmCoinEnum::ZCoinVariant(ref c) => c,
             MmCoinEnum::SiaCoinVariant(ref c) => c,
+            MmCoinEnum::MintlayerCoinVariant(ref c) => c,
             MmCoinEnum::SolanaCoinVariant(ref c) => c,
             MmCoinEnum::SolanaTokenVariant(ref c) => c,
             #[cfg(any(test, feature = "for-tests"))]
@@ -4867,11 +4880,53 @@ pub enum CoinProtocol {
     },
     ZHTLC(ZcoinProtocolInfo),
     SIA,
+    MINTLAYER,
     NFT {
         platform: String,
     },
     SOLANA(solana::SolanaProtocolInfo),
     SOLANATOKEN(solana::SolanaTokenProtocolInfo),
+}
+
+#[cfg(test)]
+mod mintlayer_protocol_tests {
+    use super::*;
+
+    const OFFICIAL_MINTLAYER_PUBLIC_KEY: &str = "03bf6f8d52dade77f95e9c6c9488fd8492a99c09ff23095caffb2e6409d1746ade";
+    const OFFICIAL_MINTLAYER_MAINNET_ADDRESS: &str = "mtc1qyumjs84s5nqgcp6nw9kwde9mn7akph6hgtulsdk";
+
+    #[test]
+    fn test_mintlayer_coin_protocol_serde() {
+        let protocol_json = serde_json::json!({"type": "MINTLAYER"});
+        let protocol: CoinProtocol = serde_json::from_value(protocol_json.clone()).unwrap();
+
+        assert!(matches!(protocol, CoinProtocol::MINTLAYER));
+        assert_eq!(serde_json::to_value(protocol).unwrap(), protocol_json);
+    }
+
+    #[test]
+    fn test_mintlayer_orderbook_address_from_pubkey() {
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
+        let conf = serde_json::json!({
+            "coin": "ML",
+            "network": "mainnet",
+            "decimals": 11,
+            "required_confirmations": 2,
+            "genesis_block_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "protocol": {"type": "MINTLAYER"}
+        });
+
+        let address = address_by_coin_conf_and_pubkey_str(
+            &ctx,
+            "ML",
+            &conf,
+            OFFICIAL_MINTLAYER_PUBLIC_KEY,
+            UtxoAddressFormat::Standard,
+        )
+        .unwrap();
+
+        assert_eq!(address, OFFICIAL_MINTLAYER_MAINNET_ADDRESS);
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
@@ -4915,7 +4970,7 @@ impl CoinProtocol {
             | CoinProtocol::BCH { .. }
             | CoinProtocol::TENDERMINT(_)
             | CoinProtocol::ZHTLC(_) => None,
-            CoinProtocol::SIA => None,
+            CoinProtocol::SIA | CoinProtocol::MINTLAYER => None,
             CoinProtocol::SOLANA(_) => None,
             CoinProtocol::SOLANATOKEN(info) => Some(&info.platform),
         }
@@ -4939,7 +4994,7 @@ impl CoinProtocol {
             | CoinProtocol::NFT { .. } => None,
             #[cfg(not(target_arch = "wasm32"))]
             CoinProtocol::LIGHTNING { .. } => None,
-            CoinProtocol::SIA => None,
+            CoinProtocol::SIA | CoinProtocol::MINTLAYER => None,
             CoinProtocol::SOLANA(_) => None,
             CoinProtocol::SOLANATOKEN(info) => Some(info.mint_address.to_string()),
         }
@@ -5294,6 +5349,14 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         CoinProtocol::SIA => {
             let params = try_s!(SiaCoinActivationRequest::from_legacy_req(req));
             try_s!(SiaCoin::new(ctx, coins_en, &params, priv_key_policy).await).into()
+        },
+        CoinProtocol::MINTLAYER => {
+            let conf: mintlayer::MintlayerCoinConf = try_s!(json::from_value(coins_en.clone()));
+            let request: mintlayer::MintlayerActivationRequest = try_s!(json::from_value(req.clone()));
+            let coin = try_s!(mintlayer::MintlayerCoin::new(ctx, conf, request, priv_key_policy));
+
+            try_s!(coin.validate_network().await);
+            coin.into()
         },
         CoinProtocol::SOLANA(_) => return ERR!("SOLANA is not supported by lp_coininit"),
         CoinProtocol::SOLANATOKEN(_) => return ERR!("SOLANATOKEN is not supported by lp_coininit"),
@@ -5958,6 +6021,14 @@ pub fn address_by_coin_conf_and_pubkey_str(
         // this will require significant changes and this function is only called from "legacy" dispatcher's `orderbook` rpc
         // so it's not a priority right now
         CoinProtocol::SIA => ERR!("address_by_coin_conf_and_pubkey_str is not supported for SIA protocol!"),
+        CoinProtocol::MINTLAYER => {
+            let mintlayer_conf: mintlayer::MintlayerCoinConf = try_s!(json::from_value(conf.clone()));
+            let pubkey_hex = pubkey.strip_prefix("0x").unwrap_or(pubkey);
+            let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| ERRL!("{}", e))?;
+
+            mintlayer::mintlayer_address_from_compressed_public_key(mintlayer_conf.network, &pubkey_bytes)
+                .map_err(|e| e.to_string())
+        },
         CoinProtocol::SOLANA(_) => ERR!("address_by_coin_conf_and_pubkey_str is not implemented for SOLANA yet."),
         CoinProtocol::SOLANATOKEN(_) => {
             ERR!("address_by_coin_conf_and_pubkey_str is not implemented for SOLANATOKEN yet.")
