@@ -1,3 +1,8 @@
+> [!IMPORTANT]
+> **This repository has not been actively maintained since April 2026.**
+>
+> It is being archived and retained for historical reference. No further updates, bug fixes, or security patches are planned for this repository.
+
 <p align="center">
     <a href="https://komodoplatform.com/en/docs/komodo-defi-framework/api/v20/" alt="Contributors">
         <img width="420" src="https://user-images.githubusercontent.com/24797699/252396802-de8f9264-8056-4430-a17d-5ecec9668dfc.png" />
@@ -189,13 +194,11 @@ Refer to the [Komodo Developer Docs](https://komodoplatform.com/en/docs/komodo-d
 
 ## Disclaimer
 
-This repository contains the `work in progress` code of the brand-new Komodo DeFi Framework (kdf) built mainly on Rust.  
-The current state can be considered as an alpha version.
+This repository contains an alpha version of the Komodo DeFi Framework (kdf), built mainly in Rust.
 
 **<b>WARNING: Use with test coins only or with assets which value does not exceed an amount you are willing to lose. This is alpha stage software! </b>**
 
 
 ## Help and troubleshooting
 
-If you have any question/want to report a bug/suggest an improvement feel free to [open an issue](https://github.com/KomodoPlatform/komodo-defi-framework/issues/new/choose) or join the  [Komodo Platform Discord](https://discord.gg/PGxVm2y) `dev-general` channel.
-
+Please refer to the existing documentation and issues for historical information. This repository is no longer actively maintained.
