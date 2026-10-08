@@ -766,7 +766,7 @@ impl SwapConfirmationsSettings {
 }
 
 fn coin_with_4x_locktime(ticker: &str) -> bool {
-    matches!(ticker, "BCH" | "BTG" | "SBTC")
+    matches!(ticker, "BCH" | "BTG" | "SBTC" | "BLOZ")
 }
 
 #[derive(Debug)]
