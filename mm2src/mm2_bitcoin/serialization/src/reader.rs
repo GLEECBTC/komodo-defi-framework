@@ -67,6 +67,11 @@ pub enum ChainVariant {
     MORTY,
     RVN,
     PIVX,
+    /// WATTx: Qtum-derived, but every block header (PoS and merged-mined PoW)
+    /// carries the Qtum fields plus a deprecated 40-byte Gapcoin tail
+    /// (nShift u32, nAdder u256, nGapSize u32), and the header serialization
+    /// never includes AuxPoW even when the version's auxpow bit is set.
+    WATTX,
 }
 
 impl ChainVariant {
@@ -92,6 +97,10 @@ impl ChainVariant {
     pub fn is_pivx(&self) -> bool {
         matches!(self, ChainVariant::PIVX)
     }
+
+    pub fn is_wattx(&self) -> bool {
+        matches!(self, ChainVariant::WATTX)
+    }
 }
 
 impl TryFrom<&str> for ChainVariant {
@@ -107,6 +116,7 @@ impl TryFrom<&str> for ChainVariant {
             "MORTY" => Ok(ChainVariant::MORTY),
             "RVN" => Ok(ChainVariant::RVN),
             "PIVX" => Ok(ChainVariant::PIVX),
+            "WATTX" => Ok(ChainVariant::WATTX),
             _ => Err(format!("Unknown chain variant: {}", value)),
         }
     }
