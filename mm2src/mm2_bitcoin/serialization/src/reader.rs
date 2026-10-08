@@ -67,6 +67,10 @@ pub enum ChainVariant {
     MORTY,
     RVN,
     PIVX,
+    /// Sharecoin (SHC): same block header layout as RVN's KawPow extension (nHeight, a 64-bit
+    /// nonce, and a mix_hash appended after the standard fields), but KawPow-only since genesis,
+    /// so unlike RVN it has no pre-KawPow header history to distinguish via `version`.
+    SHC,
 }
 
 impl ChainVariant {
@@ -92,6 +96,9 @@ impl ChainVariant {
     pub fn is_pivx(&self) -> bool {
         matches!(self, ChainVariant::PIVX)
     }
+    pub fn is_shc(&self) -> bool {
+        matches!(self, ChainVariant::SHC)
+    }
 }
 
 impl TryFrom<&str> for ChainVariant {
@@ -107,6 +114,7 @@ impl TryFrom<&str> for ChainVariant {
             "MORTY" => Ok(ChainVariant::MORTY),
             "RVN" => Ok(ChainVariant::RVN),
             "PIVX" => Ok(ChainVariant::PIVX),
+            "SHC" => Ok(ChainVariant::SHC),
             _ => Err(format!("Unknown chain variant: {}", value)),
         }
     }

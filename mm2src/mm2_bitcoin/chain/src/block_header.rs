@@ -161,8 +161,12 @@ impl Serializable for BlockHeader {
         }
         s.append(&self.time);
         s.append(&self.bits);
-        // If a BTC header uses KAWPOW_VERSION, the nonce can't be zero
-        if !self.is_prog_pow() && (self.version != KAWPOW_VERSION || self.nonce != BlockHeaderNonce::U32(0)) {
+        // Headers with the RVN-style KawPow extension (RVN itself, gated on version == KAWPOW_VERSION
+        // since RVN has pre-KawPow header history; SHC, unconditionally, since it's KawPow-only from
+        // genesis, see `n_nonce_u64` below) don't carry a standalone nonce field here: it's replaced
+        // by `n_nonce_u64` later in the layout. `n_nonce_u64.is_some()` is a reliable proxy for "this
+        // header used that extended layout", regardless of which chain variant triggered it below.
+        if !self.is_prog_pow() && self.n_nonce_u64.is_none() {
             s.append(&self.nonce);
         }
         // For PIVX-style headers, the sapling root is serialized after the nonce.
@@ -248,6 +252,7 @@ impl Deserializable for BlockHeader {
         let nonce = if is_zcash_style {
             BlockHeaderNonce::H256(reader.read()?)
         } else if (version == KAWPOW_VERSION && reader.chain_variant().is_rvn())
+            || reader.chain_variant().is_shc()
             || (version == MTP_POW_VERSION && time >= PROG_POW_SWITCH_TIME)
         {
             BlockHeaderNonce::U32(0)
@@ -311,11 +316,14 @@ impl Deserializable for BlockHeader {
             };
 
         // https://github.com/RavenProject/Ravencoin/blob/61c790447a5afe150d9892705ac421d595a2df60/src/primitives/block.h#L67
-        let (n_height, n_nonce_u64, mix_hash) = if version == KAWPOW_VERSION && reader.chain_variant().is_rvn() {
-            (Some(reader.read()?), Some(reader.read()?), Some(reader.read()?))
-        } else {
-            (None, None, None)
-        };
+        // SHC uses this same layout unconditionally (no version check needed): it's KawPow-only
+        // since genesis, so it has no plain-header history that would need to be told apart from it.
+        let (n_height, n_nonce_u64, mix_hash) =
+            if (version == KAWPOW_VERSION && reader.chain_variant().is_rvn()) || reader.chain_variant().is_shc() {
+                (Some(reader.read()?), Some(reader.read()?), Some(reader.read()?))
+            } else {
+                (None, None, None)
+            };
 
         Ok(BlockHeader {
             version,
@@ -2471,6 +2479,30 @@ mod tests {
         }
         let serialized = serialize_list(&headers);
         assert_eq!(serialized.take(), headers_bytes);
+    }
+
+    #[test]
+    fn test_shc_kawpow_header() {
+        // Real header from the live Sharecoin (SHC) chain, height 5705:
+        // https://github.com/TVHeroes/Sharecoin
+        // Confirms two things this fork's ChainVariant::SHC needs, unlike RVN: the extended
+        // KawPow fields (n_height, n_nonce_u64, mix_hash) parse even though SHC's block version
+        // (0x20000000) never equals KAWPOW_VERSION, and the header round-trips byte for byte.
+        let header_hex = "00000020ed8859f84ac624d0ea84704ba8f326fbbb4045efb38b144e1b74bba229675d3\
+                           8f86949a64ca7b3fb9aea6609b526549ac5a99df3f25567aa63ad606256bba810462a72\
+                           6a2c35011d49160000434b0e150000e6165ffa8196cecdc331000d52d9ff2ba9b4e873c\
+                           af78f7077beb797e647225db80d";
+        let header_bytes: Vec<u8> = header_hex.from_hex().unwrap();
+        let mut reader = Reader::new_with_chain_variant(header_bytes.as_slice(), ChainVariant::SHC);
+        let header: BlockHeader = reader.read().unwrap();
+
+        assert_ne!(header.version, KAWPOW_VERSION);
+        assert!(header.n_height.is_some());
+        assert!(header.n_nonce_u64.is_some());
+        assert!(header.mix_hash.is_some());
+
+        let serialized = serialize(&header);
+        assert_eq!(serialized.take(), header_bytes);
     }
 
     #[test]
