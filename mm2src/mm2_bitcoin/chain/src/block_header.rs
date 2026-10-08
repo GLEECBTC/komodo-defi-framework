@@ -236,8 +236,23 @@ impl Deserializable for BlockHeader {
             None
         };
 
+        // Kerrigan is a multi-algo chain: the mined algorithm is encoded at bits 9-11 of
+        // the version field. Different algos produce different header tails, so we cache
+        // the id here and use it to dispatch the per-algo sections below.
+        //   0 = X11 (standard 80-byte Bitcoin header, no tail)
+        //   1 = KawPoW (tail: n_height u32 + n_nonce u64 + mix_hash H256, like RVN)
+        //   2 = Equihash(200,9), 3 = Equihash(192,7) — Zcash-style Sapling layout
+        let krgn_algo: Option<u32> = if reader.chain_variant().is_krgn() {
+            Some((version >> 9) & 0x7u32)
+        } else {
+            None
+        };
+        let is_krgn_equihash = matches!(krgn_algo, Some(2) | Some(3));
+        let is_krgn_kawpow = matches!(krgn_algo, Some(1));
+
         let is_zcash_style = (version == 4 && !reader.chain_variant().is_btc() && !reader.chain_variant().is_ppc())
-            || reader.chain_variant().is_kmd_assetchain();
+            || reader.chain_variant().is_kmd_assetchain()
+            || is_krgn_equihash;
         let mut hash_final_sapling_root = if is_zcash_style { Some(reader.read()?) } else { None };
         let time = reader.read()?;
         let bits = if is_zcash_style {
@@ -311,11 +326,16 @@ impl Deserializable for BlockHeader {
             };
 
         // https://github.com/RavenProject/Ravencoin/blob/61c790447a5afe150d9892705ac421d595a2df60/src/primitives/block.h#L67
-        let (n_height, n_nonce_u64, mix_hash) = if version == KAWPOW_VERSION && reader.chain_variant().is_rvn() {
-            (Some(reader.read()?), Some(reader.read()?), Some(reader.read()?))
-        } else {
-            (None, None, None)
-        };
+        // Also used by Kerrigan KawPoW blocks: identical on-wire layout as RVN's KawPoW
+        // tail (n_height u32, n_nonce u64, mix_hash H256), just guarded by different
+        // version bits. Kerrigan keeps the 80-byte prefix nonce (zeroed) on the wire, so
+        // unlike RVN we DID consume the u32 nonce above — only the tail fields differ.
+        let (n_height, n_nonce_u64, mix_hash) =
+            if (version == KAWPOW_VERSION && reader.chain_variant().is_rvn()) || is_krgn_kawpow {
+                (Some(reader.read()?), Some(reader.read()?), Some(reader.read()?))
+            } else {
+                (None, None, None)
+            };
 
         Ok(BlockHeader {
             version,
@@ -2925,5 +2945,273 @@ mod tests {
         // Round-trip
         let serialized = serialize(&header);
         assert_eq!(serialized.take(), header_bytes);
+    }
+
+    // ── Kerrigan (KRGN) multi-algo block header tests ────────────────────────
+    //
+    // Kerrigan is a Dash fork with PIVX-style Sapling. It mines four PoW
+    // algorithms concurrently; the algo id lives at `(version >> 9) & 0x7u32` and
+    // selects a different header tail per block. The four fixtures below are
+    // real mainnet headers fetched from electrum-kerrigan.jskitty.cat around
+    // the `blockchain.block.headers` failure point (height 22313+) reported
+    // against `ChainVariant::Standard`. See:
+    // https://github.com/GLEECBTC/coins/pull/1791
+
+    /// Fixture: KRGN algo 0 (X11), height 22312. Standard 80-byte BTC header.
+    /// Field layout: version | prev | merkle | time | bits | nonce.
+    const KRGN_X11_HEADER_22312: &str = "\
+        00000020\
+        cecedd36fc1337bd11435021f61d3659bb3878adda6c32bfe7d03039d3323cb8\
+        9219536a41d8c300ee41722afa992ab97853c5793fa0f14965dafd62dd9cfaad\
+        4714dd69\
+        6eb8141a\
+        de037dfa";
+
+    /// Fixture: KRGN algo 1 (KawPoW), height 22316. 80-byte BTC prefix
+    /// (with the prefix u32 nonce zeroed on-wire) + 44-byte tail:
+    /// n_height (u32), n_nonce_64 (u64), mix_hash (H256).
+    const KRGN_KAWPOW_HEADER_22316: &str = "\
+        00020020\
+        2fdf79031346fae14cec946b538edfcdfe7e862c362b479153051ea03c18fe08\
+        83110049a44527184cfdb69384cc7f1ab5d79cc5385b97765e072431a708dbf1\
+        3b17dd69\
+        6ed4321b\
+        00000000\
+        2c570000\
+        c62f509228239162\
+        ec71a141c148176b53e852de723ec0a6fb8228ed9d18766bd554764a90cda7a4";
+
+    /// Fixture: KRGN algo 2 (Equihash(200,9)), height 22314. Zcash-style
+    /// header: hash_final_sapling_root before time, U32 bits, H256 nonce,
+    /// and a 1344-byte solution (compact-int length prefix `fd 40 05`).
+    const KRGN_EQUIHASH_200_HEADER_22314: &str = "\
+        00040020\
+        030604f488da6a2b8eabb6bf2b6ce56d9934fdc6deef9bed8762feb8fe70a4ba\
+        064f49dd64f3283ccf955b3f835e41a77c7d9f22556840a0a3df10196acb6f67\
+        0000000000000000000000000000000000000000000000000000000000000000\
+        9316dd69\
+        2963021d\
+        6000000a00000000000000000000000000003e0000000000000000000000df5c\
+        fd4005\
+        0077d885da4dfa9b1378024dcca2ee91e8e6bcee7609862bec42a6697940b452\
+        85642e26d967d9794f7f158cbf7ca885e464b7eb71d286c9d4c1351892fefe36\
+        66979381d59cc4dd5ac3eb77c884a285fb778d7a229e19793e0928398732a2cd\
+        7d50fb54bb99115a832ee44aa973a3bee3755eb3b031323b72e99d3ed86b2772\
+        5ba395d144d34525998af7f7238765cd7cf9d84f436da305566d6be85ac89e07\
+        fe135360157df72d0351e0b07acdaaa322aab11ab2dc29a1bdc07adbbf0c2a35\
+        fb40467d408a99b1528157437ea71c1ac7b408f6ad0a8b2dfa578d11b15e0135\
+        4aae8971354e682ba7b99433ef2e71c9bef3139b764777328b7fc34e0981bfd9\
+        dd9cd40b2ac2e1415c57cbe920dfbd41660ebdda9c17cdea44f4d44480ceef7b\
+        1739017c52d60db157d6eae8130dbd5fb5b4b2511f2af7243d0f335c92b71520\
+        99601988ea5770dcf8f735f47614aa8700f31597cfc7477e55786363aa59163a\
+        77db3fa8601c689d5a13f6f92bf1f284303ff6604a54025624d018aa7f917087\
+        7fa7a6b6b4273e7d4c8e7012bcd876386e3be8701ca8932566d438616e490d38\
+        148b712d04dcf20383488db92044e1c991dac4e5960fbe97bc26f90b276d537f\
+        d5a0918810df79f83a0e6d97c07b096ef84dcc5b55fbe064d5ca92dc807a09ff\
+        18acb91256be90935da8bf567da2432d65120330fafd175a032c3ead5214e42f\
+        7dc1733cd0dfe11a9ba496e099042408de85c7c131499541724fd93da2d9bdbb\
+        d1a015d926982d92a35913f7c2fd83e35841dff5b0e68017d955c2a6149a07da\
+        df33e443fb1d86cf5319b41d051c0713a14d79a5525ea3d48027b8c5c165dc34\
+        f305d7373554c61e5ae5dbf3b2c9fe3291552c9ea95308d963b7799aefc5afff\
+        20eee3b3cc48f5c60ca1763df616bc3a22bcb5a22d14598dcb249d74707be32e\
+        0181ccfa41c4e592763643310b2e5b4f111739939e14ee61b213ceb47f3b4401\
+        d72f5d442aeecfdbb3290756ad2f878d8101e86692dc07af71aa57aad555fb0d\
+        c60ebc8eafe7f7ac0a33791f7ea63124a3d70ed707510c66f3c3668d80b615ae\
+        4dcab935c0e6b170780df7d0ba7c3075239eeb3272219a3aad85021a32e60af6\
+        d9faff4a0de5b8cfa3fe6da1b43daf127e40a334b7d794890e6f5345e73a1967\
+        62e3f6f4bc9a3f05079e617e35c1edcf672d07edc3d885221f31fc0ef10ad7a0\
+        fa738fc3dcfec4428b8e2439f2083972b276113caeeba98a486ac029f29e67be\
+        d7929d4abc43a235276e4afe4ead6b6766f390bc7e4c2dc82a7b773f22a4acc6\
+        a1dc123ffcf13427826e2b61c8ad157eb24790461ad55e73035c32b7f30fe9c3\
+        3e2a33df33442ac4ae20099fac634dba547a16ac95fa2b74db9be03c9c1796cf\
+        670ffd83d6f4b783d9e1de2e62f9559d01a2452717905aac86a2a57a76bd1f45\
+        e0f95e118d136627bd21ab79f5e6d865029cf7c0296338b6f75620c2b3d19da0\
+        4fa35fd44246b8ea55a99e983eaa443bd54ba1bd62138b9534a410882d92cd87\
+        105bf8830576f56a99cf935cdd971236fe72ab36ceedfa77160669c957bf19ae\
+        f9a92697cb30f31a0eefe01cba660881b3fc7943acbab77bb501cf3b75a944da\
+        9d9d5a118b9cb4e484fa610453e1979dc706a947c48a712005ad370e658a5e29\
+        7e6bb48d8c57763d752a4e2f9f86e9aec12af5e01dbd720afd9a5faf6b243cf9\
+        8eac2d3d6dfdfa1a690b8eb6e3e00546a3f20982f37f5b33bf745286721da9a7\
+        20f4d1d15c915158733d9e7909b66a33d98731cdd41c22f5f8d3efb4bf062e16\
+        1915f0036e758d43fd570144afa6dd6d4661a739d4980bd43f9c780f20579b30\
+        b22c8eb9e8a5d817ba6df50fd77609e18789e1f7a6b4ce87da0ba156e3f9b63c";
+
+    /// Fixture: KRGN algo 3 (Equihash(192,7)), height 22313. Same Zcash-style
+    /// layout as Equihash(200,9) but with a shorter 400-byte solution.
+    const KRGN_EQUIHASH_192_HEADER_22313: &str = "\
+        00060020\
+        864a47125d16e571501cad908ca8d7f8c824e1414d8178079809000000000000\
+        41a42ad52ba9c797d4bdbec73f6283015a474735b868e46d6ce45426cb92dea4\
+        0000000000000000000000000000000000000000000000000000000000000000\
+        6815dd69\
+        e446011e\
+        c02cf51819836be40135d5f8728995f74d3d0b930000000000000000d1103020\
+        fd9001\
+        01dab64d2b6fe3b0dfdfc4f7601e523461d3d4bd2b7da4bbf63a45ffda27052d\
+        6adcd7d8ac382a3ebe370d725b7823ceb7a91c2d1ce6882056e01e7ac68db692\
+        a5a4a26ef6fed979b48d1a4e5e78f09d65d51f4c902c35f6ca42cf5d78c1d733\
+        0524185614df0f78d3e6df53569a4d1aa35e7306f84fd5665ce2c69664439dea\
+        a737de204372d1aa1a9479bba4d1d4ddaed13f4e03521c59067b361be41cdf74\
+        4652b26a0b3d4bbfe2021e9315a7a0494b25e493425eb4435a8b0e755569f42c\
+        1f016eae9fd7abdd08c4b79b4f4b02520c9d7d9de1b3889df5f5c28185bd9ff3\
+        4c2fc9ef9a519fcd84115b601fb36197dfa99693951cf3dbd82910d693790746\
+        62fc783a9fd7744fe8a39ee8f91bbaab5cef7e2d6eccad449d1942f43851b1d6\
+        df5e33e68146e83f55d9610d09ca6968f4b04af30a8f9fd3d0e3a3dcabef1272\
+        bbdbd44b30148edca805232c442c7cdfd8144b66af220b99dc954beb86f71e54\
+        10c0b1ec4e4508790b3c4383a3ccf782394249d323944f475de549f04f9dcf06\
+        b202e9f63713ae6af7663149edc27da2";
+
+    #[test]
+    fn test_krgn_chain_variant_try_from() {
+        use std::convert::TryFrom;
+        let cv = ChainVariant::try_from("KRGN").expect("KRGN variant must be recognised");
+        assert!(cv.is_krgn());
+        assert!(!cv.is_btc() && !cv.is_rvn() && !cv.is_pivx());
+    }
+
+    #[test]
+    fn test_krgn_x11_header_round_trip() {
+        let bytes: Vec<u8> = KRGN_X11_HEADER_22312.from_hex().unwrap();
+        let mut reader = Reader::new_with_chain_variant(bytes.as_slice(), ChainVariant::KRGN);
+        let header: BlockHeader = reader.read().unwrap();
+
+        assert_eq!(header.version, 0x20000000);
+        assert_eq!(header.time, 1_776_096_327);
+        assert!(matches!(header.bits, BlockHeaderBits::Compact(_)));
+        assert_eq!(header.nonce, BlockHeaderNonce::U32(0xfa7d03de));
+        assert!(header.solution.is_none(), "X11 headers have no Equihash solution");
+        assert!(header.n_height.is_none(), "X11 headers have no KawPoW tail");
+        assert!(header.hash_final_sapling_root.is_none());
+
+        let serialized = serialize(&header);
+        assert_eq!(serialized.take(), bytes, "round-trip must be byte-exact");
+    }
+
+    #[test]
+    fn test_krgn_kawpow_header_round_trip() {
+        let bytes: Vec<u8> = KRGN_KAWPOW_HEADER_22316.from_hex().unwrap();
+        assert_eq!(bytes.len(), 124, "KRGN KawPoW headers are exactly 124 bytes");
+
+        let mut reader = Reader::new_with_chain_variant(bytes.as_slice(), ChainVariant::KRGN);
+        let header: BlockHeader = reader.read().unwrap();
+
+        assert_eq!(header.version, 0x20000200);
+        assert_eq!((header.version >> 9) & 0x7, 1, "version encodes algo=1 (KawPoW)");
+        // Kerrigan keeps the 80-byte prefix u32 nonce on the wire (zeroed for KawPoW);
+        // this is the one observable difference from RVN KawPoW which omits it.
+        assert_eq!(header.nonce, BlockHeaderNonce::U32(0));
+        // KawPoW tail: n_height, n_nonce_64, mix_hash.
+        assert_eq!(header.n_height, Some(22316));
+        assert_eq!(header.n_nonce_u64, Some(0x6291_2328_9250_2fc6));
+        assert!(header.mix_hash.is_some());
+        assert!(header.solution.is_none());
+
+        let serialized = serialize(&header);
+        assert_eq!(serialized.take(), bytes, "round-trip must be byte-exact");
+    }
+
+    #[test]
+    fn test_krgn_equihash_200_header_round_trip() {
+        let bytes: Vec<u8> = KRGN_EQUIHASH_200_HEADER_22314.from_hex().unwrap();
+        assert_eq!(bytes.len(), 1487, "KRGN Equihash(200,9) headers are 1487 bytes");
+
+        let mut reader = Reader::new_with_chain_variant(bytes.as_slice(), ChainVariant::KRGN);
+        let header: BlockHeader = reader.read().unwrap();
+
+        assert_eq!(header.version, 0x20000400);
+        assert_eq!(
+            (header.version >> 9) & 0x7,
+            2,
+            "version encodes algo=2 (Equihash 200,9)"
+        );
+        assert!(matches!(header.bits, BlockHeaderBits::U32(_)), "Equihash uses U32 bits");
+        assert!(
+            matches!(header.nonce, BlockHeaderNonce::H256(_)),
+            "Equihash uses H256 nonce"
+        );
+        assert!(
+            header.hash_final_sapling_root.is_some(),
+            "Equihash has hashReserved / sapling root"
+        );
+        let sol = header.solution.as_ref().expect("Equihash must carry a solution");
+        assert_eq!(sol.len(), 1344, "Equihash(200,9) solutions are 1344 bytes");
+        assert!(header.n_height.is_none(), "Equihash headers have no KawPoW tail");
+
+        let serialized = serialize(&header);
+        assert_eq!(serialized.take(), bytes, "round-trip must be byte-exact");
+    }
+
+    #[test]
+    fn test_krgn_equihash_192_header_round_trip() {
+        let bytes: Vec<u8> = KRGN_EQUIHASH_192_HEADER_22313.from_hex().unwrap();
+        assert_eq!(bytes.len(), 543, "KRGN Equihash(192,7) headers are 543 bytes");
+
+        let mut reader = Reader::new_with_chain_variant(bytes.as_slice(), ChainVariant::KRGN);
+        let header: BlockHeader = reader.read().unwrap();
+
+        assert_eq!(header.version, 0x20000600);
+        assert_eq!(
+            (header.version >> 9) & 0x7,
+            3,
+            "version encodes algo=3 (Equihash 192,7)"
+        );
+        assert!(matches!(header.bits, BlockHeaderBits::U32(_)));
+        assert!(matches!(header.nonce, BlockHeaderNonce::H256(_)));
+        let sol = header.solution.as_ref().expect("Equihash must carry a solution");
+        assert_eq!(sol.len(), 400, "Equihash(192,7) solutions are 400 bytes");
+
+        let serialized = serialize(&header);
+        assert_eq!(serialized.take(), bytes, "round-trip must be byte-exact");
+    }
+
+    /// Reproduces the `blockchain.block.headers` batch parse that was failing
+    /// with `MalformedData` on `ChainVariant::Standard`. Concatenates one header
+    /// of each of the four Kerrigan algos in a single buffer and verifies the
+    /// reader consumes them sequentially, producing the right field shape for
+    /// each — which is exactly how an Electrum batch response is laid out.
+    #[test]
+    fn test_krgn_mixed_algo_header_batch() {
+        let mut buf: Vec<u8> = Vec::new();
+        for hex in [
+            KRGN_X11_HEADER_22312,
+            KRGN_KAWPOW_HEADER_22316,
+            KRGN_EQUIHASH_200_HEADER_22314,
+            KRGN_EQUIHASH_192_HEADER_22313,
+        ] {
+            buf.extend_from_slice(&hex.from_hex::<Vec<u8>>().unwrap());
+        }
+        let total_len = buf.len();
+
+        let mut reader = Reader::new_with_chain_variant(buf.as_slice(), ChainVariant::KRGN);
+        let mut parsed: Vec<BlockHeader> = Vec::new();
+        while !reader.is_finished() {
+            parsed.push(reader.read().expect("batch parse must not fail on KRGN"));
+        }
+        assert_eq!(parsed.len(), 4, "exactly four headers in the fixture batch");
+
+        // Each parsed header should have the algo-specific field signature that
+        // matches its version bits — i.e. the deserializer actually dispatched
+        // correctly rather than silently skipping bytes.
+        assert_eq!((parsed[0].version >> 9) & 0x7, 0); // X11
+        assert!(parsed[0].solution.is_none());
+        assert!(parsed[0].n_height.is_none());
+
+        assert_eq!((parsed[1].version >> 9) & 0x7, 1); // KawPoW
+        assert!(parsed[1].n_height.is_some());
+        assert!(parsed[1].solution.is_none());
+
+        assert_eq!((parsed[2].version >> 9) & 0x7, 2); // Equihash(200,9)
+        assert_eq!(parsed[2].solution.as_ref().unwrap().len(), 1344);
+
+        assert_eq!((parsed[3].version >> 9) & 0x7, 3); // Equihash(192,7)
+        assert_eq!(parsed[3].solution.as_ref().unwrap().len(), 400);
+
+        // Re-serialize the whole batch and verify it matches the original buffer
+        // byte-for-byte: this is the strongest round-trip guarantee we can give.
+        let mut round_trip: Vec<u8> = Vec::with_capacity(total_len);
+        for h in &parsed {
+            round_trip.extend_from_slice(&serialize(h).take());
+        }
+        assert_eq!(round_trip, buf, "full batch round-trip must be byte-exact");
     }
 }
